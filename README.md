@@ -1,0 +1,39 @@
+# Nosedive
+
+**_nosedive_ turns a plain notes repo into a hub for cross-repo work** — a place where a
+developer (and their agents) can safely pick up a piece of work that spans
+several repositories, do it, and get it reviewed, without the usual friction of
+juggling clones, branches, context, and half-remembered state.
+
+## The problem
+
+Enterprise work rarely fits inside one repository. A change to a shared library ripples
+into three services; a feature needs edits in the backend, the client, and the
+infra repo at once. Today that means:
+
+- **Lost context.** Every repo is a separate world. Where was I? What was this
+  branch for? What still needs review?
+- **Unsafe agent use.** Handing an AI agent a shell in a shared repo is risky. Worktrees
+  mitigate this, but are focused on a single repo and quickly become cumbersome.
+- **Friction in the author → review loop.** Starting a unit of work, tracking it,
+  and shepherding it through review is manual and inconsistent across people.
+
+_nosedive_ addresses these by making the unit of work a first-class, on-disk object,
+creating effort-scoped multi-repo workspaces, and by routing developer actions through
+explicit, contract-checked commands that are equally safe for a human or an agent to run.
+
+## Efforts and sessions
+
+_nosedive_ organizes work around two core concepts, both of which live as plain files on disk:
+
+- **Effort** — a unit of (potentially cross-repo) work to be designed and built. Each effort
+  has a plan document and lives under `./efforts`. The `EffortName` matches the
+  effort slug, e.g. `./efforts/dev-actions/DevActions.md`. Sub-efforts are just
+  nested directories: `./efforts/dev-actions/workon/Workon.md`.
+- **Session** — an actual working session on an effort. Sessions live under
+  `./sessions`. Starting or resuming a session is how a developer (or agent)
+  "picks up" an effort and gets back into context.
+
+This model is **dogfooded**: _nosedive_ is itself built from a set of efforts and
+sessions, and the very same structure is the product surface end users get after
+installing the package.

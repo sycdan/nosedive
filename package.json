@@ -27,7 +27,8 @@
     "build": "tsup src/nosedive.ts --format esm --target node22 --clean",
     "typecheck": "tsc",
     "test": "node dist/nosedive.js version",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

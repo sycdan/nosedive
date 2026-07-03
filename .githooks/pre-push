@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Early gate mirroring the publish workflow. Runs on `git push`.
+# Bypass a one-off with `git push --no-verify`.
+set -e
+
+echo "pre-push: typecheck + build + test"
+npm run typecheck
+npm run build
+npm test

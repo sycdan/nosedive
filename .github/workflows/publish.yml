@@ -41,6 +41,8 @@ jobs:
           fi
       - name: Stamp version
         run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
+      - name: Typecheck
+        run: npm run typecheck
       - name: Build
         run: npm run build
       - name: Smoke test

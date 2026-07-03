@@ -40,6 +40,11 @@ installing the package.
 
 ## Development
 
+Run `npm install` once after cloning. Its `prepare` script points git at
+[`.githooks`](.githooks), installing a `pre-push` hook that typechecks, builds,
+and tests before every push — the same gate CI enforces. Bypass a one-off push
+with `git push --no-verify`.
+
 ### Versioning + publishing
 
 Versions are CalVer, computed by [`scripts/version.mjs`](scripts/version.mjs):

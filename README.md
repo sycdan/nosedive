@@ -37,3 +37,11 @@ _nosedive_ organizes work around two core concepts, both of which live as plain 
 This model is **dogfooded**: _nosedive_ is itself built from a set of efforts and
 sessions, and the very same structure is the product surface end users get after
 installing the package.
+
+## Development
+
+### Versioning + publishing
+
+```bash
+npm login
+```

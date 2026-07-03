@@ -1,0 +1,51 @@
+name: Publish
+
+# Push to main -> dev build (yyyy.m.d-utcmillis, npm tag "dev").
+# Manual dispatch -> release (yyyy.m.d, npm tag "latest") + GitHub release.
+# Auth is npm trusted publishing (OIDC) — no token secret needed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release create (release path only)
+  id-token: write # npm trusted publishing
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Update npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Compute version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=$(node scripts/version.mjs --release)" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(node scripts/version.mjs)" >> "$GITHUB_OUTPUT"
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Stamp version
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
+      - name: Smoke test
+        run: npm test
+      # npm rejects duplicate versions, which enforces the one-release-per-day rule.
+      - name: Publish to npm
+        run: npm publish --tag "${{ steps.version.outputs.tag }}" --access public
+      - name: Create GitHub release and tag
+        if: github.event_name == 'workflow_dispatch'
+        run: gh release create "v${{ steps.version.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

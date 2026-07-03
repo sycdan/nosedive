@@ -15,15 +15,23 @@
   },
   "type": "module",
   "bin": {
-    "nosedive": "bin/nosedive.js"
+    "nosedive": "dist/nosedive.js"
   },
   "files": [
-    "bin"
+    "dist"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
-    "test": "node bin/nosedive.js version"
+    "build": "tsup src/nosedive.ts --format esm --target node22 --clean",
+    "typecheck": "tsc",
+    "test": "node dist/nosedive.js version",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
   }
 }

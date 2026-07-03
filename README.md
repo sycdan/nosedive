@@ -42,6 +42,14 @@ installing the package.
 
 ### Versioning + publishing
 
-```bash
-npm login
-```
+Versions are CalVer, computed by [`scripts/version.mjs`](scripts/version.mjs):
+
+- **Dev builds** — `yyyy.m.d-<utc-millis>`, published to the `dev` dist-tag on every
+  push to `main` (`npm install nosedive@dev`).
+- **Releases** — `yyyy.m.d`, published to `latest` by manually running the
+  **Publish** workflow ([Actions → Publish](https://github.com/sycdan/nosedive/actions/workflows/publish.yml) → Run workflow), which also creates the
+  git tag and GitHub release. Max one release per day; npm rejects duplicate versions, which enforces this
+
+The version in [`package.json`](package.json) stays `0.0.0-dev` in git;  pipeline stamps the real version at publish time. Publishing is handled by
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no
+token secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) smoke-tests the CLI ([`bin/nosedive.js`](bin/nosedive.js)) on PRs & pushes to `main`.

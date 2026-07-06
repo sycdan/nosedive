@@ -28,8 +28,8 @@ _nosedive_ organizes work around two core concepts, both of which live as plain 
 
 - **Effort** — a unit of (potentially cross-repo) work to be designed and built. Each effort
   has a plan document and lives under `./efforts`. The `EffortName` matches the
-  effort slug, e.g. `./efforts/dev-actions/DevActions.md`. Sub-efforts are just
-  nested directories: `./efforts/dev-actions/workon/Workon.md`.
+  effort slug, e.g. `./efforts/foo/Foo.md`. Sub-efforts are just
+  nested directories: `./efforts/foo/bar/Bar.md`.
 - **Session** — an actual working session on an effort. Sessions live under
   `./sessions`. Starting or resuming a session is how a developer (or agent)
   "picks up" an effort and gets back into context.

@@ -26,7 +26,7 @@ Given an effort reference (slug/path):
 3. **Gather context.** Read the effort doc plus related docs — parents up the
    chain, and any linked child/sibling docs that matter.
 4. **Create a session** under `./sessions` (gitignored), named
-   `<effort-slug>.<parent-slugs>.<uuid7>`.
+   `<slug-chain>.<uuid7>` (see [Slug chain](#slug-chain)).
 5. **Craft the work prompt.** Write a self-contained prompt for a subagent to
    do the actual work, directly into the session dir as `prompt.md`. At
    prompt-creation time, also fix the artifact names
@@ -43,7 +43,7 @@ Given an effort reference (slug/path):
      `git worktree add -b nosedive/session/<session-dir-name> <session-dir>/<repo> <base>`.
      One consistent branch name across all writable repos in the session makes
      the session's edits easy to find, diff, and push later. `<base>` is the
-     repo's effort branch `nosedive/effort/<effort.slug.chain>` if it exists
+     repo's effort branch `nosedive/effort/<slug-chain>` if it exists
      (rework / PR feedback continues from accepted work), otherwise the repo's
      default branch.
    - **Read-only repos** — worktree detached at the current commit (no branch
@@ -56,6 +56,22 @@ Given an effort reference (slug/path):
    present it to the user for audit. What happens next is a user decision (see
    Session lifecycle below).
 
+## Slug chain
+
+The **slug chain** is the effort's slug plus its ancestors, **leaf-first**:
+`<effort-slug>.<parent-slug>.<grandparent-slug>...`. One ordering is used
+everywhere:
+
+- Session dir: `<slug-chain>.<uuid7>` — the uuid7 lets multiple concurrent
+  sessions target the same effort.
+- Effort branch: `nosedive/effort/<slug-chain>` — the single canonical topic
+  branch per effort (no uuid; many sessions merge into one).
+
+Leaf-first puts the effort under work as the first token, matching how you
+target it (narrowest scope first, like `subdomain.example.com`). Separator is
+`.`, which is legal in git refs (no `..`, no trailing `.`, no `.lock`
+component).
+
 ## Session lifecycle
 
 `./sessions` is gitignored: a session is machine-local working state, and its
@@ -66,7 +82,7 @@ After auditing `output.md`, the user either:
 
 - **Accepts.** For each writable repo, the session branch
   (`nosedive/session/<session-dir-name>`) is merged into that repo's effort
-  branch `nosedive/effort/<effort.slug.chain>` (created on first accept) — the
+  branch `nosedive/effort/<slug-chain>` (created on first accept) — the
   PR-able branch that accumulates accepted work across sessions; later
   sessions base off it for rework and PR feedback. The session's `prompt.md` and
   `output.md` are copied into the effort's `.artifacts/` as
@@ -110,10 +126,6 @@ repos:
 
 ## Open questions (resolve during design)
 
-- Slug-chain ordering, used in both session names
-  (`<effort-slug>.<parent-slugs>.<uuid7>`) and effort branch names
-  (`nosedive/effort/<effort.slug.chain>`) — confirm whether parents read
-  root-first or leaf-first, and use one ordering for both.
 - Artifact frontmatter schema for prompt and output files (ids, timestamps,
   effort ref, prompt→output linkage).
 - How "wait for output.md" behaves in harnesses without background agents
@@ -145,7 +157,7 @@ repos:
   ones detached), and after the subagent finishes, `output.md` in the session
   dir awaiting audit.
 - Accepting a session merges its branches into
-  `nosedive/effort/<effort.slug.chain>` per writable repo and lands
+  `nosedive/effort/<slug-chain>` per writable repo and lands
   `<uuid7>-prompt.md` + `<uuid7>-output.md` (with linking frontmatter) in the
   effort's `.artifacts/`; abandoning leaves no trace. Both paths clean up
   worktrees, session branches, and the session dir.

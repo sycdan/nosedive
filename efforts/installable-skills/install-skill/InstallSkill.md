@@ -1,10 +1,10 @@
 ---
-effort: install-command
+effort: install-skill
 parent: installable-skills
 status: planned
 ---
 
-# Install Command
+# Install Skill
 
 ## Goal
 

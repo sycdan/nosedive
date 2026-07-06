@@ -28,8 +28,9 @@ This is a parent effort. The work is split into two child efforts:
   user-installable skill and describes how to install it.
 - [install-skill](install-skill/InstallSkill.md) — the
   `nosedive install-skill` CLI command that scans `kb/`, finds installable
-  skills, and installs them according to frontmatter + CLI args
-  (e.g. `--harness claude`).
+  skills, and installs them per target harness. Harnesses are auto-detected
+  from marker files (`CLAUDE.md`, `.github/copilot-instructions.md`) or given
+  explicitly via `--harness`. Supports `claude` and `copilot` to start.
 
 The first skill shipped through this pipeline is [workon](../workon/Workon.md).
 

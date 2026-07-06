@@ -1,0 +1,3 @@
+[submodule "d3d1051e7df1afd7f92f312c8b3df1bdfc7502951d534d6508707a7551de8bd4"]
+	path = repos/nosedive.sycdan
+	url = https://github.com/sycdan/nosedive.git

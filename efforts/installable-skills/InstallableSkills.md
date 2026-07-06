@@ -21,18 +21,17 @@ projects without copy-paste drift. The kb file is the single source of truth;
 
 ## Scope
 
-This is a parent effort. The work is split into two child efforts:
+This effort owns one child effort, plus a dependency on the shared kb format:
 
-- [kb-store](kb-store/KbStore.md) — the `kb/` directory format: uuid7-named
-  markdown files with frontmatter that identifies a document as a
-  user-installable skill and describes how to install it.
 - [install-skill](install-skill/InstallSkill.md) — the
   `nosedive install-skill` CLI command that scans `kb/`, finds installable
   skills, and installs them per target harness. Harnesses are auto-detected
   from marker files (`CLAUDE.md`, `.github/copilot-instructions.md`) or given
   explicitly via `--harness`. Supports `claude` and `copilot` to start.
 
-The first skill shipped through this pipeline is [workon](../workon/Workon.md).
+The document format both consume is the top-level
+[kb-store](../kb-store/KbStore.md) effort. The first skill shipped through this
+pipeline is [workon](../workon/Workon.md).
 
 ## Acceptance
 

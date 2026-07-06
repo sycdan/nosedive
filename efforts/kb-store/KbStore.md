@@ -1,6 +1,5 @@
 ---
 effort: kb-store
-parent: installable-skills
 status: planned
 ---
 
@@ -49,4 +48,4 @@ are what `nosedive install-skill` picks up.
 
 - Format documented in `kb/README.md`.
 - At least one valid skill document exists (delivered by the
-  [workon](../../workon/Workon.md) effort).
+  [workon](../workon/Workon.md) effort).

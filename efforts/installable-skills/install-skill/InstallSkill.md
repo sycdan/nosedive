@@ -75,6 +75,9 @@ nosedive install-skill [--harness <name>]... [--skill <name>]
 
 ## Acceptance
 
+- `kb/` ships in the npm package (`kb` in package.json `files`) and resolves
+  from a global/dependency install, not just from the repo — behavior step 1
+  depends on this.
 - `nosedive install-skill --harness claude` in an empty directory produces
   `.claude/skills/nosedive-workon/SKILL.md` (once the workon skill document
   exists in kb).

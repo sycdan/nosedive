@@ -6,6 +6,16 @@ name: Publish
 on:
   push:
     branches: [main]
+    # Only publish a dev build when something that reaches the npm package
+    # (or the pipeline that builds it) changes.
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+      - README.md
+      - .github/workflows/publish.yml
   workflow_dispatch:
 
 permissions:

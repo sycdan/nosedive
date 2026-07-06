@@ -20,10 +20,13 @@ efforts go through their lifecycle.
   - [kb-store](efforts/installable-skills/kb-store/KbStore.md) — planned.
     `kb/` directory format: `<uuid7>.md` docs with frontmatter marking
     user-installable skills.
-  - [install-command](efforts/installable-skills/install-command/InstallCommand.md) —
+  - [install-skill](efforts/installable-skills/install-skill/InstallSkill.md) —
     planned. `nosedive install-skill --harness claude` scans `kb/` and writes
     `.claude/skills/<name>/SKILL.md` in the cwd.
 - [workon](efforts/workon/Workon.md) — planned. The `nosedive-workon` skill:
-  locate effort, ensure submodules, craft prompt artifact, create session, run
-  subagent, collect output artifact.
+  locate effort, ensure submodules, create gitignored session with per-repo
+  worktrees (writable ones on `nosedive/session/<name>` branches), run
+  subagent against `prompt.md`, then user accepts (merge to
+  `nosedive/effort/<chain>`, artifacts land in effort `.artifacts/`) or
+  abandons; cleanup either way.
 

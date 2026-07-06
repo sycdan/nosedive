@@ -26,7 +26,7 @@ This is a parent effort. The work is split into two child efforts:
 - [kb-store](kb-store/KbStore.md) — the `kb/` directory format: uuid7-named
   markdown files with frontmatter that identifies a document as a
   user-installable skill and describes how to install it.
-- [install-command](install-command/InstallCommand.md) — the
+- [install-skill](install-skill/InstallSkill.md) — the
   `nosedive install-skill` CLI command that scans `kb/`, finds installable
   skills, and installs them according to frontmatter + CLI args
   (e.g. `--harness claude`).

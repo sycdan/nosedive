@@ -14,12 +14,13 @@ efforts go through their lifecycle.
 
 ### Current efforts
 
+- [kb-store](efforts/kb-store/KbStore.md) — planned. Top-level effort:
+  `kb/` directory format: `<uuid7>.md` docs with frontmatter marking
+  user-installable skills. Shared foundation for `installable-skills` and
+  `workon`.
 - [installable-skills](efforts/installable-skills/InstallableSkills.md) —
   planned. Ship agent skills from this repo's `kb/` store into other projects
   via `nosedive install-skill`.
-  - [kb-store](efforts/installable-skills/kb-store/KbStore.md) — planned.
-    `kb/` directory format: `<uuid7>.md` docs with frontmatter marking
-    user-installable skills.
   - [install-skill](efforts/installable-skills/install-skill/InstallSkill.md) —
     planned. `nosedive install-skill` scans `kb/` and installs skills per
     harness. Auto-detects harnesses from marker files (`CLAUDE.md`,

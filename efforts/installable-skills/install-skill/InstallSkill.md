@@ -70,7 +70,8 @@ nosedive install-skill [--harness <name>]... [--skill <name>]
 
 ## Dependencies
 
-- [kb-store](../kb-store/KbStore.md) defines the format this command consumes.
+- [kb-store](../../kb-store/KbStore.md) defines the format this command
+  consumes.
 
 ## Acceptance
 

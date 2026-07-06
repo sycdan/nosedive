@@ -10,7 +10,7 @@ status: planned
 Author the `nosedive-workon` skill: the way a developer (or agent) picks up an
 effort and gets the actual work done by a subagent, with full artifact
 tracking. The skill body lives in `kb/<uuid7>.md` per the
-[kb-store](../installable-skills/kb-store/KbStore.md) format and is delivered
+[kb-store](../kb-store/KbStore.md) format and is delivered
 to projects via
 [install-skill](../installable-skills/install-skill/InstallSkill.md).
 
@@ -132,7 +132,7 @@ repos:
 
 ## Dependencies
 
-- [kb-store](../installable-skills/kb-store/KbStore.md) — format the skill
+- [kb-store](../kb-store/KbStore.md) — format the skill
   document is written in.
 - [install-skill](../installable-skills/install-skill/InstallSkill.md) —
   needed to install/dogfood the skill.

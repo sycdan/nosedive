@@ -25,10 +25,10 @@ Given an effort reference (slug/path):
    needed, and honor each repo's `writable` flag.
 3. **Gather context.** Read the effort doc plus related docs — parents up the
    chain, and any linked child/sibling docs that matter.
-4. **Create a session** under `./sessions` (gitignored), named
-   `<slug-chain>.<uuid>` (the effort's
+4. **Create a session** directory (referred to below as `<session-dir>`) under
+   `./sessions` (gitignored), named `<slug-chain>.<uuid>` (the effort's
    [slug chain](../../kb/019f39dc-8ebf-7735-812d-522cc242a8b8.md) plus a
-   session uuid).
+   session uuid) — so `<session-dir>` is `./sessions/<slug-chain>.<uuid>`.
 5. **Craft the work prompt.** Write a self-contained prompt for a subagent to
    do the actual work, directly into the session dir as `prompt.md`. At
    prompt-creation time, also fix the artifact names
@@ -41,8 +41,8 @@ Given an effort reference (slug/path):
    (`<session-dir>/backend/` — org suffix only exists to keep submodule paths
    unique; collisions inside one session are unlikely):
    - **Writable repos** — worktree on a new branch named
-     `nosedive/session/<session-dir-name>`, e.g.
-     `git worktree add -b nosedive/session/<session-dir-name> <session-dir>/<repo> <base>`.
+     `nosedive/session/<slug-chain>.<uuid>`, e.g.
+     `git worktree add -b nosedive/session/<slug-chain>.<uuid> <session-dir>/<repo> <base>`.
      One consistent branch name across all writable repos in the session makes
      the session's edits easy to find, diff, and push later. `<base>` is the
      repo's effort branch `nosedive/effort/<slug-chain>` if it exists
@@ -67,7 +67,7 @@ created only when the user accepts a session.
 After auditing `output.md`, the user either:
 
 - **Accepts.** For each writable repo, the session branch
-  (`nosedive/session/<session-dir-name>`) is merged into that repo's effort
+  (`nosedive/session/<slug-chain>.<uuid>`) is merged into that repo's effort
   branch `nosedive/effort/<slug-chain>` (created on first accept) — the
   PR-able branch that accumulates accepted work across sessions; later
   sessions base off it for rework and PR feedback. The session's `prompt.md` and
@@ -124,7 +124,10 @@ repos:
 - [ ] Resolve open questions above; document decisions in this file.
 - [ ] Write the skill body in `kb/<uuid>.md` with `kind: skill`,
       `slug: nosedive-workon` frontmatter. Include: skill ensures `sessions/`
-      is in the hub repo's `.gitignore` before creating a session.
+      is in the hub repo's `.gitignore` before creating a session. When the
+      skill body references the session dir, promote `<session-dir>` to a
+      `kind: placeholder` in `kb/` (it becomes a second consumer); until then
+      it's defined inline in step 4.
 - [ ] Dogfood: install into this repo (`nosedive install-skill --harness claude`)
       and use `/nosedive-workon` on a real effort.
 
@@ -139,7 +142,7 @@ repos:
 
 - Running `/nosedive-workon <effort>` in a project with this skill installed
   produces a session dir with `prompt.md` and one worktree per effort repo
-  (writable ones on branch `nosedive/session/<session-dir-name>`, read-only
+  (writable ones on branch `nosedive/session/<slug-chain>.<uuid>`, read-only
   ones detached), and after the subagent finishes, `output.md` in the session
   dir awaiting audit.
 - Accepting a session merges its branches into

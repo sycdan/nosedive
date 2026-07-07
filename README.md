@@ -27,9 +27,9 @@ explicit, contract-checked commands that are equally safe for a human or an agen
 _nosedive_ organizes work around two core concepts, both of which live as plain files on disk:
 
 - **Effort** — a unit of (potentially cross-repo) work to be designed and built. Each effort
-  has a plan document and lives under `./efforts`. The `EffortName` matches the
-  effort slug, e.g. `./efforts/foo/Foo.md`. Sub-efforts are just
-  nested directories: `./efforts/foo/bar/Bar.md`.
+  has a plan document and lives under `./efforts`. The `EffortName` is the
+  effort slug in PascalCase, e.g. slug `foo-bar` → `./efforts/foo-bar/FooBar.md`. Sub-efforts are just
+  nested directories: `./efforts/foo-bar/baz-qux/BazQux.md`.
 - **Session** — an actual working session on an effort. Sessions live under
   `./sessions`. Starting or resuming a session is how a developer (or agent)
   "picks up" an effort and gets back into context.

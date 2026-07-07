@@ -14,31 +14,21 @@ are what `nosedive install-skill` picks up.
 
 ## Design
 
-- Files are named by UUIDv7 (time-ordered, so directory listing roughly follows
-  creation order). The uuid is the document's stable identity; human-readable
-  identity lives in frontmatter.
-- Frontmatter schema (initial, for skill documents):
+The canonical format spec lives in [`kb/README.md`](../../kb/README.md) — it
+ships with the store. This section records the decisions behind it.
 
-  ```yaml
-  ---
-  id: <uuid>            # matches filename
-  kind: skill            # marks document as user-installable skill
-  slug: nosedive-workon  # install slug; becomes the skill directory name
-  description: >-        # one-liner used as the skill's trigger description
-    ...
-  harnesses: [claude]    # harnesses this skill supports
-  ---
-  ```
-
-- Body below the frontmatter is the skill content itself (what becomes
-  SKILL.md body). Harness-specific frontmatter for the installed artifact
-  (e.g. Claude's `name`/`description` fields) is generated at install time
-  from the kb frontmatter, not stored in the body.
-- Non-skill documents (`kind:` other than `skill`) are allowed and ignored by
-  `install-skill`; the kb is a general document store. `kind: placeholder` is
-  the first such kind: defines a metasyntactic `<token>` once (grep-addressable
-  by its `slug`) instead of letting the definition drift across consumers (see
-  `kb/README.md`).
+- **Filenames are UUIDv7.** Time-ordered, so a directory listing roughly
+  follows creation order. The uuid is the document's stable identity;
+  human-readable identity lives in frontmatter (`slug`). See the
+  [uuid standard](../../kb/019f39d7-f914-7b40-8e9c-2c53a827b492.md).
+- **Frontmatter is the schema; body is content.** For `kind: skill` the body
+  is the SKILL.md body verbatim; the harness-specific frontmatter (e.g.
+  Claude's `name`/`description`) is generated at install time from the kb
+  frontmatter, never stored in the body.
+- **The kb is a general store, not just skills.** A `kind:` other than `skill`
+  is allowed and ignored by `install-skill`. `kind: placeholder` is the first
+  such kind: it defines a metasyntactic `<token>` once (grep-addressable by
+  `slug`) instead of letting the definition drift across consumers.
 
 ## Tasks
 

@@ -9,7 +9,7 @@ status: planned
 
 Author the `nosedive-workon` skill: the way a developer (or agent) picks up an
 effort and gets the actual work done by a subagent, with full artifact
-tracking. The skill body lives in `kb/<uuid7>.md` per the
+tracking. The skill body lives in `kb/<uuid>.md` per the
 [kb-store](../kb-store/KbStore.md) format and is delivered
 to projects via
 [install-skill](../installable-skills/install-skill/InstallSkill.md).
@@ -26,11 +26,13 @@ Given an effort reference (slug/path):
 3. **Gather context.** Read the effort doc plus related docs — parents up the
    chain, and any linked child/sibling docs that matter.
 4. **Create a session** under `./sessions` (gitignored), named
-   `<slug-chain>.<uuid7>` (see [Slug chain](#slug-chain)).
+   `<slug-chain>.<uuid>` (the effort's
+   [slug chain](../../kb/019f39dc-8ebf-7735-812d-522cc242a8b8.md) plus a
+   session uuid).
 5. **Craft the work prompt.** Write a self-contained prompt for a subagent to
    do the actual work, directly into the session dir as `prompt.md`. At
    prompt-creation time, also fix the artifact names
-   (`<uuid7>-prompt.md` / `<uuid7>-output.md`, reusing the session's uuid7) so
+   (`<uuid>-prompt.md` / `<uuid>-output.md`, reusing the session's uuid) so
    an accepted run is deterministic and trackable. Nothing is copied to the effort's
    `.artifacts/` yet — sessions may be throwaway.
 6. **Materialize the session workspace.** For each repo in the effort's
@@ -56,22 +58,6 @@ Given an effort reference (slug/path):
    present it to the user for audit. What happens next is a user decision (see
    Session lifecycle below).
 
-## Slug chain
-
-The **slug chain** is the effort's slug plus its ancestors, **leaf-first**:
-`<effort-slug>.<parent-slug>.<grandparent-slug>...`. One ordering is used
-everywhere:
-
-- Session dir: `<slug-chain>.<uuid7>` — the uuid7 lets multiple concurrent
-  sessions target the same effort.
-- Effort branch: `nosedive/effort/<slug-chain>` — the single canonical topic
-  branch per effort (no uuid; many sessions merge into one).
-
-Leaf-first puts the effort under work as the first token, matching how you
-target it (narrowest scope first, like `subdomain.example.com`). Separator is
-`.`, which is legal in git refs (no `..`, no trailing `.`, no `.lock`
-component).
-
 ## Session lifecycle
 
 `./sessions` is gitignored: a session is machine-local working state, and its
@@ -86,7 +72,7 @@ After auditing `output.md`, the user either:
   PR-able branch that accumulates accepted work across sessions; later
   sessions base off it for rework and PR feedback. The session's `prompt.md` and
   `output.md` are copied into the effort's `.artifacts/` as
-  `<uuid7>-prompt.md` and `<uuid7>-output.md` (output frontmatter points at
+  `<uuid>-prompt.md` and `<uuid>-output.md` (output frontmatter points at
   its prompt), committing the record to the hub repo.
 - **Abandons.** Session branches are discarded; nothing reaches the effort
   branch or `.artifacts/`.
@@ -136,8 +122,8 @@ repos:
 ## Tasks
 
 - [ ] Resolve open questions above; document decisions in this file.
-- [ ] Write the skill body in `kb/<uuid7>.md` with `kind: skill`,
-      `name: nosedive-workon` frontmatter. Include: skill ensures `sessions/`
+- [ ] Write the skill body in `kb/<uuid>.md` with `kind: skill`,
+      `slug: nosedive-workon` frontmatter. Include: skill ensures `sessions/`
       is in the hub repo's `.gitignore` before creating a session.
 - [ ] Dogfood: install into this repo (`nosedive install-skill --harness claude`)
       and use `/nosedive-workon` on a real effort.
@@ -158,6 +144,6 @@ repos:
   dir awaiting audit.
 - Accepting a session merges its branches into
   `nosedive/effort/<slug-chain>` per writable repo and lands
-  `<uuid7>-prompt.md` + `<uuid7>-output.md` (with linking frontmatter) in the
+  `<uuid>-prompt.md` + `<uuid>-output.md` (with linking frontmatter) in the
   effort's `.artifacts/`; abandoning leaves no trace. Both paths clean up
   worktrees, session branches, and the session dir.

@@ -15,7 +15,7 @@ efforts go through their lifecycle.
 ### Current efforts
 
 - [kb-store](efforts/kb-store/KbStore.md) — planned. Top-level effort:
-  `kb/` directory format: `<uuid7>.md` docs with frontmatter marking
+  `kb/` directory format: `<uuid>.md` docs with frontmatter marking
   user-installable skills. Shared foundation for `installable-skills` and
   `workon`.
 - [installable-skills](efforts/installable-skills/InstallableSkills.md) —

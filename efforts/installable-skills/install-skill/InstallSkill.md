@@ -15,14 +15,15 @@ the current working directory in the layout each target harness expects.
 ## CLI contract
 
 ```
-nosedive install-skill [--harness <name>]... [--skill <name>]
+nosedive install-skill [--harness <name>]... [--skill <slug>]
 ```
 
 - `--harness <name>` (optional, repeatable) — explicit install targets.
   Supported values to start: `claude`, `copilot`. When omitted, auto-detect
   (see below).
-- `--skill <name>` (optional) — install only the named skill; default installs
-  all skills whose `harnesses` frontmatter includes each target harness.
+- `--skill <slug>` (optional) — install only the skill with that `slug`;
+  default installs all skills whose `harnesses` frontmatter includes each
+  target harness.
 - Idempotent: re-running always overwrites installed files with current kb
   content. Install paths use names specific to this app, so overwrite is safe;
   no `--force` flag.
@@ -39,8 +40,8 @@ nosedive install-skill [--harness <name>]... [--skill <name>]
 
 ## Harness targets
 
-- `claude` — `.claude/skills/<name>/SKILL.md` under the cwd, invocable as
-  `/<name>` in Claude Code.
+- `claude` — `.claude/skills/<slug>/SKILL.md` under the cwd, invocable as
+  `/<slug>` in Claude Code.
 - `copilot` — install to the layout GitHub Copilot expects (confirm exact path
   during implementation, e.g. under `.github/`).
 

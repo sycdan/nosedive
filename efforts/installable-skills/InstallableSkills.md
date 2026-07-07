@@ -10,7 +10,7 @@ status: planned
 Make nosedive a distribution vehicle for agent skills. Skills are authored once
 in this repo (in a knowledge base directory, `kb/`) and can be installed into
 any project by running `nosedive install-skill`, which materializes them in the
-layout the target harness expects (e.g. `.claude/skills/<name>/SKILL.md` for
+layout the target harness expects (e.g. `.claude/skills/<slug>/SKILL.md` for
 Claude Code).
 
 ## Why
@@ -35,7 +35,7 @@ pipeline is [workon](../workon/Workon.md).
 
 ## Acceptance
 
-- A skill authored in `kb/<uuid7>.md` in this repo can be installed into a
+- A skill authored in `kb/<uuid>.md` in this repo can be installed into a
   fresh project by running `nosedive install-skill --harness claude` in that
-  project's root, producing `.claude/skills/<name>/SKILL.md`.
+  project's root, producing `.claude/skills/<slug>/SKILL.md`.
 - Re-running install is idempotent (overwrites with latest content).

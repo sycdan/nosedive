@@ -14,10 +14,11 @@ efforts go through their lifecycle.
 
 ### Current efforts
 
-- [kb-store](efforts/kb-store/KbStore.md) — planned. Top-level effort:
+- [kb-store](efforts/kb-store/KbStore.md) — in-progress. Top-level effort:
   `kb/` directory format: `<uuid>.md` docs with frontmatter marking
   user-installable skills. Shared foundation for `installable-skills` and
-  `workon`.
+  `workon`. Store + schema (`kind: skill` / `kind: placeholder`) built;
+  acceptance awaits a real skill doc from `workon`.
 - [installable-skills](efforts/installable-skills/InstallableSkills.md) —
   planned. Ship agent skills from this repo's `kb/` store into other projects
   via `nosedive install-skill`.

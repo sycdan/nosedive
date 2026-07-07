@@ -33,4 +33,12 @@ efforts go through their lifecycle.
   subagent against `prompt.md`, then user accepts (merge to
   `nosedive/effort/<chain>`, artifacts land in effort `.artifacts/`) or
   abandons; cleanup either way.
+- [knowledge-architecture](efforts/knowledge-architecture/KnowledgeArchitecture.md)
+  — planned. Top-level effort: how knowledge lives, loads, and stays fresh.
+  L0/L1/L2 context model (agent-instructions file is a _router_, not a library);
+  L2 surfaces are generated from `kb/`+`efforts/`, never hand-authored (rejects
+  git clean/smudge — see D1); `description` → `gist` split (D2); write-back rule
+  (one home per fact-type) + grep-by-slug navigation. Spine: a `nosedive`
+  generate+check tool (`install-skill` is one case) wired into the CI/pre-push
+  gate. This backlog block is itself slated to become generated.
 

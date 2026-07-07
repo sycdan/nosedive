@@ -1,6 +1,6 @@
 ---
 effort: kb-store
-status: planned
+status: in-progress
 ---
 
 # KB Store
@@ -43,10 +43,16 @@ are what `nosedive install-skill` picks up.
 ## Tasks
 
 - [x] Create `kb/` directory with a short `kb/README.md` describing the format.
-- [ ] Decide + document the frontmatter schema (started: common fields +
-      `kind: skill` / `kind: placeholder` documented in `kb/README.md`).
-- [ ] Standardize uuid generation on a tool (`npx uuidv7`); never hand-roll.
-      Decide whether tooling/tests shell out or take a dev dependency.
+- [x] Decide + document the frontmatter schema: common fields +
+      `kind: skill` / `kind: placeholder`, documented in `kb/README.md`.
+- [x] Standardize uuid generation on a tool (`npx uuidv7`); never hand-roll.
+      (Whether install tooling shells out or takes a dev dependency is
+      deferred to
+      [install-skill](../installable-skills/install-skill/InstallSkill.md) as
+      an implementation detail.)
+
+Remaining for acceptance: a valid `kind: skill` document, delivered by the
+[workon](../workon/Workon.md) effort.
 
 ## Acceptance
 

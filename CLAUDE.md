@@ -1,44 +1,7 @@
-# CLAUDE
+# Agent Instructions
 
-## Backlog
+**Important**: Search `kb/` for `kind: foundation` and read the matched documents before proceeding with assigned work.
 
-The canonical backlog is stored in `efforts/` on the `main` branch. Each efforts
-is in its own folder, and they can be nested, e.g.
-`<parent-effort-slug>/<child-effort-slug>/<grandchild-effort-slug>`.
-
-Each effort folder contains a file named `<EffortName>.md`, matching its slug
-but in PascalCase.
-
-A summary of the current efforts should be kept in `CLAUDE.md` and updated as
-efforts go through their lifecycle.
-
-### Current efforts
-
-- [kb-store](efforts/kb-store/KbStore.md) — in-progress. Top-level effort:
-  `kb/` directory format: `<uuid>.md` docs with frontmatter marking
-  user-installable skills. Shared foundation for `installable-skills` and
-  `workon`. Store + schema (`kind: skill` / `kind: placeholder`) built;
-  acceptance awaits a real skill doc from `workon`.
-- [installable-skills](efforts/installable-skills/InstallableSkills.md) —
-  planned. Ship agent skills from this repo's `kb/` store into other projects
-  via `nosedive install-skill`.
-  - [install-skill](efforts/installable-skills/install-skill/InstallSkill.md) —
-    planned. `nosedive install-skill` scans `kb/` and installs skills per
-    harness. Auto-detects harnesses from marker files (`CLAUDE.md`,
-    `.github/copilot-instructions.md`) or takes explicit `--harness`; fails if
-    none. Supports `claude` and `copilot`. Always overwrites (no `--force`).
-- [workon](efforts/workon/Workon.md) — planned. The `nosedive-workon` skill:
-  locate effort, ensure submodules, create gitignored session with per-repo
-  worktrees (writable ones on `nosedive/session/<name>` branches), run
-  subagent against `prompt.md`, then user accepts (merge to
-  `nosedive/effort/<chain>`, artifacts land in effort `.artifacts/`) or
-  abandons; cleanup either way.
-- [knowledge-architecture](efforts/knowledge-architecture/KnowledgeArchitecture.md)
-  — planned. Top-level effort: how knowledge lives, loads, and stays fresh.
-  L0/L1/L2 context model (agent-instructions file is a _router_, not a library);
-  L2 surfaces are generated from `kb/`+`efforts/`, never hand-authored (rejects
-  git clean/smudge — see D1); `description` → `gist` split (D2); write-back rule
-  (one home per fact-type) + grep-by-slug navigation. Spine: a `nosedive`
-  generate+check tool (`install-skill` is one case) wired into the CI/pre-push
-  gate. This backlog block is itself slated to become generated.
-
+```sh
+grep -r -C1 "^kind: foundation" kb/
+```

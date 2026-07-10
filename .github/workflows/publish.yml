@@ -36,8 +36,11 @@ jobs:
           node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
+      # Pin npm: trusted publishing needs >= 11.5.1, but npm@latest (11.7.x)
+      # ships a provenance path that can't load 'sigstore', breaking OIDC
+      # publish. Pin to the known-good minimum instead of floating latest.
       - name: Update npm (trusted publishing needs >= 11.5.1)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.5.1
       - run: npm ci
       - name: Compute version
         id: version

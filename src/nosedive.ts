@@ -29,21 +29,6 @@ function parseFrontmatter(text: string): Record<string, string> {
   return out;
 }
 
-/** First paragraph of the `## Goal` section, collapsed to one line. */
-function goalGist(text: string): string {
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => /^##\s+Goal\s*$/.test(l));
-  if (start === -1) return "";
-  const para: string[] = [];
-  for (let i = start + 1; i < lines.length; i++) {
-    const l = lines[i].trim();
-    if (l === "" && para.length === 0) continue; // skip blanks before the text
-    if (l === "" || l.startsWith("#")) break; // paragraph / section end
-    para.push(l);
-  }
-  return para.join(" ").replace(/\s+/g, " ").trim();
-}
-
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + "…";
 }
@@ -53,7 +38,7 @@ function truncate(s: string, max: number): string {
 interface Effort {
   depth: number;
   chain: string; // slug chain, leaf-first, dot-joined
-  status: string;
+  phase: string;
   gist: string;
 }
 
@@ -68,8 +53,8 @@ function walkEffort(dir: string, slug: string, ancestors: string[], out: Effort[
     out.push({
       depth: ancestors.length,
       chain: [slug, ...ancestors].join("."),
-      status: fm.status || "unknown",
-      gist: goalGist(text),
+      phase: fm.phase || "unknown",
+      gist: fm.gist || "",
     });
   }
   const chain = [slug, ...ancestors];
@@ -98,10 +83,10 @@ function dumpBacklog(): void {
     console.log("No open efforts.");
     return;
   }
-  // Fixed column where the slug chain starts, past the (indented) status field.
-  const col = Math.max(13, ...efforts.map((e) => e.depth * 2 + e.status.length + 2));
+  // Fixed column where the slug chain starts, past the (indented) phase field.
+  const col = Math.max(13, ...efforts.map((e) => e.depth * 2 + e.phase.length + 2));
   for (const e of efforts) {
-    const prefix = " ".repeat(e.depth * 2) + e.status;
+    const prefix = " ".repeat(e.depth * 2) + e.phase;
     console.log(prefix.padEnd(col) + e.chain);
     if (e.gist) console.log(" ".repeat(col) + truncate(e.gist, 72));
   }

@@ -1,7 +1,3 @@
 # Agent Instructions
 
-**Important**: Search `kb/` for `kind: foundation` and read the matched documents before proceeding with assigned work.
-
-```sh
-grep -r -C1 "^kind: foundation" kb/
-```
+Every nosedive uuid (kb filenames, session/artifact ids) is a UUIDv7 minted with `npx uuidv7` (never hand-rolled); generate a fresh one unless deliberately reusing an existing id.

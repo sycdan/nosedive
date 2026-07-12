@@ -2,7 +2,16 @@
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+  type Dirent,
+} from "node:fs";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -82,6 +91,14 @@ function parseMarkdownDoc(text: string): MarkdownDoc {
     fm: parseSimpleYaml(text.slice(3, end)),
     body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
   };
+}
+
+/** Parse only leading `---` YAML frontmatter. */
+function parseMarkdownFrontmatter(text: string): SimpleYaml {
+  if (!text.startsWith("---")) return emptyYaml();
+  const end = text.indexOf("\n---", 3);
+  if (end === -1) return emptyYaml();
+  return parseSimpleYaml(text.slice(3, end));
 }
 
 /** Parse leading `---` YAML frontmatter into a flat string map. */
@@ -204,6 +221,14 @@ interface TargetDoc {
   doc: KbDoc;
   render: "body" | "gist";
   scopePath: string;
+  readOnly: boolean;
+}
+
+interface ApplyPlan {
+  bridge: BridgeConfig;
+  repos: Array<EffortRepo & { repoPath?: string }>;
+  targets: Map<string, TargetDoc[]>;
+  warnings: string[];
 }
 
 function findBridgeConfig(start: string): string | undefined {
@@ -258,15 +283,15 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
     .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => {
       const path = join(kbDir, e.name);
-      const doc = parseMarkdownDoc(readFileSync(path, "utf8"));
+      const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"));
       return {
         path,
         relPath: relative(bridgeDir, path),
-        id: doc.fm.scalars.id,
-        kind: doc.fm.scalars.kind,
-        gist: doc.fm.scalars.gist,
-        repoPath: doc.fm.nested.meta?.path,
-        scopes: doc.fm.lists.scopes ?? [],
+        id: fm.scalars.id,
+        kind: fm.scalars.kind,
+        gist: fm.scalars.gist,
+        repoPath: fm.nested.meta?.path,
+        scopes: fm.lists.scopes ?? [],
       };
     });
 }
@@ -293,7 +318,7 @@ function assertDir(path: string, label: string): void {
   if (!statSync(path).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
 }
 
-function applyDryRun(): void {
+function createApplyPlan(): ApplyPlan {
   const bridge = loadBridgeConfig(process.cwd());
   assertDir(bridge.backlogDir, "backlog");
   assertDir(bridge.kbDir, "kb");
@@ -305,6 +330,7 @@ function applyDryRun(): void {
   const repoDocs = new Map(kbDocs.filter((doc) => doc.kind === "repo").map((doc) => [doc.id, doc]));
   const warnings: string[] = [];
   const targets = new Map<string, TargetDoc[]>();
+  const repos = effortRepos.map((repo) => ({ ...repo, repoPath: repoDocs.get(repo.id)?.repoPath }));
 
   for (const repo of effortRepos) {
     const repoDoc = repoDocs.get(repo.id);
@@ -340,11 +366,17 @@ function applyDryRun(): void {
 
         const render = scope.render ?? renderDefault;
         const list = targets.get(targetDir) ?? [];
-        list.push({ doc, render, scopePath: scope.path });
+        list.push({ doc, render, scopePath: scope.path, readOnly: repo.readOnly });
         targets.set(targetDir, list);
       }
     }
   }
+
+  return { bridge, repos, targets, warnings };
+}
+
+function applyDryRun(): void {
+  const { bridge, repos, targets, warnings } = createApplyPlan();
 
   console.log("nosedive apply --dry-run");
   console.log(`Bridge:    ${formatPath(bridge.bridgeDir)}`);
@@ -361,9 +393,8 @@ function applyDryRun(): void {
   console.log("");
 
   console.log("Repos:");
-  for (const repo of effortRepos) {
-    const repoDoc = repoDocs.get(repo.id);
-    const path = repoDoc?.repoPath ?? "(missing repo doc)";
+  for (const repo of repos) {
+    const path = repo.repoPath ?? "(missing repo doc)";
     const mode = repo.readOnly ? "read-only" : "writable";
     console.log(`  ${mode.padEnd(9)} ${path} (${repo.id})`);
   }
@@ -393,13 +424,127 @@ function applyDryRun(): void {
   console.log("No files written.");
 }
 
+function markdownList(items: string[]): string {
+  if (items.length === 0) return "- (none)";
+  return items.map((item) => `- \`${item}\``).join("\n");
+}
+
+function repoPathFromWorkspace(bridge: BridgeConfig, repoPath: string): string {
+  const resolved = resolveFrom(bridge.bridgeDir, repoPath);
+  const rel = relative(bridge.workspaceDir, resolved);
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : repoPath;
+}
+
+function renderWorkspaceDoc(plan: ApplyPlan): string {
+  const writable = plan.repos
+    .filter((repo) => !repo.readOnly && repo.repoPath)
+    .map((repo) => repoPathFromWorkspace(plan.bridge, repo.repoPath!))
+    .sort((a, b) => a.localeCompare(b));
+  const readOnly = plan.repos
+    .filter((repo) => repo.readOnly && repo.repoPath)
+    .map((repo) => repoPathFromWorkspace(plan.bridge, repo.repoPath!))
+    .sort((a, b) => a.localeCompare(b));
+
+  return [
+    "# Agent Instructions",
+    "",
+    "Generated by nosedive. Do not edit by hand.",
+    "",
+    "## Current Effort",
+    "",
+    `- Bridge: \`${formatPath(plan.bridge.bridgeDir)}\``,
+    `- Effort: \`${plan.bridge.effortRef}\``,
+    "",
+    "## Writable Paths",
+    "",
+    markdownList(writable),
+    "",
+    "## Read-only Paths",
+    "",
+    markdownList(readOnly),
+    "",
+    "## Workspace Boundary",
+    "",
+    "Only the paths listed above are part of this effort. Do not inspect or edit other workspace directories unless the user explicitly expands the effort.",
+    "",
+  ].join("\n");
+}
+
+function renderGistBlock(doc: KbDoc): string {
+  const title = doc.id ? `${doc.kind || "doc"} ${doc.id}` : doc.relPath;
+  return [`## ${title}`, "", doc.gist || "(no gist)", "", `Source: \`${doc.relPath}\``, ""].join("\n");
+}
+
+function renderBodyBlock(doc: KbDoc): string {
+  const body = parseMarkdownDoc(readFileSync(doc.path, "utf8")).body.trim();
+  return [`<!-- Source: ${doc.relPath} -->`, "", body, ""].join("\n");
+}
+
+function renderRepoDoc(targetDir: string, docs: TargetDoc[]): string {
+  const readOnly = docs.some((item) => item.readOnly);
+  const blocks = docs
+    .sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))
+    .map((item) => (item.render === "body" ? renderBodyBlock(item.doc) : renderGistBlock(item.doc)));
+
+  const header = [
+    "# Agent Instructions",
+    "",
+    "Generated by nosedive. Do not edit by hand.",
+    "",
+    `Target: \`${formatPath(targetDir)}\``,
+    "",
+  ];
+  if (readOnly) {
+    header.push(
+      "## Read-only For This Effort",
+      "",
+      "This repository is read-only for the current effort. Do not edit files or create commits here.",
+      "",
+    );
+  }
+
+  return [...header, ...blocks].join("\n");
+}
+
+function writeFileAtomic(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = join(dirname(path), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, path);
+}
+
+function writeAgentPair(dir: string, content: string): void {
+  writeFileAtomic(join(dir, "CLAUDE.md"), content);
+  writeFileAtomic(join(dir, "AGENTS.md"), content);
+}
+
+function applyWrite(): void {
+  const plan = createApplyPlan();
+  assertDir(plan.bridge.workspaceDir, "workspace");
+
+  const workspaceContent = renderWorkspaceDoc(plan);
+  writeAgentPair(plan.bridge.workspaceDir, workspaceContent);
+
+  for (const [targetDir, docs] of plan.targets) {
+    writeAgentPair(targetDir, renderRepoDoc(targetDir, docs));
+  }
+
+  console.log(`Wrote workspace docs: ${join(formatPath(plan.bridge.workspaceDir), "CLAUDE.md")}, ${join(formatPath(plan.bridge.workspaceDir), "AGENTS.md")}`);
+  console.log(`Wrote repo doc pairs: ${plan.targets.size}`);
+  if (plan.warnings.length > 0) {
+    console.log("");
+    console.log("Warnings:");
+    for (const warning of plan.warnings) console.log(`  - ${warning}`);
+  }
+}
+
 function apply(args: string[]): void {
   if (args.includes("--dry-run")) {
     applyDryRun();
     return;
   }
 
-  throw new Error("write mode is not implemented yet; use `nosedive apply --dry-run`");
+  applyWrite();
 }
 
 // --- dispatch --------------------------------------------------------------

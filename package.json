@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsup src/nosedive.ts --format esm --target node22 --clean",
     "typecheck": "tsc",
-    "test": "node dist/nosedive.js version",
+    "test": "node scripts/test.mjs",
     "prepack": "npm run build",
     "prepare": "git config core.hooksPath .githooks"
   },
@@ -34,5 +34,8 @@
     "@types/node": "^26.1.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
   }
 }

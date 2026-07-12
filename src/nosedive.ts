@@ -12,6 +12,7 @@ import {
   writeFileSync,
   type Dirent,
 } from "node:fs";
+import { parse as parseYaml } from "yaml";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -41,64 +42,67 @@ function emptyYaml(): SimpleYaml {
   return { scalars: {}, lists: {}, nested: {} };
 }
 
-function cleanScalar(value: string): string {
-  const trimmed = value.trim();
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
+function scalarToString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "object") return undefined;
+  return String(value);
 }
 
-/** Parse the tiny YAML subset nosedive frontmatter and .nosediverc need. */
-function parseSimpleYaml(block: string): SimpleYaml {
+/** Normalize valid YAML into the small shape nosedive callers consume. */
+function normalizeYaml(value: unknown): SimpleYaml {
   const out = emptyYaml();
-  let current: string | undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
 
-  for (const line of block.split(/\r?\n/)) {
-    if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
-
-    const listItem = line.match(/^  -\s+(.*)$/);
-    if (listItem && current) {
-      out.lists[current] ??= [];
-      out.lists[current].push(cleanScalar(listItem[1]));
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(item)) {
+      out.lists[key] = item.map((entry) => scalarToString(entry)).filter((entry): entry is string => entry !== undefined);
       continue;
     }
 
-    const nestedScalar = line.match(/^  ([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (nestedScalar && current) {
-      out.nested[current] ??= {};
-      out.nested[current][nestedScalar[1]] = cleanScalar(nestedScalar[2]);
+    if (item && typeof item === "object") {
+      const nested: Record<string, string> = {};
+      for (const [nestedKey, nestedItem] of Object.entries(item as Record<string, unknown>)) {
+        const scalar = scalarToString(nestedItem);
+        if (scalar !== undefined) nested[nestedKey] = scalar;
+      }
+      out.nested[key] = nested;
       continue;
     }
 
-    const scalar = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (scalar) {
-      current = scalar[1];
-      if (scalar[2].trim() !== "") out.scalars[current] = cleanScalar(scalar[2]);
-    }
+    const scalar = scalarToString(item);
+    if (scalar !== undefined) out.scalars[key] = scalar;
   }
 
   return out;
 }
 
+function parseYamlBlock(block: string, label: string): SimpleYaml {
+  try {
+    return normalizeYaml(parseYaml(block));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid YAML in ${label}: ${detail}`);
+  }
+}
+
 /** Parse leading `---` YAML frontmatter and return the body separately. */
-function parseMarkdownDoc(text: string): MarkdownDoc {
+function parseMarkdownDoc(text: string, label = "markdown frontmatter"): MarkdownDoc {
   if (!text.startsWith("---")) return { fm: emptyYaml(), body: text };
   const end = text.indexOf("\n---", 3);
   if (end === -1) return { fm: emptyYaml(), body: text };
   const bodyStart = text.indexOf("\n", end + 4);
   return {
-    fm: parseSimpleYaml(text.slice(3, end)),
+    fm: parseYamlBlock(text.slice(3, end), `frontmatter in ${label}`),
     body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
   };
 }
 
 /** Parse only leading `---` YAML frontmatter. */
-function parseMarkdownFrontmatter(text: string): SimpleYaml {
+function parseMarkdownFrontmatter(text: string, label = "markdown document"): SimpleYaml {
   if (!text.startsWith("---")) return emptyYaml();
   const end = text.indexOf("\n---", 3);
   if (end === -1) return emptyYaml();
-  return parseSimpleYaml(text.slice(3, end));
+  return parseYamlBlock(text.slice(3, end), `frontmatter in ${label}`);
 }
 
 /** Parse leading `---` YAML frontmatter into a flat string map. */
@@ -247,7 +251,7 @@ function loadBridgeConfig(start: string): BridgeConfig {
   if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
 
   const bridgeDir = dirname(rcPath);
-  const rc = parseSimpleYaml(readFileSync(rcPath, "utf8"));
+  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
   const workspace = rc.scalars.workspace;
   const backlog = rc.scalars.backlog;
   const kb = rc.scalars.kb;
@@ -270,7 +274,7 @@ function loadBridgeConfig(start: string): BridgeConfig {
 }
 
 function parseEffortRepos(path: string): EffortRepo[] {
-  const doc = parseMarkdownDoc(readFileSync(path, "utf8"));
+  const doc = parseMarkdownDoc(readFileSync(path, "utf8"), path);
   return (doc.fm.lists.repos ?? []).map((entry) => {
     if (entry.endsWith(":ro")) return { id: entry.slice(0, -3), readOnly: true };
     return { id: entry, readOnly: false };
@@ -283,7 +287,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
     .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => {
       const path = join(kbDir, e.name);
-      const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"));
+      const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"), path);
       return {
         path,
         relPath: relative(bridgeDir, path),
@@ -476,7 +480,7 @@ function renderGistBlock(doc: KbDoc): string {
 }
 
 function renderBodyBlock(doc: KbDoc): string {
-  const body = parseMarkdownDoc(readFileSync(doc.path, "utf8")).body.trim();
+  const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), doc.path).body.trim();
   return [`<!-- Source: ${doc.relPath} -->`, "", body, ""].join("\n");
 }
 

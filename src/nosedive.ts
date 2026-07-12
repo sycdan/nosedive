@@ -21,7 +21,7 @@ const USAGE = `Usage: nosedive <command>
 
 Commands:
   version       Print the package version
-  dump-backlog  Print the open efforts under efforts/
+  dump-backlog  Print the open efforts in the configured backlog
   apply         Materialize scoped agent docs for the current effort
 `;
 
@@ -106,8 +106,8 @@ function parseMarkdownFrontmatter(text: string, label = "markdown document"): Si
 }
 
 /** Parse leading `---` YAML frontmatter into a flat string map. */
-function parseFrontmatter(text: string): Record<string, string> {
-  return parseMarkdownDoc(text).fm.scalars;
+function parseFrontmatter(text: string, label = "markdown frontmatter"): Record<string, string> {
+  return parseMarkdownDoc(text, label).fm.scalars;
 }
 
 function truncate(s: string, max: number): string {
@@ -135,8 +135,14 @@ function formatPath(path: string): string {
 interface Effort {
   depth: number;
   chain: string; // slug chain, leaf-first, dot-joined
+  path: string;
   phase: string;
   gist: string;
+}
+
+interface BacklogConfig {
+  bridgeDir: string;
+  backlogDir: string;
 }
 
 /** Walk one effort folder: emit it if open, then recurse into child folders. */
@@ -144,12 +150,14 @@ function walkEffort(dir: string, slug: string, ancestors: string[], out: Effort[
   const entries = readdirSync(dir, { withFileTypes: true });
   const md = entries.find((e) => e.isFile() && e.name.endsWith(".md"));
   if (md) {
-    // Presence under efforts/ means open; finished work leaves for kb/.
-    const text = readFileSync(join(dir, md.name), "utf8");
-    const fm = parseFrontmatter(text);
+    // Presence under backlog/ means open; finished work leaves for kb/.
+    const path = join(dir, md.name);
+    const text = readFileSync(path, "utf8");
+    const fm = parseFrontmatter(text, path);
     out.push({
       depth: ancestors.length,
       chain: [slug, ...ancestors].join("."),
+      path,
       phase: fm.phase || "unknown",
       gist: fm.gist || "",
     });
@@ -174,19 +182,42 @@ function collectEfforts(effortsDir: string): Effort[] {
   return out;
 }
 
-function dumpBacklog(): void {
-  const efforts = collectEfforts(join(process.cwd(), "efforts"));
+function loadBacklogConfig(start: string): BacklogConfig {
+  const rcPath = findBridgeConfig(start);
+  if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+
+  const bridgeDir = dirname(rcPath);
+  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
+  const backlog = rc.scalars.backlog;
+
+  if (!backlog) throw new Error(".nosediverc is missing backlog");
+  return { bridgeDir, backlogDir: resolveFrom(bridgeDir, backlog) };
+}
+
+function formatBacklog(efforts: Effort[], verbose: boolean): string {
   if (efforts.length === 0) {
-    console.log("No open efforts.");
-    return;
+    return "No open efforts.";
   }
+
   // Fixed column where the slug chain starts, past the (indented) phase field.
   const col = Math.max(13, ...efforts.map((e) => e.depth * 2 + e.phase.length + 2));
+  const lines: string[] = [];
   for (const e of efforts) {
     const prefix = " ".repeat(e.depth * 2) + e.phase;
-    console.log(prefix.padEnd(col) + e.chain);
-    if (e.gist) console.log(" ".repeat(col) + truncate(e.gist, 72));
+    lines.push(prefix.padEnd(col) + e.chain);
+    if (verbose) lines.push(" ".repeat(col) + e.path);
+    if (e.gist) lines.push(" ".repeat(col) + truncate(e.gist, 72));
   }
+  return lines.join("\n");
+}
+
+function dumpBacklog(args: string[]): void {
+  const verbose = args.includes("--verbose");
+  const unknown = args.filter((arg) => arg !== "--verbose");
+  if (unknown.length > 0) throw new Error(`unknown dump-backlog option: ${unknown[0]}`);
+
+  const { backlogDir } = loadBacklogConfig(process.cwd());
+  console.log(formatBacklog(collectEfforts(backlogDir), verbose));
 }
 
 // --- apply -----------------------------------------------------------------
@@ -433,43 +464,44 @@ function markdownList(items: string[]): string {
   return items.map((item) => `- \`${item}\``).join("\n");
 }
 
-function repoPathFromWorkspace(bridge: BridgeConfig, repoPath: string): string {
-  const resolved = resolveFrom(bridge.bridgeDir, repoPath);
-  const rel = relative(bridge.workspaceDir, resolved);
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : repoPath;
-}
-
 function renderWorkspaceDoc(plan: ApplyPlan): string {
+  const effortBody = parseMarkdownDoc(readFileSync(plan.bridge.effortPath, "utf8"), plan.bridge.effortPath).body.trim();
   const writable = plan.repos
     .filter((repo) => !repo.readOnly && repo.repoPath)
-    .map((repo) => repoPathFromWorkspace(plan.bridge, repo.repoPath!))
+    .map((repo) => resolveFrom(plan.bridge.bridgeDir, repo.repoPath!))
     .sort((a, b) => a.localeCompare(b));
   const readOnly = plan.repos
     .filter((repo) => repo.readOnly && repo.repoPath)
-    .map((repo) => repoPathFromWorkspace(plan.bridge, repo.repoPath!))
+    .map((repo) => resolveFrom(plan.bridge.bridgeDir, repo.repoPath!))
     .sort((a, b) => a.localeCompare(b));
+  const backlog = formatBacklog(collectEfforts(plan.bridge.backlogDir), true);
 
   return [
     "# Agent Instructions",
     "",
     "Generated by nosedive. Do not edit by hand.",
     "",
-    "## Current Effort",
+    effortBody,
     "",
-    `- Bridge: \`${formatPath(plan.bridge.bridgeDir)}\``,
-    `- Effort: \`${plan.bridge.effortRef}\``,
+    "## Allowed Paths",
     "",
-    "## Writable Paths",
+    "### Writable",
     "",
     markdownList(writable),
     "",
-    "## Read-only Paths",
+    "### Read-only",
     "",
     markdownList(readOnly),
     "",
-    "## Workspace Boundary",
+    "## Boundary",
     "",
-    "Only the paths listed above are part of this effort. Do not inspect or edit other workspace directories unless the user explicitly expands the effort.",
+    "Only the paths listed above are part of this effort. Do not inspect or edit other directories unless the user explicitly expands the effort.",
+    "",
+    "## Open Efforts",
+    "",
+    "```text",
+    backlog,
+    "```",
     "",
   ].join("\n");
 }
@@ -563,7 +595,7 @@ try {
       console.log(version);
       break;
     case "dump-backlog":
-      dumpBacklog();
+      dumpBacklog(args);
       break;
     case "apply":
       apply(args);

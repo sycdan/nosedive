@@ -24,6 +24,14 @@ function assertOk(result, label) {
   assert.equal(result.status, 0, `${label}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertContainsPath(text, path) {
+  assert.match(text, new RegExp(escapeRegExp(path)));
+}
+
 try {
   const version = run(["version"], root);
   assertOk(version, "version command failed");
@@ -33,6 +41,7 @@ try {
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });
   mkdirSync(join(bridge, "workspace", "readonly", "app"), { recursive: true });
   mkdirSync(join(bridge, "backlog", "yaml-frontmatter"), { recursive: true });
+  mkdirSync(join(bridge, "backlog", "other-effort"), { recursive: true });
   mkdirSync(join(bridge, "kb"), { recursive: true });
 
   write(
@@ -55,6 +64,18 @@ repos:
 ---
 
 # YAML frontmatter
+
+Build the YAML-aware workspace work order.
+`,
+  );
+  write(
+    join(bridge, "backlog", "other-effort", "OtherEffort.md"),
+    `---
+phase: framing
+gist: "Another open effort: visible in verbose backlog output."
+---
+
+# Other effort
 `,
   );
   write(
@@ -120,6 +141,11 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
 
+  const verboseBacklog = run(["dump-backlog", "--verbose"], bridge);
+  assertOk(verboseBacklog, "dump-backlog --verbose failed");
+  assertContainsPath(verboseBacklog.stdout, join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"));
+  assertContainsPath(verboseBacklog.stdout, join(bridge, "backlog", "other-effort", "OtherEffort.md"));
+
   const apply = run(["apply"], bridge);
   assertOk(apply, "apply failed");
   assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), true);
@@ -127,8 +153,16 @@ Body rendered from valid YAML frontmatter.
   assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), true);
 
   const workspaceDoc = readFileSync(join(bridge, "workspace", "CLAUDE.md"), "utf8");
-  assert.match(workspaceDoc, /- `writable`/);
-  assert.match(workspaceDoc, /- `readonly`/);
+  assert.match(workspaceDoc, /# YAML frontmatter/);
+  assert.match(workspaceDoc, /Build the YAML-aware workspace work order\./);
+  assert.doesNotMatch(workspaceDoc, /Bridge:/);
+  assert.doesNotMatch(workspaceDoc, /Effort:/);
+  assertContainsPath(workspaceDoc, join(bridge, "workspace", "writable"));
+  assertContainsPath(workspaceDoc, join(bridge, "workspace", "readonly"));
+  assert.match(workspaceDoc, /Only the paths listed above are part of this effort\. Do not inspect or edit other directories unless the user explicitly expands the effort\./);
+  assert.doesNotMatch(workspaceDoc, /other workspace directories/);
+  assertContainsPath(workspaceDoc, join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"));
+  assertContainsPath(workspaceDoc, join(bridge, "backlog", "other-effort", "OtherEffort.md"));
 
   const writableDoc = readFileSync(join(bridge, "workspace", "writable", "CLAUDE.md"), "utf8");
   assert.match(writableDoc, /Quoted gist: colon, "quotes", and `backticks` survive YAML parsing\./);

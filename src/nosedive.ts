@@ -246,11 +246,11 @@ function dumpBacklog(args: string[]): void {
 
 interface BridgeConfig {
   bridgeDir: string;
-  workspaceDir: string;
-  backlogDir: string;
+  workspaceDir?: string;
+  backlogDir?: string;
   kbDir: string;
-  effortPath: string;
-  effortRef: string;
+  effortPath?: string;
+  effortRef?: string;
 }
 
 interface EffortRepo {
@@ -310,20 +310,18 @@ function loadBridgeConfig(start: string): BridgeConfig {
   const kb = rc.scalars.kb;
   const effort = rc.nested.current?.effort;
 
-  if (!workspace) throw new Error(".nosediverc is missing workspace");
-  if (!backlog) throw new Error(".nosediverc is missing backlog");
   if (!kb) throw new Error(".nosediverc is missing kb");
-  if (!effort) throw new Error(".nosediverc is missing current.effort");
 
-  const backlogDir = resolveFrom(bridgeDir, backlog);
-  return {
+  const backlogDir = backlog ? resolveFrom(bridgeDir, backlog) : undefined;
+  const bridge: BridgeConfig = {
     bridgeDir,
-    workspaceDir: resolveFrom(bridgeDir, workspace),
+    workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
     backlogDir,
     kbDir: resolveFrom(bridgeDir, kb),
-    effortPath: resolveFrom(backlogDir, effort),
     effortRef: effort,
   };
+  if (backlogDir && effort) bridge.effortPath = resolveFrom(backlogDir, effort);
+  return bridge;
 }
 
 function parseEffortRepos(path: string): EffortRepo[] {
@@ -375,58 +373,97 @@ function assertDir(path: string, label: string): void {
   if (!statSync(path).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
 }
 
+function addScopedRepoTargets(options: {
+  kbDocs: KbDoc[];
+  repoId: string;
+  repoRoot: string;
+  readOnly: boolean;
+  repoLabel: string;
+  targets: Map<string, TargetDoc[]>;
+  warnings: string[];
+}): void {
+  const { kbDocs, repoId, repoRoot, readOnly, repoLabel, targets, warnings } = options;
+
+  for (const doc of kbDocs) {
+    if (doc.kind === "repo") continue;
+    const renderDefault = defaultRender(doc.kind);
+    if (!renderDefault) continue;
+
+    for (const rawScope of doc.scopes) {
+      const scope = parseScopeRef(rawScope);
+      if (!scope || scope.repoId !== repoId) continue;
+
+      const targetDir = scope.path ? resolve(repoRoot, scope.path) : repoRoot;
+      if (!existsSync(targetDir)) {
+        warnings.push(`scope path does not exist; skipping ${doc.relPath} -> ${repoLabel}/${scope.path}`);
+        continue;
+      }
+
+      const render = scope.render ?? renderDefault;
+      const list = targets.get(targetDir) ?? [];
+      if (!list.some((item) => item.doc.path === doc.path && item.render === render && item.scopePath === scope.path)) {
+        list.push({ doc, render, scopePath: scope.path, readOnly });
+      }
+      targets.set(targetDir, list);
+    }
+  }
+}
+
+function shouldGenerateWorkspaceDocs(bridge: BridgeConfig): boolean {
+  return Boolean(bridge.workspaceDir && bridge.backlogDir && bridge.effortPath && bridge.effortRef);
+}
+
 function createApplyPlan(): ApplyPlan {
   const bridge = loadBridgeConfig(process.cwd());
-  assertDir(bridge.backlogDir, "backlog");
   assertDir(bridge.kbDir, "kb");
-  if (!existsSync(bridge.effortPath)) throw new Error(`current effort does not exist: ${bridge.effortPath}`);
-
-  const effortRepos = parseEffortRepos(bridge.effortPath);
-  const selected = new Map(effortRepos.map((repo) => [repo.id, repo]));
   const kbDocs = loadKbDocs(bridge.kbDir, bridge.bridgeDir);
   const repoDocs = new Map(kbDocs.filter((doc) => doc.kind === "repo").map((doc) => [doc.id, doc]));
   const warnings: string[] = [];
   const targets = new Map<string, TargetDoc[]>();
-  const repos = effortRepos.map((repo) => ({ ...repo, repoPath: repoDocs.get(repo.id)?.repoPath }));
+  let repos: Array<EffortRepo & { repoPath?: string }> = [];
 
-  for (const repo of effortRepos) {
-    const repoDoc = repoDocs.get(repo.id);
-    if (!repoDoc) {
-      warnings.push(`effort repo has no kind: repo kb doc: ${repo.id}`);
-      continue;
-    }
-    if (!repoDoc.repoPath) {
-      warnings.push(`repo doc ${repoDoc.relPath} is missing meta.path`);
-      continue;
-    }
+  const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
+  targets.set(
+    bridge.bridgeDir,
+    foundationDocs.map((doc) => ({ doc, render: "body", scopePath: "", readOnly: false })),
+  );
 
-    const repoRoot = resolveFrom(bridge.bridgeDir, repoDoc.repoPath);
-    if (!existsSync(repoRoot)) {
-      warnings.push(`repo path does not exist; skipping scoped docs for ${repo.id}: ${repoRoot}`);
-      continue;
-    }
+  if (shouldGenerateWorkspaceDocs(bridge)) {
+    assertDir(bridge.backlogDir!, "backlog");
+    if (!existsSync(bridge.effortPath!)) throw new Error(`current effort does not exist: ${bridge.effortPath}`);
 
-    for (const doc of kbDocs) {
-      if (doc.kind === "repo") continue;
-      const renderDefault = defaultRender(doc.kind);
-      if (!renderDefault) continue;
+    const effortRepos = parseEffortRepos(bridge.effortPath!);
+    repos = effortRepos.map((repo) => ({ ...repo, repoPath: repoDocs.get(repo.id)?.repoPath }));
 
-      for (const rawScope of doc.scopes) {
-        const scope = parseScopeRef(rawScope);
-        if (!scope || scope.repoId !== repo.id || !selected.has(scope.repoId)) continue;
-
-        const targetDir = scope.path ? resolve(repoRoot, scope.path) : repoRoot;
-        if (!existsSync(targetDir)) {
-          warnings.push(`scope path does not exist; skipping ${doc.relPath} -> ${repoDoc.repoPath}/${scope.path}`);
-          continue;
-        }
-
-        const render = scope.render ?? renderDefault;
-        const list = targets.get(targetDir) ?? [];
-        list.push({ doc, render, scopePath: scope.path, readOnly: repo.readOnly });
-        targets.set(targetDir, list);
+    for (const repo of effortRepos) {
+      const repoDoc = repoDocs.get(repo.id);
+      if (!repoDoc) {
+        warnings.push(`effort repo has no kind: repo kb doc: ${repo.id}`);
+        continue;
       }
+      if (!repoDoc.repoPath) {
+        warnings.push(`repo doc ${repoDoc.relPath} is missing meta.path`);
+        continue;
+      }
+
+      const repoRoot = resolveFrom(bridge.bridgeDir, repoDoc.repoPath);
+      if (!existsSync(repoRoot)) {
+        warnings.push(`repo path does not exist; skipping scoped docs for ${repo.id}: ${repoRoot}`);
+        continue;
+      }
+
+      addScopedRepoTargets({
+        kbDocs,
+        repoId: repo.id,
+        repoRoot,
+        readOnly: repo.readOnly,
+        repoLabel: repoDoc.repoPath,
+        targets,
+        warnings,
+      });
     }
+  } else if (bridge.workspaceDir || bridge.backlogDir || bridge.effortRef) {
+    warnings.push("workspace docs skipped because .nosediverc does not set workspace, backlog, and current.effort");
   }
 
   return { bridge, repos, targets, warnings };
@@ -437,31 +474,42 @@ function applyDryRun(): void {
 
   console.log("nosedive apply --dry-run");
   console.log(`Bridge:    ${formatPath(bridge.bridgeDir)}`);
-  console.log(`Workspace: ${formatPath(bridge.workspaceDir)}`);
-  console.log(`Backlog:   ${formatPath(bridge.backlogDir)}`);
+  console.log(`Workspace: ${bridge.workspaceDir ? formatPath(bridge.workspaceDir) : "(not configured)"}`);
+  console.log(`Backlog:   ${bridge.backlogDir ? formatPath(bridge.backlogDir) : "(not configured)"}`);
   console.log(`KB:        ${formatPath(bridge.kbDir)}`);
-  console.log(`Effort:    ${bridge.effortRef}`);
+  console.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
   console.log("");
 
-  console.log("Workspace docs:");
-  console.log(`  ${join(formatPath(bridge.workspaceDir), "CLAUDE.md")}`);
-  console.log(`  ${join(formatPath(bridge.workspaceDir), "AGENTS.md")}`);
-  if (!existsSync(bridge.workspaceDir)) warnings.push(`workspace does not exist: ${bridge.workspaceDir}`);
-  console.log("");
-
-  console.log("Repos:");
-  for (const repo of repos) {
-    const path = repo.repoPath ?? "(missing repo doc)";
-    const mode = repo.readOnly ? "read-only" : "writable";
-    console.log(`  ${mode.padEnd(9)} ${path} (${repo.id})`);
+  console.log("Bridge docs:");
+  console.log(`  ${join(formatPath(bridge.bridgeDir), "CLAUDE.md")}`);
+  console.log(`  ${join(formatPath(bridge.bridgeDir), "AGENTS.md")}`);
+  for (const item of (targets.get(bridge.bridgeDir) ?? []).sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))) {
+    console.log(`    - ${item.doc.relPath} :${item.render}`);
   }
   console.log("");
 
+  if (shouldGenerateWorkspaceDocs(bridge)) {
+    console.log("Workspace docs:");
+    console.log(`  ${join(formatPath(bridge.workspaceDir!), "CLAUDE.md")}`);
+    console.log(`  ${join(formatPath(bridge.workspaceDir!), "AGENTS.md")}`);
+    if (!existsSync(bridge.workspaceDir!)) warnings.push(`workspace does not exist: ${bridge.workspaceDir}`);
+    console.log("");
+
+    console.log("Repos:");
+    for (const repo of repos) {
+      const path = repo.repoPath ?? "(missing repo doc)";
+      const mode = repo.readOnly ? "read-only" : "writable";
+      console.log(`  ${mode.padEnd(9)} ${path} (${repo.id})`);
+    }
+    console.log("");
+  }
+
   console.log("Repo docs:");
-  if (targets.size === 0) {
+  const repoTargets = [...targets.entries()].filter(([targetDir]) => targetDir !== bridge.bridgeDir);
+  if (repoTargets.length === 0) {
     console.log("  (none)");
   } else {
-    for (const [targetDir, docs] of [...targets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [targetDir, docs] of repoTargets.sort((a, b) => a[0].localeCompare(b[0]))) {
       console.log(`  ${join(formatPath(targetDir), "CLAUDE.md")}`);
       console.log(`  ${join(formatPath(targetDir), "AGENTS.md")}`);
       for (const item of docs.sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))) {
@@ -487,7 +535,9 @@ function markdownList(items: string[]): string {
 }
 
 function renderWorkspaceDoc(plan: ApplyPlan): string {
-  const effortBody = parseMarkdownDoc(readFileSync(plan.bridge.effortPath, "utf8"), plan.bridge.effortPath).body.trim();
+  const effortPath = plan.bridge.effortPath!;
+  const backlogDir = plan.bridge.backlogDir!;
+  const effortBody = parseMarkdownDoc(readFileSync(effortPath, "utf8"), effortPath).body.trim();
   const writable = plan.repos
     .filter((repo) => !repo.readOnly && repo.repoPath)
     .map((repo) => resolveFrom(plan.bridge.bridgeDir, repo.repoPath!))
@@ -496,7 +546,7 @@ function renderWorkspaceDoc(plan: ApplyPlan): string {
     .filter((repo) => repo.readOnly && repo.repoPath)
     .map((repo) => resolveFrom(plan.bridge.bridgeDir, repo.repoPath!))
     .sort((a, b) => a.localeCompare(b));
-  const backlog = formatBacklog(collectEfforts(plan.bridge.backlogDir), true);
+  const backlog = formatBacklog(collectEfforts(backlogDir), true);
 
   return [
     "# Agent Instructions",
@@ -669,20 +719,29 @@ function manageGeneratedGitState(paths: string[]): string[] {
 
 function applyWrite(): void {
   const plan = createApplyPlan();
-  assertDir(plan.bridge.workspaceDir, "workspace");
   const generatedFiles: string[] = [];
+  const repoDocPairCount = [...plan.targets.keys()].filter((targetDir) => targetDir !== plan.bridge.bridgeDir).length;
 
-  const workspaceContent = renderWorkspaceDoc(plan);
-  generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir, workspaceContent));
+  generatedFiles.push(...writeAgentPair(plan.bridge.bridgeDir, renderRepoDoc(plan.bridge.bridgeDir, plan.targets.get(plan.bridge.bridgeDir) ?? [])));
+
+  if (shouldGenerateWorkspaceDocs(plan.bridge)) {
+    assertDir(plan.bridge.workspaceDir!, "workspace");
+    const workspaceContent = renderWorkspaceDoc(plan);
+    generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir!, workspaceContent));
+  }
 
   for (const [targetDir, docs] of plan.targets) {
+    if (targetDir === plan.bridge.bridgeDir) continue;
     generatedFiles.push(...writeAgentPair(targetDir, renderRepoDoc(targetDir, docs)));
   }
 
   plan.warnings.push(...manageGeneratedGitState(generatedFiles));
 
-  console.log(`Wrote workspace docs: ${join(formatPath(plan.bridge.workspaceDir), "CLAUDE.md")}, ${join(formatPath(plan.bridge.workspaceDir), "AGENTS.md")}`);
-  console.log(`Wrote repo doc pairs: ${plan.targets.size}`);
+  console.log(`Wrote bridge docs: ${join(formatPath(plan.bridge.bridgeDir), "CLAUDE.md")}, ${join(formatPath(plan.bridge.bridgeDir), "AGENTS.md")}`);
+  if (shouldGenerateWorkspaceDocs(plan.bridge)) {
+    console.log(`Wrote workspace docs: ${join(formatPath(plan.bridge.workspaceDir!), "CLAUDE.md")}, ${join(formatPath(plan.bridge.workspaceDir!), "AGENTS.md")}`);
+  }
+  console.log(`Wrote repo doc pairs: ${repoDocPairCount}`);
   if (plan.warnings.length > 0) {
     console.log("");
     console.log("Warnings:");

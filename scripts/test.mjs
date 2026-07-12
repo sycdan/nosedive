@@ -229,6 +229,60 @@ Body rendered from valid YAML frontmatter.
   assertOk(runTool("git", ["check-ignore", "app/CLAUDE.md"], writableRoot), "nested CLAUDE.md should be ignored by bare exclude pattern");
   assertOk(runTool("git", ["check-ignore", "app/AGENTS.md"], readonlyRoot), "nested AGENTS.md should be ignored by bare exclude pattern");
 
+  const activeBridge = join(tmp, "active-bridge");
+  mkdirSync(join(activeBridge, "kb"), { recursive: true });
+  write(
+    join(activeBridge, ".nosediverc"),
+    `kb: ./kb
+`,
+  );
+  write(
+    join(activeBridge, "kb", "active-foundation.md"),
+    `---
+kind: foundation
+id: active-foundation
+name: active-foundation
+gist: "Active foundation docs render from kb-only config."
+---
+
+# Active Foundation
+
+Bridge foundation body renders without a scope.
+`,
+  );
+  write(
+    join(activeBridge, "kb", "active-convention.md"),
+    `---
+kind: convention
+id: active-convention
+name: active.test
+gist: "Scoped convention should not render from kb-only config."
+scopes:
+  - repo-active
+---
+
+# Active convention body
+`,
+  );
+
+  const activeDryRun = run(["apply", "--dry-run"], activeBridge);
+  assertOk(activeDryRun, "kb-only apply --dry-run failed");
+  assert.match(activeDryRun.stdout, /Workspace: \(not configured\)/);
+  assert.match(activeDryRun.stdout, /Effort:    \(not configured\)/);
+  assert.match(activeDryRun.stdout, /Bridge docs:/);
+  assert.match(activeDryRun.stdout, /active-foundation\.md :body/);
+  assert.doesNotMatch(activeDryRun.stdout, /active-convention\.md :gist/);
+
+  const activeApply = run(["apply"], activeBridge);
+  assertOk(activeApply, "kb-only apply failed");
+  assert.equal(existsSync(join(activeBridge, "CLAUDE.md")), true);
+  assert.equal(existsSync(join(activeBridge, "AGENTS.md")), true);
+  const activeDoc = readFileSync(join(activeBridge, "CLAUDE.md"), "utf8");
+  assert.match(activeDoc, /# Active Foundation/);
+  assert.match(activeDoc, /Bridge foundation body renders without a scope\./);
+  assert.doesNotMatch(activeDoc, /Scoped convention should not render from kb-only config\./);
+  assert.equal(existsSync(join(activeBridge, "workspace", "CLAUDE.md")), false);
+
   write(
     join(bridge, "kb", "bad.md"),
     `---

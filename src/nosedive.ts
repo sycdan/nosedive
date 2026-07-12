@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
@@ -16,6 +17,27 @@ import { parse as parseYaml } from "yaml";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
+const MANAGED_EXCLUDE_BEGIN = "# BEGIN nosedive-managed exclude";
+const MANAGED_EXCLUDE_END = "# END nosedive-managed exclude";
+const MANAGED_EXCLUDE_BLOCK = [
+  MANAGED_EXCLUDE_BEGIN,
+  "# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
+  "# name: nosedive-managed-local-git-state",
+  "# owner: nosedive apply",
+  "# reason: generated agent instruction files are local workspace artifacts",
+  "CLAUDE.md",
+  "AGENTS.md",
+  MANAGED_EXCLUDE_END,
+].join("\n");
+const GIT_LOCAL_ENV_KEYS = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_PREFIX",
+  "GIT_WORK_TREE",
+];
 
 const USAGE = `Usage: nosedive <command>
 
@@ -549,21 +571,115 @@ function writeFileAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-function writeAgentPair(dir: string, content: string): void {
-  writeFileAtomic(join(dir, "CLAUDE.md"), content);
-  writeFileAtomic(join(dir, "AGENTS.md"), content);
+function writeAgentPair(dir: string, content: string): string[] {
+  const paths = [join(dir, "CLAUDE.md"), join(dir, "AGENTS.md")];
+  for (const path of paths) writeFileAtomic(path, content);
+  return paths;
+}
+
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of GIT_LOCAL_ENV_KEYS) delete env[key];
+  return env;
+}
+
+function gitOutput(cwd: string, args: string[]): string | undefined {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() });
+  if (result.status !== 0) return undefined;
+  return result.stdout.trim();
+}
+
+function gitOk(cwd: string, args: string[]): boolean {
+  return spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() }).status === 0;
+}
+
+function gitRelPath(repoRoot: string, path: string): string {
+  return relative(repoRoot, path).replaceAll("\\", "/");
+}
+
+function removeManagedExcludeBlocks(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i] !== MANAGED_EXCLUDE_BEGIN) {
+      out.push(lines[i]);
+      continue;
+    }
+
+    const end = lines.indexOf(MANAGED_EXCLUDE_END, i + 1);
+    if (end === -1) {
+      out.push(lines[i]);
+      continue;
+    }
+    i = end;
+  }
+  return out.join("\n").replace(/\n*$/, "\n");
+}
+
+function replaceManagedExcludeBlock(text: string): string {
+  const withoutManaged = removeManagedExcludeBlocks(text);
+  const prefix = withoutManaged.trim() ? `${withoutManaged.replace(/\n*$/, "\n")}\n` : "";
+  return `${prefix}${MANAGED_EXCLUDE_BLOCK}\n`;
+}
+
+function updateManagedExclude(repoRoot: string, warnings: string[]): void {
+  const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
+  if (!rawExcludePath) {
+    warnings.push(`could not resolve git exclude path for ${repoRoot}`);
+    return;
+  }
+
+  const excludePath = isAbsolute(rawExcludePath) ? rawExcludePath : resolve(repoRoot, rawExcludePath);
+  const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+  writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing));
+}
+
+function manageGeneratedGitState(paths: string[]): string[] {
+  const warnings: string[] = [];
+  const byRepo = new Map<string, string[]>();
+
+  for (const path of paths) {
+    const repoRoot = gitOutput(dirname(path), ["rev-parse", "--show-toplevel"]);
+    if (!repoRoot) {
+      warnings.push(`generated file is not inside a git worktree; cannot manage excludes: ${path}`);
+      continue;
+    }
+    const list = byRepo.get(repoRoot) ?? [];
+    list.push(path);
+    byRepo.set(repoRoot, list);
+  }
+
+  for (const [repoRoot, files] of byRepo) {
+    updateManagedExclude(repoRoot, warnings);
+
+    for (const file of files) {
+      const rel = gitRelPath(repoRoot, file);
+      if (!gitOk(repoRoot, ["ls-files", "--error-unmatch", "--", rel])) continue;
+
+      if (gitOk(repoRoot, ["update-index", "--skip-worktree", "--", rel])) {
+        warnings.push(`tracked generated file marked skip-worktree: ${file}`);
+      } else {
+        warnings.push(`could not mark tracked generated file skip-worktree: ${file}`);
+      }
+    }
+  }
+
+  return warnings;
 }
 
 function applyWrite(): void {
   const plan = createApplyPlan();
   assertDir(plan.bridge.workspaceDir, "workspace");
+  const generatedFiles: string[] = [];
 
   const workspaceContent = renderWorkspaceDoc(plan);
-  writeAgentPair(plan.bridge.workspaceDir, workspaceContent);
+  generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir, workspaceContent));
 
   for (const [targetDir, docs] of plan.targets) {
-    writeAgentPair(targetDir, renderRepoDoc(targetDir, docs));
+    generatedFiles.push(...writeAgentPair(targetDir, renderRepoDoc(targetDir, docs)));
   }
+
+  plan.warnings.push(...manageGeneratedGitState(generatedFiles));
 
   console.log(`Wrote workspace docs: ${join(formatPath(plan.bridge.workspaceDir), "CLAUDE.md")}, ${join(formatPath(plan.bridge.workspaceDir), "AGENTS.md")}`);
   console.log(`Wrote repo doc pairs: ${plan.targets.size}`);

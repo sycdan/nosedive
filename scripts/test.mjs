@@ -7,6 +7,15 @@ import { spawnSync } from "node:child_process";
 const root = process.cwd();
 const cli = join(root, "dist", "nosedive.js");
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
+const gitLocalEnvKeys = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_PREFIX",
+  "GIT_WORK_TREE",
+];
 
 function write(path, content) {
   mkdirSync(dirname(path), { recursive: true });
@@ -18,6 +27,14 @@ function run(args, cwd) {
     cwd,
     encoding: "utf8",
   });
+}
+
+function runTool(command, args, cwd) {
+  const env = { ...process.env };
+  for (const key of gitLocalEnvKeys) delete env[key];
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", env });
+  assert.equal(result.status, 0, `${command} ${args.join(" ")} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  return result;
 }
 
 function assertOk(result, label) {
@@ -43,6 +60,22 @@ try {
   mkdirSync(join(bridge, "backlog", "yaml-frontmatter"), { recursive: true });
   mkdirSync(join(bridge, "backlog", "other-effort"), { recursive: true });
   mkdirSync(join(bridge, "kb"), { recursive: true });
+
+  const writableRoot = join(bridge, "workspace", "writable");
+  const readonlyRoot = join(bridge, "workspace", "readonly");
+  const bridgeExclude = join(bridge, ".git", "info", "exclude");
+  const writableExclude = join(writableRoot, ".git", "info", "exclude");
+  const readonlyExclude = join(readonlyRoot, ".git", "info", "exclude");
+
+  runTool("git", ["init"], bridge);
+  runTool("git", ["init"], writableRoot);
+  runTool("git", ["init"], readonlyRoot);
+  write(bridgeExclude, "# user bridge exclude\n*.bridge-local\n");
+  write(writableExclude, "# user writable exclude\n*.writable-local\n");
+  write(readonlyExclude, "# user readonly exclude\n*.readonly-local\n");
+  write(join(writableRoot, "CLAUDE.md"), "# Tracked local instructions\n");
+  runTool("git", ["add", "CLAUDE.md"], writableRoot);
+  runTool("git", ["-c", "user.name=Nosedive Test", "-c", "user.email=nosedive@example.invalid", "commit", "-m", "Track CLAUDE"], writableRoot);
 
   write(
     join(bridge, ".nosediverc"),
@@ -140,6 +173,7 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /convention\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
+  assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
 
   const verboseBacklog = run(["dump-backlog", "--verbose"], bridge);
   assertOk(verboseBacklog, "dump-backlog --verbose failed");
@@ -148,6 +182,7 @@ Body rendered from valid YAML frontmatter.
 
   const apply = run(["apply"], bridge);
   assertOk(apply, "apply failed");
+  assert.match(apply.stdout, /tracked generated file marked skip-worktree: .*CLAUDE\.md/);
   assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), true);
   assert.equal(existsSync(join(bridge, "workspace", "writable", "CLAUDE.md")), true);
   assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), true);
@@ -173,6 +208,26 @@ Body rendered from valid YAML frontmatter.
 
   const readOnlyDoc = readFileSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md"), "utf8");
   assert.match(readOnlyDoc, /Read-only For This Effort/);
+
+  for (const [label, excludePath] of [
+    ["bridge", bridgeExclude],
+    ["writable", writableExclude],
+    ["readonly", readonlyExclude],
+  ]) {
+    const excludeText = readFileSync(excludePath, "utf8");
+    assert.match(excludeText, new RegExp(`# user ${label} exclude`));
+    assert.match(excludeText, /# BEGIN nosedive-managed exclude/);
+    assert.match(excludeText, /# kb: 019f5651-5539-76f5-b6bd-351d300194eb/);
+    assert.match(excludeText, /# owner: nosedive apply/);
+    assert.match(excludeText, /^CLAUDE\.md$/m);
+    assert.match(excludeText, /^AGENTS\.md$/m);
+    assert.doesNotMatch(excludeText, /^\/CLAUDE\.md$/m);
+    assert.match(excludeText, /# END nosedive-managed exclude/);
+  }
+
+  assert.match(runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root).stdout, /^S /);
+  assertOk(runTool("git", ["check-ignore", "app/CLAUDE.md"], writableRoot), "nested CLAUDE.md should be ignored by bare exclude pattern");
+  assertOk(runTool("git", ["check-ignore", "app/AGENTS.md"], readonlyRoot), "nested AGENTS.md should be ignored by bare exclude pattern");
 
   write(
     join(bridge, "kb", "bad.md"),

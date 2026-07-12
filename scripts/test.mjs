@@ -27,7 +27,7 @@ function assertOk(result, label) {
 try {
   const version = run(["version"], root);
   assertOk(version, "version command failed");
-  assert.match(version.stdout, /0\.0\.0-dev/);
+  assert.match(version.stdout.trim(), /^(\d+\.\d+\.\d+(?:-\d+)?|0\.0\.0-dev)$/);
 
   const bridge = join(tmp, "bridge");
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });

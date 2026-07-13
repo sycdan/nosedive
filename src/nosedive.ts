@@ -1,6 +1,4 @@
-#!/usr/bin/env node
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -342,6 +340,7 @@ interface KbDoc {
   kind: string;
   gist: string;
   repoPath?: string;
+  repoBaseBranch?: string;
   scopes: string[];
 }
 
@@ -367,7 +366,7 @@ interface GeneratedFrontmatter {
 
 interface ApplyPlan {
   bridge: BridgeConfig;
-  repos: Array<EffortRepo & { repoPath?: string }>;
+  repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string }>;
   targets: Map<string, TargetDoc[]>;
   warnings: string[];
 }
@@ -415,6 +414,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         kind: fm.scalars.kind,
         gist: fm.scalars.gist,
         repoPath: fm.nested.meta?.path,
+        repoBaseBranch: fm.nested.meta?.["base-branch"],
         scopes: fm.lists.scopes ?? [],
       };
     });
@@ -489,7 +489,7 @@ function createApplyPlan(): ApplyPlan {
   const repoDocs = new Map(kbDocs.filter((doc) => doc.kind === "repo").map((doc) => [doc.id, doc]));
   const warnings: string[] = [];
   const targets = new Map<string, TargetDoc[]>();
-  let repos: Array<EffortRepo & { repoPath?: string }> = [];
+  let repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string }> = [];
 
   const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
   targets.set(
@@ -502,7 +502,10 @@ function createApplyPlan(): ApplyPlan {
     if (!existsSync(bridge.effortPath!)) throw new Error(`current effort does not exist: ${bridge.effortPath}`);
 
     const effortRepos = parseEffortRepos(bridge.effortPath!);
-    repos = effortRepos.map((repo) => ({ ...repo, repoPath: repoDocs.get(repo.id)?.repoPath }));
+    repos = effortRepos.map((repo) => {
+      const repoDoc = repoDocs.get(repo.id);
+      return { ...repo, repoPath: repoDoc?.repoPath, repoBaseBranch: repoDoc?.repoBaseBranch ?? "main" };
+    });
 
     for (const repo of effortRepos) {
       const repoDoc = repoDocs.get(repo.id);
@@ -572,7 +575,7 @@ function applyDryRun(): void {
     for (const repo of repos) {
       const path = repo.repoPath ?? "(missing repo doc)";
       const mode = repo.readOnly ? "read-only" : "writable";
-      console.log(`  ${mode.padEnd(9)} ${path} (${repo.id})`);
+      console.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, base ${repo.repoBaseBranch})`);
     }
     console.log("");
   }
@@ -879,19 +882,5 @@ export function runCli(argv = process.argv.slice(2)): void {
     default:
       console.error(`Unknown command: ${command}\n\n${USAGE}`);
       process.exit(1);
-  }
-}
-
-function isEntrypoint(): boolean {
-  return process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-}
-
-if (isEntrypoint()) {
-  try {
-    runCli();
-  } catch (err) {
-    if (err instanceof Error) console.error(`nosedive: ${err.message}`);
-    else console.error(`nosedive: ${String(err)}`);
-    process.exit(1);
   }
 }

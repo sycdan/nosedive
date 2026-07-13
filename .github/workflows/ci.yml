@@ -22,6 +22,8 @@ jobs:
         run: npm run build
       - name: Smoke test
         run: npm test
+      - name: Package bin smoke test
+        run: npm run test:pack-bin
       - name: Check version script
         run: |
           node scripts/version.mjs

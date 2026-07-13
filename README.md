@@ -57,4 +57,4 @@ Versions are CalVer, computed by [`scripts/version.mjs`](scripts/version.mjs):
 
 The version in [`package.json`](package.json) stays `0.0.0-dev` in git;  pipeline stamps the real version at publish time. Publishing is handled by
 [`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no
-token secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) typechecks, builds, and smoke-tests the CLI ([`src/nosedive.ts`](src/nosedive.ts)) on PRs; the publish workflow runs the same checks before publishing.
+token secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) typechecks, builds, smoke-tests the CLI ([`src/cli.ts`](src/cli.ts)), and verifies the packed npm bin on PRs; the publish workflow runs the same checks before publishing.

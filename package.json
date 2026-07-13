@@ -15,7 +15,7 @@
   },
   "type": "module",
   "bin": {
-    "nosedive": "dist/nosedive.js"
+    "nosedive": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -24,9 +24,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup src/nosedive.ts --format esm --target node22 --clean",
+    "build": "tsup src/cli.ts src/nosedive.ts --format esm --target node22 --clean",
     "typecheck": "tsc",
     "test": "node scripts/test.mjs",
+    "test:pack-bin": "node scripts/test-pack-bin.mjs",
     "prepack": "npm run build",
     "prepare": "git config core.hooksPath .githooks"
   },

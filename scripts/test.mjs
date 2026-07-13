@@ -3,9 +3,11 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
 const cli = join(root, "dist", "nosedive.js");
+const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(cli).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
 const gitLocalEnvKeys = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -82,8 +84,13 @@ try {
     `workspace: ./workspace
 backlog: ./backlog
 kb: ./kb
+sessions: ./sessions
+home-branch: main
+work-branch-prefix: work/
+custom-scalar: keep-me
 current:
   effort: yaml-frontmatter/YamlFrontmatter.md
+  session: yaml-frontmatter.123
 `,
   );
   write(
@@ -169,11 +176,41 @@ Body rendered from valid YAML frontmatter.
 
   const dryRun = run(["apply", "--dry-run"], bridge);
   assertOk(dryRun, "apply --dry-run failed");
+  assert.match(dryRun.stdout, /Sessions:  .*sessions/);
+  assert.match(dryRun.stdout, /Home:      main/);
+  assert.match(dryRun.stdout, /Work ref:  work\//);
+  assert.match(dryRun.stdout, /Session:   yaml-frontmatter\.123/);
   assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
   assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
+
+  const rc = readNosediveRc(join(bridge, "workspace"));
+  assert.equal(rc.bridgeDir, bridge);
+  assert.equal(rc.workspaceDir, join(bridge, "workspace"));
+  assert.equal(rc.backlogDir, join(bridge, "backlog"));
+  assert.equal(rc.kbDir, join(bridge, "kb"));
+  assert.equal(rc.sessionsDir, join(bridge, "sessions"));
+  assert.equal(rc.homeBranch, "main");
+  assert.equal(rc.workBranchPrefix, "work/");
+  assert.deepEqual(rc.current, {
+    effort: "yaml-frontmatter/YamlFrontmatter.md",
+    session: "yaml-frontmatter.123",
+  });
+
+  writeNosediveRcCurrent(bridge, { effort: "other-effort/OtherEffort.md", session: "other.456" });
+  assert.match(readFileSync(join(bridge, ".nosediverc"), "utf8"), /custom-scalar: keep-me/);
+  assert.deepEqual(readNosediveRc(bridge).current, {
+    effort: "other-effort/OtherEffort.md",
+    session: "other.456",
+  });
+  writeNosediveRcCurrent(bridge);
+  assert.doesNotMatch(readFileSync(join(bridge, ".nosediverc"), "utf8"), /^current:/m);
+  writeNosediveRcCurrent(bridge, {
+    effort: "yaml-frontmatter/YamlFrontmatter.md",
+    session: "yaml-frontmatter.123",
+  });
 
   const verboseBacklog = run(["dump-backlog", "--verbose"], bridge);
   assertOk(verboseBacklog, "dump-backlog --verbose failed");

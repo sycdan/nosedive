@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -13,7 +14,7 @@ import {
   writeFileSync,
   type Dirent,
 } from "node:fs";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, parseDocument } from "yaml";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -58,6 +59,26 @@ interface SimpleYaml {
 interface MarkdownDoc {
   fm: SimpleYaml;
   body: string;
+}
+
+export interface NosediveRc {
+  path: string;
+  bridgeDir: string;
+  workspaceDir?: string;
+  backlogDir?: string;
+  kbDir?: string;
+  sessionsDir?: string;
+  homeBranch?: string;
+  workBranchPrefix?: string;
+  current: {
+    effort?: string;
+    session?: string;
+  };
+}
+
+export interface NosediveRcCurrent {
+  effort?: string;
+  session?: string;
 }
 
 function emptyYaml(): SimpleYaml {
@@ -152,6 +173,63 @@ function formatPath(path: string): string {
   return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel || "." : path;
 }
 
+function findBridgeConfig(start: string): string | undefined {
+  let dir = resolve(start);
+  while (true) {
+    const candidate = join(dir, ".nosediverc");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+export function readNosediveRc(start: string): NosediveRc {
+  const rcPath = findBridgeConfig(start);
+  if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+
+  const bridgeDir = dirname(rcPath);
+  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
+  const workspace = rc.scalars.workspace;
+  const backlog = rc.scalars.backlog;
+  const kb = rc.scalars.kb;
+  const sessions = rc.scalars.sessions;
+
+  return {
+    path: rcPath,
+    bridgeDir,
+    workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
+    backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
+    kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
+    sessionsDir: sessions ? resolveFrom(bridgeDir, sessions) : undefined,
+    homeBranch: rc.scalars["home-branch"],
+    workBranchPrefix: rc.scalars["work-branch-prefix"],
+    current: {
+      effort: rc.nested.current?.effort,
+      session: rc.nested.current?.session,
+    },
+  };
+}
+
+export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurrent): void {
+  const rcPath = findBridgeConfig(start);
+  if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+
+  const doc = parseDocument(readFileSync(rcPath, "utf8"));
+  if (doc.errors.length > 0) throw new Error(`invalid YAML in ${rcPath}: ${doc.errors[0]?.message ?? "unknown error"}`);
+
+  if (!current?.effort && !current?.session) {
+    doc.deleteIn(["current"]);
+  } else {
+    doc.setIn(["current", "effort"], current.effort ?? null);
+    doc.setIn(["current", "session"], current.session ?? null);
+    if (!current.effort) doc.deleteIn(["current", "effort"]);
+    if (!current.session) doc.deleteIn(["current", "session"]);
+  }
+
+  writeFileAtomic(rcPath, doc.toString());
+}
+
 // --- efforts ---------------------------------------------------------------
 
 interface Effort {
@@ -205,15 +283,10 @@ function collectEfforts(effortsDir: string): Effort[] {
 }
 
 function loadBacklogConfig(start: string): BacklogConfig {
-  const rcPath = findBridgeConfig(start);
-  if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+  const rc = readNosediveRc(start);
 
-  const bridgeDir = dirname(rcPath);
-  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
-  const backlog = rc.scalars.backlog;
-
-  if (!backlog) throw new Error(".nosediverc is missing backlog");
-  return { bridgeDir, backlogDir: resolveFrom(bridgeDir, backlog) };
+  if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
+  return { bridgeDir: rc.bridgeDir, backlogDir: rc.backlogDir };
 }
 
 function formatBacklog(efforts: Effort[], verbose: boolean): string {
@@ -249,8 +322,12 @@ interface BridgeConfig {
   workspaceDir?: string;
   backlogDir?: string;
   kbDir: string;
+  sessionsDir?: string;
+  homeBranch?: string;
+  workBranchPrefix?: string;
   effortPath?: string;
   effortRef?: string;
+  sessionRef?: string;
 }
 
 interface EffortRepo {
@@ -288,39 +365,24 @@ interface ApplyPlan {
   warnings: string[];
 }
 
-function findBridgeConfig(start: string): string | undefined {
-  let dir = resolve(start);
-  while (true) {
-    const candidate = join(dir, ".nosediverc");
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
 function loadBridgeConfig(start: string): BridgeConfig {
-  const rcPath = findBridgeConfig(start);
-  if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+  const rc = readNosediveRc(start);
+  const effort = rc.current.effort;
 
-  const bridgeDir = dirname(rcPath);
-  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
-  const workspace = rc.scalars.workspace;
-  const backlog = rc.scalars.backlog;
-  const kb = rc.scalars.kb;
-  const effort = rc.nested.current?.effort;
+  if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 
-  if (!kb) throw new Error(".nosediverc is missing kb");
-
-  const backlogDir = backlog ? resolveFrom(bridgeDir, backlog) : undefined;
   const bridge: BridgeConfig = {
-    bridgeDir,
-    workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
-    backlogDir,
-    kbDir: resolveFrom(bridgeDir, kb),
+    bridgeDir: rc.bridgeDir,
+    workspaceDir: rc.workspaceDir,
+    backlogDir: rc.backlogDir,
+    kbDir: rc.kbDir,
+    sessionsDir: rc.sessionsDir,
+    homeBranch: rc.homeBranch,
+    workBranchPrefix: rc.workBranchPrefix,
     effortRef: effort,
+    sessionRef: rc.current.session,
   };
-  if (backlogDir && effort) bridge.effortPath = resolveFrom(backlogDir, effort);
+  if (rc.backlogDir && effort) bridge.effortPath = resolveFrom(rc.backlogDir, effort);
   return bridge;
 }
 
@@ -477,7 +539,11 @@ function applyDryRun(): void {
   console.log(`Workspace: ${bridge.workspaceDir ? formatPath(bridge.workspaceDir) : "(not configured)"}`);
   console.log(`Backlog:   ${bridge.backlogDir ? formatPath(bridge.backlogDir) : "(not configured)"}`);
   console.log(`KB:        ${formatPath(bridge.kbDir)}`);
+  console.log(`Sessions:  ${bridge.sessionsDir ? formatPath(bridge.sessionsDir) : "(not configured)"}`);
+  console.log(`Home:      ${bridge.homeBranch ?? "(not configured)"}`);
+  console.log(`Work ref:  ${bridge.workBranchPrefix ?? "(not configured)"}`);
   console.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
+  console.log(`Session:   ${bridge.sessionRef ?? "(not configured)"}`);
   console.log("");
 
   console.log("Bridge docs:");
@@ -756,9 +822,9 @@ function apply(args: string[]): void {
 
 // --- dispatch --------------------------------------------------------------
 
-const [command, ...args] = process.argv.slice(2);
+export function runCli(argv = process.argv.slice(2)): void {
+  const [command, ...args] = argv;
 
-try {
   switch (command) {
     case "version":
     case "--version":
@@ -781,8 +847,18 @@ try {
       console.error(`Unknown command: ${command}\n\n${USAGE}`);
       process.exit(1);
   }
-} catch (err) {
-  if (err instanceof Error) console.error(`nosedive: ${err.message}`);
-  else console.error(`nosedive: ${String(err)}`);
-  process.exit(1);
+}
+
+function isEntrypoint(): boolean {
+  return process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isEntrypoint()) {
+  try {
+    runCli();
+  } catch (err) {
+    if (err instanceof Error) console.error(`nosedive: ${err.message}`);
+    else console.error(`nosedive: ${String(err)}`);
+    process.exit(1);
+  }
 }

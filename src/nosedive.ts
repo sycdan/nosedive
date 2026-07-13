@@ -353,9 +353,16 @@ interface ScopeRef {
 
 interface TargetDoc {
   doc: KbDoc;
+  repoId: string;
   render: "body" | "gist";
   scopePath: string;
   readOnly: boolean;
+}
+
+interface GeneratedFrontmatter {
+  effort?: string;
+  repoId?: string;
+  scopePath?: string;
 }
 
 interface ApplyPlan {
@@ -464,7 +471,7 @@ function addScopedRepoTargets(options: {
       const render = scope.render ?? renderDefault;
       const list = targets.get(targetDir) ?? [];
       if (!list.some((item) => item.doc.path === doc.path && item.render === render && item.scopePath === scope.path)) {
-        list.push({ doc, render, scopePath: scope.path, readOnly });
+        list.push({ doc, repoId, render, scopePath: scope.path, readOnly });
       }
       targets.set(targetDir, list);
     }
@@ -487,7 +494,7 @@ function createApplyPlan(): ApplyPlan {
   const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
   targets.set(
     bridge.bridgeDir,
-    foundationDocs.map((doc) => ({ doc, render: "body", scopePath: "", readOnly: false })),
+    foundationDocs.map((doc) => ({ doc, repoId: "", render: "body", scopePath: "", readOnly: false })),
   );
 
   if (shouldGenerateWorkspaceDocs(bridge)) {
@@ -675,6 +682,25 @@ function withGeneratedNotice(filename: string, content: string): string {
   return trimmed ? `${notice}\n\n${trimmed}` : `${notice}\n`;
 }
 
+function quoteYamlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function renderGeneratedFrontmatter(frontmatter?: GeneratedFrontmatter): string {
+  if (!frontmatter) return "";
+
+  const lines: string[] = [];
+  if (frontmatter.effort) lines.push(`effort: ${quoteYamlString(frontmatter.effort)}`);
+  if (frontmatter.repoId) lines.push(`repo-id: ${quoteYamlString(frontmatter.repoId)}`);
+  if (frontmatter.scopePath) lines.push(`scope-path: ${quoteYamlString(frontmatter.scopePath)}`);
+  if (lines.length === 0) return "";
+  return ["---", ...lines, "---", ""].join("\n");
+}
+
+function withGeneratedEnvelope(filename: string, content: string, frontmatter?: GeneratedFrontmatter): string {
+  return withGeneratedNotice(filename, `${renderGeneratedFrontmatter(frontmatter)}${content}`);
+}
+
 function writeFileAtomic(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = join(dirname(path), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
@@ -682,10 +708,10 @@ function writeFileAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-function writeAgentPair(dir: string, content: string): string[] {
+function writeAgentPair(dir: string, content: string, frontmatter?: GeneratedFrontmatter): string[] {
   const filenames = ["CLAUDE.md", "AGENTS.md"];
   const paths = filenames.map((filename) => join(dir, filename));
-  for (const filename of filenames) writeFileAtomic(join(dir, filename), withGeneratedNotice(filename, content));
+  for (const filename of filenames) writeFileAtomic(join(dir, filename), withGeneratedEnvelope(filename, content, frontmatter));
   return paths;
 }
 
@@ -779,6 +805,16 @@ function manageGeneratedGitState(paths: string[]): string[] {
   return warnings;
 }
 
+function repoFrontmatter(bridge: BridgeConfig, docs: TargetDoc[]): GeneratedFrontmatter | undefined {
+  const first = docs[0];
+  if (!bridge.effortRef || !first?.repoId) return undefined;
+  return {
+    effort: bridge.effortRef,
+    repoId: first.repoId,
+    scopePath: first.scopePath || ".",
+  };
+}
+
 function applyWrite(): void {
   const plan = createApplyPlan();
   const generatedFiles: string[] = [];
@@ -789,12 +825,12 @@ function applyWrite(): void {
   if (shouldGenerateWorkspaceDocs(plan.bridge)) {
     assertDir(plan.bridge.workspaceDir!, "workspace");
     const workspaceContent = renderWorkspaceDoc(plan);
-    generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir!, workspaceContent));
+    generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir!, workspaceContent, { effort: plan.bridge.effortRef }));
   }
 
   for (const [targetDir, docs] of plan.targets) {
     if (targetDir === plan.bridge.bridgeDir) continue;
-    generatedFiles.push(...writeAgentPair(targetDir, renderRepoDoc(targetDir, docs)));
+    generatedFiles.push(...writeAgentPair(targetDir, renderRepoDoc(targetDir, docs), repoFrontmatter(plan.bridge, docs)));
   }
 
   plan.warnings.push(...manageGeneratedGitState(generatedFiles));

@@ -330,6 +330,7 @@ interface BridgeConfig {
 
 interface EffortRepo {
   id: string;
+  ref?: string;
   readOnly: boolean;
 }
 
@@ -366,7 +367,7 @@ interface GeneratedFrontmatter {
 
 interface ApplyPlan {
   bridge: BridgeConfig;
-  repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string }>;
+  repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }>;
   targets: Map<string, TargetDoc[]>;
   warnings: string[];
 }
@@ -394,9 +395,45 @@ function loadBridgeConfig(start: string): BridgeConfig {
 
 function parseEffortRepos(path: string): EffortRepo[] {
   const doc = parseMarkdownDoc(readFileSync(path, "utf8"), path);
-  return (doc.fm.lists.repos ?? []).map((entry) => {
-    if (entry.endsWith(":ro")) return { id: entry.slice(0, -3), readOnly: true };
-    return { id: entry, readOnly: false };
+  return (doc.fm.lists.repos ?? []).map((rawEntry) => {
+    const entry = rawEntry.trim();
+    if (!entry) throw new Error(`invalid effort repo entry in ${path}: empty value`);
+
+    const firstColon = entry.indexOf(":");
+    const secondColon = firstColon === -1 ? -1 : entry.indexOf(":", firstColon + 1);
+    if (secondColon !== -1) {
+      throw new Error(`invalid effort repo entry in ${path}: ${entry} (expected <repo-id>[@ref][:flags])`);
+    }
+
+    const base = firstColon === -1 ? entry : entry.slice(0, firstColon);
+    const flagText = firstColon === -1 ? "" : entry.slice(firstColon + 1);
+    if (!base) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing repo id)`);
+
+    let readOnly = false;
+    if (firstColon !== -1) {
+      if (!flagText) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing flags after :)`);
+      for (const flag of flagText.split(",").map((item) => item.trim())) {
+        if (!flag) throw new Error(`invalid effort repo entry in ${path}: ${entry} (empty flag)`);
+        if (flag === "ro") {
+          readOnly = true;
+          continue;
+        }
+        throw new Error(`invalid effort repo flag in ${path}: ${entry} (unsupported flag: ${flag})`);
+      }
+    }
+
+    const at = base.indexOf("@");
+    const secondAt = at === -1 ? -1 : base.indexOf("@", at + 1);
+    if (secondAt !== -1) {
+      throw new Error(`invalid effort repo entry in ${path}: ${entry} (expected at most one @ref)`);
+    }
+
+    const id = at === -1 ? base : base.slice(0, at);
+    const ref = at === -1 ? undefined : base.slice(at + 1);
+    if (!id) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing repo id)`);
+    if (at !== -1 && !ref) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing ref after @)`);
+
+    return { id, ref, readOnly };
   });
 }
 
@@ -489,7 +526,7 @@ function createApplyPlan(): ApplyPlan {
   const repoDocs = new Map(kbDocs.filter((doc) => doc.kind === "repo").map((doc) => [doc.id, doc]));
   const warnings: string[] = [];
   const targets = new Map<string, TargetDoc[]>();
-  let repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string }> = [];
+  let repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }> = [];
 
   const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
   targets.set(
@@ -504,7 +541,8 @@ function createApplyPlan(): ApplyPlan {
     const effortRepos = parseEffortRepos(bridge.effortPath!);
     repos = effortRepos.map((repo) => {
       const repoDoc = repoDocs.get(repo.id);
-      return { ...repo, repoPath: repoDoc?.repoPath, repoBaseBranch: repoDoc?.repoBaseBranch ?? "main" };
+      const repoBaseBranch = repoDoc?.repoBaseBranch ?? "main";
+      return { ...repo, repoPath: repoDoc?.repoPath, repoBaseBranch, repoRef: repo.ref ?? repoBaseBranch };
     });
 
     for (const repo of effortRepos) {
@@ -575,7 +613,8 @@ function applyDryRun(): void {
     for (const repo of repos) {
       const path = repo.repoPath ?? "(missing repo doc)";
       const mode = repo.readOnly ? "read-only" : "writable";
-      console.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, base ${repo.repoBaseBranch})`);
+      const refSummary = repo.ref ? `ref ${repo.repoRef} (base ${repo.repoBaseBranch})` : `base ${repo.repoBaseBranch}`;
+      console.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, ${refSummary})`);
     }
     console.log("");
   }

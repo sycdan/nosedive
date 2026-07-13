@@ -6,8 +6,9 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
-const cli = join(root, "dist", "nosedive.js");
-const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(cli).href);
+const cli = join(root, "dist", "cli.js");
+const lib = join(root, "dist", "nosedive.js");
+const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(lib).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
 const gitLocalEnvKeys = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -66,9 +67,22 @@ function assertGeneratedFrontmatter(text, filename, fields = []) {
 }
 
 try {
+  const importOnly = spawnSync(process.execPath, ["-e", `import(${JSON.stringify(pathToFileURL(lib).href)})`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assertOk(importOnly, "library import failed");
+  assert.equal(importOnly.stdout, "", "library import unexpectedly wrote to stdout");
+  assert.equal(importOnly.stderr, "", "library import unexpectedly wrote to stderr");
+
   const version = run(["version"], root);
   assertOk(version, "version command failed");
   assert.match(version.stdout.trim(), /^(\d+\.\d+\.\d+(?:-\d+)?|0\.0\.0-dev)$/);
+
+  const help = run(["--help"], root);
+  assertOk(help, "--help command failed");
+  assert.match(help.stdout, /Usage: nosedive <command>/);
+  assert.match(help.stdout, /dump-backlog/);
 
   const bridge = join(tmp, "bridge");
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });

@@ -60,6 +60,8 @@ jobs:
         run: npm run build
       - name: Smoke test
         run: npm test
+      - name: Package bin smoke test
+        run: npm run test:pack-bin
       # npm rejects duplicate versions, which enforces the one-release-per-day rule.
       - name: Publish to npm
         run: npm publish --tag "${{ steps.version.outputs.tag }}" --access public

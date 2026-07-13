@@ -1,6 +1,4 @@
-#!/usr/bin/env node
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -884,19 +882,5 @@ export function runCli(argv = process.argv.slice(2)): void {
     default:
       console.error(`Unknown command: ${command}\n\n${USAGE}`);
       process.exit(1);
-  }
-}
-
-function isEntrypoint(): boolean {
-  return process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-}
-
-if (isEntrypoint()) {
-  try {
-    runCli();
-  } catch (err) {
-    if (err instanceof Error) console.error(`nosedive: ${err.message}`);
-    else console.error(`nosedive: ${String(err)}`);
-    process.exit(1);
   }
 }

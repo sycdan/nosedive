@@ -128,7 +128,7 @@ phase: building
 gist: "Exercise valid YAML: quoted effort gist"
 repos:
   - repo-writable
-  - repo-readonly:ro
+  - repo-readonly@develop:ro
 ---
 
 # YAML frontmatter
@@ -210,7 +210,7 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /Work ref:  work\//);
   assert.match(dryRun.stdout, /Session:   yaml-frontmatter\.123/);
   assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
-  assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, base main\)/);
+  assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
@@ -394,6 +394,26 @@ gist: "unterminated
   const invalid = run(["apply", "--dry-run"], bridge);
   assert.notEqual(invalid.status, 0, "invalid YAML unexpectedly succeeded");
   assert.match(invalid.stderr, /invalid YAML in frontmatter in .*bad\.md/);
+  rmSync(join(bridge, "kb", "bad.md"), { force: true });
+
+  write(
+    join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"),
+    `---
+phase: building
+gist: "Exercise valid YAML: quoted effort gist"
+repos:
+  - repo-writable:rw
+---
+
+# YAML frontmatter
+
+Build the YAML-aware workspace work order.
+`,
+  );
+
+  const invalidRepoFlag = run(["apply", "--dry-run"], bridge);
+  assert.notEqual(invalidRepoFlag.status, 0, "invalid repo flag unexpectedly succeeded");
+  assert.match(invalidRepoFlag.stderr, /invalid effort repo flag in .*YamlFrontmatter\.md: repo-writable:rw \(unsupported flag: rw\)/);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }

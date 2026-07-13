@@ -141,6 +141,7 @@ name: writable
 gist: "Writable repo: quoted gist"
 meta:
   path: workspace/writable
+  base-branch: develop
 ---
 `,
   );
@@ -194,7 +195,8 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /Home:      main/);
   assert.match(dryRun.stdout, /Work ref:  work\//);
   assert.match(dryRun.stdout, /Session:   yaml-frontmatter\.123/);
-  assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly\)/);
+  assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
+  assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, base main\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);

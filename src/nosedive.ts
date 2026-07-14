@@ -470,7 +470,7 @@ function parseScopeRef(scope: string): ScopeRef | undefined {
 
 function defaultRender(kind: string): "body" | "gist" | undefined {
   if (kind === "foundation") return "body";
-  if (kind === "convention" || kind === "skill") return "gist";
+  if (kind === "convention" || kind === "skill" || kind === "assertion" || kind === "decision") return "gist";
   return undefined;
 }
 

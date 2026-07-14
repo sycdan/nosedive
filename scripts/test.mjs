@@ -187,6 +187,36 @@ scopes:
 `,
   );
   write(
+    join(bridge, "kb", "assertion.md"),
+    `---
+kind: assertion
+id: assertion-doc
+name: assertion.test
+gist: "Scoped assertion gists render by default."
+scopes:
+  - repo-writable
+---
+
+# Assertion body
+`,
+  );
+  write(
+    join(bridge, "kb", "decision.md"),
+    `---
+kind: decision
+id: decision-doc
+name: decision.test
+gist: "Scoped decision gists render by default."
+scopes:
+  - repo-writable
+links:
+  - foundation-doc#frontmatter
+---
+
+# Decision body
+`,
+  );
+  write(
     join(bridge, "kb", "foundation.md"),
     `---
 kind: foundation
@@ -212,6 +242,8 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
   assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
+  assert.match(dryRun.stdout, /assertion\.md :gist/);
+  assert.match(dryRun.stdout, /decision\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
   assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
@@ -276,6 +308,8 @@ Body rendered from valid YAML frontmatter.
   ]);
   assert.doesNotMatch(writableDoc, /Target:/);
   assert.match(writableDoc, /Quoted gist: colon, "quotes", and `backticks` survive YAML parsing\./);
+  assert.match(writableDoc, /Scoped assertion gists render by default\./);
+  assert.match(writableDoc, /Scoped decision gists render by default\./);
   const writableAgentsDoc = readFileSync(join(bridge, "workspace", "writable", "AGENTS.md"), "utf8");
   assertGeneratedFrontmatter(writableAgentsDoc, "AGENTS.md", [
     `effort: "yaml-frontmatter/YamlFrontmatter.md"`,

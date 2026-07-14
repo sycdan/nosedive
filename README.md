@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/nosedive-logo-circle.png" alt="Nosedive logo" width="180" height="180">
+</p>
+
 # Nosedive: intentional velocity
 
 **_nosedive_ turns a plain notes repo into a hub for cross-repo work** — a place where a

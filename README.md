@@ -44,10 +44,6 @@ top-level effort, or add `--parent <effort>` to create a subeffort. `<effort>`
 can be a backlog path or a leaf-first effort slug chain, such as
 `baz-qux.foo-bar`. Pitch writes the new effort file locally.
 
-This model is **dogfooded**: _nosedive_ is itself built from efforts and dives,
-and the very same structure is the product surface end users get after
-installing the package.
-
 ## Development
 
 Run `npm install` once after cloning. Its `prepare` script points git at

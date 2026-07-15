@@ -35,6 +35,11 @@ _nosedive_ organizes work around two core concepts:
   is the effort slug in PascalCase, e.g. slug `foo-bar` lives at
   `./backlog/foo-bar/FooBar.md`. Subefforts are nested directories:
   `./backlog/foo-bar/baz-qux/BazQux.md`.
+- **Domain directory** — a namespace under `./backlog` with no matching
+  PascalCase effort file of its own. Domain dirs group project work without
+  being closable efforts, but they do participate in slug chains, e.g.
+  `./backlog/gogglebox/auth-refactor/AuthRefactor.md` is
+  `auth-refactor.gogglebox`.
 - **Dive** — one concrete iteration on an effort. Dives are `kind: dive` docs
   that record who is actively working, handoff notes, branch state, and linked
   artifacts.

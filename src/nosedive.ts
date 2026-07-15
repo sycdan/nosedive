@@ -239,46 +239,71 @@ interface Effort {
   gist: string;
 }
 
+interface BacklogNode {
+  slug: string;
+  effort?: Effort;
+  children: BacklogNode[];
+}
+
 interface BacklogConfig {
   bridgeDir: string;
   backlogDir: string;
 }
 
-/** Walk one effort folder: emit it if open, then recurse into child folders. */
-function walkEffort(dir: string, slug: string, ancestors: string[], out: Effort[]): void {
+function effortMarkdownInDir(dir: string, slug: string): string | undefined {
+  const expected = join(dir, `${pascalFromSlug(slug)}.md`);
+  return existsSync(expected) ? expected : undefined;
+}
+
+/** Walk one backlog directory, preserving non-effort domain directories. */
+function walkBacklogNode(dir: string, slug: string, ancestors: string[]): BacklogNode | undefined {
   const entries = readdirSync(dir, { withFileTypes: true });
-  const md = entries.find((e) => e.isFile() && e.name.endsWith(".md"));
-  if (md) {
+  const path = effortMarkdownInDir(dir, slug);
+  const chain = [slug, ...ancestors];
+  const children = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => walkBacklogNode(join(dir, e.name), e.name, chain))
+    .filter((node): node is BacklogNode => node !== undefined);
+  let effort: Effort | undefined;
+
+  if (path) {
     // Presence under backlog/ means open; finished work leaves for kb/.
-    const path = join(dir, md.name);
     const text = readFileSync(path, "utf8");
     const fm = parseFrontmatter(text, path);
-    out.push({
+    effort = {
       depth: ancestors.length,
-      chain: [slug, ...ancestors].join("."),
+      chain: chain.join("."),
       path,
       phase: fm.phase || "unknown",
       gist: fm.gist || "",
-    });
+    };
   }
-  const chain = [slug, ...ancestors];
-  for (const e of entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    walkEffort(join(dir, e.name), e.name, chain, out);
-  }
+
+  if (!effort && children.length === 0) return undefined;
+  return { slug, effort, children };
 }
 
-function collectEfforts(effortsDir: string): Effort[] {
-  const out: Effort[] = [];
+function collectBacklog(effortsDir: string): BacklogNode[] {
   let top: Dirent[];
   try {
     top = readdirSync(effortsDir, { withFileTypes: true });
   } catch {
-    return out; // missing efforts/ dir -> empty backlog
+    return []; // missing efforts/ dir -> empty backlog
   }
-  for (const e of top.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    walkEffort(join(effortsDir, e.name), e.name, [], out);
-  }
-  return out;
+  return top
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => walkBacklogNode(join(effortsDir, e.name), e.name, []))
+    .filter((node): node is BacklogNode => node !== undefined);
+}
+
+function flattenEfforts(nodes: BacklogNode[]): Effort[] {
+  return nodes.flatMap((node) => [...(node.effort ? [node.effort] : []), ...flattenEfforts(node.children)]);
+}
+
+function collectEfforts(effortsDir: string): Effort[] {
+  return flattenEfforts(collectBacklog(effortsDir));
 }
 
 function loadBacklogConfig(start: string): BacklogConfig {
@@ -288,20 +313,35 @@ function loadBacklogConfig(start: string): BacklogConfig {
   return { bridgeDir: rc.bridgeDir, backlogDir: rc.backlogDir };
 }
 
-function formatBacklog(efforts: Effort[], verbose: boolean): string {
-  if (efforts.length === 0) {
+function treeChars(): { tee: string; elbow: string; pipe: string; blank: string } {
+  if (process.env.NOSEDIVE_ASCII_TREE === "1") {
+    return { tee: "|- ", elbow: "`- ", pipe: "|  ", blank: "   " };
+  }
+  return { tee: "├─ ", elbow: "└─ ", pipe: "│  ", blank: "   " };
+}
+
+function formatBacklogNode(node: BacklogNode, prefix: string, last: boolean, verbose: boolean, lines: string[], tree = treeChars()): void {
+  const branch = last ? tree.elbow : tree.tee;
+  const childPrefix = prefix + (last ? tree.blank : tree.pipe);
+  if (node.effort) {
+    const phase = `[${node.effort.phase}]`;
+    lines.push(`${prefix}${branch}${phase} ${node.effort.chain}`);
+    if (verbose) lines.push(`${childPrefix}${node.effort.path}`);
+    if (node.effort.gist) lines.push(`${childPrefix}${truncate(node.effort.gist, 72)}`);
+  } else {
+    lines.push(`${prefix}${branch}${node.slug}/`);
+  }
+  node.children.forEach((child, index) => formatBacklogNode(child, childPrefix, index === node.children.length - 1, verbose, lines, tree));
+}
+
+function formatBacklog(nodes: BacklogNode[], verbose: boolean): string {
+  if (nodes.length === 0) {
     return "No open efforts.";
   }
 
-  // Fixed column where the slug chain starts, past the (indented) phase field.
-  const col = Math.max(13, ...efforts.map((e) => e.depth * 2 + e.phase.length + 2));
   const lines: string[] = [];
-  for (const e of efforts) {
-    const prefix = " ".repeat(e.depth * 2) + e.phase;
-    lines.push(prefix.padEnd(col) + e.chain);
-    if (verbose) lines.push(" ".repeat(col) + e.path);
-    if (e.gist) lines.push(" ".repeat(col) + truncate(e.gist, 72));
-  }
+  const tree = treeChars();
+  nodes.forEach((node, index) => formatBacklogNode(node, "", index === nodes.length - 1, verbose, lines, tree));
   return lines.join("\n");
 }
 
@@ -311,7 +351,7 @@ function dumpBacklog(args: string[]): void {
   if (unknown.length > 0) throw new Error(`unknown dump-backlog option: ${unknown[0]}`);
 
   const { backlogDir } = loadBacklogConfig(process.cwd());
-  console.log(formatBacklog(collectEfforts(backlogDir), verbose));
+  console.log(formatBacklog(collectBacklog(backlogDir), verbose));
 }
 
 function pascalFromSlug(slug: string): string {
@@ -340,16 +380,10 @@ function isInsideDir(parent: string, child: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function effortMarkdownInDir(dir: string): string | undefined {
-  const entries = readdirSync(dir, { withFileTypes: true });
-  const md = entries.filter((e) => e.isFile() && e.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
-  return md[0] ? join(dir, md[0].name) : undefined;
-}
-
 function assertEffortDirInsideBacklog(path: string, backlogDir: string, label: string): string {
   const dir = resolve(path);
   if (!isInsideDir(backlogDir, dir)) throw new Error(`${label} is outside backlog: ${path}`);
-  const effortFile = effortMarkdownInDir(dir);
+  const effortFile = effortMarkdownInDir(dir, dir.split(/[\\/]/).at(-1) ?? "");
   if (!effortFile) throw new Error(`${label} is not an effort directory: ${path}`);
   return dir;
 }
@@ -804,7 +838,7 @@ function renderWorkspaceDoc(plan: ApplyPlan): string {
     .filter((repo) => repo.readOnly && repo.repoPath)
     .map((repo) => resolveFrom(plan.bridge.bridgeDir, repo.repoPath!))
     .sort((a, b) => a.localeCompare(b));
-  const backlog = formatBacklog(collectEfforts(backlogDir), true);
+  const backlog = formatBacklog(collectBacklog(backlogDir), true);
 
   return [
     effortBody,

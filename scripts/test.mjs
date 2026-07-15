@@ -90,6 +90,8 @@ try {
   mkdirSync(join(bridge, "workspace", "readonly", "app"), { recursive: true });
   mkdirSync(join(bridge, "backlog", "yaml-frontmatter"), { recursive: true });
   mkdirSync(join(bridge, "backlog", "other-effort"), { recursive: true });
+  mkdirSync(join(bridge, "backlog", "gogglebox", "auth-refactor"), { recursive: true });
+  mkdirSync(join(bridge, "backlog", "yaml-frontmatter", ".artifacts"), { recursive: true });
   mkdirSync(join(bridge, "kb"), { recursive: true });
 
   const writableRoot = join(bridge, "workspace", "writable");
@@ -145,6 +147,30 @@ gist: "Another open effort: visible in verbose backlog output."
 ---
 
 # Other effort
+`,
+  );
+  write(
+    join(bridge, "backlog", "gogglebox", "README.md"),
+    `# Gogglebox Domain
+
+This markdown file documents the domain and must not make it an effort.
+`,
+  );
+  write(
+    join(bridge, "backlog", "gogglebox", "auth-refactor", "AuthRefactor.md"),
+    `---
+phase: shaping
+gist: "Domain-qualified effort under a project namespace."
+---
+
+# Auth Refactor
+`,
+  );
+  write(
+    join(bridge, "backlog", "yaml-frontmatter", ".artifacts", "proof.md"),
+    `# Proof
+
+Artifact markdown must not be discovered as an effort.
 `,
   );
   write(
@@ -279,6 +305,11 @@ Body rendered from valid YAML frontmatter.
   assertOk(verboseBacklog, "dump-backlog --verbose failed");
   assertContainsPath(verboseBacklog.stdout, join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"));
   assertContainsPath(verboseBacklog.stdout, join(bridge, "backlog", "other-effort", "OtherEffort.md"));
+  assertContainsPath(verboseBacklog.stdout, join(bridge, "backlog", "gogglebox", "auth-refactor", "AuthRefactor.md"));
+  assert.match(verboseBacklog.stdout, /[├└]─ gogglebox\//);
+  assert.match(verboseBacklog.stdout, /\[shaping\] auth-refactor\.gogglebox/);
+  assert.doesNotMatch(verboseBacklog.stdout, /\[unknown\] gogglebox/);
+  assert.doesNotMatch(verboseBacklog.stdout, /\.artifacts/);
 
   const apply = run(["apply"], bridge);
   assertOk(apply, "apply failed");
@@ -417,6 +448,8 @@ scopes:
 
   const pitchBridge = join(tmp, "pitch-bridge");
   mkdirSync(join(pitchBridge, "backlog", "parent-effort"), { recursive: true });
+  mkdirSync(join(pitchBridge, "backlog", "gogglebox", "auth-refactor"), { recursive: true });
+  mkdirSync(join(pitchBridge, "backlog", "other", "auth-refactor"), { recursive: true });
   runTool("git", ["init", "-b", "main"], pitchBridge);
   runTool("git", ["config", "user.name", "Nosedive Test"], pitchBridge);
   runTool("git", ["config", "user.email", "nosedive@example.invalid"], pitchBridge);
@@ -436,7 +469,37 @@ gist: "Parent effort for pitch tests."
 # Parent Effort
 `,
   );
-  runTool("git", ["add", ".nosediverc", "backlog/parent-effort/ParentEffort.md"], pitchBridge);
+  write(
+    join(pitchBridge, "backlog", "gogglebox", "auth-refactor", "AuthRefactor.md"),
+    `---
+phase: shaping
+gist: "Gogglebox auth parent."
+---
+
+# Auth Refactor
+`,
+  );
+  write(
+    join(pitchBridge, "backlog", "other", "auth-refactor", "AuthRefactor.md"),
+    `---
+phase: shaping
+gist: "Other auth parent."
+---
+
+# Auth Refactor
+`,
+  );
+  runTool(
+    "git",
+    [
+      "add",
+      ".nosediverc",
+      "backlog/parent-effort/ParentEffort.md",
+      "backlog/gogglebox/auth-refactor/AuthRefactor.md",
+      "backlog/other/auth-refactor/AuthRefactor.md",
+    ],
+    pitchBridge,
+  );
   runTool("git", ["commit", "-m", "Seed pitch bridge"], pitchBridge);
 
   const pitchByChain = run(
@@ -472,6 +535,12 @@ gist: "Parent effort for pitch tests."
   assert.match(childByPathText, /gist: "Path child gist\."/);
   assert.match(childByPathText, /Path child gist\./);
 
+  const pitchByDomainChain = run(["pitch", "domain-child", "--gist=Domain child gist.", "--parent", "auth-refactor.gogglebox"], pitchBridge);
+  assertOk(pitchByDomainChain, "pitch by domain-qualified slug chain failed");
+  const domainChild = join(pitchBridge, "backlog", "gogglebox", "auth-refactor", "domain-child", "DomainChild.md");
+  assert.equal(existsSync(domainChild), true);
+  assert.match(readFileSync(domainChild, "utf8"), /gist: "Domain child gist\."/);
+
   const pitchWithSlugOnly = run(["pitch", "top-level-slug-only"], pitchBridge);
   assertOk(pitchWithSlugOnly, "pitch with slug only failed");
   const topLevel = join(pitchBridge, "backlog", "top-level-slug-only", "TopLevelSlugOnly.md");
@@ -482,12 +551,14 @@ gist: "Parent effort for pitch tests."
 
   const pitchLog = runTool("git", ["log", "--oneline", "--max-count=3"], pitchBridge).stdout;
   assert.doesNotMatch(pitchLog, /Pitch top-level-slug-only/);
+  assert.doesNotMatch(pitchLog, /Pitch domain-child/);
   assert.doesNotMatch(pitchLog, /Pitch child-effort-from-path/);
   assert.doesNotMatch(pitchLog, /Pitch child-effort-from-slug-chain/);
   assert.match(pitchLog, /Seed pitch bridge/);
   const pitchStatus = runTool("git", ["status", "--short", "--untracked-files=all"], pitchBridge).stdout;
   assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-slug-chain\/ChildEffortFromSlugChain\.md/);
   assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-path\/ChildEffortFromPath\.md/);
+  assert.match(pitchStatus, /\?\? backlog\/gogglebox\/auth-refactor\/domain-child\/DomainChild\.md/);
   assert.match(pitchStatus, /\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/);
 
   write(

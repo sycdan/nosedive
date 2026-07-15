@@ -42,6 +42,7 @@ try {
   const help = runNpm(["exec", "--yes", "--package", `./${packed.filename}`, "-c", "nosedive --help"]);
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /dump-backlog/);
+  assert.match(help.stdout, /pitch/);
 } finally {
   rmSync(packed.filename, { force: true });
 }

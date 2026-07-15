@@ -83,6 +83,7 @@ try {
   assertOk(help, "--help command failed");
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /dump-backlog/);
+  assert.match(help.stdout, /pitch/);
 
   const bridge = join(tmp, "bridge");
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });
@@ -413,6 +414,81 @@ scopes:
   assert.match(activeDoc, /Bridge foundation body renders without a scope\./);
   assert.doesNotMatch(activeDoc, /Scoped convention should not render from kb-only config\./);
   assert.equal(existsSync(join(activeBridge, "workspace", "CLAUDE.md")), false);
+
+  const pitchBridge = join(tmp, "pitch-bridge");
+  mkdirSync(join(pitchBridge, "backlog", "parent-effort"), { recursive: true });
+  runTool("git", ["init", "-b", "main"], pitchBridge);
+  runTool("git", ["config", "user.name", "Nosedive Test"], pitchBridge);
+  runTool("git", ["config", "user.email", "nosedive@example.invalid"], pitchBridge);
+  write(
+    join(pitchBridge, ".nosediverc"),
+    `backlog: ./backlog
+kb: ./kb
+`,
+  );
+  write(
+    join(pitchBridge, "backlog", "parent-effort", "ParentEffort.md"),
+    `---
+phase: shaping
+gist: "Parent effort for pitch tests."
+---
+
+# Parent Effort
+`,
+  );
+  runTool("git", ["add", ".nosediverc", "backlog/parent-effort/ParentEffort.md"], pitchBridge);
+  runTool("git", ["commit", "-m", "Seed pitch bridge"], pitchBridge);
+
+  const pitchByChain = run(
+    [
+      "pitch",
+      "child-effort-from-slug-chain",
+      "--gist",
+      "Short slug-chain child gist.",
+      "--pitch",
+      "Longer pitch text for the slug-chain child.",
+      "--parent",
+      "parent-effort",
+    ],
+    pitchBridge,
+  );
+  assertOk(pitchByChain, "pitch by slug chain failed");
+  assert.match(pitchByChain.stdout, /Pitched .*ChildEffortFromSlugChain\.md/);
+  assert.doesNotMatch(pitchByChain.stdout, /Pushed bridge branch/);
+
+  const childByChain = join(pitchBridge, "backlog", "parent-effort", "child-effort-from-slug-chain", "ChildEffortFromSlugChain.md");
+  assert.equal(existsSync(childByChain), true);
+  const childByChainText = readFileSync(childByChain, "utf8");
+  assert.match(childByChainText, /phase: framing/);
+  assert.match(childByChainText, /gist: "Short slug-chain child gist\."/);
+  assert.match(childByChainText, /# Child Effort From Slug Chain/);
+  assert.match(childByChainText, /Longer pitch text for the slug-chain child\./);
+
+  const pitchByPath = run(["pitch", "child-effort-from-path", "--gist=Path child gist.", "--parent", "backlog/parent-effort/ParentEffort.md"], pitchBridge);
+  assertOk(pitchByPath, "pitch by backlog path failed");
+  const childByPath = join(pitchBridge, "backlog", "parent-effort", "child-effort-from-path", "ChildEffortFromPath.md");
+  assert.equal(existsSync(childByPath), true);
+  const childByPathText = readFileSync(childByPath, "utf8");
+  assert.match(childByPathText, /gist: "Path child gist\."/);
+  assert.match(childByPathText, /Path child gist\./);
+
+  const pitchWithSlugOnly = run(["pitch", "top-level-slug-only"], pitchBridge);
+  assertOk(pitchWithSlugOnly, "pitch with slug only failed");
+  const topLevel = join(pitchBridge, "backlog", "top-level-slug-only", "TopLevelSlugOnly.md");
+  assert.equal(existsSync(topLevel), true);
+  const topLevelText = readFileSync(topLevel, "utf8");
+  assert.match(topLevelText, /gist: "Top Level Slug Only"/);
+  assert.match(topLevelText, /Top Level Slug Only/);
+
+  const pitchLog = runTool("git", ["log", "--oneline", "--max-count=3"], pitchBridge).stdout;
+  assert.doesNotMatch(pitchLog, /Pitch top-level-slug-only/);
+  assert.doesNotMatch(pitchLog, /Pitch child-effort-from-path/);
+  assert.doesNotMatch(pitchLog, /Pitch child-effort-from-slug-chain/);
+  assert.match(pitchLog, /Seed pitch bridge/);
+  const pitchStatus = runTool("git", ["status", "--short", "--untracked-files=all"], pitchBridge).stdout;
+  assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-slug-chain\/ChildEffortFromSlugChain\.md/);
+  assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-path\/ChildEffortFromPath\.md/);
+  assert.match(pitchStatus, /\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/);
 
   write(
     join(bridge, "kb", "bad.md"),

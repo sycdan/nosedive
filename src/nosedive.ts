@@ -43,6 +43,7 @@ const USAGE = `Usage: nosedive <command>
 Commands:
   version       Print the package version
   dump-backlog  Print the open efforts in the configured backlog
+  pitch         Create a new effort in the backlog
   apply         Materialize scoped agent docs for the current effort
 `;
 
@@ -311,6 +312,148 @@ function dumpBacklog(args: string[]): void {
 
   const { backlogDir } = loadBacklogConfig(process.cwd());
   console.log(formatBacklog(collectEfforts(backlogDir), verbose));
+}
+
+function pascalFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join("");
+}
+
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function assertSlug(slug: string, label: string): string {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    throw new Error(`${label} must be kebab-case: ${slug}`);
+  }
+  return slug;
+}
+
+function isInsideDir(parent: string, child: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function effortMarkdownInDir(dir: string): string | undefined {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const md = entries.filter((e) => e.isFile() && e.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
+  return md[0] ? join(dir, md[0].name) : undefined;
+}
+
+function assertEffortDirInsideBacklog(path: string, backlogDir: string, label: string): string {
+  const dir = resolve(path);
+  if (!isInsideDir(backlogDir, dir)) throw new Error(`${label} is outside backlog: ${path}`);
+  const effortFile = effortMarkdownInDir(dir);
+  if (!effortFile) throw new Error(`${label} is not an effort directory: ${path}`);
+  return dir;
+}
+
+function resolveParentEffortDir(parentRef: string, bridgeDir: string, backlogDir: string): string {
+  const pathCandidates = [
+    isAbsolute(parentRef) ? resolve(parentRef) : undefined,
+    resolve(bridgeDir, parentRef),
+    resolve(backlogDir, parentRef),
+  ].filter((candidate): candidate is string => candidate !== undefined);
+
+  for (const candidate of pathCandidates) {
+    if (!existsSync(candidate)) continue;
+    const stats = statSync(candidate);
+    if (stats.isFile()) {
+      if (!candidate.endsWith(".md")) throw new Error(`parent path is not an effort markdown file: ${parentRef}`);
+      const dir = dirname(candidate);
+      if (!isInsideDir(backlogDir, dir)) throw new Error(`parent path is outside backlog: ${parentRef}`);
+      return assertEffortDirInsideBacklog(dir, backlogDir, `parent path ${parentRef}`);
+    }
+    if (stats.isDirectory()) return assertEffortDirInsideBacklog(candidate, backlogDir, `parent path ${parentRef}`);
+  }
+
+  const matches = collectEfforts(backlogDir).filter((effort) => effort.chain === parentRef);
+  if (matches.length === 1) return dirname(matches[0]!.path);
+  if (matches.length > 1) throw new Error(`parent effort is ambiguous: ${parentRef}`);
+  throw new Error(`parent effort not found: ${parentRef}`);
+}
+
+function parsePitchArgs(args: string[]): { slug: string; gist: string; pitch: string; parent?: string } {
+  let slug: string | undefined;
+  let pitchText: string | undefined;
+  let gistText: string | undefined;
+  let parent: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--parent" || arg === "--pitch" || arg === "--gist") {
+      const value = args[i + 1];
+      if (!value) throw new Error(`${arg} requires a value`);
+      if (arg === "--parent") parent = value;
+      if (arg === "--pitch") pitchText = value;
+      if (arg === "--gist") gistText = value;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--parent=")) {
+      parent = arg.slice("--parent=".length);
+      if (!parent) throw new Error("--parent requires an effort path or slug chain");
+      continue;
+    }
+    if (arg.startsWith("--pitch=")) {
+      pitchText = arg.slice("--pitch=".length);
+      if (!pitchText) throw new Error("--pitch requires a value");
+      continue;
+    }
+    if (arg.startsWith("--gist=")) {
+      gistText = arg.slice("--gist=".length);
+      if (!gistText) throw new Error("--gist requires a value");
+      continue;
+    }
+    if (arg.startsWith("--")) throw new Error(`unknown pitch option: ${arg}`);
+    if (slug) throw new Error(`unexpected pitch argument: ${arg}`);
+    slug = assertSlug(arg, "pitch slug");
+  }
+
+  if (!slug) throw new Error("pitch requires a slug");
+  const defaultText = titleFromSlug(slug);
+  const pitch = (pitchText ?? gistText ?? defaultText).trim();
+  const gist = (gistText ?? pitchText ?? defaultText).trim();
+  if (!pitch) throw new Error("pitch text cannot be empty");
+  if (!gist) throw new Error("gist cannot be empty");
+  return { slug, gist, pitch, parent };
+}
+
+function renderPitchedEffort(slug: string, gist: string, pitchText: string): string {
+  const title = titleFromSlug(slug);
+  return [
+    "---",
+    "phase: framing",
+    `gist: ${quoteYamlString(gist)}`,
+    "---",
+    "",
+    `# ${title}`,
+    "",
+    "## Framing",
+    "",
+    pitchText,
+    "",
+  ].join("\n");
+}
+
+function pitch(args: string[]): void {
+  const { slug, gist, pitch: pitchText, parent } = parsePitchArgs(args);
+  const { bridgeDir, backlogDir } = loadBacklogConfig(process.cwd());
+  const parentDir = parent ? resolveParentEffortDir(parent, bridgeDir, backlogDir) : backlogDir;
+  if (!existsSync(backlogDir)) mkdirSync(backlogDir, { recursive: true });
+
+  const effortDir = join(parentDir, slug);
+  if (existsSync(effortDir)) throw new Error(`effort already exists: ${formatPath(effortDir)}`);
+  const effortPath = join(effortDir, `${pascalFromSlug(slug)}.md`);
+  writeFileAtomic(effortPath, renderPitchedEffort(slug, gist, pitchText));
+
+  console.log(`Pitched ${formatPath(effortPath)}`);
 }
 
 // --- apply -----------------------------------------------------------------
@@ -908,6 +1051,9 @@ export function runCli(argv = process.argv.slice(2)): void {
       break;
     case "dump-backlog":
       dumpBacklog(args);
+      break;
+    case "pitch":
+      pitch(args);
       break;
     case "apply":
       apply(args);

@@ -22,20 +22,26 @@ _nosedive_ addresses these by making the unit of work a first-class, on-disk obj
 creating effort-scoped multi-repo workspaces, and by routing developer actions through
 explicit, contract-checked commands that are equally safe for a human or an agent to run.
 
-## Efforts and sessions
+## Efforts and dives
 
-_nosedive_ organizes work around two core concepts, both of which live as plain files on disk:
+_nosedive_ organizes work around two core concepts:
 
-- **Effort** — a unit of (potentially cross-repo) work to be designed and built. Each effort
-  has a plan document and lives under `./backlog`. The `EffortName` is the
-  effort slug in PascalCase, e.g. slug `foo-bar` → `./backlog/foo-bar/FooBar.md`. Sub-efforts are just
-  nested directories: `./backlog/foo-bar/baz-qux/BazQux.md`.
-- **Session** — an actual working session on an effort. Sessions live under
-  `./sessions`. Starting or resuming a session is how a developer (or agent)
-  "picks up" an effort and gets back into context.
+- **Effort** — a unit of (potentially cross-repo) work to be designed and built.
+  Efforts are canonical, discrete objects under `./backlog`. The `EffortName`
+  is the effort slug in PascalCase, e.g. slug `foo-bar` lives at
+  `./backlog/foo-bar/FooBar.md`. Subefforts are nested directories:
+  `./backlog/foo-bar/baz-qux/BazQux.md`.
+- **Dive** — one concrete iteration on an effort. Dives are `kind: dive` docs
+  that record who is actively working, handoff notes, branch state, and linked
+  artifacts.
 
-This model is **dogfooded**: _nosedive_ is itself built from a set of efforts and
-sessions, and the very same structure is the product surface end users get after
+Run `nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"]` to create a
+top-level effort, or add `--parent <effort>` to create a subeffort. `<effort>`
+can be a backlog path or a leaf-first effort slug chain, such as
+`baz-qux.foo-bar`. Pitch writes the new effort file locally.
+
+This model is **dogfooded**: _nosedive_ is itself built from efforts and dives,
+and the very same structure is the product surface end users get after
 installing the package.
 
 ## Development

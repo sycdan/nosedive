@@ -575,6 +575,8 @@ gist: "Other auth parent."
   runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "alpha"));
   runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "beta"));
   runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "gamma"));
+  const longFeatureGist =
+    "Feature effort for add-repo tests with a deliberately long one-line gist that must not be wrapped or otherwise reformatted when repos are appended.";
   write(
     join(addRepoBridge, ".nosediverc"),
     `workspace: ./workspace
@@ -586,7 +588,7 @@ kb: ./kb
     join(addRepoBridge, "backlog", "feature", "Feature.md"),
     `---
 phase: building
-gist: "Feature effort for add-repo tests."
+gist: "${longFeatureGist}"
 custom: keep-me
 repos:
   - repo-alpha
@@ -701,10 +703,11 @@ meta:
 `,
   );
 
-  const addById = run(["add-repo", "repo-beta", "--effort", "feature"], addRepoBridge);
+  const addById = run(["add-repo", "repo-beta", "--effort", "../../backlog/feature/Feature.md"], join(addRepoBridge, "workspace", "alpha"));
   assertOk(addById, "add-repo by id failed");
   assert.match(addById.stdout, /Added repo-beta to .*Feature\.md/);
   const featureAfterId = readFileSync(join(addRepoBridge, "backlog", "feature", "Feature.md"), "utf8");
+  assert.match(featureAfterId, new RegExp(`gist: "${escapeRegExp(longFeatureGist)}"\\ncustom: keep-me`));
   assert.match(featureAfterId, /custom: keep-me/);
   assert.match(featureAfterId, /repos:\n  - repo-alpha\n  - repo-beta/);
   assert.match(featureAfterId, /Do not rewrite this body\./);

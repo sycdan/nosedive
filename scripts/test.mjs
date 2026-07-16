@@ -222,10 +222,24 @@ id: assertion-doc
 name: assertion.test
 gist: "Scoped assertion gists render by default."
 scopes:
-  - repo-writable
+  - repo-writable@abc123:ro,gist
 ---
 
 # Assertion body
+`,
+  );
+  write(
+    join(bridge, "kb", "old-colon-scope.md"),
+    `---
+kind: assertion
+id: old-colon-scope
+name: old-colon-scope.test
+gist: "Old multi-colon scopes do not render."
+scopes:
+  - repo-writable:ro:gist
+---
+
+# Old colon scope body
 `,
   );
   write(
@@ -271,6 +285,7 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
   assert.match(dryRun.stdout, /assertion\.md :gist/);
+  assert.doesNotMatch(dryRun.stdout, /old-colon-scope\.md/);
   assert.match(dryRun.stdout, /decision\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
@@ -342,6 +357,7 @@ Body rendered from valid YAML frontmatter.
   assert.doesNotMatch(writableDoc, /Target:/);
   assert.match(writableDoc, /Quoted gist: colon, "quotes", and `backticks` survive YAML parsing\./);
   assert.match(writableDoc, /Scoped assertion gists render by default\./);
+  assert.doesNotMatch(writableDoc, /Old multi-colon scopes do not render\./);
   assert.match(writableDoc, /Scoped decision gists render by default\./);
   const writableAgentsDoc = readFileSync(join(bridge, "workspace", "writable", "AGENTS.md"), "utf8");
   assertGeneratedFrontmatter(writableAgentsDoc, "AGENTS.md", [

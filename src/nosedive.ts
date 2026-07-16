@@ -12,7 +12,7 @@ import {
   writeFileSync,
   type Dirent,
 } from "node:fs";
-import { parse as parseYaml, parseDocument } from "yaml";
+import { isSeq, parse as parseYaml, parseDocument } from "yaml";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -44,6 +44,7 @@ Commands:
   version       Print the package version
   dump-backlog  Print the open efforts in the configured backlog
   pitch         Create a new effort in the backlog
+  add-repo      Add a kb repo to an effort's workspace
   apply         Materialize scoped agent docs for the current effort
 `;
 
@@ -57,6 +58,11 @@ interface SimpleYaml {
 
 interface MarkdownDoc {
   fm: SimpleYaml;
+  body: string;
+}
+
+interface MarkdownFrontmatterBlock {
+  yaml: string;
   body: string;
 }
 
@@ -135,6 +141,17 @@ function parseMarkdownDoc(text: string, label = "markdown frontmatter"): Markdow
   const bodyStart = text.indexOf("\n", end + 4);
   return {
     fm: parseYamlBlock(text.slice(3, end), `frontmatter in ${label}`),
+    body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
+  };
+}
+
+function splitMarkdownFrontmatter(text: string, label = "markdown document"): MarkdownFrontmatterBlock {
+  if (!text.startsWith("---")) throw new Error(`${label} is missing YAML frontmatter`);
+  const end = text.indexOf("\n---", 3);
+  if (end === -1) throw new Error(`${label} has unterminated YAML frontmatter`);
+  const bodyStart = text.indexOf("\n", end + 4);
+  return {
+    yaml: text.slice(3, end),
     body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
   };
 }
@@ -413,6 +430,38 @@ function resolveParentEffortDir(parentRef: string, bridgeDir: string, backlogDir
   throw new Error(`parent effort not found: ${parentRef}`);
 }
 
+function resolveEffortPath(effortRef: string, bridgeDir: string, backlogDir: string, label = "effort"): string {
+  const pathCandidates = [
+    isAbsolute(effortRef) ? resolve(effortRef) : undefined,
+    resolve(bridgeDir, effortRef),
+    resolve(backlogDir, effortRef),
+  ].filter((candidate): candidate is string => candidate !== undefined);
+
+  for (const candidate of pathCandidates) {
+    if (!existsSync(candidate)) continue;
+    const stats = statSync(candidate);
+    if (stats.isFile()) {
+      if (!candidate.endsWith(".md")) throw new Error(`${label} path is not an effort markdown file: ${effortRef}`);
+      if (!isInsideDir(backlogDir, candidate)) throw new Error(`${label} path is outside backlog: ${effortRef}`);
+      return candidate;
+    }
+    if (stats.isDirectory()) {
+      const dir = assertEffortDirInsideBacklog(candidate, backlogDir, `${label} path ${effortRef}`);
+      const slug = dir.split(/[\\/]/).at(-1) ?? "";
+      return join(dir, `${pascalFromSlug(slug)}.md`);
+    }
+  }
+
+  const matches = collectEfforts(backlogDir).filter((effort) => effort.chain === effortRef);
+  if (matches.length === 1) return matches[0]!.path;
+  if (matches.length > 1) throw new Error(`${label} is ambiguous: ${effortRef}`);
+  throw new Error(`${label} not found: ${effortRef}`);
+}
+
+function effortRefFromPath(effortPath: string, backlogDir: string): string {
+  return relative(backlogDir, effortPath).replaceAll("\\", "/");
+}
+
 function parsePitchArgs(args: string[]): { slug: string; gist: string; pitch: string; parent?: string } {
   let slug: string | undefined;
   let pitchText: string | undefined;
@@ -515,6 +564,7 @@ interface KbDoc {
   path: string;
   relPath: string;
   id: string;
+  name: string;
   kind: string;
   gist: string;
   repoPath?: string;
@@ -549,9 +599,38 @@ interface ApplyPlan {
   warnings: string[];
 }
 
+function currentDeveloperId(bridgeDir: string): string | undefined {
+  return gitOutput(bridgeDir, ["config", "user.email"]) || gitOutput(bridgeDir, ["config", "user.name"]);
+}
+
+function heldDiveEffortRefs(rc: NosediveRc): string[] {
+  if (!rc.kbDir || !rc.backlogDir) return [];
+  const developer = currentDeveloperId(rc.bridgeDir);
+  if (!developer) return [];
+
+  return readdirSync(rc.kbDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => {
+      const path = join(rc.kbDir!, entry.name);
+      const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"), path);
+      if (fm.scalars.kind !== "dive") return undefined;
+      if (fm.nested.meta?.diver !== developer) return undefined;
+      return fm.scalars.effort;
+    })
+    .filter((effort): effort is string => Boolean(effort));
+}
+
+function activeEffortRefFromHeldDive(rc: NosediveRc): string | undefined {
+  if (!rc.backlogDir) return undefined;
+  const held = heldDiveEffortRefs(rc);
+  if (held.length === 0) return undefined;
+  if (held.length > 1) throw new Error(`developer has more than one held dive: ${held.join(", ")}`);
+  return effortRefFromPath(resolveEffortPath(held[0]!, rc.bridgeDir, rc.backlogDir, "held dive effort"), rc.backlogDir);
+}
+
 function loadBridgeConfig(start: string): BridgeConfig {
   const rc = readNosediveRc(start);
-  const effort = rc.current.effort;
+  const effort = rc.current.effort ?? activeEffortRefFromHeldDive(rc);
 
   if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 
@@ -625,6 +704,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         path,
         relPath: relative(bridgeDir, path),
         id: fm.scalars.id,
+        name: fm.scalars.name,
         kind: fm.scalars.kind,
         gist: fm.scalars.gist,
         repoPath: fm.nested.meta?.path,
@@ -632,6 +712,139 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         scopes: fm.lists.scopes ?? [],
       };
     });
+}
+
+interface AddRepoOptions {
+  repoRef: string;
+  effortRef?: string;
+  repoEntryRef?: string;
+  readOnly: boolean;
+  apply: boolean;
+}
+
+function parseAddRepoArgs(args: string[]): AddRepoOptions {
+  let repoRef: string | undefined;
+  let effortRef: string | undefined;
+  let repoEntryRef: string | undefined;
+  let readOnly = false;
+  let shouldApply = true;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--effort" || arg === "--ref") {
+      const value = args[i + 1];
+      if (!value) throw new Error(`${arg} requires a value`);
+      if (arg === "--effort") effortRef = value;
+      if (arg === "--ref") repoEntryRef = value;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--effort=")) {
+      effortRef = arg.slice("--effort=".length);
+      if (!effortRef) throw new Error("--effort requires a value");
+      continue;
+    }
+    if (arg.startsWith("--ref=")) {
+      repoEntryRef = arg.slice("--ref=".length);
+      if (!repoEntryRef) throw new Error("--ref requires a value");
+      continue;
+    }
+    if (arg === "--read-only" || arg === "--ro") {
+      readOnly = true;
+      continue;
+    }
+    if (arg === "--no-apply") {
+      shouldApply = false;
+      continue;
+    }
+    if (arg.startsWith("--")) throw new Error(`unknown add-repo option: ${arg}`);
+    if (repoRef) throw new Error(`unexpected add-repo argument: ${arg}`);
+    repoRef = arg;
+  }
+
+  if (!repoRef) throw new Error("add-repo requires a repo id or name");
+  if (repoEntryRef?.includes(":")) throw new Error(`repo ref cannot contain ':': ${repoEntryRef}`);
+  return { repoRef, effortRef, repoEntryRef, readOnly, apply: shouldApply };
+}
+
+function repoDocs(kbDocs: KbDoc[]): KbDoc[] {
+  return kbDocs.filter((doc) => doc.kind === "repo");
+}
+
+function resolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc {
+  const byId = repoDocs(kbDocs).filter((doc) => doc.id === repoRef);
+  if (byId.length === 1) return byId[0]!;
+
+  const byName = repoDocs(kbDocs).filter((doc) => doc.name === repoRef);
+  if (byName.length === 1) return byName[0]!;
+  if (byName.length > 1) {
+    throw new Error(`repo name is ambiguous: ${repoRef} (${byName.map((doc) => doc.id).join(", ")})`);
+  }
+  throw new Error(`repo not found: ${repoRef}`);
+}
+
+function formatEffortRepoEntry(repoId: string, ref: string | undefined, readOnly: boolean): string {
+  return `${repoId}${ref ? `@${ref}` : ""}${readOnly ? ":ro" : ""}`;
+}
+
+function appendRepoToEffort(path: string, repo: EffortRepo): string {
+  const existing = parseEffortRepos(path);
+  if (existing.some((entry) => entry.id === repo.id)) throw new Error(`effort already includes repo ${repo.id}: ${formatPath(path)}`);
+
+  const text = readFileSync(path, "utf8");
+  const frontmatter = splitMarkdownFrontmatter(text, path);
+  const doc = parseDocument(frontmatter.yaml);
+  if (doc.errors.length > 0) throw new Error(`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`);
+
+  const entry = formatEffortRepoEntry(repo.id, repo.ref, repo.readOnly);
+  const repos = doc.get("repos", true);
+  if (repos === undefined || repos === null) {
+    doc.set("repos", [entry]);
+  } else if (isSeq(repos)) {
+    repos.add(entry);
+  } else {
+    throw new Error(`invalid effort repos in ${path}: expected a YAML list`);
+  }
+
+  writeFileAtomic(path, ["---", doc.toString().trimEnd(), "---", frontmatter.body].join("\n"));
+  return entry;
+}
+
+function activeEffortPath(rc: NosediveRc): string | undefined {
+  if (!rc.backlogDir) return undefined;
+  const effortRef = rc.current.effort ?? activeEffortRefFromHeldDive(rc);
+  return effortRef ? resolveEffortPath(effortRef, rc.bridgeDir, rc.backlogDir, "active effort") : undefined;
+}
+
+function resolveAddRepoEffort(rc: NosediveRc, options: AddRepoOptions): { path: string; active: boolean } {
+  if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
+
+  const activePath = activeEffortPath(rc);
+  if (options.effortRef) {
+    const explicitPath = resolveEffortPath(options.effortRef, rc.bridgeDir, rc.backlogDir, "effort");
+    return { path: explicitPath, active: activePath === explicitPath };
+  }
+  if (!activePath) throw new Error("add-repo requires --effort when no held dive or current effort is active");
+  return { path: activePath, active: true };
+}
+
+function addRepo(args: string[]): void {
+  const options = parseAddRepoArgs(args);
+  const rc = readNosediveRc(process.cwd());
+  if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+
+  const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+  const repoDoc = resolveRepoDoc(kbDocs, options.repoRef);
+  const effort = resolveAddRepoEffort(rc, options);
+  appendRepoToEffort(effort.path, { id: repoDoc.id, ref: options.repoEntryRef, readOnly: options.readOnly });
+
+  console.log(`Added ${repoDoc.id} to ${formatPath(effort.path)}`);
+
+  if (options.apply && effort.active && rc.workspaceDir) {
+    applyWrite();
+  } else if (options.apply && !effort.active) {
+    console.log("Generated docs not updated because the target effort is not active.");
+  }
 }
 
 function parseScopeRef(scope: string): ScopeRef | undefined {
@@ -1088,6 +1301,9 @@ export function runCli(argv = process.argv.slice(2)): void {
       break;
     case "pitch":
       pitch(args);
+      break;
+    case "add-repo":
+      addRepo(args);
       break;
     case "apply":
       apply(args);

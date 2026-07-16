@@ -84,6 +84,7 @@ try {
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
+  assert.match(help.stdout, /add-repo/);
 
   const bridge = join(tmp, "bridge");
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });
@@ -560,6 +561,183 @@ gist: "Other auth parent."
   assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-path\/ChildEffortFromPath\.md/);
   assert.match(pitchStatus, /\?\? backlog\/gogglebox\/auth-refactor\/domain-child\/DomainChild\.md/);
   assert.match(pitchStatus, /\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/);
+
+  const addRepoBridge = join(tmp, "add-repo-bridge");
+  mkdirSync(join(addRepoBridge, "backlog", "feature"), { recursive: true });
+  mkdirSync(join(addRepoBridge, "backlog", "held-feature"), { recursive: true });
+  mkdirSync(join(addRepoBridge, "kb"), { recursive: true });
+  mkdirSync(join(addRepoBridge, "workspace", "alpha"), { recursive: true });
+  mkdirSync(join(addRepoBridge, "workspace", "beta"), { recursive: true });
+  mkdirSync(join(addRepoBridge, "workspace", "gamma"), { recursive: true });
+  runTool("git", ["init", "-b", "main"], addRepoBridge);
+  runTool("git", ["config", "user.email", "dev@example.invalid"], addRepoBridge);
+  runTool("git", ["config", "user.name", "Nosedive Dev"], addRepoBridge);
+  runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "alpha"));
+  runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "beta"));
+  runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "gamma"));
+  write(
+    join(addRepoBridge, ".nosediverc"),
+    `workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+`,
+  );
+  write(
+    join(addRepoBridge, "backlog", "feature", "Feature.md"),
+    `---
+phase: building
+gist: "Feature effort for add-repo tests."
+custom: keep-me
+repos:
+  - repo-alpha
+---
+
+# Feature
+
+Do not rewrite this body.
+`,
+  );
+  write(
+    join(addRepoBridge, "backlog", "held-feature", "HeldFeature.md"),
+    `---
+phase: building
+gist: "Held feature effort for add-repo tests."
+repos:
+  - repo-alpha
+---
+
+# Held Feature
+
+Active workspace docs should be regenerated.
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "repo-alpha.md"),
+    `---
+kind: repo
+id: repo-alpha
+name: alpha
+gist: "Alpha repo."
+meta:
+  path: workspace/alpha
+---
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "repo-beta.md"),
+    `---
+kind: repo
+id: repo-beta
+name: beta
+gist: "Beta repo."
+meta:
+  path: workspace/beta
+---
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "repo-gamma.md"),
+    `---
+kind: repo
+id: repo-gamma
+name: gamma
+gist: "Gamma repo."
+meta:
+  path: workspace/gamma
+---
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "repo-duplicate-a.md"),
+    `---
+kind: repo
+id: repo-duplicate-a
+name: duplicate
+gist: "First duplicate repo."
+meta:
+  path: workspace/duplicate-a
+---
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "repo-duplicate-b.md"),
+    `---
+kind: repo
+id: repo-duplicate-b
+name: duplicate
+gist: "Second duplicate repo."
+meta:
+  path: workspace/duplicate-b
+---
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "gamma-convention.md"),
+    `---
+kind: convention
+id: gamma-convention
+name: gamma.test
+gist: "Gamma convention generated after add-repo."
+scopes:
+  - repo-gamma
+---
+
+# Gamma convention body
+`,
+  );
+  write(
+    join(addRepoBridge, "kb", "held-dive.md"),
+    `---
+kind: dive
+id: held-dive
+name: held-feature.abcdef
+gist: "Held dive for add-repo tests."
+effort: backlog/held-feature/HeldFeature.md
+meta:
+  diver: dev@example.invalid
+---
+
+# Held dive
+`,
+  );
+
+  const addById = run(["add-repo", "repo-beta", "--effort", "feature"], addRepoBridge);
+  assertOk(addById, "add-repo by id failed");
+  assert.match(addById.stdout, /Added repo-beta to .*Feature\.md/);
+  const featureAfterId = readFileSync(join(addRepoBridge, "backlog", "feature", "Feature.md"), "utf8");
+  assert.match(featureAfterId, /custom: keep-me/);
+  assert.match(featureAfterId, /repos:\n  - repo-alpha\n  - repo-beta/);
+  assert.match(featureAfterId, /Do not rewrite this body\./);
+
+  const addWithModifiers = run(["add-repo", "gamma", "--effort", "feature", "--ref", "release/candidate", "--read-only", "--no-apply"], addRepoBridge);
+  assertOk(addWithModifiers, "add-repo with modifiers failed");
+  const featureAfterModifiers = readFileSync(join(addRepoBridge, "backlog", "feature", "Feature.md"), "utf8");
+  assert.match(featureAfterModifiers, /  - repo-gamma@release\/candidate:ro/);
+  assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")), false);
+
+  const duplicateAdd = run(["add-repo", "repo-beta", "--effort", "feature"], addRepoBridge);
+  assert.notEqual(duplicateAdd.status, 0, "duplicate add-repo unexpectedly succeeded");
+  assert.match(duplicateAdd.stderr, /effort already includes repo repo-beta/);
+
+  const ambiguousAdd = run(["add-repo", "duplicate", "--effort", "feature"], addRepoBridge);
+  assert.notEqual(ambiguousAdd.status, 0, "ambiguous add-repo unexpectedly succeeded");
+  assert.match(ambiguousAdd.stderr, /repo name is ambiguous: duplicate/);
+  assert.match(ambiguousAdd.stderr, /repo-duplicate-a/);
+  assert.match(ambiguousAdd.stderr, /repo-duplicate-b/);
+
+  const addFromHeldDive = run(["add-repo", "gamma"], addRepoBridge);
+  assertOk(addFromHeldDive, "add-repo from held dive failed");
+  assert.match(addFromHeldDive.stdout, /Added repo-gamma to .*HeldFeature\.md/);
+  assert.match(addFromHeldDive.stdout, /Wrote workspace docs/);
+  const heldFeatureAfterAdd = readFileSync(join(addRepoBridge, "backlog", "held-feature", "HeldFeature.md"), "utf8");
+  assert.match(heldFeatureAfterAdd, /repos:\n  - repo-alpha\n  - repo-gamma/);
+  const gammaDoc = readFileSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md"), "utf8");
+  assertGeneratedFrontmatter(gammaDoc, "CLAUDE.md", [
+    `effort: "held-feature/HeldFeature.md"`,
+    `repo-id: "repo-gamma"`,
+    `scope-path: "."`,
+  ]);
+  assert.match(gammaDoc, /Gamma convention generated after add-repo\./);
 
   write(
     join(bridge, "kb", "bad.md"),

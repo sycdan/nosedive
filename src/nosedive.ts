@@ -576,6 +576,9 @@ interface KbDoc {
 interface ScopeRef {
   repoId: string;
   path: string;
+  ref?: string;
+  readOnly: boolean;
+  flags: string[];
   render?: "body" | "gist";
 }
 
@@ -850,14 +853,31 @@ function addRepo(args: string[]): void {
 }
 
 function parseScopeRef(scope: string): ScopeRef | undefined {
-  const renderMatch = scope.match(/:(body|gist)$/);
-  const render = renderMatch?.[1] as "body" | "gist" | undefined;
-  const withoutRender = render ? scope.slice(0, -1 * (render.length + 1)) : scope;
-  const slash = withoutRender.indexOf("/");
-  const repoId = slash === -1 ? withoutRender : withoutRender.slice(0, slash);
-  const path = slash === -1 ? "" : withoutRender.slice(slash + 1);
+  const colon = scope.indexOf(":");
+  const targetAndRef = colon === -1 ? scope : scope.slice(0, colon);
+  const flagText = colon === -1 ? "" : scope.slice(colon + 1);
+  if (flagText.includes(":")) return undefined;
+  const flags =
+    colon === -1
+      ? []
+      : flagText
+          .split(",")
+          .map((flag) => flag.trim())
+          .filter(Boolean);
+  let render: "body" | "gist" | undefined;
+
+  for (const flag of flags) {
+    if (flag === "body" || flag === "gist") render = flag;
+  }
+
+  const at = targetAndRef.indexOf("@");
+  const target = at === -1 ? targetAndRef : targetAndRef.slice(0, at);
+  const ref = at === -1 ? undefined : targetAndRef.slice(at + 1);
+  const slash = target.indexOf("/");
+  const repoId = slash === -1 ? target : target.slice(0, slash);
+  const path = slash === -1 ? "" : target.slice(slash + 1);
   if (!repoId) return undefined;
-  return { repoId, path, render };
+  return { repoId, path, ref, readOnly: flags.includes("ro"), flags, render };
 }
 
 function defaultRender(kind: string): "body" | "gist" | undefined {

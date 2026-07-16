@@ -43,6 +43,7 @@ try {
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
+  assert.match(help.stdout, /add-repo/);
 } finally {
   rmSync(packed.filename, { force: true });
 }

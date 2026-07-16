@@ -433,6 +433,7 @@ function resolveParentEffortDir(parentRef: string, bridgeDir: string, backlogDir
 function resolveEffortPath(effortRef: string, bridgeDir: string, backlogDir: string, label = "effort"): string {
   const pathCandidates = [
     isAbsolute(effortRef) ? resolve(effortRef) : undefined,
+    resolve(process.cwd(), effortRef),
     resolve(bridgeDir, effortRef),
     resolve(backlogDir, effortRef),
   ].filter((candidate): candidate is string => candidate !== undefined);
@@ -793,10 +794,10 @@ function appendRepoToEffort(path: string, repo: EffortRepo): string {
 
   const text = readFileSync(path, "utf8");
   const frontmatter = splitMarkdownFrontmatter(text, path);
+  const entry = formatEffortRepoEntry(repo.id, repo.ref, repo.readOnly);
   const doc = parseDocument(frontmatter.yaml);
   if (doc.errors.length > 0) throw new Error(`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`);
 
-  const entry = formatEffortRepoEntry(repo.id, repo.ref, repo.readOnly);
   const repos = doc.get("repos", true);
   if (repos === undefined || repos === null) {
     doc.set("repos", [entry]);
@@ -806,7 +807,8 @@ function appendRepoToEffort(path: string, repo: EffortRepo): string {
     throw new Error(`invalid effort repos in ${path}: expected a YAML list`);
   }
 
-  writeFileAtomic(path, ["---", doc.toString().trimEnd(), "---", frontmatter.body].join("\n"));
+  const yaml = doc.toString({ lineWidth: 0 });
+  writeFileAtomic(path, ["---", yaml.trimEnd(), "---", frontmatter.body].join("\n"));
   return entry;
 }
 

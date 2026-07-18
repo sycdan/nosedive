@@ -45,8 +45,9 @@ _nosedive_ organizes work around two core concepts:
   artifacts.
 
 Run `nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"]` to create a
-top-level effort, or add `--parent <effort>` to create a subeffort. `<effort>`
-can be a backlog path or a leaf-first effort slug chain, such as
+top-level effort, or add `--parent <parent>` to create it under an existing
+effort or domain directory. `<parent>` can be a backlog path, a domain directory
+path such as `backlog/gogglebox`, or a leaf-first effort slug chain such as
 `baz-qux.foo-bar`. Pitch writes the new effort file locally.
 
 ## Development

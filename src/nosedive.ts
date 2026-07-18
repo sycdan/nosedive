@@ -405,7 +405,13 @@ function assertEffortDirInsideBacklog(path: string, backlogDir: string, label: s
   return dir;
 }
 
-function resolveParentEffortDir(parentRef: string, bridgeDir: string, backlogDir: string): string {
+function assertBacklogDir(path: string, backlogDir: string, label: string): string {
+  const dir = resolve(path);
+  if (!isInsideDir(backlogDir, dir)) throw new Error(`${label} is outside backlog: ${path}`);
+  return dir;
+}
+
+function resolveParentDir(parentRef: string, bridgeDir: string, backlogDir: string): string {
   const pathCandidates = [
     isAbsolute(parentRef) ? resolve(parentRef) : undefined,
     resolve(bridgeDir, parentRef),
@@ -421,7 +427,7 @@ function resolveParentEffortDir(parentRef: string, bridgeDir: string, backlogDir
       if (!isInsideDir(backlogDir, dir)) throw new Error(`parent path is outside backlog: ${parentRef}`);
       return assertEffortDirInsideBacklog(dir, backlogDir, `parent path ${parentRef}`);
     }
-    if (stats.isDirectory()) return assertEffortDirInsideBacklog(candidate, backlogDir, `parent path ${parentRef}`);
+    if (stats.isDirectory()) return assertBacklogDir(candidate, backlogDir, `parent path ${parentRef}`);
   }
 
   const matches = collectEfforts(backlogDir).filter((effort) => effort.chain === parentRef);
@@ -482,7 +488,7 @@ function parsePitchArgs(args: string[]): { slug: string; gist: string; pitch: st
     }
     if (arg.startsWith("--parent=")) {
       parent = arg.slice("--parent=".length);
-      if (!parent) throw new Error("--parent requires an effort path or slug chain");
+      if (!parent) throw new Error("--parent requires an effort or namespace path, or an effort slug chain");
       continue;
     }
     if (arg.startsWith("--pitch=")) {
@@ -529,7 +535,7 @@ function renderPitchedEffort(slug: string, gist: string, pitchText: string): str
 function pitch(args: string[]): void {
   const { slug, gist, pitch: pitchText, parent } = parsePitchArgs(args);
   const { bridgeDir, backlogDir } = loadBacklogConfig(process.cwd());
-  const parentDir = parent ? resolveParentEffortDir(parent, bridgeDir, backlogDir) : backlogDir;
+  const parentDir = parent ? resolveParentDir(parent, bridgeDir, backlogDir) : backlogDir;
   if (!existsSync(backlogDir)) mkdirSync(backlogDir, { recursive: true });
 
   const effortDir = join(parentDir, slug);

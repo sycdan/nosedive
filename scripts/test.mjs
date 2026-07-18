@@ -558,6 +558,18 @@ gist: "Other auth parent."
   assert.equal(existsSync(domainChild), true);
   assert.match(readFileSync(domainChild, "utf8"), /gist: "Domain child gist\."/);
 
+  const pitchByNamespace = run(["pitch", "namespace-child", "--gist=Namespace child gist.", "--parent", "gogglebox"], pitchBridge);
+  assertOk(pitchByNamespace, "pitch by namespace parent failed");
+  const namespaceChild = join(pitchBridge, "backlog", "gogglebox", "namespace-child", "NamespaceChild.md");
+  assert.equal(existsSync(namespaceChild), true);
+  assert.match(readFileSync(namespaceChild, "utf8"), /gist: "Namespace child gist\."/);
+
+  const pitchByNamespacePath = run(["pitch", "namespace-path-child", "--gist=Namespace path child gist.", "--parent", "backlog/gogglebox"], pitchBridge);
+  assertOk(pitchByNamespacePath, "pitch by namespace parent path failed");
+  const namespacePathChild = join(pitchBridge, "backlog", "gogglebox", "namespace-path-child", "NamespacePathChild.md");
+  assert.equal(existsSync(namespacePathChild), true);
+  assert.match(readFileSync(namespacePathChild, "utf8"), /gist: "Namespace path child gist\."/);
+
   const pitchWithSlugOnly = run(["pitch", "top-level-slug-only"], pitchBridge);
   assertOk(pitchWithSlugOnly, "pitch with slug only failed");
   const topLevel = join(pitchBridge, "backlog", "top-level-slug-only", "TopLevelSlugOnly.md");
@@ -576,6 +588,8 @@ gist: "Other auth parent."
   assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-slug-chain\/ChildEffortFromSlugChain\.md/);
   assert.match(pitchStatus, /\?\? backlog\/parent-effort\/child-effort-from-path\/ChildEffortFromPath\.md/);
   assert.match(pitchStatus, /\?\? backlog\/gogglebox\/auth-refactor\/domain-child\/DomainChild\.md/);
+  assert.match(pitchStatus, /\?\? backlog\/gogglebox\/namespace-child\/NamespaceChild\.md/);
+  assert.match(pitchStatus, /\?\? backlog\/gogglebox\/namespace-path-child\/NamespacePathChild\.md/);
   assert.match(pitchStatus, /\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/);
 
   const addRepoBridge = join(tmp, "add-repo-bridge");

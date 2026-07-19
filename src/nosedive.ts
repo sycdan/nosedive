@@ -888,7 +888,7 @@ function parseScopeRef(scope: string): ScopeRef | undefined {
 
 function defaultRender(kind: string): "body" | "gist" | undefined {
   if (kind === "foundation") return "body";
-  if (kind === "convention" || kind === "skill" || kind === "assertion" || kind === "decision") return "gist";
+  if (kind === "convention" || kind === "skill" || kind === "runbook" || kind === "assertion" || kind === "decision") return "gist";
   return undefined;
 }
 
@@ -937,6 +937,10 @@ function shouldGenerateWorkspaceDocs(bridge: BridgeConfig): boolean {
   return Boolean(bridge.workspaceDir && bridge.backlogDir && bridge.effortPath && bridge.effortRef);
 }
 
+function bridgeRunbookDocs(kbDocs: KbDoc[]): KbDoc[] {
+  return kbDocs.filter((doc) => doc.kind === "runbook" && doc.scopes.some((scope) => scope.trim() === "."));
+}
+
 function createApplyPlan(): ApplyPlan {
   const bridge = loadBridgeConfig(process.cwd());
   assertDir(bridge.kbDir, "kb");
@@ -949,7 +953,10 @@ function createApplyPlan(): ApplyPlan {
   const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
   targets.set(
     bridge.bridgeDir,
-    foundationDocs.map((doc) => ({ doc, repoId: "", render: "body", scopePath: "", readOnly: false })),
+    [
+      ...foundationDocs.map((doc) => ({ doc, repoId: "", render: "body" as const, scopePath: "", readOnly: false })),
+      ...bridgeRunbookDocs(kbDocs).map((doc) => ({ doc, repoId: "", render: "gist" as const, scopePath: ".", readOnly: false })),
+    ],
   );
 
   if (shouldGenerateWorkspaceDocs(bridge)) {
@@ -1112,6 +1119,11 @@ function renderGistBlock(doc: KbDoc): string {
   return [`## ${title}`, "", doc.gist || "(no gist)", "", `Source: \`${doc.relPath}\``, ""].join("\n");
 }
 
+function renderRunbookGistBlock(doc: KbDoc): string {
+  const title = doc.name || doc.id || doc.relPath;
+  return [`### \`${title}\``, "", doc.gist || "(no gist)", "", `Source: \`${doc.relPath}\``, ""].join("\n");
+}
+
 function renderBodyBlock(doc: KbDoc): string {
   const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), doc.path).body.trim();
   return [`<!-- Source: ${doc.relPath} -->`, "", body, ""].join("\n");
@@ -1119,8 +1131,12 @@ function renderBodyBlock(doc: KbDoc): string {
 
 function renderRepoDoc(targetDir: string, docs: TargetDoc[]): string {
   const readOnly = docs.some((item) => item.readOnly);
-  const blocks = docs
-    .sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))
+  const sortedDocs = docs.sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath));
+  const runbookItems = sortedDocs
+    .filter((item) => item.render === "gist" && item.doc.kind === "runbook")
+    .sort((a, b) => a.doc.name.localeCompare(b.doc.name));
+  const nonRunbookBlocks = sortedDocs
+    .filter((item) => item.doc.kind !== "runbook")
     .map((item) => (item.render === "body" ? renderBodyBlock(item.doc) : renderGistBlock(item.doc)));
 
   const header: string[] = [];
@@ -1133,7 +1149,19 @@ function renderRepoDoc(targetDir: string, docs: TargetDoc[]): string {
     );
   }
 
-  return [...header, ...blocks].join("\n");
+  const runbookBlocks =
+    runbookItems.length === 0
+      ? []
+      : [
+          "## Available Runbooks",
+          "",
+          "If the user asks what runbooks are available or what they can do, answer from this list with runbook names and gists.",
+          "If the user asks to do something that sounds like one of these runbooks, read the full source doc before taking the runbook.",
+          "",
+          ...runbookItems.map((item) => renderRunbookGistBlock(item.doc)),
+        ];
+
+  return [...header, ...nonRunbookBlocks, ...runbookBlocks].join("\n");
 }
 
 function quoteYamlString(value: string): string {

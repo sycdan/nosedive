@@ -259,6 +259,36 @@ links:
 `,
   );
   write(
+    join(bridge, "kb", "runbook-workon.md"),
+    `---
+kind: runbook
+id: runbook-workon
+name: workon
+gist: "Start working on an effort."
+scopes:
+  - .
+---
+
+# Workon
+
+Run the workon flow after reading this doc.
+`,
+  );
+  write(
+    join(bridge, "kb", "runbook-repo.md"),
+    `---
+kind: runbook
+id: runbook-repo
+name: repo-runbook.test
+gist: "Repo-scoped runbooks render as gists."
+scopes:
+  - repo-writable
+---
+
+# Repo runbook body
+`,
+  );
+  write(
     join(bridge, "kb", "foundation.md"),
     `---
 kind: foundation
@@ -287,6 +317,8 @@ Body rendered from valid YAML frontmatter.
   assert.match(dryRun.stdout, /assertion\.md :gist/);
   assert.doesNotMatch(dryRun.stdout, /old-colon-scope\.md/);
   assert.match(dryRun.stdout, /decision\.md :gist/);
+  assert.match(dryRun.stdout, /runbook-workon\.md :gist/);
+  assert.match(dryRun.stdout, /runbook-repo\.md :gist/);
   assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
   assert.match(dryRun.stdout, /No files written\./);
   assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
@@ -330,9 +362,21 @@ Body rendered from valid YAML frontmatter.
   const apply = run(["apply"], bridge);
   assertOk(apply, "apply failed");
   assert.match(apply.stdout, /tracked generated file marked skip-worktree: .*CLAUDE\.md/);
+  assert.equal(existsSync(join(bridge, "CLAUDE.md")), true);
   assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), true);
   assert.equal(existsSync(join(bridge, "workspace", "writable", "CLAUDE.md")), true);
   assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), true);
+
+  const bridgeDoc = readFileSync(join(bridge, "CLAUDE.md"), "utf8");
+  assertGeneratedFrontmatter(bridgeDoc, "CLAUDE.md");
+  assert.match(bridgeDoc, /# Foundation Body/);
+  assert.match(bridgeDoc, /## Available Runbooks/);
+  assert.match(bridgeDoc, /If the user asks what runbooks are available or what they can do, answer from this list with runbook names and gists\./);
+  assert.match(bridgeDoc, /If the user asks to do something that sounds like one of these runbooks, read the full source doc before taking the runbook\./);
+  assert.match(bridgeDoc, /### `workon`/);
+  assert.match(bridgeDoc, /Start working on an effort\./);
+  assert.match(bridgeDoc, /Source: `kb[\\/]runbook-workon\.md`/);
+  assert.doesNotMatch(bridgeDoc, /Run the workon flow after reading this doc\./);
 
   const workspaceDoc = readFileSync(join(bridge, "workspace", "CLAUDE.md"), "utf8");
   assertGeneratedFrontmatter(workspaceDoc, "CLAUDE.md", [`effort: "yaml-frontmatter/YamlFrontmatter.md"`]);
@@ -359,6 +403,8 @@ Body rendered from valid YAML frontmatter.
   assert.match(writableDoc, /Scoped assertion gists render by default\./);
   assert.doesNotMatch(writableDoc, /Old multi-colon scopes do not render\./);
   assert.match(writableDoc, /Scoped decision gists render by default\./);
+  assert.match(writableDoc, /### `repo-runbook\.test`/);
+  assert.match(writableDoc, /Repo-scoped runbooks render as gists\./);
   const writableAgentsDoc = readFileSync(join(bridge, "workspace", "writable", "AGENTS.md"), "utf8");
   assertGeneratedFrontmatter(writableAgentsDoc, "AGENTS.md", [
     `effort: "yaml-frontmatter/YamlFrontmatter.md"`,
@@ -438,6 +484,20 @@ scopes:
 # Active convention body
 `,
   );
+  write(
+    join(activeBridge, "kb", "active-runbook.md"),
+    `---
+kind: runbook
+id: active-runbook
+name: active
+gist: "Active bridge runbook renders from dot scope."
+scopes:
+  - .
+---
+
+# Active runbook body
+`,
+  );
 
   const activeDryRun = run(["apply", "--dry-run"], activeBridge);
   assertOk(activeDryRun, "kb-only apply --dry-run failed");
@@ -445,6 +505,7 @@ scopes:
   assert.match(activeDryRun.stdout, /Effort:    \(not configured\)/);
   assert.match(activeDryRun.stdout, /Bridge docs:/);
   assert.match(activeDryRun.stdout, /active-foundation\.md :body/);
+  assert.match(activeDryRun.stdout, /active-runbook\.md :gist/);
   assert.doesNotMatch(activeDryRun.stdout, /active-convention\.md :gist/);
 
   const activeApply = run(["apply"], activeBridge);
@@ -460,6 +521,9 @@ scopes:
   assert.doesNotMatch(activeDoc, /Target:/);
   assert.match(activeDoc, /# Active Foundation/);
   assert.match(activeDoc, /Bridge foundation body renders without a scope\./);
+  assert.match(activeDoc, /### `active`/);
+  assert.match(activeDoc, /Active bridge runbook renders from dot scope\./);
+  assert.doesNotMatch(activeDoc, /# Active runbook body/);
   assert.doesNotMatch(activeDoc, /Scoped convention should not render from kb-only config\./);
   assert.equal(existsSync(join(activeBridge, "workspace", "CLAUDE.md")), false);
 

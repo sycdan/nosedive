@@ -59,11 +59,11 @@ the published bin too, for example:
 `npx -y nosedive@dev mint 1997-08-29T02:14:00-04:00`
 
 `nosedive init` creates or edits `.nosediverc` in the current directory,
-prompting for each setting (workspace, backlog, kb, sessions, home branch,
-work branch prefix, and `agents`  which agent(s) to generate instructions
-for, `copilot` by default with `claude` as an additional/alternative
-choice). Existing values, or the built-in defaults, are shown as the default
-for each prompt; press Enter to keep it.
+prompting for each setting (workspace, backlog, kb, home branch, work branch
+prefix, and `agents`  which agent(s) to generate instructions for, `copilot`
+by default with `claude` as an additional/alternative choice). Existing
+values, or the built-in defaults, are shown as the default for each prompt;
+press Enter to keep it.
 
 ## Development
 

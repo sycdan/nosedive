@@ -37,6 +37,11 @@ function parsePackOutput(stdout) {
 const pack = runNpm(["pack", "--json"]);
 const [packed] = parsePackOutput(pack.stdout);
 assert.equal(typeof packed?.filename, "string", `npm pack output did not include a filename:\n${pack.stdout}`);
+assert.equal(
+  packed.files?.some((file) => file.path === "kb/00000000-0000-7434-9b1d-72a777ca61f7.md"),
+  true,
+  `npm package did not include package foundation docs:\n${pack.stdout}`,
+);
 
 try {
   const help = runNpm(["exec", "--yes", "--package", `./${packed.filename}`, "-c", "nosedive --help"]);

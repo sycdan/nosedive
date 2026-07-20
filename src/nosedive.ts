@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   existsSync,
   mkdirSync,
@@ -19,6 +20,8 @@ const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 const MANAGED_EXCLUDE_BEGIN = "# BEGIN nosedive-managed exclude";
 const MANAGED_EXCLUDE_END = "# END nosedive-managed exclude";
+const FOUNDATION_EXCLUDE_BEGIN = "# BEGIN nosedive-managed package-foundation exclude";
+const FOUNDATION_EXCLUDE_END = "# END nosedive-managed package-foundation exclude";
 const GIT_LOCAL_ENV_KEYS = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR",
@@ -356,6 +359,39 @@ function renderRc(settings: RcSettings): string {
   ].join("\n");
 }
 
+function packageRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+function packageFoundationDocs(): Array<{ filename: string; content: string }> {
+  const kbDir = join(packageRoot(), "kb");
+  if (!existsSync(kbDir)) return [];
+
+  return readdirSync(kbDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => {
+      const sourcePath = join(kbDir, entry.name);
+      const content = readFileSync(sourcePath, "utf8");
+      const fm = parseMarkdownFrontmatter(content, sourcePath);
+      return fm.scalars.kind === "foundation" ? { filename: entry.name, content } : undefined;
+    })
+    .filter((doc): doc is { filename: string; content: string } => doc !== undefined);
+}
+
+function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] {
+  const docs = packageFoundationDocs();
+  if (docs.length === 0) return [];
+
+  const kbDir = resolveFrom(bridgeDir, kbPath);
+  mkdirSync(kbDir, { recursive: true });
+
+  return docs.map((doc) => {
+    const target = join(kbDir, doc.filename);
+    writeFileAtomic(target, doc.content);
+    return target;
+  });
+}
+
 async function init(args: string[]): Promise<void> {
   if (args[0] === "-h" || args[0] === "--help") {
     console.log("Usage: nosedive init");
@@ -387,6 +423,11 @@ async function init(args: string[]): Promise<void> {
 
   writeFileAtomic(rcPath, renderRc(settings));
   console.log(`Wrote ${formatPath(rcPath)}`);
+  const seededFoundationDocs = seedPackageFoundationDocs(process.cwd(), settings.kb);
+  if (seededFoundationDocs.length > 0) {
+    for (const warning of manageFoundationGitState(seededFoundationDocs)) console.error(`warning: ${warning}`);
+    console.log(`Seeded ${seededFoundationDocs.length} foundation doc${seededFoundationDocs.length === 1 ? "" : "s"} into ${settings.kb}`);
+  }
 }
 
 // --- efforts ---------------------------------------------------------------
@@ -1452,16 +1493,42 @@ function gitRelPath(repoRoot: string, path: string): string {
   return relative(repoRoot, path).replaceAll("\\", "/");
 }
 
-function removeManagedExcludeBlocks(text: string): string {
+interface ManagedExcludeSpec {
+  begin: string;
+  end: string;
+  header: string[];
+}
+
+const AGENT_EXCLUDE_SPEC: ManagedExcludeSpec = {
+  begin: MANAGED_EXCLUDE_BEGIN,
+  end: MANAGED_EXCLUDE_END,
+  header: [
+    "# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
+    "# name: nosedive-managed-local-git-state",
+    "# owner: nosedive apply",
+    "# reason: generated bridge agent instruction files are local artifacts",
+  ],
+};
+
+const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
+  begin: FOUNDATION_EXCLUDE_BEGIN,
+  end: FOUNDATION_EXCLUDE_END,
+  header: [
+    "# owner: nosedive init",
+    "# reason: package foundation docs are local bootstrap artifacts",
+  ],
+};
+
+function removeManagedExcludeBlocks(text: string, spec: ManagedExcludeSpec): string {
   const lines = text.split(/\r?\n/);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i] !== MANAGED_EXCLUDE_BEGIN) {
+    if (lines[i] !== spec.begin) {
       out.push(lines[i]);
       continue;
     }
 
-    const end = lines.indexOf(MANAGED_EXCLUDE_END, i + 1);
+    const end = lines.indexOf(spec.end, i + 1);
     if (end === -1) {
       out.push(lines[i]);
       continue;
@@ -1471,25 +1538,22 @@ function removeManagedExcludeBlocks(text: string): string {
   return out.join("\n").replace(/\n*$/, "\n");
 }
 
-function renderManagedExcludeBlock(filenames: string[]): string {
+function renderManagedExcludeBlock(filenames: string[], spec: ManagedExcludeSpec): string {
   return [
-    MANAGED_EXCLUDE_BEGIN,
-    "# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
-    "# name: nosedive-managed-local-git-state",
-    "# owner: nosedive apply",
-    "# reason: generated bridge agent instruction files are local artifacts",
+    spec.begin,
+    ...spec.header,
     ...filenames,
-    MANAGED_EXCLUDE_END,
+    spec.end,
   ].join("\n");
 }
 
-function replaceManagedExcludeBlock(text: string, filenames: string[]): string {
-  const withoutManaged = removeManagedExcludeBlocks(text);
+function replaceManagedExcludeBlock(text: string, filenames: string[], spec: ManagedExcludeSpec): string {
+  const withoutManaged = removeManagedExcludeBlocks(text, spec);
   const prefix = withoutManaged.trim() ? `${withoutManaged.replace(/\n*$/, "\n")}\n` : "";
-  return `${prefix}${renderManagedExcludeBlock(filenames)}\n`;
+  return `${prefix}${renderManagedExcludeBlock(filenames, spec)}\n`;
 }
 
-function updateManagedExclude(repoRoot: string, filenames: string[], warnings: string[]): void {
+function updateManagedExclude(repoRoot: string, filenames: string[], warnings: string[], spec: ManagedExcludeSpec): void {
   const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
   if (!rawExcludePath) {
     warnings.push(`could not resolve git exclude path for ${repoRoot}`);
@@ -1498,10 +1562,10 @@ function updateManagedExclude(repoRoot: string, filenames: string[], warnings: s
 
   const excludePath = isAbsolute(rawExcludePath) ? rawExcludePath : resolve(repoRoot, rawExcludePath);
   const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
-  writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing, filenames));
+  writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing, filenames, spec));
 }
 
-function manageGeneratedGitState(paths: string[]): string[] {
+function manageGitState(paths: string[], spec: ManagedExcludeSpec): string[] {
   const warnings: string[] = [];
   const byRepo = new Map<string, string[]>();
 
@@ -1518,7 +1582,7 @@ function manageGeneratedGitState(paths: string[]): string[] {
 
   for (const [repoRoot, files] of byRepo) {
     const filenames = [...new Set(files.map((file) => gitRelPath(repoRoot, file)))];
-    updateManagedExclude(repoRoot, filenames, warnings);
+    updateManagedExclude(repoRoot, filenames, warnings, spec);
 
     for (const file of files) {
       const rel = gitRelPath(repoRoot, file);
@@ -1533,6 +1597,14 @@ function manageGeneratedGitState(paths: string[]): string[] {
   }
 
   return warnings;
+}
+
+function manageGeneratedGitState(paths: string[]): string[] {
+  return manageGitState(paths, AGENT_EXCLUDE_SPEC);
+}
+
+function manageFoundationGitState(paths: string[]): string[] {
+  return manageGitState(paths, FOUNDATION_EXCLUDE_SPEC);
 }
 
 function repoFrontmatter(bridge: BridgeConfig, docs: TargetDoc[]): GeneratedFrontmatter | undefined {

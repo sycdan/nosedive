@@ -18,7 +18,8 @@
     "nosedive": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "kb"
   ],
   "engines": {
     "node": ">=22"

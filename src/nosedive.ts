@@ -19,16 +19,6 @@ const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 const MANAGED_EXCLUDE_BEGIN = "# BEGIN nosedive-managed exclude";
 const MANAGED_EXCLUDE_END = "# END nosedive-managed exclude";
-const MANAGED_EXCLUDE_BLOCK = [
-  MANAGED_EXCLUDE_BEGIN,
-  "# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
-  "# name: nosedive-managed-local-git-state",
-  "# owner: nosedive apply",
-  "# reason: generated agent instruction files are local workspace artifacts",
-  "CLAUDE.md",
-  "AGENTS.md",
-  MANAGED_EXCLUDE_END,
-].join("\n");
 const GIT_LOCAL_ENV_KEYS = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR",
@@ -52,6 +42,10 @@ Commands:
 `;
 
 const KNOWN_AGENTS = ["copilot", "claude"];
+const AGENT_FILENAMES: Record<string, string> = {
+  copilot: "AGENTS.md",
+  claude: "CLAUDE.md",
+};
 
 const DEFAULT_RC = {
   workspace: "./workspace",
@@ -68,6 +62,7 @@ interface SimpleYaml {
   scalars: Record<string, string>;
   lists: Record<string, string[]>;
   nested: Record<string, Record<string, string>>;
+  nestedLists: Record<string, Record<string, string[]>>;
 }
 
 interface MarkdownDoc {
@@ -88,6 +83,8 @@ export interface NosediveRc {
   kbDir?: string;
   homeBranch?: string;
   workBranchPrefix?: string;
+  pilotName?: string;
+  pilotEmail?: string;
   agents: string[];
   current: {
     effort?: string;
@@ -99,7 +96,7 @@ export interface NosediveRcCurrent {
 }
 
 function emptyYaml(): SimpleYaml {
-  return { scalars: {}, lists: {}, nested: {} };
+  return { scalars: {}, lists: {}, nested: {}, nestedLists: {} };
 }
 
 function scalarToString(value: unknown): string | undefined {
@@ -121,11 +118,17 @@ function normalizeYaml(value: unknown): SimpleYaml {
 
     if (item && typeof item === "object") {
       const nested: Record<string, string> = {};
+      const nestedLists: Record<string, string[]> = {};
       for (const [nestedKey, nestedItem] of Object.entries(item as Record<string, unknown>)) {
+        if (Array.isArray(nestedItem)) {
+          nestedLists[nestedKey] = nestedItem.map((entry) => scalarToString(entry)).filter((entry): entry is string => entry !== undefined);
+          continue;
+        }
         const scalar = scalarToString(nestedItem);
         if (scalar !== undefined) nested[nestedKey] = scalar;
       }
       out.nested[key] = nested;
+      out.nestedLists[key] = nestedLists;
       continue;
     }
 
@@ -230,6 +233,8 @@ export function readNosediveRc(start: string): NosediveRc {
     kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
     homeBranch: rc.scalars["home-branch"],
     workBranchPrefix: rc.scalars["work-branch-prefix"],
+    pilotName: rc.scalars["pilot-name"],
+    pilotEmail: rc.scalars["pilot-email"],
     agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
     current: {
       effort: rc.nested.current?.effort,
@@ -262,10 +267,14 @@ interface RcSettings {
   kb: string;
   homeBranch: string;
   workBranchPrefix: string;
+  pilotName: string;
+  pilotEmail: string;
   agents: string[];
 }
 
-function loadRcSettings(rcPath: string): RcSettings {
+function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
+  const detectedPilotName = gitOutput(bridgeDir, ["config", "user.name"]) ?? "";
+  const detectedPilotEmail = gitOutput(bridgeDir, ["config", "user.email"]) ?? "";
   if (!existsSync(rcPath)) {
     return {
       workspace: DEFAULT_RC.workspace,
@@ -273,6 +282,8 @@ function loadRcSettings(rcPath: string): RcSettings {
       kb: DEFAULT_RC.kb,
       homeBranch: DEFAULT_RC["home-branch"],
       workBranchPrefix: DEFAULT_RC["work-branch-prefix"],
+      pilotName: detectedPilotName,
+      pilotEmail: detectedPilotEmail,
       agents: [...DEFAULT_RC.agents],
     };
   }
@@ -284,6 +295,8 @@ function loadRcSettings(rcPath: string): RcSettings {
     kb: rc.scalars.kb ?? DEFAULT_RC.kb,
     homeBranch: rc.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
     workBranchPrefix: rc.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
+    pilotName: rc.scalars["pilot-name"] ?? detectedPilotName,
+    pilotEmail: rc.scalars["pilot-email"] ?? detectedPilotEmail,
     agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
   };
 }
@@ -335,6 +348,8 @@ function renderRc(settings: RcSettings): string {
     `kb: ${settings.kb}`,
     `home-branch: ${settings.homeBranch}`,
     `work-branch-prefix: ${settings.workBranchPrefix}`,
+    `pilot-name: ${settings.pilotName}`,
+    `pilot-email: ${settings.pilotEmail}`,
     `agents:`,
     ...settings.agents.map((agent) => `  - ${agent}`),
     "",
@@ -350,7 +365,10 @@ async function init(args: string[]): Promise<void> {
   }
 
   const rcPath = join(process.cwd(), ".nosediverc");
-  const settings = loadRcSettings(rcPath);
+  if (!gitOutput(process.cwd(), ["rev-parse", "--show-toplevel"])) {
+    throw new Error("nosedive init must be run inside a git repository");
+  }
+  const settings = loadRcSettings(rcPath, process.cwd());
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -360,6 +378,8 @@ async function init(args: string[]): Promise<void> {
     settings.kb = await promptScalar(iter, "kb", settings.kb);
     settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
     settings.workBranchPrefix = await promptScalar(iter, "work-branch-prefix", settings.workBranchPrefix);
+    settings.pilotName = await promptScalar(iter, "pilot-name", settings.pilotName);
+    settings.pilotEmail = await promptScalar(iter, "pilot-email", settings.pilotEmail);
     settings.agents = await promptAgents(iter, settings.agents);
   } finally {
     rl.close();
@@ -678,8 +698,12 @@ interface BridgeConfig {
   kbDir: string;
   homeBranch?: string;
   workBranchPrefix?: string;
+  pilotName?: string;
+  pilotEmail?: string;
+  agents: string[];
   effortPath?: string;
   effortRef?: string;
+  activeDiveId?: string;
 }
 
 interface EffortRepo {
@@ -697,6 +721,9 @@ interface KbDoc {
   gist: string;
   repoPath?: string;
   repoBaseBranch?: string;
+  effortRef?: string;
+  metaScalars: Record<string, string>;
+  metaLists: Record<string, string[]>;
   scopes: string[];
 }
 
@@ -726,6 +753,8 @@ interface GeneratedFrontmatter {
 interface ApplyPlan {
   bridge: BridgeConfig;
   repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }>;
+  agentFiles: string[];
+  tags: Set<string>;
   targets: Map<string, TargetDoc[]>;
   warnings: string[];
 }
@@ -764,6 +793,9 @@ function loadBridgeConfig(start: string): BridgeConfig {
   const effort = rc.current.effort ?? activeEffortRefFromHeldDive(rc);
 
   if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+  if (!gitOutput(rc.bridgeDir, ["rev-parse", "--show-toplevel"])) {
+    throw new Error("nosedive apply must be run inside a git-backed bridge");
+  }
 
   const bridge: BridgeConfig = {
     bridgeDir: rc.bridgeDir,
@@ -772,6 +804,9 @@ function loadBridgeConfig(start: string): BridgeConfig {
     kbDir: rc.kbDir,
     homeBranch: rc.homeBranch,
     workBranchPrefix: rc.workBranchPrefix,
+    pilotName: rc.pilotName,
+    pilotEmail: rc.pilotEmail,
+    agents: rc.agents,
     effortRef: effort,
   };
   if (rc.backlogDir && effort) bridge.effortPath = resolveFrom(rc.backlogDir, effort);
@@ -838,9 +873,33 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         gist: fm.scalars.gist,
         repoPath: fm.nested.meta?.path,
         repoBaseBranch: fm.nested.meta?.["base-branch"],
+        effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
+        metaScalars: fm.nested.meta ?? {},
+        metaLists: fm.nestedLists.meta ?? {},
         scopes: fm.lists.scopes ?? [],
       };
     });
+}
+
+function readActiveDiveId(workspaceDir: string | undefined): string | undefined {
+  if (!workspaceDir) return undefined;
+  const markerPath = join(workspaceDir, ".nosedive-ref");
+  if (!existsSync(markerPath)) return undefined;
+  const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), markerPath);
+  return marker.scalars.id;
+}
+
+function isWorkspaceEmpty(workspaceDir: string | undefined): boolean {
+  if (!workspaceDir || !existsSync(workspaceDir)) return true;
+  if (!statSync(workspaceDir).isDirectory()) return false;
+  return readdirSync(workspaceDir).filter((entry) => entry !== ".nosedive-ref").length === 0;
+}
+
+function computeApplyTags(bridge: BridgeConfig): Set<string> {
+  const tags = new Set<string>();
+  if (isWorkspaceEmpty(bridge.workspaceDir)) tags.add("workspace-is-empty");
+  if (bridge.pilotName?.trim() || bridge.pilotEmail?.trim()) tags.add("pilot-is-set");
+  return tags;
 }
 
 interface AddRepoOptions {
@@ -1060,71 +1119,138 @@ function bridgeRunbookDocs(kbDocs: KbDoc[]): KbDoc[] {
   return kbDocs.filter((doc) => doc.kind === "runbook" && doc.scopes.some((scope) => scope.trim() === "."));
 }
 
+function agentFilenames(agents: string[], warnings: string[]): string[] {
+  const filenames: string[] = [];
+  for (const agent of agents) {
+    const filename = AGENT_FILENAMES[agent];
+    if (!filename) {
+      warnings.push(`unknown agent in .nosediverc; skipping generated docs for ${agent}`);
+      continue;
+    }
+    if (!filenames.includes(filename)) filenames.push(filename);
+  }
+  if (filenames.length === 0) throw new Error("no supported agents configured in .nosediverc");
+  return filenames;
+}
+
+const FOUNDATION_FILTER_KEYS = ["include-when-any", "include-when-all", "exclude-when-any", "exclude-when-all"] as const;
+
+type FoundationFilterKey = (typeof FOUNDATION_FILTER_KEYS)[number];
+
+function metaFilterTags(doc: KbDoc, key: FoundationFilterKey): string[] {
+  const list = doc.metaLists[key];
+  if (list && list.length > 0) return list.map((tag) => tag.trim()).filter(Boolean);
+  const scalar = doc.metaScalars[key];
+  return scalar ? [scalar.trim()].filter(Boolean) : [];
+}
+
+function selectedFoundationFilter(doc: KbDoc, warnings: string[]): { key: FoundationFilterKey; tags: string[] } | undefined {
+  const filters = FOUNDATION_FILTER_KEYS
+    .map((key) => ({ key, tags: metaFilterTags(doc, key) }))
+    .filter((filter) => filter.tags.length > 0);
+
+  if (filters.length > 1) {
+    warnings.push(`foundation doc ${doc.relPath} has multiple include/exclude meta filters; skipping`);
+    return undefined;
+  }
+  return filters[0];
+}
+
+function foundationFilterAllows(doc: KbDoc, tags: Set<string>, warnings: string[]): boolean {
+  const filter = selectedFoundationFilter(doc, warnings);
+  if (!filter) {
+    return !FOUNDATION_FILTER_KEYS.some((key) => Object.hasOwn(doc.metaLists, key) || Object.hasOwn(doc.metaScalars, key));
+  }
+
+  if (filter.key === "include-when-any") return filter.tags.some((tag) => tags.has(tag));
+  if (filter.key === "include-when-all") return filter.tags.every((tag) => tags.has(tag));
+  if (filter.key === "exclude-when-any") return !filter.tags.some((tag) => tags.has(tag));
+  return !filter.tags.every((tag) => tags.has(tag));
+}
+
+function scopeMatchesAnyRepo(scope: string, repoIds: Set<string>): boolean {
+  const parsed = parseScopeRef(scope);
+  return Boolean(parsed && repoIds.has(parsed.repoId));
+}
+
+function foundationBridgeTargets(options: {
+  kbDocs: KbDoc[];
+  activeRepoIds: Set<string>;
+  tags: Set<string>;
+  warnings: string[];
+}): TargetDoc[] {
+  const { kbDocs, activeRepoIds, tags, warnings } = options;
+  const targets: TargetDoc[] = [];
+
+  for (const doc of kbDocs.filter((item) => item.kind === "foundation")) {
+    if (!foundationFilterAllows(doc, tags, warnings)) continue;
+
+    if (doc.scopes.length === 0) {
+      targets.push({ doc, repoId: "", render: "body", scopePath: "", readOnly: false });
+      continue;
+    }
+
+    if (activeRepoIds.size === 0) continue;
+    if (!doc.scopes.some((scope) => scopeMatchesAnyRepo(scope, activeRepoIds))) continue;
+    targets.push({ doc, repoId: "", render: "body", scopePath: "", readOnly: false });
+  }
+
+  return targets;
+}
+
+function activeDiveRepos(dive: KbDoc | undefined): EffortRepo[] {
+  if (!dive) return [];
+  const repos = new Map<string, EffortRepo>();
+  for (const rawScope of dive.scopes) {
+    const scope = parseScopeRef(rawScope);
+    if (!scope) continue;
+    if (!repos.has(scope.repoId)) repos.set(scope.repoId, { id: scope.repoId, ref: scope.ref, readOnly: scope.readOnly });
+  }
+  return [...repos.values()];
+}
+
 function createApplyPlan(): ApplyPlan {
   const bridge = loadBridgeConfig(process.cwd());
   assertDir(bridge.kbDir, "kb");
   const kbDocs = loadKbDocs(bridge.kbDir, bridge.bridgeDir);
   const repoDocs = new Map(kbDocs.filter((doc) => doc.kind === "repo").map((doc) => [doc.id, doc]));
   const warnings: string[] = [];
+  const agentFiles = agentFilenames(bridge.agents, warnings);
+  const activeDiveId = readActiveDiveId(bridge.workspaceDir);
+  const activeDive = activeDiveId ? kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeDiveId) : undefined;
+  if (activeDiveId && !activeDive) warnings.push(`active dive marker points at missing kind: dive doc: ${activeDiveId}`);
+  bridge.activeDiveId = activeDiveId;
+  if (activeDive?.effortRef && bridge.backlogDir) {
+    bridge.effortRef = effortRefFromPath(resolveEffortPath(activeDive.effortRef, bridge.bridgeDir, bridge.backlogDir, "active dive effort"), bridge.backlogDir);
+    bridge.effortPath = resolveFrom(bridge.backlogDir, bridge.effortRef);
+  }
+  const tags = computeApplyTags(bridge);
   const targets = new Map<string, TargetDoc[]>();
   let repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }> = [];
 
-  const foundationDocs = kbDocs.filter((doc) => doc.kind === "foundation");
+  const activeRepos = activeDiveRepos(activeDive);
+  const activeRepoIds = new Set(activeRepos.map((repo) => repo.id));
   targets.set(
     bridge.bridgeDir,
     [
-      ...foundationDocs.map((doc) => ({ doc, repoId: "", render: "body" as const, scopePath: "", readOnly: false })),
+      ...foundationBridgeTargets({ kbDocs, activeRepoIds, tags, warnings }),
       ...bridgeRunbookDocs(kbDocs).map((doc) => ({ doc, repoId: "", render: "gist" as const, scopePath: ".", readOnly: false })),
     ],
   );
 
-  if (shouldGenerateWorkspaceDocs(bridge)) {
-    assertDir(bridge.backlogDir!, "backlog");
-    if (!existsSync(bridge.effortPath!)) throw new Error(`current effort does not exist: ${bridge.effortPath}`);
-
-    const effortRepos = parseEffortRepos(bridge.effortPath!);
-    repos = effortRepos.map((repo) => {
+  if (activeRepos.length > 0) {
+    repos = activeRepos.map((repo) => {
       const repoDoc = repoDocs.get(repo.id);
       const repoBaseBranch = repoDoc?.repoBaseBranch ?? "main";
       return { ...repo, repoPath: repoDoc?.repoPath, repoBaseBranch, repoRef: repo.ref ?? repoBaseBranch };
     });
-
-    for (const repo of effortRepos) {
-      const repoDoc = repoDocs.get(repo.id);
-      if (!repoDoc) {
-        warnings.push(`effort repo has no kind: repo kb doc: ${repo.id}`);
-        continue;
-      }
-      if (!repoDoc.repoPath) {
-        warnings.push(`repo doc ${repoDoc.relPath} is missing meta.path`);
-        continue;
-      }
-
-      const repoRoot = resolveFrom(bridge.bridgeDir, repoDoc.repoPath);
-      if (!existsSync(repoRoot)) {
-        warnings.push(`repo path does not exist; skipping scoped docs for ${repo.id}: ${repoRoot}`);
-        continue;
-      }
-
-      addScopedRepoTargets({
-        kbDocs,
-        repoId: repo.id,
-        repoRoot,
-        readOnly: repo.readOnly,
-        repoLabel: repoDoc.repoPath,
-        targets,
-        warnings,
-      });
-    }
-  } else if (bridge.workspaceDir || bridge.backlogDir || bridge.effortRef) {
-    warnings.push("workspace docs skipped because .nosediverc does not set workspace, backlog, and current.effort");
   }
 
-  return { bridge, repos, targets, warnings };
+  return { bridge, repos, agentFiles, tags, targets, warnings };
 }
 
 function applyDryRun(): void {
-  const { bridge, repos, targets, warnings } = createApplyPlan();
+  const { bridge, repos, agentFiles, tags, targets, warnings } = createApplyPlan();
 
   console.log("nosedive apply --dry-run");
   console.log(`Bridge:    ${formatPath(bridge.bridgeDir)}`);
@@ -1133,24 +1259,20 @@ function applyDryRun(): void {
   console.log(`KB:        ${formatPath(bridge.kbDir)}`);
   console.log(`Home:      ${bridge.homeBranch ?? "(not configured)"}`);
   console.log(`Work ref:  ${bridge.workBranchPrefix ?? "(not configured)"}`);
+  console.log(`Pilot:     ${bridge.pilotName ?? "(no name)"} <${bridge.pilotEmail ?? "no email"}>`);
   console.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
+  console.log(`Dive:      ${bridge.activeDiveId ?? "(not configured)"}`);
+  console.log(`Tags:      ${tags.size > 0 ? [...tags].sort().join(", ") : "(none)"}`);
   console.log("");
 
   console.log("Bridge docs:");
-  console.log(`  ${join(formatPath(bridge.bridgeDir), "CLAUDE.md")}`);
-  console.log(`  ${join(formatPath(bridge.bridgeDir), "AGENTS.md")}`);
+  for (const filename of agentFiles) console.log(`  ${join(formatPath(bridge.bridgeDir), filename)}`);
   for (const item of (targets.get(bridge.bridgeDir) ?? []).sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))) {
     console.log(`    - ${item.doc.relPath} :${item.render}`);
   }
   console.log("");
 
-  if (shouldGenerateWorkspaceDocs(bridge)) {
-    console.log("Workspace docs:");
-    console.log(`  ${join(formatPath(bridge.workspaceDir!), "CLAUDE.md")}`);
-    console.log(`  ${join(formatPath(bridge.workspaceDir!), "AGENTS.md")}`);
-    if (!existsSync(bridge.workspaceDir!)) warnings.push(`workspace does not exist: ${bridge.workspaceDir}`);
-    console.log("");
-
+  if (repos.length > 0) {
     console.log("Repos:");
     for (const repo of repos) {
       const path = repo.repoPath ?? "(missing repo doc)";
@@ -1159,21 +1281,6 @@ function applyDryRun(): void {
       console.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, ${refSummary})`);
     }
     console.log("");
-  }
-
-  console.log("Repo docs:");
-  const repoTargets = [...targets.entries()].filter(([targetDir]) => targetDir !== bridge.bridgeDir);
-  if (repoTargets.length === 0) {
-    console.log("  (none)");
-  } else {
-    for (const [targetDir, docs] of repoTargets.sort((a, b) => a[0].localeCompare(b[0]))) {
-      console.log(`  ${join(formatPath(targetDir), "CLAUDE.md")}`);
-      console.log(`  ${join(formatPath(targetDir), "AGENTS.md")}`);
-      for (const item of docs.sort((a, b) => a.doc.relPath.localeCompare(b.doc.relPath))) {
-        const suffix = item.scopePath ? ` scope=${item.scopePath}` : "";
-        console.log(`    - ${item.doc.relPath} :${item.render}${suffix}`);
-      }
-    }
   }
 
   if (warnings.length > 0) {
@@ -1310,8 +1417,7 @@ function writeFileAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-function writeAgentPair(dir: string, content: string, frontmatter?: GeneratedFrontmatter): string[] {
-  const filenames = ["CLAUDE.md", "AGENTS.md"];
+function writeAgentFiles(dir: string, filenames: string[], content: string, frontmatter?: GeneratedFrontmatter): string[] {
   const paths = filenames.map((filename) => join(dir, filename));
   for (const filename of filenames) writeFileAtomic(join(dir, filename), withGeneratedEnvelope(filename, content, frontmatter));
   return paths;
@@ -1356,13 +1462,25 @@ function removeManagedExcludeBlocks(text: string): string {
   return out.join("\n").replace(/\n*$/, "\n");
 }
 
-function replaceManagedExcludeBlock(text: string): string {
-  const withoutManaged = removeManagedExcludeBlocks(text);
-  const prefix = withoutManaged.trim() ? `${withoutManaged.replace(/\n*$/, "\n")}\n` : "";
-  return `${prefix}${MANAGED_EXCLUDE_BLOCK}\n`;
+function renderManagedExcludeBlock(filenames: string[]): string {
+  return [
+    MANAGED_EXCLUDE_BEGIN,
+    "# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
+    "# name: nosedive-managed-local-git-state",
+    "# owner: nosedive apply",
+    "# reason: generated bridge agent instruction files are local artifacts",
+    ...filenames,
+    MANAGED_EXCLUDE_END,
+  ].join("\n");
 }
 
-function updateManagedExclude(repoRoot: string, warnings: string[]): void {
+function replaceManagedExcludeBlock(text: string, filenames: string[]): string {
+  const withoutManaged = removeManagedExcludeBlocks(text);
+  const prefix = withoutManaged.trim() ? `${withoutManaged.replace(/\n*$/, "\n")}\n` : "";
+  return `${prefix}${renderManagedExcludeBlock(filenames)}\n`;
+}
+
+function updateManagedExclude(repoRoot: string, filenames: string[], warnings: string[]): void {
   const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
   if (!rawExcludePath) {
     warnings.push(`could not resolve git exclude path for ${repoRoot}`);
@@ -1371,7 +1489,7 @@ function updateManagedExclude(repoRoot: string, warnings: string[]): void {
 
   const excludePath = isAbsolute(rawExcludePath) ? rawExcludePath : resolve(repoRoot, rawExcludePath);
   const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
-  writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing));
+  writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing, filenames));
 }
 
 function manageGeneratedGitState(paths: string[]): string[] {
@@ -1390,7 +1508,8 @@ function manageGeneratedGitState(paths: string[]): string[] {
   }
 
   for (const [repoRoot, files] of byRepo) {
-    updateManagedExclude(repoRoot, warnings);
+    const filenames = [...new Set(files.map((file) => gitRelPath(repoRoot, file)))];
+    updateManagedExclude(repoRoot, filenames, warnings);
 
     for (const file of files) {
       const rel = gitRelPath(repoRoot, file);
@@ -1420,28 +1539,12 @@ function repoFrontmatter(bridge: BridgeConfig, docs: TargetDoc[]): GeneratedFron
 function applyWrite(): void {
   const plan = createApplyPlan();
   const generatedFiles: string[] = [];
-  const repoDocPairCount = [...plan.targets.keys()].filter((targetDir) => targetDir !== plan.bridge.bridgeDir).length;
 
-  generatedFiles.push(...writeAgentPair(plan.bridge.bridgeDir, renderRepoDoc(plan.bridge.bridgeDir, plan.targets.get(plan.bridge.bridgeDir) ?? [])));
-
-  if (shouldGenerateWorkspaceDocs(plan.bridge)) {
-    assertDir(plan.bridge.workspaceDir!, "workspace");
-    const workspaceContent = renderWorkspaceDoc(plan);
-    generatedFiles.push(...writeAgentPair(plan.bridge.workspaceDir!, workspaceContent, { effort: plan.bridge.effortRef }));
-  }
-
-  for (const [targetDir, docs] of plan.targets) {
-    if (targetDir === plan.bridge.bridgeDir) continue;
-    generatedFiles.push(...writeAgentPair(targetDir, renderRepoDoc(targetDir, docs), repoFrontmatter(plan.bridge, docs)));
-  }
+  generatedFiles.push(...writeAgentFiles(plan.bridge.bridgeDir, plan.agentFiles, renderRepoDoc(plan.bridge.bridgeDir, plan.targets.get(plan.bridge.bridgeDir) ?? [])));
 
   plan.warnings.push(...manageGeneratedGitState(generatedFiles));
 
-  console.log(`Wrote bridge docs: ${join(formatPath(plan.bridge.bridgeDir), "CLAUDE.md")}, ${join(formatPath(plan.bridge.bridgeDir), "AGENTS.md")}`);
-  if (shouldGenerateWorkspaceDocs(plan.bridge)) {
-    console.log(`Wrote workspace docs: ${join(formatPath(plan.bridge.workspaceDir!), "CLAUDE.md")}, ${join(formatPath(plan.bridge.workspaceDir!), "AGENTS.md")}`);
-  }
-  console.log(`Wrote repo doc pairs: ${repoDocPairCount}`);
+  console.log(`Wrote bridge docs: ${plan.agentFiles.map((filename) => join(formatPath(plan.bridge.bridgeDir), filename)).join(", ")}`);
   if (plan.warnings.length > 0) {
     console.log("");
     console.log("Warnings:");

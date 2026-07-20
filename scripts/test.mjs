@@ -10,7 +10,13 @@ const cli = join(root, "dist", "cli.js");
 const lib = join(root, "dist", "nosedive.js");
 const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(lib).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
-const packageFoundationDoc = "00000000-0000-7434-9b1d-72a777ca61f7.md";
+const packageFoundationDocs = [
+  "00000000-0000-7434-9b1d-72a777ca61f7.md",
+  "0000000f-4240-7a62-8f61-a85b4c364560.md",
+  "0000001e-8480-79d6-8e3d-00222452c904.md",
+  "0000002d-c6c0-7354-a306-7624c2db8283.md",
+];
+const packageFoundationDocCount = packageFoundationDocs.length;
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";
 const gitLocalEnvKeys = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -1034,7 +1040,7 @@ Build the YAML-aware workspace work order.
   const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n\n");
   assertOk(initFresh, "init on empty directory failed");
   assert.match(initFresh.stdout, /Wrote \.nosediverc/);
-  assert.match(initFresh.stdout, /Seeded 1 foundation doc into \.\/kb/);
+  assert.match(initFresh.stdout, new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`));
   const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
   assert.equal(
     freshRc,
@@ -1051,16 +1057,22 @@ Build the YAML-aware workspace work order.
       "",
     ].join("\n"),
   );
-  assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
+  }
   assert.equal(existsSync(join(initBridge, "kb", packageNonFoundationDoc)), false);
   assert.equal(existsSync(join(initBridge, ".gitignore")), false);
   const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
   assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
-  assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+  }
   assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
   assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
   const initGitStatus = runTool("git", ["status", "--ignored", "--short", "--untracked-files=all"], initBridge).stdout;
-  assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
+  }
   assert.doesNotMatch(initGitStatus, /\.gitignore/);
 
   const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
@@ -1081,7 +1093,7 @@ Build the YAML-aware workspace work order.
   assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
   assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
   assert.match(initHeadlessFresh.stdout, /Wrote \.nosediverc/);
-  assert.match(initHeadlessFresh.stdout, /Seeded 1 foundation doc into \.\/kb/);
+  assert.match(initHeadlessFresh.stdout, new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`));
   assert.equal(
     readFileSync(join(headlessFreshBridge, ".nosediverc"), "utf8"),
     [
@@ -1097,9 +1109,13 @@ Build the YAML-aware workspace work order.
       "",
     ].join("\n"),
   );
-  assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
+  }
   const headlessFreshExclude = readFileSync(join(headlessFreshBridge, ".git", "info", "exclude"), "utf8");
-  assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+  }
 
   const headlessExistingBridge = join(tmp, "headless-existing-bridge");
   mkdirSync(headlessExistingBridge, { recursive: true });
@@ -1120,7 +1136,7 @@ agents:
   assertOk(initHeadlessExisting, "headless init with existing config failed");
   assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
   assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
-  assert.match(initHeadlessExisting.stdout, /Seeded 1 foundation doc into \.\/custom-kb/);
+  assert.match(initHeadlessExisting.stdout, new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/custom-kb`));
   assert.equal(
     readFileSync(join(headlessExistingBridge, ".nosediverc"), "utf8"),
     [
@@ -1136,9 +1152,13 @@ agents:
       "",
     ].join("\n"),
   );
-  assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
+  }
   const headlessExistingExclude = readFileSync(join(headlessExistingBridge, ".git", "info", "exclude"), "utf8");
-  assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
+  for (const packageFoundationDoc of packageFoundationDocs) {
+    assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
+  }
 
   const nonGitInit = join(tmp, "non-git-init");
   mkdirSync(nonGitInit, { recursive: true });

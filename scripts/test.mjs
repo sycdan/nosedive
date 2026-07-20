@@ -1064,12 +1064,14 @@ Build the YAML-aware workspace work order.
   assert.equal(existsSync(join(initBridge, ".gitignore")), false);
   const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
   assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
+  assert.match(initExclude, /^\.nosediverc$/m);
   for (const packageFoundationDoc of packageFoundationDocs) {
     assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
   }
   assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
   assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
   const initGitStatus = runTool("git", ["status", "--ignored", "--short", "--untracked-files=all"], initBridge).stdout;
+  assert.match(initGitStatus, /^!! \.nosediverc$/m);
   for (const packageFoundationDoc of packageFoundationDocs) {
     assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
   }
@@ -1113,6 +1115,7 @@ Build the YAML-aware workspace work order.
     assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
   }
   const headlessFreshExclude = readFileSync(join(headlessFreshBridge, ".git", "info", "exclude"), "utf8");
+  assert.match(headlessFreshExclude, /^\.nosediverc$/m);
   for (const packageFoundationDoc of packageFoundationDocs) {
     assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
   }
@@ -1156,6 +1159,7 @@ agents:
     assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
   }
   const headlessExistingExclude = readFileSync(join(headlessExistingBridge, ".git", "info", "exclude"), "utf8");
+  assert.match(headlessExistingExclude, /^\.nosediverc$/m);
   for (const packageFoundationDoc of packageFoundationDocs) {
     assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
   }

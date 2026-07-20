@@ -4,6 +4,8 @@
 
 # Nosedive: intentional velocity
 
+⚠️ This repo is currently undergoing active development and may undergo breaking changes without warning. ⚠️
+
 **_nosedive_ turns a plain notes repo into a hub for cross-repo work** — a place where a
 developer (and their agents) can safely pick up a piece of work that spans
 several repositories, do it, and get it reviewed, without the usual friction of

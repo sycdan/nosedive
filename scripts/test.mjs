@@ -25,10 +25,11 @@ function write(path, content) {
   writeFileSync(path, content, "utf8");
 }
 
-function run(args, cwd) {
+function run(args, cwd, input) {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd,
     encoding: "utf8",
+    input,
   });
 }
 
@@ -83,6 +84,7 @@ try {
   assertOk(help, "--help command failed");
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /mint/);
+  assert.match(help.stdout, /init/);
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
   assert.match(help.stdout, /add-repo/);
@@ -883,6 +885,39 @@ Build the YAML-aware workspace work order.
   const invalidRepoFlag = run(["apply", "--dry-run"], bridge);
   assert.notEqual(invalidRepoFlag.status, 0, "invalid repo flag unexpectedly succeeded");
   assert.match(invalidRepoFlag.stderr, /invalid effort repo flag in .*YamlFrontmatter\.md: repo-writable:rw \(unsupported flag: rw\)/);
+
+  const initHelp = run(["init", "--help"], root);
+  assertOk(initHelp, "init --help failed");
+  assert.match(initHelp.stdout, /Usage: nosedive init/);
+
+  const initBridge = join(tmp, "init-bridge");
+  mkdirSync(initBridge, { recursive: true });
+
+  const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n");
+  assertOk(initFresh, "init on empty directory failed");
+  assert.match(initFresh.stdout, /Wrote \.nosediverc/);
+  const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
+  assert.equal(
+    freshRc,
+    [
+      "workspace: ./workspace",
+      "backlog: ./backlog",
+      "kb: ./kb",
+      "sessions: ./sessions",
+      "home-branch: main",
+      "work-branch-prefix: work/",
+      "agents:",
+      "  - copilot",
+      "",
+    ].join("\n"),
+  );
+
+  const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\nbogus\ncopilot,claude\n");
+  assertOk(initReprompt, "init re-run with invalid agent failed");
+  assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
+  const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
+  assert.match(repromptedRc, /workspace: \.\/workspace/);
+  assert.match(repromptedRc, /agents:\n  - copilot\n  - claude\n$/);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }

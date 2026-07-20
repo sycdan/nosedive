@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   existsSync,
@@ -43,11 +44,24 @@ const USAGE = `Usage: nosedive <command>
 Commands:
   version       Print the package version
   mint          Generate UUIDv7 with a specific timestamp encoded
+  init          Create or edit .nosediverc interactively
   dump-backlog  Print the open efforts in the configured backlog
   pitch         Create a new effort in the backlog
   add-repo      Add a kb repo to an effort's workspace
   apply         Materialize scoped agent docs for the current effort
 `;
+
+const KNOWN_AGENTS = ["copilot", "claude"];
+
+const DEFAULT_RC = {
+  workspace: "./workspace",
+  backlog: "./backlog",
+  kb: "./kb",
+  sessions: "./sessions",
+  "home-branch": "main",
+  "work-branch-prefix": "work/",
+  agents: ["copilot"],
+};
 
 // --- frontmatter -----------------------------------------------------------
 
@@ -76,6 +90,7 @@ export interface NosediveRc {
   sessionsDir?: string;
   homeBranch?: string;
   workBranchPrefix?: string;
+  agents: string[];
   current: {
     effort?: string;
     session?: string;
@@ -221,6 +236,7 @@ export function readNosediveRc(start: string): NosediveRc {
     sessionsDir: sessions ? resolveFrom(bridgeDir, sessions) : undefined,
     homeBranch: rc.scalars["home-branch"],
     workBranchPrefix: rc.scalars["work-branch-prefix"],
+    agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
     current: {
       effort: rc.nested.current?.effort,
       session: rc.nested.current?.session,
@@ -245,6 +261,126 @@ export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurren
   }
 
   writeFileAtomic(rcPath, doc.toString());
+}
+
+// --- init --------------------------------------------------------------
+
+interface RcSettings {
+  workspace: string;
+  backlog: string;
+  kb: string;
+  sessions: string;
+  homeBranch: string;
+  workBranchPrefix: string;
+  agents: string[];
+}
+
+function loadRcSettings(rcPath: string): RcSettings {
+  if (!existsSync(rcPath)) {
+    return {
+      workspace: DEFAULT_RC.workspace,
+      backlog: DEFAULT_RC.backlog,
+      kb: DEFAULT_RC.kb,
+      sessions: DEFAULT_RC.sessions,
+      homeBranch: DEFAULT_RC["home-branch"],
+      workBranchPrefix: DEFAULT_RC["work-branch-prefix"],
+      agents: [...DEFAULT_RC.agents],
+    };
+  }
+
+  const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
+  return {
+    workspace: rc.scalars.workspace ?? DEFAULT_RC.workspace,
+    backlog: rc.scalars.backlog ?? DEFAULT_RC.backlog,
+    kb: rc.scalars.kb ?? DEFAULT_RC.kb,
+    sessions: rc.scalars.sessions ?? DEFAULT_RC.sessions,
+    homeBranch: rc.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
+    workBranchPrefix: rc.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
+    agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
+  };
+}
+
+type LineIterator = NodeJS.AsyncIterator<string>;
+
+/**
+ * Piped (non-TTY) stdin delivers every buffered line the instant the stream
+ * is first resumed, but `rl.question()` only ever attaches a listener for
+ * one line at a time -- every line after the first gets silently dropped,
+ * and the next question then hangs waiting on an already-EOF'd stream.
+ * Driving the interface's async iterator directly instead consumes lines
+ * one at a time regardless of how they arrived.
+ */
+async function nextLine(iter: LineIterator): Promise<string | undefined> {
+  const { value, done } = await iter.next();
+  return done ? undefined : value.trim();
+}
+
+async function promptScalar(iter: LineIterator, label: string, current: string): Promise<string> {
+  process.stdout.write(`${label} [${current}]: `);
+  const line = await nextLine(iter);
+  return !line ? current : line;
+}
+
+async function promptAgents(iter: LineIterator, current: string[]): Promise<string[]> {
+  for (;;) {
+    process.stdout.write(`agents, comma-separated (options: ${KNOWN_AGENTS.join(", ")}) [${current.join(",")}]: `);
+    const line = await nextLine(iter);
+    if (line === undefined) return current;
+    const list = line === "" ? current : line.split(",").map((entry) => entry.trim()).filter(Boolean);
+    const unknown = list.filter((agent) => !KNOWN_AGENTS.includes(agent));
+    if (unknown.length > 0) {
+      console.error(`unknown agent(s): ${unknown.join(", ")} (options: ${KNOWN_AGENTS.join(", ")})`);
+      continue;
+    }
+    if (list.length === 0) {
+      console.error("select at least one agent");
+      continue;
+    }
+    return list;
+  }
+}
+
+function renderRc(settings: RcSettings): string {
+  return [
+    `workspace: ${settings.workspace}`,
+    `backlog: ${settings.backlog}`,
+    `kb: ${settings.kb}`,
+    `sessions: ${settings.sessions}`,
+    `home-branch: ${settings.homeBranch}`,
+    `work-branch-prefix: ${settings.workBranchPrefix}`,
+    `agents:`,
+    ...settings.agents.map((agent) => `  - ${agent}`),
+    "",
+  ].join("\n");
+}
+
+async function init(args: string[]): Promise<void> {
+  if (args[0] === "-h" || args[0] === "--help") {
+    console.log("Usage: nosedive init");
+    console.log("  Create or edit .nosediverc in the current directory, prompting for each setting.");
+    console.log("  Existing values (or built-in defaults) are shown as the default for each prompt; press Enter to keep it.");
+    return;
+  }
+
+  const rcPath = join(process.cwd(), ".nosediverc");
+  const settings = loadRcSettings(rcPath);
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const iter = rl[Symbol.asyncIterator]();
+    settings.workspace = await promptScalar(iter, "workspace", settings.workspace);
+    settings.backlog = await promptScalar(iter, "backlog", settings.backlog);
+    settings.kb = await promptScalar(iter, "kb", settings.kb);
+    settings.sessions = await promptScalar(iter, "sessions", settings.sessions);
+    settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
+    settings.workBranchPrefix = await promptScalar(iter, "work-branch-prefix", settings.workBranchPrefix);
+    settings.agents = await promptAgents(iter, settings.agents);
+  } finally {
+    rl.close();
+  }
+
+  writeFileAtomic(rcPath, renderRc(settings));
+  console.log(`Wrote ${formatPath(rcPath)}`);
 }
 
 // --- efforts ---------------------------------------------------------------
@@ -1395,7 +1531,7 @@ function mintId(args: string[]): void {
 
 // --- dispatch --------------------------------------------------------------
 
-export function runCli(argv = process.argv.slice(2)): void {
+export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const [command, ...args] = argv;
 
   switch (command) {
@@ -1406,6 +1542,9 @@ export function runCli(argv = process.argv.slice(2)): void {
       break;
     case "mint":
       mintId(args);
+      break;
+    case "init":
+      await init(args);
       break;
     case "dump-backlog":
       dumpBacklog(args);

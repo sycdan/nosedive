@@ -66,6 +66,7 @@ try {
   assert.match(init.stdout, new RegExp(`Seeded ${expectedFoundationDocs.length} foundation docs into \\.\\/kb`));
   const seededFilenames = readdirSync(join(initBridge, "kb")).filter((filename) => filename.endsWith(".md")).sort();
   assert.deepEqual(seededFilenames, expectedFoundationDocs);
+  assert.match(readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8"), /^\.nosediverc$/m);
   const seededDocs = seededFilenames
     .filter((filename) => filename.endsWith(".md"))
     .map((filename) => readFileSync(join(initBridge, "kb", filename), "utf8"));

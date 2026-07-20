@@ -82,9 +82,22 @@ try {
   const help = run(["--help"], root);
   assertOk(help, "--help command failed");
   assert.match(help.stdout, /Usage: nosedive <command>/);
+  assert.match(help.stdout, /mint/);
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
   assert.match(help.stdout, /add-repo/);
+
+  const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], root);
+  assertOk(minted, "mint command failed");
+  const mintedLines = minted.stdout.trim().split(/\r?\n/);
+  assert.equal(mintedLines.length, 2, "mint should print one UUID per line");
+  assert.match(mintedLines[0], /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.match(mintedLines[1], /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(mintedLines[0] < mintedLines[1], true, "mint count mode should advance timestamps by 1ms and sort lexicographically");
+
+  const mintedNow = run(["mint"], root);
+  assertOk(mintedNow, "mint default timestamp command failed");
+  assert.match(mintedNow.stdout.trim(), /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
   const bridge = join(tmp, "bridge");
   mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });

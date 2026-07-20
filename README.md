@@ -50,6 +50,12 @@ effort or domain directory. `<parent>` can be a backlog path, a domain directory
 path such as `backlog/gogglebox`, or a leaf-first effort slug chain such as
 `baz-qux.foo-bar`. Pitch writes the new effort file locally.
 
+`nosedive mint <timestamp> [count]` generates UUIDv7 values with a specific
+timestamp encoded (ISO date string or Unix milliseconds). This is available via
+the published bin too, for example:
+
+`npx -y nosedive@dev mint 1997-08-29T02:14:00-04:00`
+
 ## Development
 
 Run `npm install` once after cloning. Its `prepare` script points git at

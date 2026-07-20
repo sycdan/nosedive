@@ -42,6 +42,7 @@ Commands:
   pitch         Create a new effort in the backlog
   add-repo      Add a kb repo to an effort's workspace
   apply         Materialize scoped agent docs for the current effort
+  nuke          Reset managed local git state
 `;
 
 const KNOWN_AGENTS = ["copilot", "claude"];
@@ -348,7 +349,7 @@ async function promptScalar(iter: LineIterator, label: string, current: string):
 }
 
 async function promptAgents(iter: LineIterator, current: string[]): Promise<string[]> {
-  for (;;) {
+  for (; ;) {
     process.stdout.write(`agents, comma-separated (options: ${KNOWN_AGENTS.join(", ")}) [${current.join(",")}]: `);
     const line = await nextLine(iter);
     if (line === undefined) return current;
@@ -1633,6 +1634,108 @@ function manageFoundationGitState(paths: string[]): string[] {
   return manageGitState(paths, FOUNDATION_EXCLUDE_SPEC);
 }
 
+function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[] {
+  const entries: string[] = [];
+  const lines = text.split(/\r?\n/);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i] !== spec.begin) continue;
+
+    const end = lines.indexOf(spec.end, i + 1);
+    if (end === -1) continue;
+
+    for (let j = i + 1; j < end; j += 1) {
+      const entry = lines[j]?.trim() ?? "";
+      if (!entry || entry.startsWith("#")) continue;
+      entries.push(entry);
+    }
+
+    i = end;
+  }
+
+  return [...new Set(entries)];
+}
+
+function nukeInstructions(): void {
+  const bridge = loadBridgeConfig(process.cwd());
+  const repoRoot = gitOutput(bridge.bridgeDir, ["rev-parse", "--show-toplevel"]);
+  if (!repoRoot) throw new Error("nosedive nuke must be run inside a git-backed bridge");
+
+  const warnings: string[] = [];
+  let revertedFiles = 0;
+
+  const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
+  if (!rawExcludePath) {
+    warnings.push(`could not resolve git exclude path for ${repoRoot}`);
+  } else {
+    const excludePath = isAbsolute(rawExcludePath) ? rawExcludePath : resolve(repoRoot, rawExcludePath);
+    const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    const managedEntries = managedExcludeEntries(existing, AGENT_EXCLUDE_SPEC);
+
+    for (const rel of managedEntries) {
+      if (!gitOk(repoRoot, ["ls-files", "--error-unmatch", "--", rel])) continue;
+
+      if (!gitOk(repoRoot, ["update-index", "--no-skip-worktree", "--", rel])) {
+        warnings.push(`could not clear skip-worktree: ${join(repoRoot, rel)}`);
+        continue;
+      }
+
+      if (!gitOk(repoRoot, ["checkout", "--", rel])) {
+        warnings.push(`could not restore tracked file from git: ${join(repoRoot, rel)}`);
+        continue;
+      }
+
+      revertedFiles += 1;
+    }
+
+    const withoutManaged = removeManagedExcludeBlocks(existing, AGENT_EXCLUDE_SPEC);
+    if (withoutManaged !== existing) writeFileAtomic(excludePath, withoutManaged);
+  }
+
+  console.log(`Nuked managed instruction state in bridge repo; reverted ${revertedFiles} tracked file${revertedFiles === 1 ? "" : "s"}.`);
+  if (warnings.length > 0) {
+    console.log("");
+    console.log("Warnings:");
+    for (const warning of warnings) console.log(`  - ${warning}`);
+  }
+}
+
+interface NukeOptions {
+  help: boolean;
+  instructions: boolean;
+}
+
+function parseNukeOptions(args: string[]): NukeOptions {
+  const options: NukeOptions = { help: false, instructions: false };
+  for (const arg of args) {
+    if (arg === "-h" || arg === "--help") {
+      options.help = true;
+      continue;
+    }
+    if (arg === "--instructions") {
+      options.instructions = true;
+      continue;
+    }
+    throw new Error(`unknown nuke option: ${arg}`);
+  }
+  return options;
+}
+
+function nuke(args: string[]): void {
+  const options = parseNukeOptions(args);
+  if (options.help) {
+    console.log("Usage: nosedive nuke --instructions");
+    console.log("  Reset managed instruction-file git state to factory defaults.");
+    return;
+  }
+
+  if (!options.instructions) {
+    throw new Error("nosedive nuke is destructive; rerun with --instructions");
+  }
+
+  nukeInstructions();
+}
+
 function repoFrontmatter(bridge: BridgeConfig, docs: TargetDoc[]): GeneratedFrontmatter | undefined {
   const first = docs[0];
   if (!bridge.effortRef || !first?.repoId) return undefined;
@@ -1747,6 +1850,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       break;
     case "apply":
       apply(args);
+      break;
+    case "nuke":
+      nuke(args);
       break;
     case undefined:
     case "help":

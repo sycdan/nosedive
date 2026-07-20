@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const npmExecPath = process.env.npm_execpath;
 
-function run(command, args) {
-  const result = spawnSync(command, args, { encoding: "utf8" });
+function run(command, args, cwd) {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
   assert.equal(
     result.status,
     0,
@@ -17,6 +19,11 @@ function run(command, args) {
 function runNpm(args) {
   if (npmExecPath) return run(process.execPath, [npmExecPath, ...args]);
   return run(process.platform === "win32" ? "npm.cmd" : "npm", args);
+}
+
+function runPackedNpm(args, cwd) {
+  if (npmExecPath) return run(process.execPath, [npmExecPath, ...args], cwd);
+  return run(process.platform === "win32" ? "npm.cmd" : "npm", args, cwd);
 }
 
 function parsePackOutput(stdout) {
@@ -37,18 +44,29 @@ function parsePackOutput(stdout) {
 const pack = runNpm(["pack", "--json"]);
 const [packed] = parsePackOutput(pack.stdout);
 assert.equal(typeof packed?.filename, "string", `npm pack output did not include a filename:\n${pack.stdout}`);
-assert.equal(
-  packed.files?.some((file) => file.path === "kb/00000000-0000-7434-9b1d-72a777ca61f7.md"),
-  true,
-  `npm package did not include package foundation docs:\n${pack.stdout}`,
-);
+const packedPath = resolve(packed.filename);
+const initBridge = mkdtempSync(join(tmpdir(), "nosedive-pack-init-"));
 
 try {
-  const help = runNpm(["exec", "--yes", "--package", `./${packed.filename}`, "-c", "nosedive --help"]);
+  const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
   assert.match(help.stdout, /Usage: nosedive <command>/);
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
   assert.match(help.stdout, /add-repo/);
+
+  run("git", ["init", "-b", "main"], initBridge);
+  const init = runPackedNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive init --headless"], initBridge);
+  assert.match(init.stdout, /Wrote \.nosediverc/);
+  assert.match(init.stdout, /Seeded \d+ foundation doc/);
+  const seededDocs = readdirSync(join(initBridge, "kb"))
+    .filter((filename) => filename.endsWith(".md"))
+    .map((filename) => readFileSync(join(initBridge, "kb", filename), "utf8"));
+  assert.equal(
+    seededDocs.some((content) => /^kind: foundation$/m.test(content)),
+    true,
+    `packed init did not seed any foundation docs:\n${init.stdout}\n${init.stderr}`,
+  );
 } finally {
   rmSync(packed.filename, { force: true });
+  rmSync(initBridge, { recursive: true, force: true });
 }

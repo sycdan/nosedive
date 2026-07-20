@@ -11,6 +11,7 @@ on:
     paths:
       - "src/**"
       - "scripts/**"
+      - "kb/**"
       - package.json
       - package-lock.json
       - tsconfig.json

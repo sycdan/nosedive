@@ -42,6 +42,7 @@ const USAGE = `Usage: nosedive <command>
 
 Commands:
   version       Print the package version
+  mint          Generate UUIDv7 with a specific timestamp encoded
   dump-backlog  Print the open efforts in the configured backlog
   pitch         Create a new effort in the backlog
   add-repo      Add a kb repo to an effort's workspace
@@ -867,9 +868,9 @@ function parseScopeRef(scope: string): ScopeRef | undefined {
     colon === -1
       ? []
       : flagText
-          .split(",")
-          .map((flag) => flag.trim())
-          .filter(Boolean);
+        .split(",")
+        .map((flag) => flag.trim())
+        .filter(Boolean);
   let render: "body" | "gist" | undefined;
 
   for (const flag of flags) {
@@ -1153,13 +1154,13 @@ function renderRepoDoc(targetDir: string, docs: TargetDoc[]): string {
     runbookItems.length === 0
       ? []
       : [
-          "## Available Runbooks",
-          "",
-          "If the user asks what runbooks are available or what they can do, answer from this list with runbook names and gists.",
-          "If the user asks to do something that sounds like one of these runbooks, read the full source doc before taking the runbook.",
-          "",
-          ...runbookItems.map((item) => renderRunbookGistBlock(item.doc)),
-        ];
+        "## Available Runbooks",
+        "",
+        "If the user asks what runbooks are available or what they can do, answer from this list with runbook names and gists.",
+        "If the user asks to do something that sounds like one of these runbooks, read the full source doc before taking the runbook.",
+        "",
+        ...runbookItems.map((item) => renderRunbookGistBlock(item.doc)),
+      ];
 
   return [...header, ...nonRunbookBlocks, ...runbookBlocks].join("\n");
 }
@@ -1341,6 +1342,57 @@ function apply(args: string[]): void {
   applyWrite();
 }
 
+function parseMintTimestamp(value: string): number {
+  if (/^\d+$/.test(value)) return Number(value);
+  return Date.parse(value);
+}
+
+const UUID7_MAX_TIMESTAMP_MS = 0xffffffffffff;
+
+function uuid7AtMs(ms: number): string {
+  const bytes = new Uint8Array(require("node:crypto").randomBytes(16)) as Uint8Array;
+  const ts = BigInt(ms);
+
+  bytes[0] = Number((ts >> 40n) & 0xffn);
+  bytes[1] = Number((ts >> 32n) & 0xffn);
+  bytes[2] = Number((ts >> 24n) & 0xffn);
+  bytes[3] = Number((ts >> 16n) & 0xffn);
+  bytes[4] = Number((ts >> 8n) & 0xffn);
+  bytes[5] = Number(ts & 0xffn);
+
+  // Set version (0111) and variant (10).
+  bytes[6] = (bytes[6] & 0x0f) | 0x70;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (x) => x.toString(16).padStart(2, "0")).join("");
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+}
+
+function mintId(args: string[]): void {
+  const [firstArg, secondArg] = args;
+  if (firstArg === "-h" || firstArg === "--help") {
+    console.log("Usage: nosedive mint [timestamp] [count]");
+    console.log("  [timestamp]: ISO date string or Unix milliseconds (default: now)");
+    console.log("  [count]: integer from 1 to 1000 (default: 1, one UUID per successive ms)");
+    return;
+  }
+
+  const baseMs = firstArg ? parseMintTimestamp(firstArg) : Date.now();
+  const count = secondArg ? Number(secondArg) : 1;
+
+  if (!Number.isFinite(baseMs) || baseMs < 0 || !Number.isInteger(baseMs)) {
+    throw new Error("mint: invalid timestamp (use ISO date string or Unix milliseconds)");
+  }
+  if (!Number.isInteger(count) || count < 1 || count > 1000) {
+    throw new Error("mint: invalid count (must be an integer between 1 and 1000)");
+  }
+  if (baseMs > UUID7_MAX_TIMESTAMP_MS || baseMs + (count - 1) > UUID7_MAX_TIMESTAMP_MS) {
+    throw new Error("mint: timestamp out of UUIDv7 range");
+  }
+
+  for (let i = 0; i < count; i += 1) console.log(uuid7AtMs(baseMs + i));
+}
+
 // --- dispatch --------------------------------------------------------------
 
 export function runCli(argv = process.argv.slice(2)): void {
@@ -1351,6 +1403,9 @@ export function runCli(argv = process.argv.slice(2)): void {
     case "--version":
     case "-v":
       console.log(version);
+      break;
+    case "mint":
+      mintId(args);
       break;
     case "dump-backlog":
       dumpBacklog(args);

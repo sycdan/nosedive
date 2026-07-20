@@ -1018,7 +1018,12 @@ Build the YAML-aware workspace work order.
 
   const initHelp = run(["init", "--help"], root);
   assertOk(initHelp, "init --help failed");
-  assert.match(initHelp.stdout, /Usage: nosedive init/);
+  assert.match(initHelp.stdout, /Usage: nosedive init \[--headless\]/);
+  assert.match(initHelp.stdout, /--headless skips prompts/);
+
+  const unknownInitOption = run(["init", "--bogus"], root, "");
+  assert.notEqual(unknownInitOption.status, 0, "init with unknown option unexpectedly succeeded");
+  assert.match(unknownInitOption.stderr, /unknown init option: --bogus/);
 
   const initBridge = join(tmp, "init-bridge");
   mkdirSync(initBridge, { recursive: true });
@@ -1064,6 +1069,76 @@ Build the YAML-aware workspace work order.
   const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
   assert.match(repromptedRc, /workspace: \.\/workspace/);
   assert.match(repromptedRc, /agents:\n  - copilot\n  - claude\n$/);
+
+  const headlessFreshBridge = join(tmp, "headless-fresh-bridge");
+  mkdirSync(headlessFreshBridge, { recursive: true });
+  runTool("git", ["init", "-b", "main"], headlessFreshBridge);
+  runTool("git", ["config", "user.name", "Headless Person"], headlessFreshBridge);
+  runTool("git", ["config", "user.email", "headless@example.invalid"], headlessFreshBridge);
+
+  const initHeadlessFresh = run(["init", "--headless"], headlessFreshBridge, "");
+  assertOk(initHeadlessFresh, "headless init on empty directory failed");
+  assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
+  assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
+  assert.match(initHeadlessFresh.stdout, /Wrote \.nosediverc/);
+  assert.match(initHeadlessFresh.stdout, /Seeded 1 foundation doc into \.\/kb/);
+  assert.equal(
+    readFileSync(join(headlessFreshBridge, ".nosediverc"), "utf8"),
+    [
+      "workspace: ./workspace",
+      "backlog: ./backlog",
+      "kb: ./kb",
+      "home-branch: main",
+      "work-branch-prefix: work/",
+      "pilot-name: Headless Person",
+      "pilot-email: headless@example.invalid",
+      "agents:",
+      "  - copilot",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
+  const headlessFreshExclude = readFileSync(join(headlessFreshBridge, ".git", "info", "exclude"), "utf8");
+  assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+
+  const headlessExistingBridge = join(tmp, "headless-existing-bridge");
+  mkdirSync(headlessExistingBridge, { recursive: true });
+  runTool("git", ["init", "-b", "main"], headlessExistingBridge);
+  runTool("git", ["config", "user.name", "Detected Name"], headlessExistingBridge);
+  runTool("git", ["config", "user.email", "detected@example.invalid"], headlessExistingBridge);
+  write(
+    join(headlessExistingBridge, ".nosediverc"),
+    `workspace: ./custom-workspace
+kb: ./custom-kb
+pilot-name: Existing Pilot
+agents:
+  - claude
+`,
+  );
+
+  const initHeadlessExisting = run(["init", "--headless"], headlessExistingBridge, "");
+  assertOk(initHeadlessExisting, "headless init with existing config failed");
+  assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
+  assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
+  assert.match(initHeadlessExisting.stdout, /Seeded 1 foundation doc into \.\/custom-kb/);
+  assert.equal(
+    readFileSync(join(headlessExistingBridge, ".nosediverc"), "utf8"),
+    [
+      "workspace: ./custom-workspace",
+      "backlog: ./backlog",
+      "kb: ./custom-kb",
+      "home-branch: main",
+      "work-branch-prefix: work/",
+      "pilot-name: Existing Pilot",
+      "pilot-email: detected@example.invalid",
+      "agents:",
+      "  - claude",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
+  const headlessExistingExclude = readFileSync(join(headlessExistingBridge, ".git", "info", "exclude"), "utf8");
+  assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
 
   const nonGitInit = join(tmp, "non-git-init");
   mkdirSync(nonGitInit, { recursive: true });

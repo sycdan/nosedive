@@ -133,9 +133,19 @@ backlog: ./backlog
 kb: ./kb
 home-branch: main
 work-branch-prefix: work/
+pilot-name: Pilot Person
+pilot-email: pilot@example.invalid
+agents:
+  - copilot
+  - claude
 custom-scalar: keep-me
 current:
   effort: yaml-frontmatter/YamlFrontmatter.md
+`,
+  );
+  write(
+    join(bridge, "workspace", ".nosedive-ref"),
+    `id: active-dive
 `,
   );
   write(
@@ -302,6 +312,24 @@ scopes:
 `,
   );
   write(
+    join(bridge, "kb", "active-dive.md"),
+    `---
+kind: dive
+id: active-dive
+name: yaml-frontmatter.abcdef
+gist: "Active dive for apply tests."
+scopes:
+  - repo-writable
+  - repo-readonly@develop:ro
+meta:
+  effort: backlog/yaml-frontmatter/YamlFrontmatter.md
+  diver: pilot@example.invalid
+---
+
+# Active dive
+`,
+  );
+  write(
     join(bridge, "kb", "foundation.md"),
     `---
 kind: foundation
@@ -322,17 +350,22 @@ Body rendered from valid YAML frontmatter.
   assertOk(dryRun, "apply --dry-run failed");
   assert.match(dryRun.stdout, /Home:      main/);
   assert.match(dryRun.stdout, /Work ref:  work\//);
+  assert.match(dryRun.stdout, /Pilot:     Pilot Person <pilot@example\.invalid>/);
+  assert.match(dryRun.stdout, /Dive:      active-dive/);
+  assert.match(dryRun.stdout, /Tags:      pilot-is-set/);
   assert.doesNotMatch(dryRun.stdout, /Sessions:/);
   assert.doesNotMatch(dryRun.stdout, /Session:/);
   assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
   assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/);
-  assert.match(dryRun.stdout, /convention\.md :gist/);
-  assert.match(dryRun.stdout, /assertion\.md :gist/);
+  assert.doesNotMatch(dryRun.stdout, /Workspace docs:/);
+  assert.doesNotMatch(dryRun.stdout, /Repo docs:/);
+  assert.doesNotMatch(dryRun.stdout, /convention\.md :gist/);
+  assert.doesNotMatch(dryRun.stdout, /assertion\.md :gist/);
   assert.doesNotMatch(dryRun.stdout, /old-colon-scope\.md/);
-  assert.match(dryRun.stdout, /decision\.md :gist/);
+  assert.doesNotMatch(dryRun.stdout, /decision\.md :gist/);
   assert.match(dryRun.stdout, /runbook-workon\.md :gist/);
-  assert.match(dryRun.stdout, /runbook-repo\.md :gist/);
-  assert.match(dryRun.stdout, /foundation\.md :body scope=app/);
+  assert.doesNotMatch(dryRun.stdout, /runbook-repo\.md :gist/);
+  assert.match(dryRun.stdout, /foundation\.md :body/);
   assert.match(dryRun.stdout, /No files written\./);
   assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
 
@@ -370,15 +403,19 @@ Body rendered from valid YAML frontmatter.
 
   const apply = run(["apply"], bridge);
   assertOk(apply, "apply failed");
-  assert.match(apply.stdout, /tracked generated file marked skip-worktree: .*CLAUDE\.md/);
+  assert.doesNotMatch(apply.stdout, /tracked generated file marked skip-worktree: .*CLAUDE\.md/);
   assert.equal(existsSync(join(bridge, "CLAUDE.md")), true);
-  assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), true);
+  assert.equal(existsSync(join(bridge, "AGENTS.md")), true);
+  assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), false);
   assert.equal(existsSync(join(bridge, "workspace", "writable", "CLAUDE.md")), true);
-  assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), true);
+  assert.equal(readFileSync(join(bridge, "workspace", "writable", "CLAUDE.md"), "utf8"), "# Tracked local instructions\n");
+  assert.equal(existsSync(join(bridge, "workspace", "writable", "AGENTS.md")), false);
+  assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), false);
 
   const bridgeDoc = readFileSync(join(bridge, "CLAUDE.md"), "utf8");
   assertGeneratedFrontmatter(bridgeDoc, "CLAUDE.md");
   assert.match(bridgeDoc, /# Foundation Body/);
+  assert.match(readFileSync(join(bridge, "AGENTS.md"), "utf8"), /# Foundation Body/);
   assert.match(bridgeDoc, /## Available Runbooks/);
   assert.match(bridgeDoc, /If the user asks what runbooks are available or what they can do, answer from this list with runbook names and gists\./);
   assert.match(bridgeDoc, /If the user asks to do something that sounds like one of these runbooks, read the full source doc before taking the runbook\./);
@@ -387,82 +424,28 @@ Body rendered from valid YAML frontmatter.
   assert.match(bridgeDoc, /Source: `kb[\\/]runbook-workon\.md`/);
   assert.doesNotMatch(bridgeDoc, /Run the workon flow after reading this doc\./);
 
-  const workspaceDoc = readFileSync(join(bridge, "workspace", "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(workspaceDoc, "CLAUDE.md", [`effort: "yaml-frontmatter/YamlFrontmatter.md"`]);
-  assert.doesNotMatch(workspaceDoc, /# Agent Instructions/);
-  assert.match(workspaceDoc, /# YAML frontmatter/);
-  assert.match(workspaceDoc, /Build the YAML-aware workspace work order\./);
-  assert.doesNotMatch(workspaceDoc, /Bridge:/);
-  assert.doesNotMatch(workspaceDoc, /Effort:/);
-  assertContainsPath(workspaceDoc, join(bridge, "workspace", "writable"));
-  assertContainsPath(workspaceDoc, join(bridge, "workspace", "readonly"));
-  assert.match(workspaceDoc, /Only the paths listed above are part of this effort\. Do not inspect or edit other directories unless the user explicitly expands the effort\./);
-  assert.doesNotMatch(workspaceDoc, /other workspace directories/);
-  assertContainsPath(workspaceDoc, join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"));
-  assertContainsPath(workspaceDoc, join(bridge, "backlog", "other-effort", "OtherEffort.md"));
+  const bridgeExcludeText = readFileSync(bridgeExclude, "utf8");
+  assert.match(bridgeExcludeText, /# user bridge exclude/);
+  assert.match(bridgeExcludeText, /# BEGIN nosedive-managed exclude/);
+  assert.match(bridgeExcludeText, /# kb: 019f5651-5539-76f5-b6bd-351d300194eb/);
+  assert.match(bridgeExcludeText, /# owner: nosedive apply/);
+  assert.match(bridgeExcludeText, /^AGENTS\.md$/m);
+  assert.match(bridgeExcludeText, /^CLAUDE\.md$/m);
+  assert.doesNotMatch(bridgeExcludeText, /^\/CLAUDE\.md$/m);
+  assert.match(bridgeExcludeText, /# END nosedive-managed exclude/);
+  assert.doesNotMatch(readFileSync(writableExclude, "utf8"), /BEGIN nosedive-managed/);
+  assert.doesNotMatch(readFileSync(readonlyExclude, "utf8"), /BEGIN nosedive-managed/);
 
-  const writableDoc = readFileSync(join(bridge, "workspace", "writable", "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(writableDoc, "CLAUDE.md", [
-    `effort: "yaml-frontmatter/YamlFrontmatter.md"`,
-    `repo-id: "repo-writable"`,
-    `scope-path: "."`,
-  ]);
-  assert.doesNotMatch(writableDoc, /Target:/);
-  assert.match(writableDoc, /Quoted gist: colon, "quotes", and `backticks` survive YAML parsing\./);
-  assert.match(writableDoc, /Scoped assertion gists render by default\./);
-  assert.doesNotMatch(writableDoc, /Old multi-colon scopes do not render\./);
-  assert.match(writableDoc, /Scoped decision gists render by default\./);
-  assert.match(writableDoc, /### `repo-runbook\.test`/);
-  assert.match(writableDoc, /Repo-scoped runbooks render as gists\./);
-  const writableAgentsDoc = readFileSync(join(bridge, "workspace", "writable", "AGENTS.md"), "utf8");
-  assertGeneratedFrontmatter(writableAgentsDoc, "AGENTS.md", [
-    `effort: "yaml-frontmatter/YamlFrontmatter.md"`,
-    `repo-id: "repo-writable"`,
-    `scope-path: "."`,
-  ]);
-
-  const bodyDoc = readFileSync(join(bridge, "workspace", "writable", "app", "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(bodyDoc, "CLAUDE.md", [
-    `effort: "yaml-frontmatter/YamlFrontmatter.md"`,
-    `repo-id: "repo-writable"`,
-    `scope-path: "app"`,
-  ]);
-  assert.match(bodyDoc, /# Foundation Body/);
-  assert.match(bodyDoc, /Body rendered from valid YAML frontmatter\./);
-
-  const readOnlyDoc = readFileSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(readOnlyDoc, "CLAUDE.md", [
-    `effort: "yaml-frontmatter/YamlFrontmatter.md"`,
-    `repo-id: "repo-readonly"`,
-    `scope-path: "app"`,
-  ]);
-  assert.match(readOnlyDoc, /Read-only For This Effort/);
-
-  for (const [label, excludePath] of [
-    ["bridge", bridgeExclude],
-    ["writable", writableExclude],
-    ["readonly", readonlyExclude],
-  ]) {
-    const excludeText = readFileSync(excludePath, "utf8");
-    assert.match(excludeText, new RegExp(`# user ${label} exclude`));
-    assert.match(excludeText, /# BEGIN nosedive-managed exclude/);
-    assert.match(excludeText, /# kb: 019f5651-5539-76f5-b6bd-351d300194eb/);
-    assert.match(excludeText, /# owner: nosedive apply/);
-    assert.match(excludeText, /^CLAUDE\.md$/m);
-    assert.match(excludeText, /^AGENTS\.md$/m);
-    assert.doesNotMatch(excludeText, /^\/CLAUDE\.md$/m);
-    assert.match(excludeText, /# END nosedive-managed exclude/);
-  }
-
-  assert.match(runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root).stdout, /^S /);
-  assertOk(runTool("git", ["check-ignore", "app/CLAUDE.md"], writableRoot), "nested CLAUDE.md should be ignored by bare exclude pattern");
-  assertOk(runTool("git", ["check-ignore", "app/AGENTS.md"], readonlyRoot), "nested AGENTS.md should be ignored by bare exclude pattern");
+  assert.match(runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root).stdout, /^H /);
 
   const activeBridge = join(tmp, "active-bridge");
   mkdirSync(join(activeBridge, "kb"), { recursive: true });
+  runTool("git", ["init", "-b", "main"], activeBridge);
   write(
     join(activeBridge, ".nosediverc"),
     `kb: ./kb
+agents:
+  - copilot
 `,
   );
   write(
@@ -507,22 +490,82 @@ scopes:
 # Active runbook body
 `,
   );
+  write(
+    join(activeBridge, "kb", "empty-workspace-foundation.md"),
+    `---
+kind: foundation
+id: empty-workspace-foundation
+name: empty-workspace-foundation
+gist: "Workspace-empty foundation renders only while the workspace is absent or empty."
+meta:
+  include-when-any:
+    - workspace-is-empty
+---
+
+# Empty Workspace Foundation
+
+This renders before workspace setup.
+`,
+  );
+  write(
+    join(activeBridge, "kb", "pilot-foundation.md"),
+    `---
+kind: foundation
+id: pilot-foundation
+name: pilot-foundation
+gist: "Pilot foundation renders only when pilot is configured."
+meta:
+  include-when-all:
+    - pilot-is-set
+---
+
+# Pilot Foundation
+
+This renders only when pilot is set.
+`,
+  );
+  write(
+    join(activeBridge, "kb", "conflicting-foundation.md"),
+    `---
+kind: foundation
+id: conflicting-foundation
+name: conflicting-foundation
+gist: "Conflicting foundation filters should skip with a warning."
+meta:
+  include-when-any:
+    - workspace-is-empty
+  exclude-when-any:
+    - pilot-is-set
+---
+
+# Conflicting Foundation
+
+This should be skipped.
+`,
+  );
 
   const activeDryRun = run(["apply", "--dry-run"], activeBridge);
   assertOk(activeDryRun, "kb-only apply --dry-run failed");
   assert.match(activeDryRun.stdout, /Workspace: \(not configured\)/);
   assert.match(activeDryRun.stdout, /Effort:    \(not configured\)/);
+  assert.match(activeDryRun.stdout, /Tags:      workspace-is-empty/);
   assert.match(activeDryRun.stdout, /Bridge docs:/);
+  assert.match(activeDryRun.stdout, /AGENTS\.md/);
+  assert.doesNotMatch(activeDryRun.stdout, /CLAUDE\.md/);
   assert.match(activeDryRun.stdout, /active-foundation\.md :body/);
+  assert.match(activeDryRun.stdout, /empty-workspace-foundation\.md :body/);
+  assert.doesNotMatch(activeDryRun.stdout, /pilot-foundation\.md :body/);
+  assert.doesNotMatch(activeDryRun.stdout, /conflicting-foundation\.md :body/);
+  assert.match(activeDryRun.stdout, /foundation doc kb[\\/]conflicting-foundation\.md has multiple include\/exclude meta filters; skipping/);
   assert.match(activeDryRun.stdout, /active-runbook\.md :gist/);
   assert.doesNotMatch(activeDryRun.stdout, /active-convention\.md :gist/);
 
   const activeApply = run(["apply"], activeBridge);
   assertOk(activeApply, "kb-only apply failed");
-  assert.equal(existsSync(join(activeBridge, "CLAUDE.md")), true);
+  assert.equal(existsSync(join(activeBridge, "CLAUDE.md")), false);
   assert.equal(existsSync(join(activeBridge, "AGENTS.md")), true);
-  const activeDoc = readFileSync(join(activeBridge, "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(activeDoc, "CLAUDE.md");
+  const activeDoc = readFileSync(join(activeBridge, "AGENTS.md"), "utf8");
+  assertGeneratedFrontmatter(activeDoc, "AGENTS.md");
   assert.doesNotMatch(activeDoc, /^effort:/m);
   assert.doesNotMatch(activeDoc, /^repo-id:/m);
   assert.doesNotMatch(activeDoc, /^scope-path:/m);
@@ -530,6 +573,9 @@ scopes:
   assert.doesNotMatch(activeDoc, /Target:/);
   assert.match(activeDoc, /# Active Foundation/);
   assert.match(activeDoc, /Bridge foundation body renders without a scope\./);
+  assert.match(activeDoc, /# Empty Workspace Foundation/);
+  assert.doesNotMatch(activeDoc, /# Pilot Foundation/);
+  assert.doesNotMatch(activeDoc, /# Conflicting Foundation/);
   assert.match(activeDoc, /### `active`/);
   assert.match(activeDoc, /Active bridge runbook renders from dot scope\./);
   assert.doesNotMatch(activeDoc, /# Active runbook body/);
@@ -713,7 +759,7 @@ repos:
 
 # Held Feature
 
-Active workspace docs should be regenerated.
+Active bridge docs should be regenerated.
 `,
   );
   write(
@@ -834,16 +880,12 @@ meta:
   const addFromHeldDive = run(["add-repo", "gamma"], addRepoBridge);
   assertOk(addFromHeldDive, "add-repo from held dive failed");
   assert.match(addFromHeldDive.stdout, /Added repo-gamma to .*HeldFeature\.md/);
-  assert.match(addFromHeldDive.stdout, /Wrote workspace docs/);
+  assert.match(addFromHeldDive.stdout, /Wrote bridge docs/);
   const heldFeatureAfterAdd = readFileSync(join(addRepoBridge, "backlog", "held-feature", "HeldFeature.md"), "utf8");
   assert.match(heldFeatureAfterAdd, /repos:\n  - repo-alpha\n  - repo-gamma/);
-  const gammaDoc = readFileSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md"), "utf8");
-  assertGeneratedFrontmatter(gammaDoc, "CLAUDE.md", [
-    `effort: "held-feature/HeldFeature.md"`,
-    `repo-id: "repo-gamma"`,
-    `scope-path: "."`,
-  ]);
-  assert.match(gammaDoc, /Gamma convention generated after add-repo\./);
+  assert.equal(existsSync(join(addRepoBridge, "AGENTS.md")), true);
+  assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")), false);
+  assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "AGENTS.md")), false);
 
   write(
     join(bridge, "kb", "bad.md"),
@@ -876,9 +918,10 @@ Build the YAML-aware workspace work order.
 `,
   );
 
-  const invalidRepoFlag = run(["apply", "--dry-run"], bridge);
-  assert.notEqual(invalidRepoFlag.status, 0, "invalid repo flag unexpectedly succeeded");
-  assert.match(invalidRepoFlag.stderr, /invalid effort repo flag in .*YamlFrontmatter\.md: repo-writable:rw \(unsupported flag: rw\)/);
+  const staleEffortRepoFlag = run(["apply", "--dry-run"], bridge);
+  assertOk(staleEffortRepoFlag, "apply should use the active dive scopes, not stale current effort repos");
+  assert.match(staleEffortRepoFlag.stdout, /Dive:      active-dive/);
+  assert.match(staleEffortRepoFlag.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
 
   const initHelp = run(["init", "--help"], root);
   assertOk(initHelp, "init --help failed");
@@ -886,8 +929,11 @@ Build the YAML-aware workspace work order.
 
   const initBridge = join(tmp, "init-bridge");
   mkdirSync(initBridge, { recursive: true });
+  runTool("git", ["init", "-b", "main"], initBridge);
+  runTool("git", ["config", "user.name", "Init Person"], initBridge);
+  runTool("git", ["config", "user.email", "init@example.invalid"], initBridge);
 
-  const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n");
+  const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n\n");
   assertOk(initFresh, "init on empty directory failed");
   assert.match(initFresh.stdout, /Wrote \.nosediverc/);
   const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
@@ -899,18 +945,26 @@ Build the YAML-aware workspace work order.
       "kb: ./kb",
       "home-branch: main",
       "work-branch-prefix: work/",
+      "pilot-name: Init Person",
+      "pilot-email: init@example.invalid",
       "agents:",
       "  - copilot",
       "",
     ].join("\n"),
   );
 
-  const initReprompt = run(["init"], initBridge, "\n\n\n\n\nbogus\ncopilot,claude\n");
+  const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
   assertOk(initReprompt, "init re-run with invalid agent failed");
   assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
   const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
   assert.match(repromptedRc, /workspace: \.\/workspace/);
   assert.match(repromptedRc, /agents:\n  - copilot\n  - claude\n$/);
+
+  const nonGitInit = join(tmp, "non-git-init");
+  mkdirSync(nonGitInit, { recursive: true });
+  const initOutsideGit = run(["init"], nonGitInit, "");
+  assert.notEqual(initOutsideGit.status, 0, "init outside git unexpectedly succeeded");
+  assert.match(initOutsideGit.stderr, /nosedive init must be run inside a git repository/);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }

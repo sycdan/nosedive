@@ -895,10 +895,19 @@ function isWorkspaceEmpty(workspaceDir: string | undefined): boolean {
   return readdirSync(workspaceDir).filter((entry) => entry !== ".nosedive-ref").length === 0;
 }
 
+function isPathIgnoredByGitStatus(repoRoot: string, path: string): boolean {
+  const rel = gitRelPath(repoRoot, path);
+  if (!rel || rel === ".." || rel.startsWith("../") || isAbsolute(rel)) return false;
+  const status = gitOutput(repoRoot, ["status", "--ignored", "--short", "--", rel]);
+  return Boolean(status?.split(/\r?\n/).some((line) => line.startsWith("!! ")));
+}
+
 function computeApplyTags(bridge: BridgeConfig): Set<string> {
   const tags = new Set<string>();
   if (isWorkspaceEmpty(bridge.workspaceDir)) tags.add("workspace-is-empty");
   if (bridge.pilotName?.trim() || bridge.pilotEmail?.trim()) tags.add("pilot-is-set");
+  if (bridge.backlogDir && !existsSync(bridge.backlogDir)) tags.add("backlog-is-missing");
+  if (bridge.backlogDir && isPathIgnoredByGitStatus(bridge.bridgeDir, bridge.backlogDir)) tags.add("backlog-is-ignored");
   return tags;
 }
 
@@ -1133,7 +1142,7 @@ function agentFilenames(agents: string[], warnings: string[]): string[] {
   return filenames;
 }
 
-const FOUNDATION_FILTER_KEYS = ["include-when-any", "include-when-all", "exclude-when-any", "exclude-when-all"] as const;
+const FOUNDATION_FILTER_KEYS = ["include-if-any", "include-if-all", "exclude-if-any", "exclude-if-all"] as const;
 
 type FoundationFilterKey = (typeof FOUNDATION_FILTER_KEYS)[number];
 
@@ -1162,9 +1171,9 @@ function foundationFilterAllows(doc: KbDoc, tags: Set<string>, warnings: string[
     return !FOUNDATION_FILTER_KEYS.some((key) => Object.hasOwn(doc.metaLists, key) || Object.hasOwn(doc.metaScalars, key));
   }
 
-  if (filter.key === "include-when-any") return filter.tags.some((tag) => tags.has(tag));
-  if (filter.key === "include-when-all") return filter.tags.every((tag) => tags.has(tag));
-  if (filter.key === "exclude-when-any") return !filter.tags.some((tag) => tags.has(tag));
+  if (filter.key === "include-if-any") return filter.tags.some((tag) => tags.has(tag));
+  if (filter.key === "include-if-all") return filter.tags.every((tag) => tags.has(tag));
+  if (filter.key === "exclude-if-any") return !filter.tags.some((tag) => tags.has(tag));
   return !filter.tags.every((tag) => tags.has(tag));
 }
 
@@ -1183,15 +1192,15 @@ function foundationBridgeTargets(options: {
   const targets: TargetDoc[] = [];
 
   for (const doc of kbDocs.filter((item) => item.kind === "foundation")) {
-    if (!foundationFilterAllows(doc, tags, warnings)) continue;
-
     if (doc.scopes.length === 0) {
+      if (!foundationFilterAllows(doc, tags, warnings)) continue;
       targets.push({ doc, repoId: "", render: "body", scopePath: "", readOnly: false });
       continue;
     }
 
     if (activeRepoIds.size === 0) continue;
     if (!doc.scopes.some((scope) => scopeMatchesAnyRepo(scope, activeRepoIds))) continue;
+    if (!foundationFilterAllows(doc, tags, warnings)) continue;
     targets.push({ doc, repoId: "", render: "body", scopePath: "", readOnly: false });
   }
 

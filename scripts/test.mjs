@@ -498,7 +498,7 @@ id: empty-workspace-foundation
 name: empty-workspace-foundation
 gist: "Workspace-empty foundation renders only while the workspace is absent or empty."
 meta:
-  include-when-any:
+  include-if-any:
     - workspace-is-empty
 ---
 
@@ -515,7 +515,7 @@ id: pilot-foundation
 name: pilot-foundation
 gist: "Pilot foundation renders only when pilot is configured."
 meta:
-  include-when-all:
+  include-if-all:
     - pilot-is-set
 ---
 
@@ -532,15 +532,36 @@ id: conflicting-foundation
 name: conflicting-foundation
 gist: "Conflicting foundation filters should skip with a warning."
 meta:
-  include-when-any:
+  include-if-any:
     - workspace-is-empty
-  exclude-when-any:
+  exclude-if-any:
     - pilot-is-set
 ---
 
 # Conflicting Foundation
 
 This should be skipped.
+`,
+  );
+  write(
+    join(activeBridge, "kb", "unmatched-conflicting-foundation.md"),
+    `---
+kind: foundation
+id: unmatched-conflicting-foundation
+name: unmatched-conflicting-foundation
+gist: "Nonmatching scoped foundation filters should not be evaluated."
+scopes:
+  - repo-active
+meta:
+  include-if-any:
+    - workspace-is-empty
+  exclude-if-any:
+    - pilot-is-set
+---
+
+# Unmatched Conflicting Foundation
+
+This should not be considered when no active dive repo matches it.
 `,
   );
 
@@ -556,7 +577,9 @@ This should be skipped.
   assert.match(activeDryRun.stdout, /empty-workspace-foundation\.md :body/);
   assert.doesNotMatch(activeDryRun.stdout, /pilot-foundation\.md :body/);
   assert.doesNotMatch(activeDryRun.stdout, /conflicting-foundation\.md :body/);
+  assert.doesNotMatch(activeDryRun.stdout, /unmatched-conflicting-foundation\.md/);
   assert.match(activeDryRun.stdout, /foundation doc kb[\\/]conflicting-foundation\.md has multiple include\/exclude meta filters; skipping/);
+  assert.doesNotMatch(activeDryRun.stdout, /foundation doc kb[\\/]unmatched-conflicting-foundation\.md has multiple include\/exclude meta filters; skipping/);
   assert.match(activeDryRun.stdout, /active-runbook\.md :gist/);
   assert.doesNotMatch(activeDryRun.stdout, /active-convention\.md :gist/);
 
@@ -581,6 +604,74 @@ This should be skipped.
   assert.doesNotMatch(activeDoc, /# Active runbook body/);
   assert.doesNotMatch(activeDoc, /Scoped convention should not render from kb-only config\./);
   assert.equal(existsSync(join(activeBridge, "workspace", "CLAUDE.md")), false);
+
+  const tagBridge = join(tmp, "tag-bridge");
+  mkdirSync(join(tagBridge, "kb"), { recursive: true });
+  runTool("git", ["init", "-b", "main"], tagBridge);
+  write(
+    join(tagBridge, ".nosediverc"),
+    `backlog: ./missing-backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+  );
+  write(
+    join(tagBridge, "kb", "missing-backlog-foundation.md"),
+    `---
+kind: foundation
+id: missing-backlog-foundation
+name: missing-backlog-foundation
+gist: "Missing-backlog foundation renders only when configured backlog is absent."
+meta:
+  include-if-any:
+    - backlog-is-missing
+---
+
+# Missing Backlog Foundation
+
+This renders when the configured backlog directory does not exist.
+`,
+  );
+  write(
+    join(tagBridge, "kb", "ignored-backlog-foundation.md"),
+    `---
+kind: foundation
+id: ignored-backlog-foundation
+name: ignored-backlog-foundation
+gist: "Ignored-backlog foundation renders only when configured backlog is ignored."
+meta:
+  include-if-any:
+    - backlog-is-ignored
+---
+
+# Ignored Backlog Foundation
+
+This renders when the configured backlog path is ignored by git status.
+`,
+  );
+
+  const missingBacklogDryRun = run(["apply", "--dry-run"], tagBridge);
+  assertOk(missingBacklogDryRun, "missing-backlog apply --dry-run failed");
+  assert.match(missingBacklogDryRun.stdout, /Tags:      backlog-is-missing, workspace-is-empty/);
+  assert.match(missingBacklogDryRun.stdout, /missing-backlog-foundation\.md :body/);
+  assert.doesNotMatch(missingBacklogDryRun.stdout, /ignored-backlog-foundation\.md :body/);
+
+  write(
+    join(tagBridge, ".nosediverc"),
+    `backlog: ./ignored-backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+  );
+  write(join(tagBridge, ".gitignore"), "ignored-backlog/\n");
+  write(join(tagBridge, "ignored-backlog", "placeholder.txt"), "ignored by git status\n");
+  const ignoredBacklogDryRun = run(["apply", "--dry-run"], tagBridge);
+  assertOk(ignoredBacklogDryRun, "ignored-backlog apply --dry-run failed");
+  assert.match(ignoredBacklogDryRun.stdout, /Tags:      backlog-is-ignored, workspace-is-empty/);
+  assert.match(ignoredBacklogDryRun.stdout, /ignored-backlog-foundation\.md :body/);
+  assert.doesNotMatch(ignoredBacklogDryRun.stdout, /missing-backlog-foundation\.md :body/);
 
   const pitchBridge = join(tmp, "pitch-bridge");
   mkdirSync(join(pitchBridge, "backlog", "parent-effort"), { recursive: true });

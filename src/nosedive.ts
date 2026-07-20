@@ -275,6 +275,28 @@ interface RcSettings {
   agents: string[];
 }
 
+interface InitOptions {
+  help: boolean;
+  headless: boolean;
+}
+
+function parseInitOptions(args: string[]): InitOptions {
+  const options: InitOptions = { help: false, headless: false };
+  for (const arg of args) {
+    if (arg === "-h" || arg === "--help") {
+      options.help = true;
+      continue;
+    }
+    if (arg === "--headless") {
+      options.headless = true;
+      continue;
+    }
+    if (arg.startsWith("--")) throw new Error(`unknown init option: ${arg}`);
+    throw new Error(`unexpected init argument: ${arg}`);
+  }
+  return options;
+}
+
 function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
   const detectedPilotName = gitOutput(bridgeDir, ["config", "user.name"]) ?? "";
   const detectedPilotEmail = gitOutput(bridgeDir, ["config", "user.email"]) ?? "";
@@ -393,10 +415,12 @@ function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] 
 }
 
 async function init(args: string[]): Promise<void> {
-  if (args[0] === "-h" || args[0] === "--help") {
-    console.log("Usage: nosedive init");
-    console.log("  Create or edit .nosediverc in the current directory, prompting for each setting.");
+  const options = parseInitOptions(args);
+  if (options.help) {
+    console.log("Usage: nosedive init [--headless]");
+    console.log("  Create or edit .nosediverc in the current directory.");
     console.log("  Existing values (or built-in defaults) are shown as the default for each prompt; press Enter to keep it.");
+    console.log("  --headless skips prompts and writes existing values or configured defaults.");
     return;
   }
 
@@ -406,19 +430,21 @@ async function init(args: string[]): Promise<void> {
   }
   const settings = loadRcSettings(rcPath, process.cwd());
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const iter = rl[Symbol.asyncIterator]();
-    settings.workspace = await promptScalar(iter, "workspace", settings.workspace);
-    settings.backlog = await promptScalar(iter, "backlog", settings.backlog);
-    settings.kb = await promptScalar(iter, "kb", settings.kb);
-    settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
-    settings.workBranchPrefix = await promptScalar(iter, "work-branch-prefix", settings.workBranchPrefix);
-    settings.pilotName = await promptScalar(iter, "pilot-name", settings.pilotName);
-    settings.pilotEmail = await promptScalar(iter, "pilot-email", settings.pilotEmail);
-    settings.agents = await promptAgents(iter, settings.agents);
-  } finally {
-    rl.close();
+  if (!options.headless) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const iter = rl[Symbol.asyncIterator]();
+      settings.workspace = await promptScalar(iter, "workspace", settings.workspace);
+      settings.backlog = await promptScalar(iter, "backlog", settings.backlog);
+      settings.kb = await promptScalar(iter, "kb", settings.kb);
+      settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
+      settings.workBranchPrefix = await promptScalar(iter, "work-branch-prefix", settings.workBranchPrefix);
+      settings.pilotName = await promptScalar(iter, "pilot-name", settings.pilotName);
+      settings.pilotEmail = await promptScalar(iter, "pilot-email", settings.pilotEmail);
+      settings.agents = await promptAgents(iter, settings.agents);
+    } finally {
+      rl.close();
+    }
   }
 
   writeFileAtomic(rcPath, renderRc(settings));

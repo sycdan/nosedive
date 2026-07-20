@@ -12,9 +12,9 @@ const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(li
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
 const packageFoundationDocs = [
   "00000000-0000-7434-9b1d-72a777ca61f7.md",
-  "019f39d7-f912-7da9-a5fb-985a79e33452.md",
-  "019f39d7-f913-7c7e-9272-0a53a1e04aa1.md",
-  "019f58e3-f949-7ae1-b3ab-a43980ae4c42.md",
+  "0000000f-4240-7a62-8f61-a85b4c364560.md",
+  "0000001e-8480-79d6-8e3d-00222452c904.md",
+  "0000002d-c6c0-7354-a306-7624c2db8283.md",
 ];
 const packageFoundationDocCount = packageFoundationDocs.length;
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";

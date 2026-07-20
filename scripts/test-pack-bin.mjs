@@ -46,6 +46,12 @@ const [packed] = parsePackOutput(pack.stdout);
 assert.equal(typeof packed?.filename, "string", `npm pack output did not include a filename:\n${pack.stdout}`);
 const packedPath = resolve(packed.filename);
 const initBridge = mkdtempSync(join(tmpdir(), "nosedive-pack-init-"));
+const expectedFoundationDocs = [
+  "00000000-0000-7434-9b1d-72a777ca61f7.md",
+  "0000000f-4240-7a62-8f61-a85b4c364560.md",
+  "0000001e-8480-79d6-8e3d-00222452c904.md",
+  "0000002d-c6c0-7354-a306-7624c2db8283.md",
+];
 
 try {
   const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
@@ -57,8 +63,10 @@ try {
   run("git", ["init", "-b", "main"], initBridge);
   const init = runPackedNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive init --headless"], initBridge);
   assert.match(init.stdout, /Wrote \.nosediverc/);
-  assert.match(init.stdout, /Seeded \d+ foundation doc/);
-  const seededDocs = readdirSync(join(initBridge, "kb"))
+  assert.match(init.stdout, new RegExp(`Seeded ${expectedFoundationDocs.length} foundation docs into \\.\\/kb`));
+  const seededFilenames = readdirSync(join(initBridge, "kb")).filter((filename) => filename.endsWith(".md")).sort();
+  assert.deepEqual(seededFilenames, expectedFoundationDocs);
+  const seededDocs = seededFilenames
     .filter((filename) => filename.endsWith(".md"))
     .map((filename) => readFileSync(join(initBridge, "kb", filename), "utf8"));
   assert.equal(

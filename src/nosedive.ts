@@ -450,8 +450,8 @@ async function init(args: string[]): Promise<void> {
   writeFileAtomic(rcPath, renderRc(settings));
   console.log(`Wrote ${formatPath(rcPath)}`);
   const seededFoundationDocs = seedPackageFoundationDocs(process.cwd(), settings.kb);
+  for (const warning of manageFoundationGitState([rcPath, ...seededFoundationDocs])) console.error(`warning: ${warning}`);
   if (seededFoundationDocs.length > 0) {
-    for (const warning of manageFoundationGitState(seededFoundationDocs)) console.error(`warning: ${warning}`);
     console.log(`Seeded ${seededFoundationDocs.length} foundation doc${seededFoundationDocs.length === 1 ? "" : "s"} into ${settings.kb}`);
   }
 }
@@ -1541,7 +1541,7 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
   end: FOUNDATION_EXCLUDE_END,
   header: [
     "# owner: nosedive init",
-    "# reason: package foundation docs are local bootstrap artifacts",
+    "# reason: .nosediverc and package foundation docs are local bootstrap artifacts",
   ],
 };
 

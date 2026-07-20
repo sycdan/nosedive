@@ -10,6 +10,8 @@ const cli = join(root, "dist", "cli.js");
 const lib = join(root, "dist", "nosedive.js");
 const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(lib).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
+const packageFoundationDoc = "00000000-0000-7434-9b1d-72a777ca61f7.md";
+const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";
 const gitLocalEnvKeys = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR",
@@ -1027,6 +1029,7 @@ Build the YAML-aware workspace work order.
   const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n\n");
   assertOk(initFresh, "init on empty directory failed");
   assert.match(initFresh.stdout, /Wrote \.nosediverc/);
+  assert.match(initFresh.stdout, /Seeded 1 foundation doc into \.\/kb/);
   const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
   assert.equal(
     freshRc,
@@ -1043,6 +1046,17 @@ Build the YAML-aware workspace work order.
       "",
     ].join("\n"),
   );
+  assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
+  assert.equal(existsSync(join(initBridge, "kb", packageNonFoundationDoc)), false);
+  assert.equal(existsSync(join(initBridge, ".gitignore")), false);
+  const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
+  assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
+  assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
+  assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
+  assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
+  const initGitStatus = runTool("git", ["status", "--ignored", "--short", "--untracked-files=all"], initBridge).stdout;
+  assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
+  assert.doesNotMatch(initGitStatus, /\.gitignore/);
 
   const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
   assertOk(initReprompt, "init re-run with invalid agent failed");

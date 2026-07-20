@@ -131,13 +131,11 @@ try {
     `workspace: ./workspace
 backlog: ./backlog
 kb: ./kb
-sessions: ./sessions
 home-branch: main
 work-branch-prefix: work/
 custom-scalar: keep-me
 current:
   effort: yaml-frontmatter/YamlFrontmatter.md
-  session: yaml-frontmatter.123
 `,
   );
   write(
@@ -322,10 +320,10 @@ Body rendered from valid YAML frontmatter.
 
   const dryRun = run(["apply", "--dry-run"], bridge);
   assertOk(dryRun, "apply --dry-run failed");
-  assert.match(dryRun.stdout, /Sessions:  .*sessions/);
   assert.match(dryRun.stdout, /Home:      main/);
   assert.match(dryRun.stdout, /Work ref:  work\//);
-  assert.match(dryRun.stdout, /Session:   yaml-frontmatter\.123/);
+  assert.doesNotMatch(dryRun.stdout, /Sessions:/);
+  assert.doesNotMatch(dryRun.stdout, /Session:/);
   assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
   assert.match(dryRun.stdout, /read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/);
   assert.match(dryRun.stdout, /convention\.md :gist/);
@@ -343,25 +341,21 @@ Body rendered from valid YAML frontmatter.
   assert.equal(rc.workspaceDir, join(bridge, "workspace"));
   assert.equal(rc.backlogDir, join(bridge, "backlog"));
   assert.equal(rc.kbDir, join(bridge, "kb"));
-  assert.equal(rc.sessionsDir, join(bridge, "sessions"));
   assert.equal(rc.homeBranch, "main");
   assert.equal(rc.workBranchPrefix, "work/");
   assert.deepEqual(rc.current, {
     effort: "yaml-frontmatter/YamlFrontmatter.md",
-    session: "yaml-frontmatter.123",
   });
 
-  writeNosediveRcCurrent(bridge, { effort: "other-effort/OtherEffort.md", session: "other.456" });
+  writeNosediveRcCurrent(bridge, { effort: "other-effort/OtherEffort.md" });
   assert.match(readFileSync(join(bridge, ".nosediverc"), "utf8"), /custom-scalar: keep-me/);
   assert.deepEqual(readNosediveRc(bridge).current, {
     effort: "other-effort/OtherEffort.md",
-    session: "other.456",
   });
   writeNosediveRcCurrent(bridge);
   assert.doesNotMatch(readFileSync(join(bridge, ".nosediverc"), "utf8"), /^current:/m);
   writeNosediveRcCurrent(bridge, {
     effort: "yaml-frontmatter/YamlFrontmatter.md",
-    session: "yaml-frontmatter.123",
   });
 
   const verboseBacklog = run(["dump-backlog", "--verbose"], bridge);
@@ -893,7 +887,7 @@ Build the YAML-aware workspace work order.
   const initBridge = join(tmp, "init-bridge");
   mkdirSync(initBridge, { recursive: true });
 
-  const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n");
+  const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n");
   assertOk(initFresh, "init on empty directory failed");
   assert.match(initFresh.stdout, /Wrote \.nosediverc/);
   const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
@@ -903,7 +897,6 @@ Build the YAML-aware workspace work order.
       "workspace: ./workspace",
       "backlog: ./backlog",
       "kb: ./kb",
-      "sessions: ./sessions",
       "home-branch: main",
       "work-branch-prefix: work/",
       "agents:",
@@ -912,7 +905,7 @@ Build the YAML-aware workspace work order.
     ].join("\n"),
   );
 
-  const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\nbogus\ncopilot,claude\n");
+  const initReprompt = run(["init"], initBridge, "\n\n\n\n\nbogus\ncopilot,claude\n");
   assertOk(initReprompt, "init re-run with invalid agent failed");
   assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
   const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");

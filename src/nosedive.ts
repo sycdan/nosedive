@@ -57,7 +57,6 @@ const DEFAULT_RC = {
   workspace: "./workspace",
   backlog: "./backlog",
   kb: "./kb",
-  sessions: "./sessions",
   "home-branch": "main",
   "work-branch-prefix": "work/",
   agents: ["copilot"],
@@ -87,19 +86,16 @@ export interface NosediveRc {
   workspaceDir?: string;
   backlogDir?: string;
   kbDir?: string;
-  sessionsDir?: string;
   homeBranch?: string;
   workBranchPrefix?: string;
   agents: string[];
   current: {
     effort?: string;
-    session?: string;
   };
 }
 
 export interface NosediveRcCurrent {
   effort?: string;
-  session?: string;
 }
 
 function emptyYaml(): SimpleYaml {
@@ -225,7 +221,6 @@ export function readNosediveRc(start: string): NosediveRc {
   const workspace = rc.scalars.workspace;
   const backlog = rc.scalars.backlog;
   const kb = rc.scalars.kb;
-  const sessions = rc.scalars.sessions;
 
   return {
     path: rcPath,
@@ -233,13 +228,11 @@ export function readNosediveRc(start: string): NosediveRc {
     workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
     backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
     kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
-    sessionsDir: sessions ? resolveFrom(bridgeDir, sessions) : undefined,
     homeBranch: rc.scalars["home-branch"],
     workBranchPrefix: rc.scalars["work-branch-prefix"],
     agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
     current: {
       effort: rc.nested.current?.effort,
-      session: rc.nested.current?.session,
     },
   };
 }
@@ -251,13 +244,11 @@ export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurren
   const doc = parseDocument(readFileSync(rcPath, "utf8"));
   if (doc.errors.length > 0) throw new Error(`invalid YAML in ${rcPath}: ${doc.errors[0]?.message ?? "unknown error"}`);
 
-  if (!current?.effort && !current?.session) {
+  if (!current?.effort) {
     doc.deleteIn(["current"]);
   } else {
     doc.setIn(["current", "effort"], current.effort ?? null);
-    doc.setIn(["current", "session"], current.session ?? null);
     if (!current.effort) doc.deleteIn(["current", "effort"]);
-    if (!current.session) doc.deleteIn(["current", "session"]);
   }
 
   writeFileAtomic(rcPath, doc.toString());
@@ -269,7 +260,6 @@ interface RcSettings {
   workspace: string;
   backlog: string;
   kb: string;
-  sessions: string;
   homeBranch: string;
   workBranchPrefix: string;
   agents: string[];
@@ -281,7 +271,6 @@ function loadRcSettings(rcPath: string): RcSettings {
       workspace: DEFAULT_RC.workspace,
       backlog: DEFAULT_RC.backlog,
       kb: DEFAULT_RC.kb,
-      sessions: DEFAULT_RC.sessions,
       homeBranch: DEFAULT_RC["home-branch"],
       workBranchPrefix: DEFAULT_RC["work-branch-prefix"],
       agents: [...DEFAULT_RC.agents],
@@ -293,7 +282,6 @@ function loadRcSettings(rcPath: string): RcSettings {
     workspace: rc.scalars.workspace ?? DEFAULT_RC.workspace,
     backlog: rc.scalars.backlog ?? DEFAULT_RC.backlog,
     kb: rc.scalars.kb ?? DEFAULT_RC.kb,
-    sessions: rc.scalars.sessions ?? DEFAULT_RC.sessions,
     homeBranch: rc.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
     workBranchPrefix: rc.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
     agents: rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
@@ -345,7 +333,6 @@ function renderRc(settings: RcSettings): string {
     `workspace: ${settings.workspace}`,
     `backlog: ${settings.backlog}`,
     `kb: ${settings.kb}`,
-    `sessions: ${settings.sessions}`,
     `home-branch: ${settings.homeBranch}`,
     `work-branch-prefix: ${settings.workBranchPrefix}`,
     `agents:`,
@@ -371,7 +358,6 @@ async function init(args: string[]): Promise<void> {
     settings.workspace = await promptScalar(iter, "workspace", settings.workspace);
     settings.backlog = await promptScalar(iter, "backlog", settings.backlog);
     settings.kb = await promptScalar(iter, "kb", settings.kb);
-    settings.sessions = await promptScalar(iter, "sessions", settings.sessions);
     settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
     settings.workBranchPrefix = await promptScalar(iter, "work-branch-prefix", settings.workBranchPrefix);
     settings.agents = await promptAgents(iter, settings.agents);
@@ -690,12 +676,10 @@ interface BridgeConfig {
   workspaceDir?: string;
   backlogDir?: string;
   kbDir: string;
-  sessionsDir?: string;
   homeBranch?: string;
   workBranchPrefix?: string;
   effortPath?: string;
   effortRef?: string;
-  sessionRef?: string;
 }
 
 interface EffortRepo {
@@ -786,11 +770,9 @@ function loadBridgeConfig(start: string): BridgeConfig {
     workspaceDir: rc.workspaceDir,
     backlogDir: rc.backlogDir,
     kbDir: rc.kbDir,
-    sessionsDir: rc.sessionsDir,
     homeBranch: rc.homeBranch,
     workBranchPrefix: rc.workBranchPrefix,
     effortRef: effort,
-    sessionRef: rc.current.session,
   };
   if (rc.backlogDir && effort) bridge.effortPath = resolveFrom(rc.backlogDir, effort);
   return bridge;
@@ -1149,11 +1131,9 @@ function applyDryRun(): void {
   console.log(`Workspace: ${bridge.workspaceDir ? formatPath(bridge.workspaceDir) : "(not configured)"}`);
   console.log(`Backlog:   ${bridge.backlogDir ? formatPath(bridge.backlogDir) : "(not configured)"}`);
   console.log(`KB:        ${formatPath(bridge.kbDir)}`);
-  console.log(`Sessions:  ${bridge.sessionsDir ? formatPath(bridge.sessionsDir) : "(not configured)"}`);
   console.log(`Home:      ${bridge.homeBranch ?? "(not configured)"}`);
   console.log(`Work ref:  ${bridge.workBranchPrefix ?? "(not configured)"}`);
   console.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
-  console.log(`Session:   ${bridge.sessionRef ?? "(not configured)"}`);
   console.log("");
 
   console.log("Bridge docs:");

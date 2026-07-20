@@ -96,6 +96,7 @@ try {
   assert.match(help.stdout, /dump-backlog/);
   assert.match(help.stdout, /pitch/);
   assert.match(help.stdout, /add-repo/);
+  assert.match(help.stdout, /nuke/);
 
   const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], root);
   assertOk(minted, "mint command failed");
@@ -127,6 +128,9 @@ try {
   runTool("git", ["init"], bridge);
   runTool("git", ["init"], writableRoot);
   runTool("git", ["init"], readonlyRoot);
+  write(join(bridge, "AGENTS.md"), "# Tracked bridge instructions\n");
+  runTool("git", ["add", "AGENTS.md"], bridge);
+  runTool("git", ["-c", "user.name=Nosedive Test", "-c", "user.email=nosedive@example.invalid", "commit", "-m", "Track AGENTS"], bridge);
   write(bridgeExclude, "# user bridge exclude\n*.bridge-local\n");
   write(writableExclude, "# user writable exclude\n*.writable-local\n");
   write(readonlyExclude, "# user readonly exclude\n*.readonly-local\n");
@@ -443,6 +447,25 @@ Body rendered from valid YAML frontmatter.
   assert.match(bridgeExcludeText, /# END nosedive-managed exclude/);
   assert.doesNotMatch(readFileSync(writableExclude, "utf8"), /BEGIN nosedive-managed/);
   assert.doesNotMatch(readFileSync(readonlyExclude, "utf8"), /BEGIN nosedive-managed/);
+
+  const guardedNuke = run(["nuke"], bridge);
+  assert.equal(guardedNuke.status, 1);
+  assert.match(guardedNuke.stderr, /rerun with --instructions/);
+
+  write(
+    writableExclude,
+    `${readFileSync(writableExclude, "utf8").replace(/\n*$/, "\n")}# BEGIN nosedive-managed exclude\n# owner: workspace fixture\nCLAUDE.md\n# END nosedive-managed exclude\n`,
+  );
+
+  const nuke = run(["nuke", "--instructions"], bridge);
+  assertOk(nuke, "nuke --instructions failed");
+  assert.match(nuke.stdout, /Nuked managed instruction state/);
+  const bridgeExcludeAfterNuke = readFileSync(bridgeExclude, "utf8");
+  assert.match(bridgeExcludeAfterNuke, /# user bridge exclude/);
+  assert.doesNotMatch(bridgeExcludeAfterNuke, /BEGIN nosedive-managed exclude/);
+  assert.match(readFileSync(writableExclude, "utf8"), /BEGIN nosedive-managed exclude/);
+  assert.equal(readFileSync(join(bridge, "AGENTS.md"), "utf8"), "# Tracked bridge instructions\n");
+  assert.match(runTool("git", ["-C", bridge, "ls-files", "-v", "AGENTS.md"], root).stdout, /^H /);
 
   assert.match(runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root).stdout, /^H /);
 

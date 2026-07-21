@@ -792,7 +792,7 @@ interface KbDoc {
   effortRef?: string;
   metaScalars: Record<string, string>;
   metaLists: Record<string, string[]>;
-  scopes: string[];
+  scopes: ScopeRef[];
 }
 
 interface ScopeRef {
@@ -931,7 +931,9 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
     .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => {
       const path = join(kbDir, e.name);
-      const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"), path);
+      const text = readFileSync(path, "utf8");
+      const fm = parseMarkdownFrontmatter(text, path);
+      const raw = parseRawFrontmatterObject(text, path);
       return {
         path,
         relPath: relative(bridgeDir, path),
@@ -944,9 +946,23 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
         metaScalars: fm.nested.meta ?? {},
         metaLists: fm.nestedLists.meta ?? {},
-        scopes: fm.lists.scopes ?? [],
+        scopes: parseScopeRefs(raw.scopes, path),
       };
     });
+}
+
+function parseRawFrontmatterObject(text: string, label: string): Record<string, unknown> {
+  if (!text.startsWith("---")) return {};
+  const block = splitMarkdownFrontmatter(text, label);
+  let value: unknown;
+  try {
+    value = parseYaml(block.yaml);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid YAML in frontmatter in ${label}: ${detail}`);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
 }
 
 function readActiveDiveId(workspaceDir: string | undefined): string | undefined {
@@ -1113,32 +1129,90 @@ function addRepo(args: string[]): void {
   }
 }
 
-function parseScopeRef(scope: string): ScopeRef | undefined {
-  const colon = scope.indexOf(":");
-  const targetAndRef = colon === -1 ? scope : scope.slice(0, colon);
-  const flagText = colon === -1 ? "" : scope.slice(colon + 1);
-  if (flagText.includes(":")) return undefined;
-  const flags =
-    colon === -1
-      ? []
-      : flagText
-        .split(",")
-        .map((flag) => flag.trim())
-        .filter(Boolean);
-  let render: "body" | "gist" | undefined;
+function optionalScopeString(value: Record<string, unknown>, key: string, label: string): string | undefined {
+  if (!Object.hasOwn(value, key)) return undefined;
+  const scalar = scalarToString(value[key]);
+  if (scalar === undefined || scalar.trim() === "") {
+    throw new Error(`invalid scope entry in ${label}: ${key} must be a non-empty string`);
+  }
+  return scalar;
+}
 
-  for (const flag of flags) {
-    if (flag === "body" || flag === "gist") render = flag;
+function optionalScopeFlags(value: Record<string, unknown>, label: string): string[] {
+  if (!Object.hasOwn(value, "flags")) return [];
+  const raw = value.flags;
+  if (!Array.isArray(raw)) throw new Error(`invalid scope entry in ${label}: flags must be a YAML list`);
+  return raw.map((entry) => {
+    const flag = scalarToString(entry);
+    if (!flag || flag.trim() === "") throw new Error(`invalid scope entry in ${label}: flags must contain non-empty strings`);
+    return flag;
+  });
+}
+
+function parseScopeRef(scope: unknown, path: string, index: number): ScopeRef {
+  const label = `${path} scopes[${index}]`;
+  if (typeof scope === "string") {
+    throw new Error(`legacy scope shorthand is not supported in ${label}; use '- <repo-id>: { ... }' object form`);
+  }
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error(`invalid scope entry in ${label}: expected a one-key object`);
   }
 
-  const at = targetAndRef.indexOf("@");
-  const target = at === -1 ? targetAndRef : targetAndRef.slice(0, at);
-  const ref = at === -1 ? undefined : targetAndRef.slice(at + 1);
-  const slash = target.indexOf("/");
-  const repoId = slash === -1 ? target : target.slice(0, slash);
-  const path = slash === -1 ? "" : target.slice(slash + 1);
-  if (!repoId) return undefined;
-  return { repoId, path, ref, readOnly: flags.includes("ro"), flags, render };
+  const keys = Object.keys(scope as Record<string, unknown>);
+  if (keys.length !== 1) {
+    throw new Error(`invalid scope entry in ${label}: expected exactly one repo id key`);
+  }
+
+  const repoId = keys[0]!.trim();
+  if (!repoId) throw new Error(`invalid scope entry in ${label}: repo id key must be non-empty`);
+
+  const rawValue = (scope as Record<string, unknown>)[repoId];
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    throw new Error(`invalid scope entry in ${label}: value for '${repoId}' must be a YAML object`);
+  }
+
+  const value = rawValue as Record<string, unknown>;
+  const ref = optionalScopeString(value, "ref", label);
+  const pathValue = optionalScopeString(value, "path", label) ?? "";
+  const mode = optionalScopeString(value, "mode", label);
+  const render = optionalScopeString(value, "render", label) as "body" | "gist" | undefined;
+  const flags = optionalScopeFlags(value, label);
+
+  if (render && render !== "body" && render !== "gist") {
+    throw new Error(`invalid scope entry in ${label}: render must be 'body' or 'gist'`);
+  }
+  if (mode && mode !== "ro" && mode !== "rw") {
+    throw new Error(`invalid scope entry in ${label}: mode must be 'ro' or 'rw'`);
+  }
+  if (flags.some((flag) => flag === "body" || flag === "gist")) {
+    throw new Error(`invalid scope entry in ${label}: body/gist must use render, not flags`);
+  }
+
+  const flagReadOnly = flags.includes("ro");
+  if (mode === "rw" && flagReadOnly) {
+    throw new Error(`invalid scope entry in ${label}: mode=rw conflicts with flags containing ro`);
+  }
+
+  if (repoId === ".") {
+    if (ref) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set ref`);
+    if (pathValue) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set path`);
+    if (mode) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set mode`);
+  }
+
+  return {
+    repoId,
+    path: pathValue,
+    ref,
+    readOnly: mode ? mode === "ro" : flagReadOnly,
+    flags,
+    render,
+  };
+}
+
+function parseScopeRefs(value: unknown, path: string): ScopeRef[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error(`invalid scopes in ${path}: expected a YAML list`);
+  return value.map((scope, index) => parseScopeRef(scope, path, index));
 }
 
 function defaultRender(kind: string): "body" | "gist" | undefined {
@@ -1168,9 +1242,8 @@ function addScopedRepoTargets(options: {
     const renderDefault = defaultRender(doc.kind);
     if (!renderDefault) continue;
 
-    for (const rawScope of doc.scopes) {
-      const scope = parseScopeRef(rawScope);
-      if (!scope || scope.repoId !== repoId) continue;
+    for (const scope of doc.scopes) {
+      if (scope.repoId !== repoId) continue;
 
       const targetDir = scope.path ? resolve(repoRoot, scope.path) : repoRoot;
       if (!existsSync(targetDir)) {
@@ -1192,8 +1265,18 @@ function shouldGenerateWorkspaceDocs(bridge: BridgeConfig): boolean {
   return Boolean(bridge.workspaceDir && bridge.backlogDir && bridge.effortPath && bridge.effortRef);
 }
 
-function bridgeRunbookDocs(kbDocs: KbDoc[]): KbDoc[] {
-  return kbDocs.filter((doc) => doc.kind === "runbook" && doc.scopes.some((scope) => scope.trim() === "."));
+function bridgeRunbookTargets(kbDocs: KbDoc[]): TargetDoc[] {
+  const targets: TargetDoc[] = [];
+  for (const doc of kbDocs) {
+    if (doc.kind !== "runbook") continue;
+    for (const scope of doc.scopes) {
+      if (scope.repoId !== ".") continue;
+      const render = scope.render ?? "gist";
+      targets.push({ doc, repoId: "", render, scopePath: ".", readOnly: false });
+      break;
+    }
+  }
+  return targets;
 }
 
 function agentFilenames(agents: string[], warnings: string[]): string[] {
@@ -1245,9 +1328,8 @@ function foundationFilterAllows(doc: KbDoc, tags: Set<string>, warnings: string[
   return !filter.tags.every((tag) => tags.has(tag));
 }
 
-function scopeMatchesAnyRepo(scope: string, repoIds: Set<string>): boolean {
-  const parsed = parseScopeRef(scope);
-  return Boolean(parsed && repoIds.has(parsed.repoId));
+function scopeMatchesAnyRepo(scope: ScopeRef, repoIds: Set<string>): boolean {
+  return repoIds.has(scope.repoId);
 }
 
 function foundationBridgeTargets(options: {
@@ -1278,9 +1360,8 @@ function foundationBridgeTargets(options: {
 function activeDiveRepos(dive: KbDoc | undefined): EffortRepo[] {
   if (!dive) return [];
   const repos = new Map<string, EffortRepo>();
-  for (const rawScope of dive.scopes) {
-    const scope = parseScopeRef(rawScope);
-    if (!scope) continue;
+  for (const scope of dive.scopes) {
+    if (scope.repoId === ".") continue;
     if (!repos.has(scope.repoId)) repos.set(scope.repoId, { id: scope.repoId, ref: scope.ref, readOnly: scope.readOnly });
   }
   return [...repos.values()];
@@ -1311,7 +1392,7 @@ function createApplyPlan(): ApplyPlan {
     bridge.bridgeDir,
     [
       ...foundationBridgeTargets({ kbDocs, activeRepoIds, tags, warnings }),
-      ...bridgeRunbookDocs(kbDocs).map((doc) => ({ doc, repoId: "", render: "gist" as const, scopePath: ".", readOnly: false })),
+      ...bridgeRunbookTargets(kbDocs),
     ],
   );
 

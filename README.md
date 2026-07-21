@@ -46,24 +46,71 @@ _nosedive_ organizes work around two core concepts:
   that record who is actively working, handoff notes, branch state, and linked
   artifacts.
 
-Run `nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"]` to create a
-top-level effort, or add `--parent <parent>` to create it under an existing
-effort or domain directory. `<parent>` can be a backlog path, a domain directory
-path such as `backlog/gogglebox`, or a leaf-first effort slug chain such as
-`baz-qux.foo-bar`. Pitch writes the new effort file locally.
+## Commands
 
-`nosedive mint <timestamp> [count]` generates UUIDv7 values with a specific
-timestamp encoded (ISO date string or Unix milliseconds). This is available via
-the published bin too, for example:
+### pitch
+
+Create a new effort file in `backlog/`.
+
+Usage:
+
+`nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"] [--parent <parent>]`
+
+- `<slug>` is the effort directory name in kebab-case.
+- `--parent` can be an effort path, a domain directory path such as
+  `backlog/gogglebox`, or a leaf-first slug chain such as `baz-qux.foo-bar`.
+- Pitch writes the new effort file locally.
+
+### mint
+
+Generate UUIDv7 values with a specific timestamp encoded.
+
+Usage:
+
+`nosedive mint <timestamp> [count]`
+
+- `<timestamp>` accepts an ISO date string or Unix milliseconds.
+- `count` defaults to `1`.
+
+Example:
 
 `npx -y nosedive@dev mint 1997-08-29T02:14:00-04:00`
 
-`nosedive init` creates or edits `.nosediverc` in the current directory,
-prompting for each setting (workspace, backlog, kb, home branch, work branch
-prefix, and `agents`  which agent(s) to generate instructions for, `copilot`
-by default with `claude` as an additional/alternative choice). Existing
-values, or the built-in defaults, are shown as the default for each prompt;
-press Enter to keep it.
+### init
+
+Create or edit `.nosediverc` in the current directory.
+
+Usage:
+
+`nosedive init`
+
+- Prompts for workspace, backlog, kb, home branch, work branch prefix, and
+  `agents`.
+- Existing values (or defaults) are shown and kept by pressing Enter.
+- `agents` defaults to `copilot` (with `claude` as an optional additional
+  target).
+
+### hydrate-repo.workspace
+
+Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at
+the resolved commit.
+
+Usage:
+
+`nosedive hydrate-repo.workspace <repo-id> [--at <ref>] [--read-only]`
+
+- `<repo-id>` is required and must match a kb `kind: repo` `id`.
+- `--at <ref>` chooses the source ref and defaults to `main`.
+- `--read-only` sets `remote.origin.pushurl=no_push://disabled`.
+
+Behavior:
+
+- Path resolution prefers `meta.worktree-path`, then falls back to `meta.path`.
+- Target path must remain inside configured `workspace:` after canonical path
+  resolution.
+- Hydration writes `.nosedive-ref` at repo root with `id: <repo-id>` for strict
+  ownership checks on reuse.
+- Success status is always one of `created`, `updated`, or `noop`.
 
 ## Development
 

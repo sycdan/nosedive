@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   existsSync,
   mkdirSync,
+  realpathSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -40,6 +41,7 @@ Commands:
   init          Create or edit .nosediverc interactively
   dump-backlog  Print the open efforts in the configured backlog
   pitch         Create a new effort in the backlog
+  hydrate-repo.workspace  Hydrate one repo worktree from kb metadata
   add-repo      Add a kb repo to an effort's workspace
   apply         Materialize scoped agent docs for the current effort
   nuke          Reset managed local git state
@@ -792,6 +794,7 @@ interface KbDoc {
   effortRef?: string;
   metaScalars: Record<string, string>;
   metaLists: Record<string, string[]>;
+  metaRaw: Record<string, unknown>;
   scopes: ScopeRef[];
 }
 
@@ -946,6 +949,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
         effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
         metaScalars: fm.nested.meta ?? {},
         metaLists: fm.nestedLists.meta ?? {},
+        metaRaw: raw.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta) ? (raw.meta as Record<string, unknown>) : {},
         scopes: parseScopeRefs(raw.scopes, path),
       };
     });
@@ -1127,6 +1131,309 @@ function addRepo(args: string[]): void {
   } else if (options.apply && !effort.active) {
     console.log("Generated docs not updated because the target effort is not active.");
   }
+}
+
+interface HydrateRepoWorkspaceOptions {
+  repoId: string;
+  at: string;
+  readOnly: boolean;
+}
+
+interface HydrateRepoWorkspaceResult {
+  status: "created" | "updated" | "noop";
+  repoId: string;
+  targetPath: string;
+  commit: string;
+}
+
+function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOptions {
+  let repoId: string | undefined;
+  let at = "main";
+  let readOnly = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === "--at") {
+      const value = args[i + 1];
+      if (!value) throw new Error("--at requires a value");
+      at = value;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--at=")) {
+      at = arg.slice("--at=".length);
+      if (!at) throw new Error("--at requires a value");
+      continue;
+    }
+    if (arg === "--read-only") {
+      readOnly = true;
+      continue;
+    }
+    if (arg.startsWith("--")) throw new Error(`unknown hydrate-repo.workspace option: ${arg}`);
+    if (repoId) throw new Error(`unexpected hydrate-repo.workspace argument: ${arg}`);
+    repoId = arg;
+  }
+
+  if (!repoId) throw new Error("hydrate-repo.workspace requires a repo id");
+  return { repoId, at, readOnly };
+}
+
+function gitRun(cwd: string, args: string[], label: string): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() });
+  if (result.status === 0) return result.stdout.trim();
+  const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
+  throw new Error(`${label}: ${detail}`);
+}
+
+function uuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function parseRepoMarkerStrict(markerPath: string): { id: string } {
+  const raw = readFileSync(markerPath, "utf8");
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (lines.some((line) => /^\s/.test(line))) {
+    throw new Error(`invalid marker format at ${formatPath(markerPath)}: no leading indentation is allowed`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid marker YAML at ${formatPath(markerPath)}: ${detail}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`invalid marker format at ${formatPath(markerPath)}: expected a YAML object`);
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  if (keys.length !== 1 || keys[0] !== "id") {
+    throw new Error(`invalid marker format at ${formatPath(markerPath)}: expected exactly one top-level key 'id'`);
+  }
+
+  const idValue = scalarToString(obj.id)?.trim();
+  if (!idValue || !uuidLike(idValue)) {
+    throw new Error(`invalid marker format at ${formatPath(markerPath)}: id must be UUID-shaped`);
+  }
+
+  return { id: idValue };
+}
+
+function realpathStable(path: string): string {
+  if (existsSync(path)) return realpathSync(path);
+
+  let current = resolve(path);
+  const missingSegments: string[] = [];
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    missingSegments.unshift(current.slice(parent.length).replace(/^[\\/]/, ""));
+    current = parent;
+  }
+
+  const base = existsSync(current) ? realpathSync(current) : resolve(path);
+  return missingSegments.reduce((acc, segment) => resolve(acc, segment), base);
+}
+
+function ensureSafeTargetPath(repoId: string, targetPath: string, workspaceDir: string): void {
+  const canonicalWorkspace = realpathStable(workspaceDir);
+  const canonicalTarget = realpathStable(targetPath);
+  if (!isInsideDir(canonicalWorkspace, canonicalTarget)) {
+    throw new Error(
+      `unsafe target path for repo ${repoId}: ${formatPath(targetPath)} resolves outside workspace ${formatPath(workspaceDir)}`,
+    );
+  }
+}
+
+function repoSourcePath(repoDoc: KbDoc, bridgeDir: string): string {
+  const remotes = repoDoc.metaRaw.remotes;
+  if (!remotes || typeof remotes !== "object" || Array.isArray(remotes)) {
+    throw new Error(`repo ${repoDoc.id} is missing meta.remotes.local in ${repoDoc.relPath}`);
+  }
+
+  const local = scalarToString((remotes as Record<string, unknown>).local)?.trim();
+  if (!local) throw new Error(`repo ${repoDoc.id} is missing meta.remotes.local in ${repoDoc.relPath}`);
+
+  const resolved = resolveFrom(bridgeDir, local);
+  if (!existsSync(resolved)) {
+    throw new Error(`repo ${repoDoc.id} local source does not exist: ${formatPath(resolved)}`);
+  }
+  if (!statSync(resolved).isDirectory()) {
+    throw new Error(`repo ${repoDoc.id} local source is not a directory: ${formatPath(resolved)}`);
+  }
+  if (!gitOutput(resolved, ["rev-parse", "--git-dir"])) {
+    throw new Error(`repo ${repoDoc.id} local source is not a git repository: ${formatPath(resolved)}`);
+  }
+
+  return resolved;
+}
+
+function expectedWorktreePath(repoDoc: KbDoc, bridgeDir: string): string {
+  const worktreePath = repoDoc.metaScalars["worktree-path"] ?? repoDoc.repoPath;
+  if (!worktreePath) {
+    throw new Error(`repo ${repoDoc.id} is missing both meta.worktree-path and meta.path in ${repoDoc.relPath}`);
+  }
+  return resolveFrom(bridgeDir, worktreePath);
+}
+
+function worktreeHasExpectedSource(targetPath: string, sourcePath: string): boolean {
+  const sourceCommonRaw = gitOutput(sourcePath, ["rev-parse", "--git-common-dir"]);
+  const targetCommonRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
+  if (!sourceCommonRaw || !targetCommonRaw) return false;
+
+  const sourceCommonPath = realpathStable(resolveFrom(sourcePath, sourceCommonRaw));
+  const targetCommonPath = realpathStable(resolveFrom(targetPath, targetCommonRaw));
+  return sourceCommonPath === targetCommonPath;
+}
+
+function maybeFetchSource(sourcePath: string, repoId: string): void {
+  const remotes = gitOutput(sourcePath, ["remote"]);
+  if (!remotes) return;
+  const fetched = spawnSync("git", ["fetch", "--all", "--prune"], {
+    cwd: sourcePath,
+    encoding: "utf8",
+    env: cleanGitEnv(),
+  });
+  if (fetched.status !== 0) {
+    const detail = fetched.stderr.trim() || fetched.stdout.trim() || "unknown git error";
+    console.error(`warning: fetch skipped for repo ${repoId} at ${formatPath(sourcePath)}: ${detail}`);
+  }
+}
+
+function resolveRefCommit(sourcePath: string, repoId: string, ref: string): string {
+  maybeFetchSource(sourcePath, repoId);
+  return gitRun(
+    sourcePath,
+    ["rev-parse", "--verify", `${ref}^{commit}`],
+    `failed to resolve ref for repo ${repoId}: ref=${ref}`,
+  );
+}
+
+function markerPathForTarget(targetPath: string): string {
+  return join(targetPath, ".nosedive-ref");
+}
+
+function isDirEmpty(path: string): boolean {
+  return readdirSync(path).length === 0;
+}
+
+function ensureReusableExistingTarget(repoId: string, targetPath: string, sourcePath: string): void {
+  const markerPath = markerPathForTarget(targetPath);
+  if (!existsSync(markerPath)) {
+    throw new Error(`unsafe target path for repo ${repoId}: non-empty target is missing ${formatPath(markerPath)}`);
+  }
+
+  const marker = parseRepoMarkerStrict(markerPath);
+  if (marker.id !== repoId) {
+    throw new Error(
+      `marker mismatch for repo ${repoId} at ${formatPath(targetPath)}: expected id=${repoId}, found id=${marker.id}`,
+    );
+  }
+
+  if (!gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) {
+    throw new Error(`unsafe target path for repo ${repoId}: ${formatPath(targetPath)} is not a git worktree`);
+  }
+  if (!worktreeHasExpectedSource(targetPath, sourcePath)) {
+    throw new Error(
+      `unsafe target path for repo ${repoId}: ${formatPath(targetPath)} is a git worktree for a different source repository`,
+    );
+  }
+}
+
+function ensureDetachedAtCommit(targetPath: string, commit: string, repoId: string): boolean {
+  const currentCommit = gitRun(targetPath, ["rev-parse", "HEAD"], `failed to inspect current commit for repo ${repoId}`);
+  const symbolicHead = gitOutput(targetPath, ["symbolic-ref", "-q", "HEAD"]);
+  if (currentCommit === commit && !symbolicHead) return false;
+
+  gitRun(targetPath, ["checkout", "--detach", commit], `failed to detach worktree for repo ${repoId} at ${formatPath(targetPath)}`);
+  return true;
+}
+
+function writeRepoMarker(targetPath: string, repoId: string): boolean {
+  const markerPath = markerPathForTarget(targetPath);
+  const expected = `id: ${repoId}\n`;
+  const existing = existsSync(markerPath) ? readFileSync(markerPath, "utf8") : undefined;
+  if (existing === expected) return false;
+  writeFileAtomic(markerPath, expected);
+  return true;
+}
+
+function reconcilePushReadOnly(targetPath: string, readOnly: boolean, repoId: string): boolean {
+  const pushUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.pushurl"]);
+  const fetchUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.url"]);
+
+  if (readOnly) {
+    if (pushUrl === "no_push://disabled") return false;
+    gitRun(
+      targetPath,
+      ["config", "remote.origin.pushurl", "no_push://disabled"],
+      `failed to enforce read-only push hardening for repo ${repoId}`,
+    );
+    return true;
+  }
+
+  if (!pushUrl) return false;
+
+  if (fetchUrl) {
+    gitRun(targetPath, ["config", "remote.origin.pushurl", fetchUrl], `failed to restore writable push URL for repo ${repoId}`);
+  }
+  gitRun(targetPath, ["config", "--unset-all", "remote.origin.pushurl"], `failed to clear push URL override for repo ${repoId}`);
+  return true;
+}
+
+function hydrateRepoWorkspace(args: string[]): void {
+  const options = parseHydrateRepoWorkspaceArgs(args);
+  const rc = readNosediveRc(process.cwd());
+  if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+  if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+
+  const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+  const repoDoc = kbDocs.find((doc) => doc.kind === "repo" && doc.id === options.repoId);
+  if (!repoDoc) {
+    throw new Error(`repo id has no matching kb kind: repo doc: ${options.repoId}`);
+  }
+
+  const sourcePath = repoSourcePath(repoDoc, rc.bridgeDir);
+  const targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
+  ensureSafeTargetPath(options.repoId, targetPath, rc.workspaceDir);
+  const commit = resolveRefCommit(sourcePath, options.repoId, options.at);
+
+  let status: HydrateRepoWorkspaceResult["status"] = "noop";
+  let changed = false;
+  const targetExists = existsSync(targetPath);
+
+  if (targetExists && !statSync(targetPath).isDirectory()) {
+    throw new Error(`unsafe target path for repo ${options.repoId}: target exists but is not a directory: ${formatPath(targetPath)}`);
+  }
+
+  if (!targetExists || (statSync(targetPath).isDirectory() && isDirEmpty(targetPath))) {
+    mkdirSync(dirname(targetPath), { recursive: true });
+    gitRun(
+      sourcePath,
+      ["worktree", "add", "--detach", targetPath, commit],
+      `failed to create worktree for repo ${options.repoId} at ${formatPath(targetPath)}`,
+    );
+    if (writeRepoMarker(targetPath, options.repoId)) changed = true;
+    status = "created";
+  } else {
+    ensureReusableExistingTarget(options.repoId, targetPath, sourcePath);
+    if (ensureDetachedAtCommit(targetPath, commit, options.repoId)) changed = true;
+    if (writeRepoMarker(targetPath, options.repoId)) changed = true;
+  }
+
+  if (reconcilePushReadOnly(targetPath, options.readOnly, options.repoId)) changed = true;
+  if (status !== "created") status = changed ? "updated" : "noop";
+
+  const result: HydrateRepoWorkspaceResult = {
+    status,
+    repoId: options.repoId,
+    targetPath,
+    commit,
+  };
+  console.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)} commit=${result.commit}`);
 }
 
 function optionalScopeString(value: Record<string, unknown>, key: string, label: string): string | undefined {
@@ -1928,6 +2235,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       break;
     case "add-repo":
       addRepo(args);
+      break;
+    case "hydrate-repo.workspace":
+      hydrateRepoWorkspace(args);
       break;
     case "apply":
       apply(args);

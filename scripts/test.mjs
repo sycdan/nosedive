@@ -3,6 +3,7 @@ import {
 	existsSync,
 	mkdtempSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -1401,9 +1402,13 @@ meta:
 	const unsafeRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9a";
 	const unresolvedRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9b";
 	const otherRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9c";
+	const emptyFailRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9d";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "source"), { recursive: true });
+	mkdirSync(join(hydrateBridge, "repos", "source-empty-fail"), {
+		recursive: true,
+	});
 	runTool("git", ["init", "-b", "main"], hydrateBridge);
 	runTool(
 		"git",
@@ -1428,6 +1433,18 @@ meta:
 	write(join(sourceRepo, "README.md"), "release\n");
 	runTool("git", ["commit", "-am", "release commit"], sourceRepo);
 	runTool("git", ["checkout", "main"], sourceRepo);
+
+	const emptyFailSourceRepo = join(hydrateBridge, "repos", "source-empty-fail");
+	runTool("git", ["init", "-b", "main"], emptyFailSourceRepo);
+	runTool(
+		"git",
+		["config", "user.email", "hydrate@example.invalid"],
+		emptyFailSourceRepo,
+	);
+	runTool("git", ["config", "user.name", "Hydrate Dev"], emptyFailSourceRepo);
+	write(join(emptyFailSourceRepo, "README.md"), "empty fail source\n");
+	runTool("git", ["add", "README.md"], emptyFailSourceRepo);
+	runTool("git", ["commit", "-m", "main commit"], emptyFailSourceRepo);
 
 	write(
 		join(hydrateBridge, ".nosediverc"),
@@ -1629,6 +1646,36 @@ meta:
 		`id: ${otherRepoId}\n`,
 	);
 
+	write(hydratedMarkerPath, `  id: ${hydrateRepoId}\n`);
+	const markerIndented = run(
+		["hydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		markerIndented.status,
+		0,
+		"indented marker unexpectedly succeeded",
+	);
+	assert.match(
+		markerIndented.stderr,
+		/invalid marker format .*no leading indentation is allowed/,
+	);
+
+	write(hydratedMarkerPath, `id: ${hydrateRepoId}\nextra: nope\n`);
+	const markerExtraKey = run(
+		["hydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		markerExtraKey.status,
+		0,
+		"extra marker key unexpectedly succeeded",
+	);
+	assert.match(
+		markerExtraKey.stderr,
+		/invalid marker format .*exactly one top-level key 'id'/,
+	);
+
 	const missingRepo = run(
 		["hydrate-repo.workspace", "repo-does-not-exist"],
 		hydrateBridge,
@@ -1691,6 +1738,54 @@ meta:
 		existsSync(unresolvedTarget),
 		false,
 		"target path should not be created when ref resolution fails",
+	);
+
+	const emptyFailTarget = join(hydrateBridge, "workspace", "empty-fail-target");
+	mkdirSync(emptyFailTarget, { recursive: true });
+	write(
+		join(hydrateBridge, "kb", "repo-empty-fail.md"),
+		`---
+kind: repo
+id: ${emptyFailRepoId}
+name: empty-fail
+gist: "Empty target worktree failure fixture"
+meta:
+  worktree-path: workspace/empty-fail-target
+  remotes:
+    local: repos/source-empty-fail
+---
+`,
+	);
+	const sourceGitDir = runTool(
+		"git",
+		["rev-parse", "--git-dir"],
+		emptyFailSourceRepo,
+	).stdout.trim();
+	const sourceWorktreesPath = join(
+		emptyFailSourceRepo,
+		sourceGitDir,
+		"worktrees",
+	);
+	write(sourceWorktreesPath, "block worktree dir creation\n");
+	const emptyDirFailure = run(
+		["hydrate-repo.workspace", emptyFailRepoId],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		emptyDirFailure.status,
+		0,
+		"empty target worktree failure unexpectedly succeeded",
+	);
+	assert.match(
+		emptyDirFailure.stderr,
+		new RegExp(
+			`failed to create worktree for repo ${emptyFailRepoId} at .*empty-fail-target`,
+		),
+	);
+	assert.equal(
+		readdirSync(emptyFailTarget).length,
+		0,
+		"empty target directory should remain unchanged when worktree creation fails",
 	);
 
 	const unsafePath = run(

@@ -242,8 +242,10 @@ id: convention-doc
 name: convention.test
 gist: "Quoted gist: colon, \\"quotes\\", and \`backticks\` survive YAML parsing."
 scopes:
-  - repo-writable
-  - repo-readonly/app:gist
+  - repo-writable: {}
+  - repo-readonly:
+      path: app
+      render: gist
 ---
 
 # Convention body
@@ -257,7 +259,10 @@ id: assertion-doc
 name: assertion.test
 gist: "Scoped assertion gists render by default."
 scopes:
-  - repo-writable@abc123:ro,gist
+  - repo-writable:
+      ref: abc123
+      mode: ro
+      render: gist
 ---
 
 # Assertion body
@@ -271,7 +276,9 @@ id: old-colon-scope
 name: old-colon-scope.test
 gist: "Old multi-colon scopes do not render."
 scopes:
-  - repo-writable:ro:gist
+  - repo-unused:
+      mode: ro
+      render: gist
 ---
 
 # Old colon scope body
@@ -285,7 +292,7 @@ id: decision-doc
 name: decision.test
 gist: "Scoped decision gists render by default."
 scopes:
-  - repo-writable
+  - repo-writable: {}
 links:
   - foundation-doc#frontmatter
 ---
@@ -301,7 +308,8 @@ id: runbook-workon
 name: workon
 gist: "Start working on an effort."
 scopes:
-  - .
+  - .:
+      render: gist
 ---
 
 # Workon
@@ -317,7 +325,7 @@ id: runbook-repo
 name: repo-runbook.test
 gist: "Repo-scoped runbooks render as gists."
 scopes:
-  - repo-writable
+  - repo-writable: {}
 ---
 
 # Repo runbook body
@@ -331,8 +339,10 @@ id: active-dive
 name: yaml-frontmatter.abcdef
 gist: "Active dive for apply tests."
 scopes:
-  - repo-writable
-  - repo-readonly@develop:ro
+  - repo-writable: {}
+  - repo-readonly:
+      ref: develop
+      mode: ro
 meta:
   effort: backlog/yaml-frontmatter/YamlFrontmatter.md
   diver: pilot@example.invalid
@@ -349,7 +359,9 @@ id: foundation-doc
 name: foundation.test
 gist: "Foundation gist: body render uses markdown body."
 scopes:
-  - repo-writable/app:body
+  - repo-writable:
+      path: app
+      render: body
 ---
 
 # Foundation Body
@@ -501,7 +513,7 @@ id: active-convention
 name: active.test
 gist: "Scoped convention should not render from kb-only config."
 scopes:
-  - repo-active
+  - repo-active: {}
 ---
 
 # Active convention body
@@ -515,7 +527,8 @@ id: active-runbook
 name: active
 gist: "Active bridge runbook renders from dot scope."
 scopes:
-  - .
+  - .:
+      render: gist
 ---
 
 # Active runbook body
@@ -582,7 +595,7 @@ id: unmatched-conflicting-foundation
 name: unmatched-conflicting-foundation
 gist: "Nonmatching scoped foundation filters should not be evaluated."
 scopes:
-  - repo-active
+  - repo-active: {}
 meta:
   include-if-any:
     - workspace-is-empty
@@ -952,7 +965,7 @@ id: gamma-convention
 name: gamma.test
 gist: "Gamma convention generated after add-repo."
 scopes:
-  - repo-gamma
+  - repo-gamma: {}
 ---
 
 # Gamma convention body
@@ -1024,6 +1037,26 @@ gist: "unterminated
   assert.notEqual(invalid.status, 0, "invalid YAML unexpectedly succeeded");
   assert.match(invalid.stderr, /invalid YAML in frontmatter in .*bad\.md/);
   rmSync(join(bridge, "kb", "bad.md"), { force: true });
+
+  write(
+    join(bridge, "kb", "legacy-scope.md"),
+    `---
+kind: convention
+id: legacy-scope
+name: legacy-scope
+gist: "Legacy shorthand scopes are rejected after hard cut."
+scopes:
+  - repo-writable/app:gist
+---
+
+# Legacy scope
+`,
+  );
+
+  const legacyScope = run(["apply", "--dry-run"], bridge);
+  assert.notEqual(legacyScope.status, 0, "legacy scope shorthand unexpectedly succeeded");
+  assert.match(legacyScope.stderr, /legacy scope shorthand is not supported in .*legacy-scope\.md scopes\[0\]/);
+  rmSync(join(bridge, "kb", "legacy-scope.md"), { force: true });
 
   write(
     join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"),

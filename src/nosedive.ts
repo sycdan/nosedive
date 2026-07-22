@@ -44,6 +44,7 @@ Commands:
   dump-backlog  Print the open efforts in the configured backlog
   pitch         Create a new effort in the backlog
   hydrate-repo.workspace  Hydrate one repo worktree from kb metadata
+  dehydrate-repo.workspace  Remove one hydrated repo worktree from the workspace
   add-repo      Add a kb repo to an effort's workspace
   apply         Materialize scoped agent docs for the current effort
   nuke          Reset managed local git state
@@ -1059,15 +1060,21 @@ function repoDocs(kbDocs: KbDoc[]): KbDoc[] {
 }
 
 function resolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc {
+  const repo = maybeResolveRepoDoc(kbDocs, repoRef);
+  if (repo) return repo;
+  throw new Error(`repo not found: ${repoRef}`);
+}
+
+function maybeResolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc | undefined {
   const byId = repoDocs(kbDocs).filter((doc) => doc.id === repoRef);
-  if (byId.length === 1) return byId[0]!;
+  if (byId.length === 1) return byId[0];
 
   const byName = repoDocs(kbDocs).filter((doc) => doc.name === repoRef);
-  if (byName.length === 1) return byName[0]!;
+  if (byName.length === 1) return byName[0];
   if (byName.length > 1) {
     throw new Error(`repo name is ambiguous: ${repoRef} (${byName.map((doc) => doc.id).join(", ")})`);
   }
-  throw new Error(`repo not found: ${repoRef}`);
+  return undefined;
 }
 
 function formatEffortRepoEntry(repoId: string, ref: string | undefined, readOnly: boolean): string {
@@ -1141,11 +1148,22 @@ interface HydrateRepoWorkspaceOptions {
   readOnly: boolean;
 }
 
+interface DehydrateRepoWorkspaceOptions {
+  repoRef: string;
+  force: boolean;
+}
+
 interface HydrateRepoWorkspaceResult {
   status: "created" | "updated" | "noop";
   repoId: string;
   targetPath: string;
   commit: string;
+}
+
+interface DehydrateRepoWorkspaceResult {
+  status: "removed" | "noop";
+  repoId: string;
+  targetPath: string;
 }
 
 function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOptions {
@@ -1178,6 +1196,24 @@ function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOpti
 
   if (!repoRef) throw new Error("hydrate-repo.workspace requires a repo id or name");
   return { repoRef, at, readOnly };
+}
+
+function parseDehydrateRepoWorkspaceArgs(args: string[]): DehydrateRepoWorkspaceOptions {
+  let repoRef: string | undefined;
+  let force = false;
+
+  for (const arg of args) {
+    if (arg === "--force") {
+      force = true;
+      continue;
+    }
+    if (arg.startsWith("--")) throw new Error(`unknown dehydrate-repo.workspace option: ${arg}`);
+    if (repoRef) throw new Error(`unexpected dehydrate-repo.workspace argument: ${arg}`);
+    repoRef = arg;
+  }
+
+  if (!repoRef) throw new Error("dehydrate-repo.workspace requires a repo id, name, or workspace-relative path");
+  return { repoRef, force };
 }
 
 function gitRun(cwd: string, args: string[], label: string): string {
@@ -1426,6 +1462,112 @@ function ensureReusableExistingTarget(repoId: string, targetPath: string, source
   }
 }
 
+function ensureDehydratePathInsideWorkspace(pathRef: string, bridgeDir: string, workspaceDir: string): string {
+  if (isAbsolute(pathRef)) {
+    throw new Error(`unsafe dehydrate target path: expected a workspace-relative path, got absolute path ${formatPath(pathRef)}`);
+  }
+
+  const candidate = resolve(bridgeDir, pathRef);
+  if (!isInsideDir(workspaceDir, candidate)) {
+    throw new Error(
+      `unsafe dehydrate target path: ${pathRef} resolves outside configured workspace ${formatPath(workspaceDir)}`,
+    );
+  }
+  return candidate;
+}
+
+function resolveDehydrateTargetFromPath(pathRef: string, kbDocs: KbDoc[], bridgeDir: string, workspaceDir: string): { repoDoc: KbDoc; targetPath: string } {
+  const resolved = ensureDehydratePathInsideWorkspace(pathRef, bridgeDir, workspaceDir);
+  const markerPath = resolved.endsWith(".nosedive-ref") ? resolved : join(resolved, ".nosedive-ref");
+  if (!existsSync(markerPath)) {
+    throw new Error(`unsafe dehydrate target path: expected managed marker at ${formatPath(markerPath)}`);
+  }
+  if (!statSync(markerPath).isFile()) {
+    throw new Error(`unsafe dehydrate target path: marker is not a file at ${formatPath(markerPath)}`);
+  }
+
+  const marker = parseRepoMarkerStrict(markerPath);
+  const repoDoc = repoDocs(kbDocs).find((doc) => doc.id === marker.id);
+  if (!repoDoc) {
+    throw new Error(`repo not found for marker id ${marker.id}: ${formatPath(markerPath)}`);
+  }
+
+  const targetPath = expectedWorktreePath(repoDoc, bridgeDir);
+  ensureSafeTargetPath(repoDoc.id, targetPath, workspaceDir);
+
+  const inputTargetPath = resolved.endsWith(".nosedive-ref") ? dirname(resolved) : resolved;
+  if (realpathStable(inputTargetPath) !== realpathStable(targetPath)) {
+    throw new Error(
+      `unsafe dehydrate target path: ${formatPath(inputTargetPath)} does not match configured workspace target ${formatPath(targetPath)} for repo ${repoDoc.id}`,
+    );
+  }
+
+  return { repoDoc, targetPath };
+}
+
+function ensureDehydrateTargetOwnership(repoId: string, targetPath: string): void {
+  if (!statSync(targetPath).isDirectory()) {
+    throw new Error(`unsafe target path for repo ${repoId}: target exists but is not a directory: ${formatPath(targetPath)}`);
+  }
+
+  const markerPath = markerPathForTarget(targetPath);
+  if (!existsSync(markerPath)) {
+    throw new Error(`unsafe target path for repo ${repoId}: target is missing managed marker ${formatPath(markerPath)}`);
+  }
+
+  const marker = parseRepoMarkerStrict(markerPath);
+  if (marker.id !== repoId) {
+    throw new Error(`marker mismatch for repo ${repoId} at ${formatPath(targetPath)}: expected id=${repoId}, found id=${marker.id}`);
+  }
+
+  if (!gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) {
+    throw new Error(`unsafe target path for repo ${repoId}: ${formatPath(targetPath)} is not a git worktree`);
+  }
+}
+
+function dehydrateHasUncommittedWork(targetPath: string): boolean {
+  const status = gitOutput(targetPath, ["status", "--short"]);
+  return Boolean(status && status.trim());
+}
+
+function dehydrateHasUnpublishedCommits(targetPath: string): boolean {
+  const refsContainingHeadRaw = gitOutput(targetPath, [
+    "for-each-ref",
+    "--format=%(refname)",
+    "--contains",
+    "HEAD",
+    "refs/heads",
+    "refs/remotes",
+  ]) ?? "";
+  const refsContainingHead = refsContainingHeadRaw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const currentBranch = gitOutput(targetPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+
+  if (!currentBranch) return refsContainingHead.length === 0;
+
+  const upstream = gitOutput(targetPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+  if (upstream) {
+    const aheadCount = gitRun(targetPath, ["rev-list", "--count", `${upstream}..HEAD`], "failed to inspect unpublished commits");
+    return Number(aheadCount) > 0;
+  }
+
+  const currentHeadRef = `refs/heads/${currentBranch}`;
+  const otherRefsContainHead = refsContainingHead.some((ref) => ref !== currentHeadRef);
+  return !otherRefsContainHead;
+}
+
+function removeHydratedWorktree(repoId: string, targetPath: string, force: boolean): void {
+  const commonDirRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
+  if (!commonDirRaw) {
+    throw new Error(`failed to resolve worktree source for repo ${repoId} at ${formatPath(targetPath)}`);
+  }
+  const sourcePath = isAbsolute(commonDirRaw) ? commonDirRaw : resolve(targetPath, commonDirRaw);
+
+  const args = ["worktree", "remove"];
+  if (force) args.push("--force");
+  args.push(targetPath);
+  gitRun(sourcePath, args, `failed to remove hydrated worktree for repo ${repoId} at ${formatPath(targetPath)}`);
+}
+
 function ensureDetachedAtCommit(targetPath: string, commit: string, repoId: string): boolean {
   const currentCommit = gitRun(targetPath, ["rev-parse", "HEAD"], `failed to inspect current commit for repo ${repoId}`);
   const symbolicHead = gitOutput(targetPath, ["symbolic-ref", "-q", "HEAD"]);
@@ -1592,6 +1734,45 @@ function hydrateRepoWorkspace(args: string[]): void {
     commit,
   };
   console.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)} commit=${result.commit}`);
+}
+
+function dehydrateRepoWorkspace(args: string[]): void {
+  const options = parseDehydrateRepoWorkspaceArgs(args);
+  const rc = readNosediveRc(process.cwd());
+  if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+  if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+
+  const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+  let repoDoc = maybeResolveRepoDoc(kbDocs, options.repoRef);
+  let targetPath: string;
+
+  if (repoDoc) {
+    targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
+    ensureSafeTargetPath(repoDoc.id, targetPath, rc.workspaceDir);
+  } else {
+    const resolved = resolveDehydrateTargetFromPath(options.repoRef, kbDocs, rc.bridgeDir, rc.workspaceDir);
+    repoDoc = resolved.repoDoc;
+    targetPath = resolved.targetPath;
+  }
+
+  const repoId = repoDoc.id;
+  if (!existsSync(targetPath)) {
+    const noopResult: DehydrateRepoWorkspaceResult = { status: "noop", repoId, targetPath };
+    console.log(`${noopResult.status} repo=${noopResult.repoId} path=${formatPath(noopResult.targetPath)}`);
+    return;
+  }
+
+  ensureDehydrateTargetOwnership(repoId, targetPath);
+  if (!options.force && dehydrateHasUncommittedWork(targetPath)) {
+    throw new Error(`refusing to dehydrate repo ${repoId} at ${formatPath(targetPath)}: checkout has uncommitted work; rerun with --force`);
+  }
+  if (!options.force && dehydrateHasUnpublishedCommits(targetPath)) {
+    throw new Error(`refusing to dehydrate repo ${repoId} at ${formatPath(targetPath)}: checkout has unpublished commits; rerun with --force`);
+  }
+
+  removeHydratedWorktree(repoId, targetPath, options.force);
+  const result: DehydrateRepoWorkspaceResult = { status: "removed", repoId, targetPath };
+  console.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)}`);
 }
 
 function optionalScopeString(value: Record<string, unknown>, key: string, label: string): string | undefined {
@@ -2405,6 +2586,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       break;
     case "hydrate-repo.workspace":
       hydrateRepoWorkspace(args);
+      break;
+    case "dehydrate-repo.workspace":
+      dehydrateRepoWorkspace(args);
       break;
     case "apply":
       apply(args);

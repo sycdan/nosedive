@@ -142,6 +142,7 @@ try {
 	assert.match(help.stdout, /dump-backlog/);
 	assert.match(help.stdout, /pitch/);
 	assert.match(help.stdout, /hydrate-repo\.workspace/);
+	assert.match(help.stdout, /dehydrate-repo\.workspace/);
 	assert.match(help.stdout, /add-repo/);
 	assert.match(help.stdout, /nuke/);
 
@@ -2132,6 +2133,217 @@ meta:
 	assert.match(
 		unsafePath.stderr,
 		new RegExp(`unsafe target path for repo ${unsafeRepoId}`),
+	);
+
+	write(hydratedMarkerPath, `id: ${hydrateRepoId}\n`);
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId, "--at", "main"], hydrateBridge),
+		"restore hydrated target on main before dehydrate tests failed",
+	);
+
+	const dehydrateById = run(
+		["dehydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assertOk(dehydrateById, "dehydrate-repo.workspace by id failed");
+	assert.match(
+		dehydrateById.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+	assert.equal(
+		existsSync(join(hydrateBridge, "workspace", "hydrated-target")),
+		false,
+		"dehydrate by id should remove hydrated target",
+	);
+	assert.equal(
+		existsSync(join(hydrateBridge, ".nosedive", "cache", hydrateRepoId)),
+		true,
+		"dehydrate should preserve managed cache",
+	);
+
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before dehydrate by name failed",
+	);
+	const dehydrateByName = run(["dehydrate-repo.workspace", "hydrate"], hydrateBridge);
+	assertOk(dehydrateByName, "dehydrate-repo.workspace by name failed");
+	assert.match(
+		dehydrateByName.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before dehydrate by path failed",
+	);
+	const dehydrateByPath = run(
+		["dehydrate-repo.workspace", "workspace/hydrated-target"],
+		hydrateBridge,
+	);
+	assertOk(dehydrateByPath, "dehydrate-repo.workspace by directory path failed");
+	assert.match(
+		dehydrateByPath.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before dehydrate by marker failed",
+	);
+	const dehydrateByMarker = run(
+		["dehydrate-repo.workspace", "workspace/hydrated-target/.nosedive-ref"],
+		hydrateBridge,
+	);
+	assertOk(dehydrateByMarker, "dehydrate-repo.workspace by marker path failed");
+	assert.match(
+		dehydrateByMarker.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	const dehydrateNoop = run(
+		["dehydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assertOk(dehydrateNoop, "dehydrate-repo.workspace noop failed");
+	assert.match(
+		dehydrateNoop.stdout,
+		new RegExp(`^noop repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before dirty protection check failed",
+	);
+	const dirtyTarget = join(hydrateBridge, "workspace", "hydrated-target");
+	write(join(dirtyTarget, ".assertion-dirty"), "dirty\n");
+	const dirtyWithoutForce = run(
+		["dehydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		dirtyWithoutForce.status,
+		0,
+		"dirty dehydrate without --force unexpectedly succeeded",
+	);
+	assert.match(dirtyWithoutForce.stderr, /(dirty|uncommitted|force)/i);
+	assert.equal(
+		existsSync(join(dirtyTarget, ".assertion-dirty")),
+		true,
+		"dirty target should remain after refusal",
+	);
+	const dirtyWithForce = run(
+		["dehydrate-repo.workspace", hydrateRepoId, "--force"],
+		hydrateBridge,
+	);
+	assertOk(dirtyWithForce, "dirty dehydrate with --force failed");
+	assert.match(
+		dirtyWithForce.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before unpublished-commit protection check failed",
+	);
+	const aheadTarget = join(hydrateBridge, "workspace", "hydrated-target");
+	write(join(aheadTarget, ".assertion-ahead"), "ahead\n");
+	runTool("git", ["add", ".assertion-ahead"], aheadTarget);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Assertion",
+			"-c",
+			"user.email=assertion@example.invalid",
+			"commit",
+			"-m",
+			"assertion unpublished commit",
+		],
+		aheadTarget,
+	);
+	const aheadWithoutForce = run(
+		["dehydrate-repo.workspace", hydrateRepoId],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		aheadWithoutForce.status,
+		0,
+		"ahead dehydrate without --force unexpectedly succeeded",
+	);
+	assert.match(aheadWithoutForce.stderr, /(unpublished|unpushed|ahead|force)/i);
+	assert.equal(
+		existsSync(join(aheadTarget, ".assertion-ahead")),
+		true,
+		"ahead target should remain after refusal",
+	);
+	const aheadWithForce = run(
+		["dehydrate-repo.workspace", hydrateRepoId, "--force"],
+		hydrateBridge,
+	);
+	assertOk(aheadWithForce, "ahead dehydrate with --force failed");
+	assert.match(
+		aheadWithForce.stdout,
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+	);
+
+	const outsideDehydrateDir = join(tmp, "outside-dehydrate-target");
+	mkdirSync(outsideDehydrateDir, { recursive: true });
+	write(join(outsideDehydrateDir, "keep.txt"), "outside\n");
+	const insideUnowned = join(hydrateBridge, "workspace", "not-owned");
+	mkdirSync(insideUnowned, { recursive: true });
+	write(join(insideUnowned, "keep.txt"), "inside\n");
+
+	const unsafeOutside = run(
+		["dehydrate-repo.workspace", "../outside-dehydrate-target"],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		unsafeOutside.status,
+		0,
+		"outside-workspace dehydrate unexpectedly succeeded",
+	);
+	assert.match(unsafeOutside.stderr, /(workspace|outside|relative)/i);
+
+	const unsafeInside = run(
+		["dehydrate-repo.workspace", "workspace/not-owned"],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		unsafeInside.status,
+		0,
+		"unowned in-workspace dehydrate unexpectedly succeeded",
+	);
+	assert.match(unsafeInside.stderr, /(marker|\.nosedive-ref|owned)/i);
+
+	const unsafeOutsideForce = run(
+		["dehydrate-repo.workspace", "../outside-dehydrate-target", "--force"],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		unsafeOutsideForce.status,
+		0,
+		"outside-workspace dehydrate with --force unexpectedly succeeded",
+	);
+
+	const unsafeInsideForce = run(
+		["dehydrate-repo.workspace", "workspace/not-owned", "--force"],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		unsafeInsideForce.status,
+		0,
+		"unowned in-workspace dehydrate with --force unexpectedly succeeded",
+	);
+
+	assert.equal(
+		readFileSync(join(outsideDehydrateDir, "keep.txt"), "utf8"),
+		"outside\n",
+		"outside-workspace file should remain untouched",
+	);
+	assert.equal(
+		readFileSync(join(insideUnowned, "keep.txt"), "utf8"),
+		"inside\n",
+		"in-workspace unowned file should remain untouched",
 	);
 
 	write(

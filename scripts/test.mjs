@@ -64,6 +64,12 @@ function runTool(command, args, cwd) {
 	return result;
 }
 
+function runGitUnchecked(args, cwd) {
+	const env = { ...process.env };
+	for (const key of gitLocalEnvKeys) delete env[key];
+	return spawnSync("git", args, { cwd, encoding: "utf8", env });
+}
+
 function assertOk(result, label) {
 	assert.equal(
 		result.status,
@@ -1731,14 +1737,20 @@ meta:
 		"hydrated worktree should resolve default ref from the cloud-backed cache",
 	);
 
-	const detachedAfterCreate = spawnSync("git", ["symbolic-ref", "-q", "HEAD"], {
-		cwd: join(hydrateBridge, "workspace", "hydrated-target"),
-		encoding: "utf8",
-	});
+	const detachedAfterCreate = runGitUnchecked(
+		["symbolic-ref", "-q", "HEAD"],
+		join(hydrateBridge, "workspace", "hydrated-target"),
+	);
 	assert.notEqual(
 		detachedAfterCreate.status,
 		0,
 		"hydrated worktree should be detached",
+	);
+	const peerWorktree = join(hydrateBridge, "workspace", "hydrated-peer");
+	runTool(
+		"git",
+		["worktree", "add", "--detach", peerWorktree, cloudMainCommit],
+		hydrateCache,
 	);
 
 	const hydrateNoop = run(
@@ -1771,10 +1783,57 @@ meta:
 	);
 	const pushUrlReadOnly = runTool(
 		"git",
-		["config", "--get", "remote.origin.pushurl"],
+		["config", "--worktree", "--get", "remote.origin.pushurl"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	).stdout.trim();
 	assert.equal(pushUrlReadOnly, "no_push://disabled");
+	const pushUrlReadOnlyFromOrdinaryConfig = runGitUnchecked(
+		["config", "--get", "remote.origin.pushurl"],
+		join(hydrateBridge, "workspace", "hydrated-target"),
+	);
+	assert.equal(
+		pushUrlReadOnlyFromOrdinaryConfig.stdout.trim(),
+		"no_push://disabled",
+		"effective pushurl should still block pushes from the hydrated worktree",
+	);
+	const sharedCachePushUrlReadOnly = runGitUnchecked(
+		["config", "--get", "remote.origin.pushurl"],
+		hydrateCache,
+	);
+	assert.notEqual(
+		sharedCachePushUrlReadOnly.status,
+		0,
+		"read-only hardening should not write pushurl into shared cache config",
+	);
+	const peerPushUrlReadOnly = runGitUnchecked(
+		["config", "--get", "remote.origin.pushurl"],
+		peerWorktree,
+	);
+	assert.notEqual(
+		peerPushUrlReadOnly.status,
+		0,
+		"read-only hardening should not affect sibling worktrees",
+	);
+	const peerStillWorktree = runTool(
+		"git",
+		["rev-parse", "--is-inside-work-tree"],
+		peerWorktree,
+	).stdout.trim();
+	assert.equal(
+		peerStillWorktree,
+		"true",
+		"enabling worktree-local config should not make sibling worktrees look bare",
+	);
+	const worktreeConfigEnabled = runTool(
+		"git",
+		["config", "--get", "extensions.worktreeConfig"],
+		hydrateCache,
+	).stdout.trim();
+	assert.equal(
+		worktreeConfigEnabled,
+		"true",
+		"read-only hardening should enable Git worktree-local config",
+	);
 
 	const hydrateWritableRestore = run(
 		["hydrate-repo.workspace", hydrateRepoId],
@@ -1791,18 +1850,23 @@ meta:
 			"m",
 		),
 	);
-	const pushUrlAfterRestore = spawnSync(
-		"git",
-		["config", "--get", "remote.origin.pushurl"],
-		{
-			cwd: join(hydrateBridge, "workspace", "hydrated-target"),
-			encoding: "utf8",
-		},
+	const pushUrlAfterRestore = runGitUnchecked(
+		["config", "--worktree", "--get", "remote.origin.pushurl"],
+		join(hydrateBridge, "workspace", "hydrated-target"),
 	);
 	assert.notEqual(
 		pushUrlAfterRestore.status,
 		0,
-		"explicit pushurl override should be removed in writable mode",
+		"worktree-local pushurl override should be removed in writable mode",
+	);
+	const sharedCachePushUrlAfterRestore = runGitUnchecked(
+		["config", "--get", "remote.origin.pushurl"],
+		hydrateCache,
+	);
+	assert.notEqual(
+		sharedCachePushUrlAfterRestore.status,
+		0,
+		"writable restore should leave shared cache pushurl unset",
 	);
 
 	const releaseCommit = runTool(

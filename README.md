@@ -102,7 +102,8 @@ Usage:
 - `<repo-id-or-name>` is required and must match either a kb `kind: repo` `id`
   or an exact `name`; duplicate names fail as ambiguous.
 - `--at <ref>` chooses the source ref and defaults to `main`.
-- `--read-only` sets `remote.origin.pushurl=no_push://disabled`.
+- `--read-only` sets the hydrated worktree's worktree-local
+  `remote.origin.pushurl=no_push://disabled`.
 
 Behavior:
 

@@ -1459,26 +1459,85 @@ function ensureRepoMarkerExcluded(targetPath: string, repoId: string): boolean {
   return true;
 }
 
-function reconcilePushReadOnly(targetPath: string, readOnly: boolean, repoId: string): boolean {
-  const pushUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.pushurl"]);
-  const fetchUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.url"]);
+function worktreeConfigEnabled(targetPath: string): boolean {
+  return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
+}
+
+interface GitWorktreeEntry {
+  path: string;
+  bare: boolean;
+}
+
+function gitWorktreeEntries(sourcePath: string, repoId: string): GitWorktreeEntry[] {
+  const text = gitRun(
+    sourcePath,
+    ["worktree", "list", "--porcelain"],
+    `failed to list worktrees for repo ${repoId} at ${formatPath(sourcePath)}`,
+  );
+  const entries: GitWorktreeEntry[] = [];
+  let current: GitWorktreeEntry | undefined;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) {
+      if (current) entries.push(current);
+      current = undefined;
+      continue;
+    }
+    if (line.startsWith("worktree ")) {
+      if (current) entries.push(current);
+      current = { path: line.slice("worktree ".length), bare: false };
+      continue;
+    }
+    if (line === "bare" && current) current.bare = true;
+  }
+  if (current) entries.push(current);
+  return entries;
+}
+
+function ensureLinkedWorktreesNonBare(sourcePath: string, repoId: string): boolean {
+  let changed = false;
+  for (const entry of gitWorktreeEntries(sourcePath, repoId)) {
+    if (entry.bare || !existsSync(entry.path)) continue;
+    const current = gitOutput(entry.path, ["config", "--worktree", "--get", "core.bare"]);
+    if (current === "false") continue;
+    gitRun(
+      entry.path,
+      ["config", "--worktree", "core.bare", "false"],
+      `failed to mark linked worktree non-bare for repo ${repoId} at ${formatPath(entry.path)}`,
+    );
+    changed = true;
+  }
+  return changed;
+}
+
+function reconcilePushReadOnly(sourcePath: string, targetPath: string, readOnly: boolean, repoId: string): boolean {
+  let changed = false;
+  if (!worktreeConfigEnabled(sourcePath)) {
+    if (!readOnly) return false;
+    gitRun(
+      sourcePath,
+      ["config", "extensions.worktreeConfig", "true"],
+      `failed to enable worktree-local config for repo ${repoId}`,
+    );
+    changed = true;
+  }
+  if (ensureLinkedWorktreesNonBare(sourcePath, repoId)) changed = true;
+
+  const pushUrl = gitOutput(targetPath, ["config", "--worktree", "--get", "remote.origin.pushurl"]);
 
   if (readOnly) {
-    if (pushUrl === "no_push://disabled") return false;
+    if (pushUrl === "no_push://disabled") return changed;
     gitRun(
       targetPath,
-      ["config", "remote.origin.pushurl", "no_push://disabled"],
+      ["config", "--worktree", "--replace-all", "remote.origin.pushurl", "no_push://disabled"],
       `failed to enforce read-only push hardening for repo ${repoId}`,
     );
     return true;
   }
 
-  if (!pushUrl) return false;
+  if (!pushUrl) return changed;
 
-  if (fetchUrl) {
-    gitRun(targetPath, ["config", "remote.origin.pushurl", fetchUrl], `failed to restore writable push URL for repo ${repoId}`);
-  }
-  gitRun(targetPath, ["config", "--unset-all", "remote.origin.pushurl"], `failed to clear push URL override for repo ${repoId}`);
+  gitRun(targetPath, ["config", "--worktree", "--unset-all", "remote.origin.pushurl"], `failed to clear worktree-local push URL override for repo ${repoId}`);
   return true;
 }
 
@@ -1523,7 +1582,7 @@ function hydrateRepoWorkspace(args: string[]): void {
     if (ensureRepoMarkerExcluded(targetPath, repoId)) changed = true;
   }
 
-  if (reconcilePushReadOnly(targetPath, options.readOnly, repoId)) changed = true;
+  if (reconcilePushReadOnly(sourcePath, targetPath, options.readOnly, repoId)) changed = true;
   if (status !== "created") status = changed ? "updated" : "noop";
 
   const result: HydrateRepoWorkspaceResult = {

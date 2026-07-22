@@ -12,6 +12,7 @@ on:
       - "src/**"
       - "scripts/**"
       - "kb/**"
+      - .prettierrc.json
       - package.json
       - package-lock.json
       - tsconfig.json
@@ -43,6 +44,8 @@ jobs:
       - name: Update npm (trusted publishing needs >= 11.5.1)
         run: npm install -g npm@11.5.1
       - run: npm ci
+      - name: Format check
+        run: npm run format:check
       - name: Compute version
         id: version
         run: |

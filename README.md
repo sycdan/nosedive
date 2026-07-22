@@ -149,9 +149,10 @@ Behavior:
 ## Development
 
 Run `npm install` once after cloning. Its `prepare` script points git at
-[`.githooks`](.githooks), installing a `pre-push` hook that typechecks, builds,
-and tests before every push — the same gate CI enforces. Bypass a one-off push
-with `git push --no-verify`.
+[`.githooks`](.githooks), installing a `pre-push` hook that checks formatting,
+typechecks, builds, and tests before every push — the same gate CI enforces.
+Use `npm run format` to apply the repo-local Prettier config. Bypass a one-off
+push with `git push --no-verify`.
 
 ### Versioning + publishing
 
@@ -165,4 +166,7 @@ Versions are CalVer, computed by [`scripts/version.mjs`](scripts/version.mjs):
 
 The version in [`package.json`](package.json) stays `0.0.0-dev` in git;  pipeline stamps the real version at publish time. Publishing is handled by
 [`.github/workflows/publish.yml`](.github/workflows/publish.yml) using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no
-token secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) typechecks, builds, smoke-tests the CLI ([`src/cli.ts`](src/cli.ts)), and verifies the packed npm bin on PRs; the publish workflow runs the same checks before publishing.
+token secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks
+formatting, typechecks, builds, smoke-tests the CLI ([`src/cli.ts`](src/cli.ts)),
+and verifies the packed npm bin on PRs; the publish workflow runs the same
+checks before publishing.

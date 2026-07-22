@@ -23,6 +23,8 @@ const MANAGED_EXCLUDE_BEGIN = "# BEGIN nosedive-managed exclude";
 const MANAGED_EXCLUDE_END = "# END nosedive-managed exclude";
 const FOUNDATION_EXCLUDE_BEGIN = "# BEGIN nosedive-managed package-foundation exclude";
 const FOUNDATION_EXCLUDE_END = "# END nosedive-managed package-foundation exclude";
+const REPO_MARKER_EXCLUDE_BEGIN = "# BEGIN nosedive-managed repo-marker exclude";
+const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclude";
 const GIT_LOCAL_ENV_KEYS = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR",
@@ -1376,6 +1378,14 @@ function maybeFetchSource(sourcePath: string, repoId: string): void {
   }
 }
 
+function pruneStaleWorktrees(sourcePath: string, repoId: string): void {
+  gitRun(
+    sourcePath,
+    ["worktree", "prune"],
+    `failed to prune stale worktrees for repo ${repoId} at ${formatPath(sourcePath)}`,
+  );
+}
+
 function resolveRefCommit(sourcePath: string, repoId: string, ref: string): string {
   maybeFetchSource(sourcePath, repoId);
   return gitRun(
@@ -1434,6 +1444,21 @@ function writeRepoMarker(targetPath: string, repoId: string): boolean {
   return true;
 }
 
+function ensureRepoMarkerExcluded(targetPath: string, repoId: string): boolean {
+  const rawExcludePath = gitOutput(targetPath, ["rev-parse", "--git-path", "info/exclude"]);
+  if (!rawExcludePath) {
+    throw new Error(`failed to resolve git exclude path for repo ${repoId} at ${formatPath(targetPath)}`);
+  }
+
+  const excludePath = isAbsolute(rawExcludePath) ? rawExcludePath : resolve(targetPath, rawExcludePath);
+  const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+  const updated = replaceManagedExcludeBlock(existing, [".nosedive-ref"], REPO_MARKER_EXCLUDE_SPEC);
+  if (updated === existing) return false;
+
+  writeFileAtomic(excludePath, updated);
+  return true;
+}
+
 function reconcilePushReadOnly(targetPath: string, readOnly: boolean, repoId: string): boolean {
   const pushUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.pushurl"]);
   const fetchUrl = gitOutput(targetPath, ["config", "--get", "remote.origin.url"]);
@@ -1482,17 +1507,20 @@ function hydrateRepoWorkspace(args: string[]): void {
 
   if (!targetExists || (statSync(targetPath).isDirectory() && isDirEmpty(targetPath))) {
     mkdirSync(dirname(targetPath), { recursive: true });
+    pruneStaleWorktrees(sourcePath, repoId);
     gitRun(
       sourcePath,
       ["worktree", "add", "--detach", targetPath, commit],
       `failed to create worktree for repo ${repoId} at ${formatPath(targetPath)}`,
     );
     if (writeRepoMarker(targetPath, repoId)) changed = true;
+    if (ensureRepoMarkerExcluded(targetPath, repoId)) changed = true;
     status = "created";
   } else {
     ensureReusableExistingTarget(repoId, targetPath, sourcePath);
     if (ensureDetachedAtCommit(targetPath, commit, repoId)) changed = true;
     if (writeRepoMarker(targetPath, repoId)) changed = true;
+    if (ensureRepoMarkerExcluded(targetPath, repoId)) changed = true;
   }
 
   if (reconcilePushReadOnly(targetPath, options.readOnly, repoId)) changed = true;
@@ -2002,6 +2030,15 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
   header: [
     "# owner: nosedive init",
     "# reason: .nosediverc and package foundation docs are local bootstrap artifacts",
+  ],
+};
+
+const REPO_MARKER_EXCLUDE_SPEC: ManagedExcludeSpec = {
+  begin: REPO_MARKER_EXCLUDE_BEGIN,
+  end: REPO_MARKER_EXCLUDE_END,
+  header: [
+    "# owner: nosedive hydrate-repo.workspace",
+    "# reason: repo ownership marker is local workspace state",
   ],
 };
 

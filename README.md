@@ -119,6 +119,33 @@ Behavior:
   ownership checks on reuse.
 - Success status is always one of `created`, `updated`, or `noop`.
 
+### dehydrate-repo.workspace
+
+Remove one hydrated workspace checkout for a kb repo without touching managed
+cache or bridge metadata.
+
+Usage:
+
+`nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]`
+
+- `<repo-id-or-name-or-workspace-path>` is required and accepts either:
+  - a repo `id`
+  - an exact repo `name`
+  - a bridge-workspace-relative directory path (or `.nosedive-ref` path)
+    for an already hydrated checkout
+- `--force` bypasses local dirty/unpublished-work protection only.
+
+Behavior:
+
+- The command resolves and validates the configured workspace target for the
+  repo and requires the managed `.nosedive-ref` ownership marker before
+  removing anything.
+- Target paths must remain inside configured `workspace:` and cannot be
+  widened by `--force`.
+- Without `--force`, dehydration refuses to remove a checkout with uncommitted
+  changes or unpublished commits.
+- Success status is always one of `removed` or `noop`.
+
 ## Development
 
 Run `npm install` once after cloning. Its `prepare` script points git at

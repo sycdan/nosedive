@@ -1134,7 +1134,7 @@ function addRepo(args: string[]): void {
 }
 
 interface HydrateRepoWorkspaceOptions {
-  repoId: string;
+  repoRef: string;
   at: string;
   readOnly: boolean;
 }
@@ -1147,7 +1147,7 @@ interface HydrateRepoWorkspaceResult {
 }
 
 function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOptions {
-  let repoId: string | undefined;
+  let repoRef: string | undefined;
   let at = "main";
   let readOnly = false;
 
@@ -1170,12 +1170,12 @@ function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOpti
       continue;
     }
     if (arg.startsWith("--")) throw new Error(`unknown hydrate-repo.workspace option: ${arg}`);
-    if (repoId) throw new Error(`unexpected hydrate-repo.workspace argument: ${arg}`);
-    repoId = arg;
+    if (repoRef) throw new Error(`unexpected hydrate-repo.workspace argument: ${arg}`);
+    repoRef = arg;
   }
 
-  if (!repoId) throw new Error("hydrate-repo.workspace requires a repo id");
-  return { repoId, at, readOnly };
+  if (!repoRef) throw new Error("hydrate-repo.workspace requires a repo id or name");
+  return { repoRef, at, readOnly };
 }
 
 function gitRun(cwd: string, args: string[], label: string): string {
@@ -1464,22 +1464,20 @@ function hydrateRepoWorkspace(args: string[]): void {
   if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
   const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-  const repoDoc = kbDocs.find((doc) => doc.kind === "repo" && doc.id === options.repoId);
-  if (!repoDoc) {
-    throw new Error(`repo id has no matching kb kind: repo doc: ${options.repoId}`);
-  }
+  const repoDoc = resolveRepoDoc(kbDocs, options.repoRef);
+  const repoId = repoDoc.id;
 
   const sourcePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
   const targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
-  ensureSafeTargetPath(options.repoId, targetPath, rc.workspaceDir);
-  const commit = resolveRefCommit(sourcePath, options.repoId, options.at);
+  ensureSafeTargetPath(repoId, targetPath, rc.workspaceDir);
+  const commit = resolveRefCommit(sourcePath, repoId, options.at);
 
   let status: HydrateRepoWorkspaceResult["status"] = "noop";
   let changed = false;
   const targetExists = existsSync(targetPath);
 
   if (targetExists && !statSync(targetPath).isDirectory()) {
-    throw new Error(`unsafe target path for repo ${options.repoId}: target exists but is not a directory: ${formatPath(targetPath)}`);
+    throw new Error(`unsafe target path for repo ${repoId}: target exists but is not a directory: ${formatPath(targetPath)}`);
   }
 
   if (!targetExists || (statSync(targetPath).isDirectory() && isDirEmpty(targetPath))) {
@@ -1487,22 +1485,22 @@ function hydrateRepoWorkspace(args: string[]): void {
     gitRun(
       sourcePath,
       ["worktree", "add", "--detach", targetPath, commit],
-      `failed to create worktree for repo ${options.repoId} at ${formatPath(targetPath)}`,
+      `failed to create worktree for repo ${repoId} at ${formatPath(targetPath)}`,
     );
-    if (writeRepoMarker(targetPath, options.repoId)) changed = true;
+    if (writeRepoMarker(targetPath, repoId)) changed = true;
     status = "created";
   } else {
-    ensureReusableExistingTarget(options.repoId, targetPath, sourcePath);
-    if (ensureDetachedAtCommit(targetPath, commit, options.repoId)) changed = true;
-    if (writeRepoMarker(targetPath, options.repoId)) changed = true;
+    ensureReusableExistingTarget(repoId, targetPath, sourcePath);
+    if (ensureDetachedAtCommit(targetPath, commit, repoId)) changed = true;
+    if (writeRepoMarker(targetPath, repoId)) changed = true;
   }
 
-  if (reconcilePushReadOnly(targetPath, options.readOnly, options.repoId)) changed = true;
+  if (reconcilePushReadOnly(targetPath, options.readOnly, repoId)) changed = true;
   if (status !== "created") status = changed ? "updated" : "noop";
 
   const result: HydrateRepoWorkspaceResult = {
     status,
-    repoId: options.repoId,
+    repoId,
     targetPath,
     commit,
   };

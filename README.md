@@ -97,9 +97,10 @@ the resolved commit.
 
 Usage:
 
-`nosedive hydrate-repo.workspace <repo-id> [--at <ref>] [--read-only]`
+`nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]`
 
-- `<repo-id>` is required and must match a kb `kind: repo` `id`.
+- `<repo-id-or-name>` is required and must match either a kb `kind: repo` `id`
+  or an exact `name`; duplicate names fail as ambiguous.
 - `--at <ref>` chooses the source ref and defaults to `main`.
 - `--read-only` sets `remote.origin.pushurl=no_push://disabled`.
 
@@ -107,8 +108,8 @@ Behavior:
 
 - Path resolution uses canonical `meta.path`, with deprecated
   `meta.worktree-path` accepted only as a compatibility fallback.
-- A managed git cache is prepared at `.nosedive/cache/<repo-id>` and workspace
-  worktrees are created from that cache.
+- A managed git cache is prepared at `.nosedive/cache/<repo-id>` for the
+  resolved repo id, and workspace worktrees are created from that cache.
 - `meta.remotes.cloud` is preferred as the cache upstream; `meta.remotes.local`
   is only a seed source when no cloud remote is configured.
 - Target path must remain inside configured `workspace:` after canonical path

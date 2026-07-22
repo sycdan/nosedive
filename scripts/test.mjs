@@ -1409,6 +1409,9 @@ meta:
 	const unresolvedRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9b";
 	const otherRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9c";
 	const emptyFailRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9d";
+	const nameRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9e";
+	const ambiguousRepoIdA = "019f8584-453f-79ea-9d53-5f1b20b4cd9f";
+	const ambiguousRepoIdB = "019f8584-453f-79ea-9d53-5f1b20b4cda0";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "cloud-source"), { recursive: true });
@@ -1523,6 +1526,48 @@ meta:
 `,
 	);
 	write(
+		join(hydrateBridge, "kb", "repo-by-name.md"),
+		`---
+kind: repo
+id: ${nameRepoId}
+name: hydrate-by-name
+gist: "Exact name hydrate fixture"
+meta:
+  path: workspace/name-target
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	write(
+		join(hydrateBridge, "kb", "repo-ambiguous-a.md"),
+		`---
+kind: repo
+id: ${ambiguousRepoIdA}
+name: duplicate-name
+gist: "Ambiguous name fixture A"
+meta:
+  path: workspace/ambiguous-a
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	write(
+		join(hydrateBridge, "kb", "repo-ambiguous-b.md"),
+		`---
+kind: repo
+id: ${ambiguousRepoIdB}
+name: duplicate-name
+gist: "Ambiguous name fixture B"
+meta:
+  path: workspace/ambiguous-b
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	write(
 		join(hydrateBridge, "kb", "repo-unsafe.md"),
 		`---
 kind: repo
@@ -1535,6 +1580,52 @@ meta:
     local: repos/source
 ---
 `,
+	);
+
+	const hydrateByName = run(
+		["hydrate-repo.workspace", "hydrate-by-name"],
+		hydrateBridge,
+	);
+	assertOk(hydrateByName, "hydrate-repo.workspace exact name failed");
+	assert.match(
+		hydrateByName.stdout,
+		new RegExp(
+			`^created repo=${nameRepoId} path=workspace[\\\\/]name-target commit=[0-9a-f]{40}$`,
+			"m",
+		),
+	);
+	assert.equal(
+		readFileSync(
+			join(hydrateBridge, "workspace", "name-target", ".nosedive-ref"),
+			"utf8",
+		),
+		`id: ${nameRepoId}\n`,
+	);
+
+	const ambiguousName = run(
+		["hydrate-repo.workspace", "duplicate-name"],
+		hydrateBridge,
+	);
+	assert.notEqual(
+		ambiguousName.status,
+		0,
+		"ambiguous repo name unexpectedly succeeded",
+	);
+	assert.match(
+		ambiguousName.stderr,
+		new RegExp(
+			`repo name is ambiguous: duplicate-name \\(${ambiguousRepoIdA}, ${ambiguousRepoIdB}\\)`,
+		),
+	);
+	assert.equal(
+		existsSync(join(hydrateBridge, "workspace", "ambiguous-a")),
+		false,
+		"ambiguous repo name should not create first matching target path",
+	);
+	assert.equal(
+		existsSync(join(hydrateBridge, "workspace", "ambiguous-b")),
+		false,
+		"ambiguous repo name should not create second matching target path",
 	);
 
 	const hydrateCreated = run(
@@ -1758,7 +1849,7 @@ meta:
 	);
 	assert.match(
 		missingRepo.stderr,
-		/repo id has no matching kb kind: repo doc: repo-does-not-exist/,
+		/repo not found: repo-does-not-exist/,
 	);
 
 	const fallbackCreate = run(

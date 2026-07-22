@@ -1,43 +1,46 @@
 {
-  "name": "nosedive",
-  "version": "0.0.0-dev",
-  "description": "Turns a plain notes repo into a hub for cross-repo work.",
-  "keywords": [
-    "cli",
-    "workflow",
-    "multi-repo"
-  ],
-  "license": "MIT",
-  "author": "Dan Stace <dstace@gmail.com>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sycdan/nosedive.git"
-  },
-  "type": "module",
-  "bin": {
-    "nosedive": "dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "kb"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "build": "tsup src/cli.ts src/nosedive.ts --format esm --target node22 --clean",
-    "typecheck": "tsc",
-    "test": "node scripts/test.mjs",
-    "test:pack-bin": "node scripts/test-pack-bin.mjs",
-    "prepack": "npm run build",
-    "prepare": "git config core.hooksPath .githooks"
-  },
-  "devDependencies": {
-    "@types/node": "^26.1.0",
-    "tsup": "^8.5.1",
-    "typescript": "^6.0.3"
-  },
-  "dependencies": {
-    "yaml": "^2.9.0"
-  }
+	"name": "nosedive",
+	"version": "0.0.0-dev",
+	"description": "Turns a plain notes repo into a hub for cross-repo work.",
+	"keywords": [
+		"cli",
+		"workflow",
+		"multi-repo"
+	],
+	"license": "MIT",
+	"author": "Dan Stace <dstace@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/sycdan/nosedive.git"
+	},
+	"type": "module",
+	"bin": {
+		"nosedive": "dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"kb"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "tsup src/cli.ts src/nosedive.ts --format esm --target node22 --clean",
+		"format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.mjs\" \"package.json\" \"tsconfig.json\" \".github/workflows/*.yml\" \".prettierrc.json\"",
+		"format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"package.json\" \"tsconfig.json\" \".github/workflows/*.yml\" \".prettierrc.json\"",
+		"typecheck": "tsc",
+		"test": "node scripts/test.mjs",
+		"test:pack-bin": "node scripts/test-pack-bin.mjs",
+		"prepack": "npm run build",
+		"prepare": "git config core.hooksPath .githooks"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.0",
+		"prettier": "3.9.6",
+		"tsup": "^8.5.1",
+		"typescript": "^6.0.3"
+	},
+	"dependencies": {
+		"yaml": "^2.9.0"
+	}
 }

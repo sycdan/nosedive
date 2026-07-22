@@ -16,6 +16,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Format check
+        run: npm run format:check
       - name: Typecheck
         run: npm run typecheck
       - name: Build

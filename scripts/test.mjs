@@ -24,6 +24,7 @@ const packageFoundationDocs = [
 	"0000000f-4240-7a62-8f61-a85b4c364560.md",
 	"0000001e-8480-79d6-8e3d-00222452c904.md",
 	"0000002d-c6c0-7354-a306-7624c2db8283.md",
+	"0000004c-4b40-7ee6-a8de-1f3b50de9a0b.md",
 ];
 const packageFoundationDocCount = packageFoundationDocs.length;
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";

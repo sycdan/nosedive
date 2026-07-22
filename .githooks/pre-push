@@ -3,7 +3,8 @@
 # Bypass a one-off with `git push --no-verify`.
 set -e
 
-echo "pre-push: typecheck + build + test"
+echo "pre-push: format check + typecheck + build + test"
+npm run format:check
 npm run typecheck
 npm run build
 npm test

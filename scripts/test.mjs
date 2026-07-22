@@ -17,9 +17,7 @@ import { pathToFileURL } from "node:url";
 const root = process.cwd();
 const cli = join(root, "dist", "cli.js");
 const lib = join(root, "dist", "nosedive.js");
-const { readNosediveRc, writeNosediveRcCurrent } = await import(
-	pathToFileURL(lib).href
-);
+const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(lib).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
 const packageFoundationDocs = [
 	"00000000-0000-7434-9b1d-72a777ca61f7.md",
@@ -71,11 +69,7 @@ function runGitUnchecked(args, cwd) {
 }
 
 function assertOk(result, label) {
-	assert.equal(
-		result.status,
-		0,
-		`${label}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-	);
+	assert.equal(result.status, 0, `${label}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
 }
 
 function escapeRegExp(value) {
@@ -119,16 +113,8 @@ try {
 		},
 	);
 	assertOk(importOnly, "library import failed");
-	assert.equal(
-		importOnly.stdout,
-		"",
-		"library import unexpectedly wrote to stdout",
-	);
-	assert.equal(
-		importOnly.stderr,
-		"",
-		"library import unexpectedly wrote to stderr",
-	);
+	assert.equal(importOnly.stdout, "", "library import unexpectedly wrote to stdout");
+	assert.equal(importOnly.stderr, "", "library import unexpectedly wrote to stderr");
 
 	const version = run(["version"], root);
 	assertOk(version, "version command failed");
@@ -463,18 +449,12 @@ Body rendered from valid YAML frontmatter.
 	assertOk(dryRun, "apply --dry-run failed");
 	assert.match(dryRun.stdout, /Home:      main/);
 	assert.match(dryRun.stdout, /Work ref:  work\//);
-	assert.match(
-		dryRun.stdout,
-		/Pilot:     Pilot Person <pilot@example\.invalid>/,
-	);
+	assert.match(dryRun.stdout, /Pilot:     Pilot Person <pilot@example\.invalid>/);
 	assert.match(dryRun.stdout, /Dive:      active-dive/);
 	assert.match(dryRun.stdout, /Tags:      pilot-is-set/);
 	assert.doesNotMatch(dryRun.stdout, /Sessions:/);
 	assert.doesNotMatch(dryRun.stdout, /Session:/);
-	assert.match(
-		dryRun.stdout,
-		/writable\s+workspace\/writable \(repo-writable, base develop\)/,
-	);
+	assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
 	assert.match(
 		dryRun.stdout,
 		/read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/,
@@ -489,10 +469,7 @@ Body rendered from valid YAML frontmatter.
 	assert.doesNotMatch(dryRun.stdout, /runbook-repo\.md :gist/);
 	assert.match(dryRun.stdout, /foundation\.md :body/);
 	assert.match(dryRun.stdout, /No files written\./);
-	assert.doesNotMatch(
-		readFileSync(bridgeExclude, "utf8"),
-		/BEGIN nosedive-managed/,
-	);
+	assert.doesNotMatch(readFileSync(bridgeExclude, "utf8"), /BEGIN nosedive-managed/);
 
 	const rc = readNosediveRc(join(bridge, "workspace"));
 	assert.equal(rc.bridgeDir, bridge);
@@ -506,18 +483,12 @@ Body rendered from valid YAML frontmatter.
 	});
 
 	writeNosediveRcCurrent(bridge, { effort: "other-effort/OtherEffort.md" });
-	assert.match(
-		readFileSync(join(bridge, ".nosediverc"), "utf8"),
-		/custom-scalar: keep-me/,
-	);
+	assert.match(readFileSync(join(bridge, ".nosediverc"), "utf8"), /custom-scalar: keep-me/);
 	assert.deepEqual(readNosediveRc(bridge).current, {
 		effort: "other-effort/OtherEffort.md",
 	});
 	writeNosediveRcCurrent(bridge);
-	assert.doesNotMatch(
-		readFileSync(join(bridge, ".nosediverc"), "utf8"),
-		/^current:/m,
-	);
+	assert.doesNotMatch(readFileSync(join(bridge, ".nosediverc"), "utf8"), /^current:/m);
 	writeNosediveRcCurrent(bridge, {
 		effort: "yaml-frontmatter/YamlFrontmatter.md",
 	});
@@ -543,37 +514,22 @@ Body rendered from valid YAML frontmatter.
 
 	const apply = run(["apply"], bridge);
 	assertOk(apply, "apply failed");
-	assert.doesNotMatch(
-		apply.stdout,
-		/tracked generated file marked skip-worktree: .*CLAUDE\.md/,
-	);
+	assert.doesNotMatch(apply.stdout, /tracked generated file marked skip-worktree: .*CLAUDE\.md/);
 	assert.equal(existsSync(join(bridge, "CLAUDE.md")), true);
 	assert.equal(existsSync(join(bridge, "AGENTS.md")), true);
 	assert.equal(existsSync(join(bridge, "workspace", "CLAUDE.md")), false);
-	assert.equal(
-		existsSync(join(bridge, "workspace", "writable", "CLAUDE.md")),
-		true,
-	);
+	assert.equal(existsSync(join(bridge, "workspace", "writable", "CLAUDE.md")), true);
 	assert.equal(
 		readFileSync(join(bridge, "workspace", "writable", "CLAUDE.md"), "utf8"),
 		"# Tracked local instructions\n",
 	);
-	assert.equal(
-		existsSync(join(bridge, "workspace", "writable", "AGENTS.md")),
-		false,
-	);
-	assert.equal(
-		existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")),
-		false,
-	);
+	assert.equal(existsSync(join(bridge, "workspace", "writable", "AGENTS.md")), false);
+	assert.equal(existsSync(join(bridge, "workspace", "readonly", "app", "CLAUDE.md")), false);
 
 	const bridgeDoc = readFileSync(join(bridge, "CLAUDE.md"), "utf8");
 	assertGeneratedFrontmatter(bridgeDoc, "CLAUDE.md");
 	assert.match(bridgeDoc, /# Foundation Body/);
-	assert.match(
-		readFileSync(join(bridge, "AGENTS.md"), "utf8"),
-		/# Foundation Body/,
-	);
+	assert.match(readFileSync(join(bridge, "AGENTS.md"), "utf8"), /# Foundation Body/);
 	assert.match(bridgeDoc, /## Available Runbooks/);
 	assert.match(
 		bridgeDoc,
@@ -586,10 +542,7 @@ Body rendered from valid YAML frontmatter.
 	assert.match(bridgeDoc, /### `workon`/);
 	assert.match(bridgeDoc, /Start working on an effort\./);
 	assert.match(bridgeDoc, /Source: `kb[\\/]runbook-workon\.md`/);
-	assert.doesNotMatch(
-		bridgeDoc,
-		/Run the workon flow after reading this doc\./,
-	);
+	assert.doesNotMatch(bridgeDoc, /Run the workon flow after reading this doc\./);
 
 	const bridgeExcludeText = readFileSync(bridgeExclude, "utf8");
 	assert.match(bridgeExcludeText, /# user bridge exclude/);
@@ -600,14 +553,8 @@ Body rendered from valid YAML frontmatter.
 	assert.match(bridgeExcludeText, /^CLAUDE\.md$/m);
 	assert.doesNotMatch(bridgeExcludeText, /^\/CLAUDE\.md$/m);
 	assert.match(bridgeExcludeText, /# END nosedive-managed exclude/);
-	assert.doesNotMatch(
-		readFileSync(writableExclude, "utf8"),
-		/BEGIN nosedive-managed/,
-	);
-	assert.doesNotMatch(
-		readFileSync(readonlyExclude, "utf8"),
-		/BEGIN nosedive-managed/,
-	);
+	assert.doesNotMatch(readFileSync(writableExclude, "utf8"), /BEGIN nosedive-managed/);
+	assert.doesNotMatch(readFileSync(readonlyExclude, "utf8"), /BEGIN nosedive-managed/);
 
 	const guardedNuke = run(["nuke"], bridge);
 	assert.equal(guardedNuke.status, 1);
@@ -624,22 +571,12 @@ Body rendered from valid YAML frontmatter.
 	const bridgeExcludeAfterNuke = readFileSync(bridgeExclude, "utf8");
 	assert.match(bridgeExcludeAfterNuke, /# user bridge exclude/);
 	assert.doesNotMatch(bridgeExcludeAfterNuke, /BEGIN nosedive-managed exclude/);
-	assert.match(
-		readFileSync(writableExclude, "utf8"),
-		/BEGIN nosedive-managed exclude/,
-	);
-	assert.equal(
-		readFileSync(join(bridge, "AGENTS.md"), "utf8"),
-		"# Tracked bridge instructions\n",
-	);
-	assert.match(
-		runTool("git", ["-C", bridge, "ls-files", "-v", "AGENTS.md"], root).stdout,
-		/^H /,
-	);
+	assert.match(readFileSync(writableExclude, "utf8"), /BEGIN nosedive-managed exclude/);
+	assert.equal(readFileSync(join(bridge, "AGENTS.md"), "utf8"), "# Tracked bridge instructions\n");
+	assert.match(runTool("git", ["-C", bridge, "ls-files", "-v", "AGENTS.md"], root).stdout, /^H /);
 
 	assert.match(
-		runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root)
-			.stdout,
+		runTool("git", ["-C", writableRoot, "ls-files", "-v", "CLAUDE.md"], root).stdout,
 		/^H /,
 	);
 
@@ -783,10 +720,7 @@ This should not be considered when no active dive repo matches it.
 	assert.match(activeDryRun.stdout, /empty-workspace-foundation\.md :body/);
 	assert.doesNotMatch(activeDryRun.stdout, /pilot-foundation\.md :body/);
 	assert.doesNotMatch(activeDryRun.stdout, /conflicting-foundation\.md :body/);
-	assert.doesNotMatch(
-		activeDryRun.stdout,
-		/unmatched-conflicting-foundation\.md/,
-	);
+	assert.doesNotMatch(activeDryRun.stdout, /unmatched-conflicting-foundation\.md/);
 	assert.match(
 		activeDryRun.stdout,
 		/foundation doc kb[\\/]conflicting-foundation\.md has multiple include\/exclude meta filters; skipping/,
@@ -817,10 +751,7 @@ This should not be considered when no active dive repo matches it.
 	assert.match(activeDoc, /### `active`/);
 	assert.match(activeDoc, /Active bridge runbook renders from dot scope\./);
 	assert.doesNotMatch(activeDoc, /# Active runbook body/);
-	assert.doesNotMatch(
-		activeDoc,
-		/Scoped convention should not render from kb-only config\./,
-	);
+	assert.doesNotMatch(activeDoc, /Scoped convention should not render from kb-only config\./);
 	assert.equal(existsSync(join(activeBridge, "workspace", "CLAUDE.md")), false);
 
 	const tagBridge = join(tmp, "tag-bridge");
@@ -871,18 +802,9 @@ This renders when the configured backlog path is ignored by git status.
 
 	const missingBacklogDryRun = run(["apply", "--dry-run"], tagBridge);
 	assertOk(missingBacklogDryRun, "missing-backlog apply --dry-run failed");
-	assert.match(
-		missingBacklogDryRun.stdout,
-		/Tags:      backlog-is-missing, workspace-is-empty/,
-	);
-	assert.match(
-		missingBacklogDryRun.stdout,
-		/missing-backlog-foundation\.md :body/,
-	);
-	assert.doesNotMatch(
-		missingBacklogDryRun.stdout,
-		/ignored-backlog-foundation\.md :body/,
-	);
+	assert.match(missingBacklogDryRun.stdout, /Tags:      backlog-is-missing, workspace-is-empty/);
+	assert.match(missingBacklogDryRun.stdout, /missing-backlog-foundation\.md :body/);
+	assert.doesNotMatch(missingBacklogDryRun.stdout, /ignored-backlog-foundation\.md :body/);
 
 	write(
 		join(tagBridge, ".nosediverc"),
@@ -893,24 +815,12 @@ agents:
 `,
 	);
 	write(join(tagBridge, ".gitignore"), "ignored-backlog/\n");
-	write(
-		join(tagBridge, "ignored-backlog", "placeholder.txt"),
-		"ignored by git status\n",
-	);
+	write(join(tagBridge, "ignored-backlog", "placeholder.txt"), "ignored by git status\n");
 	const ignoredBacklogDryRun = run(["apply", "--dry-run"], tagBridge);
 	assertOk(ignoredBacklogDryRun, "ignored-backlog apply --dry-run failed");
-	assert.match(
-		ignoredBacklogDryRun.stdout,
-		/Tags:      backlog-is-ignored, workspace-is-empty/,
-	);
-	assert.match(
-		ignoredBacklogDryRun.stdout,
-		/ignored-backlog-foundation\.md :body/,
-	);
-	assert.doesNotMatch(
-		ignoredBacklogDryRun.stdout,
-		/missing-backlog-foundation\.md :body/,
-	);
+	assert.match(ignoredBacklogDryRun.stdout, /Tags:      backlog-is-ignored, workspace-is-empty/);
+	assert.match(ignoredBacklogDryRun.stdout, /ignored-backlog-foundation\.md :body/);
+	assert.doesNotMatch(ignoredBacklogDryRun.stdout, /missing-backlog-foundation\.md :body/);
 
 	const pitchBridge = join(tmp, "pitch-bridge");
 	mkdirSync(join(pitchBridge, "backlog", "parent-effort"), { recursive: true });
@@ -922,11 +832,7 @@ agents:
 	});
 	runTool("git", ["init", "-b", "main"], pitchBridge);
 	runTool("git", ["config", "user.name", "Nosedive Test"], pitchBridge);
-	runTool(
-		"git",
-		["config", "user.email", "nosedive@example.invalid"],
-		pitchBridge,
-	);
+	runTool("git", ["config", "user.email", "nosedive@example.invalid"], pitchBridge);
 	write(
 		join(pitchBridge, ".nosediverc"),
 		`backlog: ./backlog
@@ -944,13 +850,7 @@ gist: "Parent effort for pitch tests."
 `,
 	);
 	write(
-		join(
-			pitchBridge,
-			"backlog",
-			"gogglebox",
-			"auth-refactor",
-			"AuthRefactor.md",
-		),
+		join(pitchBridge, "backlog", "gogglebox", "auth-refactor", "AuthRefactor.md"),
 		`---
 phase: shaping
 gist: "Gogglebox auth parent."
@@ -1011,10 +911,7 @@ gist: "Other auth parent."
 	assert.match(childByChainText, /phase: framing/);
 	assert.match(childByChainText, /gist: "Short slug-chain child gist\."/);
 	assert.match(childByChainText, /# Child Effort From Slug Chain/);
-	assert.match(
-		childByChainText,
-		/Longer pitch text for the slug-chain child\./,
-	);
+	assert.match(childByChainText, /Longer pitch text for the slug-chain child\./);
 
 	const pitchByPath = run(
 		[
@@ -1040,13 +937,7 @@ gist: "Other auth parent."
 	assert.match(childByPathText, /Path child gist\./);
 
 	const pitchByDomainChain = run(
-		[
-			"pitch",
-			"domain-child",
-			"--gist=Domain child gist.",
-			"--parent",
-			"auth-refactor.gogglebox",
-		],
+		["pitch", "domain-child", "--gist=Domain child gist.", "--parent", "auth-refactor.gogglebox"],
 		pitchBridge,
 	);
 	assertOk(pitchByDomainChain, "pitch by domain-qualified slug chain failed");
@@ -1059,19 +950,10 @@ gist: "Other auth parent."
 		"DomainChild.md",
 	);
 	assert.equal(existsSync(domainChild), true);
-	assert.match(
-		readFileSync(domainChild, "utf8"),
-		/gist: "Domain child gist\."/,
-	);
+	assert.match(readFileSync(domainChild, "utf8"), /gist: "Domain child gist\."/);
 
 	const pitchByNamespace = run(
-		[
-			"pitch",
-			"namespace-child",
-			"--gist=Namespace child gist.",
-			"--parent",
-			"gogglebox",
-		],
+		["pitch", "namespace-child", "--gist=Namespace child gist.", "--parent", "gogglebox"],
 		pitchBridge,
 	);
 	assertOk(pitchByNamespace, "pitch by namespace parent failed");
@@ -1083,10 +965,7 @@ gist: "Other auth parent."
 		"NamespaceChild.md",
 	);
 	assert.equal(existsSync(namespaceChild), true);
-	assert.match(
-		readFileSync(namespaceChild, "utf8"),
-		/gist: "Namespace child gist\."/,
-	);
+	assert.match(readFileSync(namespaceChild, "utf8"), /gist: "Namespace child gist\."/);
 
 	const pitchByNamespacePath = run(
 		[
@@ -1107,29 +986,17 @@ gist: "Other auth parent."
 		"NamespacePathChild.md",
 	);
 	assert.equal(existsSync(namespacePathChild), true);
-	assert.match(
-		readFileSync(namespacePathChild, "utf8"),
-		/gist: "Namespace path child gist\."/,
-	);
+	assert.match(readFileSync(namespacePathChild, "utf8"), /gist: "Namespace path child gist\."/);
 
 	const pitchWithSlugOnly = run(["pitch", "top-level-slug-only"], pitchBridge);
 	assertOk(pitchWithSlugOnly, "pitch with slug only failed");
-	const topLevel = join(
-		pitchBridge,
-		"backlog",
-		"top-level-slug-only",
-		"TopLevelSlugOnly.md",
-	);
+	const topLevel = join(pitchBridge, "backlog", "top-level-slug-only", "TopLevelSlugOnly.md");
 	assert.equal(existsSync(topLevel), true);
 	const topLevelText = readFileSync(topLevel, "utf8");
 	assert.match(topLevelText, /gist: "Top Level Slug Only"/);
 	assert.match(topLevelText, /Top Level Slug Only/);
 
-	const pitchLog = runTool(
-		"git",
-		["log", "--oneline", "--max-count=3"],
-		pitchBridge,
-	).stdout;
+	const pitchLog = runTool("git", ["log", "--oneline", "--max-count=3"], pitchBridge).stdout;
 	assert.doesNotMatch(pitchLog, /Pitch top-level-slug-only/);
 	assert.doesNotMatch(pitchLog, /Pitch domain-child/);
 	assert.doesNotMatch(pitchLog, /Pitch child-effort-from-path/);
@@ -1152,18 +1019,12 @@ gist: "Other auth parent."
 		pitchStatus,
 		/\?\? backlog\/gogglebox\/auth-refactor\/domain-child\/DomainChild\.md/,
 	);
-	assert.match(
-		pitchStatus,
-		/\?\? backlog\/gogglebox\/namespace-child\/NamespaceChild\.md/,
-	);
+	assert.match(pitchStatus, /\?\? backlog\/gogglebox\/namespace-child\/NamespaceChild\.md/);
 	assert.match(
 		pitchStatus,
 		/\?\? backlog\/gogglebox\/namespace-path-child\/NamespacePathChild\.md/,
 	);
-	assert.match(
-		pitchStatus,
-		/\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/,
-	);
+	assert.match(pitchStatus, /\?\? backlog\/top-level-slug-only\/TopLevelSlugOnly\.md/);
 
 	const addRepoBridge = join(tmp, "add-repo-bridge");
 	mkdirSync(join(addRepoBridge, "backlog", "feature"), { recursive: true });
@@ -1175,27 +1036,11 @@ gist: "Other auth parent."
 	mkdirSync(join(addRepoBridge, "workspace", "beta"), { recursive: true });
 	mkdirSync(join(addRepoBridge, "workspace", "gamma"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], addRepoBridge);
-	runTool(
-		"git",
-		["config", "user.email", "dev@example.invalid"],
-		addRepoBridge,
-	);
+	runTool("git", ["config", "user.email", "dev@example.invalid"], addRepoBridge);
 	runTool("git", ["config", "user.name", "Nosedive Dev"], addRepoBridge);
-	runTool(
-		"git",
-		["init", "-b", "main"],
-		join(addRepoBridge, "workspace", "alpha"),
-	);
-	runTool(
-		"git",
-		["init", "-b", "main"],
-		join(addRepoBridge, "workspace", "beta"),
-	);
-	runTool(
-		"git",
-		["init", "-b", "main"],
-		join(addRepoBridge, "workspace", "gamma"),
-	);
+	runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "alpha"));
+	runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "beta"));
+	runTool("git", ["init", "-b", "main"], join(addRepoBridge, "workspace", "gamma"));
 	const longFeatureGist =
 		"Feature effort for add-repo tests with a deliberately long one-line gist that must not be wrapped or otherwise reformatted when repos are appended.";
 	write(
@@ -1361,31 +1206,14 @@ meta:
 		"utf8",
 	);
 	assert.match(featureAfterModifiers, /  - repo-gamma@release\/candidate:ro/);
-	assert.equal(
-		existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")),
-		false,
-	);
+	assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")), false);
 
-	const duplicateAdd = run(
-		["add-repo", "repo-beta", "--effort", "feature"],
-		addRepoBridge,
-	);
-	assert.notEqual(
-		duplicateAdd.status,
-		0,
-		"duplicate add-repo unexpectedly succeeded",
-	);
+	const duplicateAdd = run(["add-repo", "repo-beta", "--effort", "feature"], addRepoBridge);
+	assert.notEqual(duplicateAdd.status, 0, "duplicate add-repo unexpectedly succeeded");
 	assert.match(duplicateAdd.stderr, /effort already includes repo repo-beta/);
 
-	const ambiguousAdd = run(
-		["add-repo", "duplicate", "--effort", "feature"],
-		addRepoBridge,
-	);
-	assert.notEqual(
-		ambiguousAdd.status,
-		0,
-		"ambiguous add-repo unexpectedly succeeded",
-	);
+	const ambiguousAdd = run(["add-repo", "duplicate", "--effort", "feature"], addRepoBridge);
+	assert.notEqual(ambiguousAdd.status, 0, "ambiguous add-repo unexpectedly succeeded");
 	assert.match(ambiguousAdd.stderr, /repo name is ambiguous: duplicate/);
 	assert.match(ambiguousAdd.stderr, /repo-duplicate-a/);
 	assert.match(ambiguousAdd.stderr, /repo-duplicate-b/);
@@ -1400,14 +1228,8 @@ meta:
 	);
 	assert.match(heldFeatureAfterAdd, /repos:\n  - repo-alpha\n  - repo-gamma/);
 	assert.equal(existsSync(join(addRepoBridge, "AGENTS.md")), true);
-	assert.equal(
-		existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")),
-		false,
-	);
-	assert.equal(
-		existsSync(join(addRepoBridge, "workspace", "gamma", "AGENTS.md")),
-		false,
-	);
+	assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "CLAUDE.md")), false);
+	assert.equal(existsSync(join(addRepoBridge, "workspace", "gamma", "AGENTS.md")), false);
 
 	const hydrateBridge = join(tmp, "hydrate-bridge");
 	const hydrateRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd98";
@@ -1428,20 +1250,12 @@ meta:
 		recursive: true,
 	});
 	runTool("git", ["init", "-b", "main"], hydrateBridge);
-	runTool(
-		"git",
-		["config", "user.email", "hydrate@example.invalid"],
-		hydrateBridge,
-	);
+	runTool("git", ["config", "user.email", "hydrate@example.invalid"], hydrateBridge);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], hydrateBridge);
 
 	const cloudSourceRepo = join(hydrateBridge, "repos", "cloud-source");
 	runTool("git", ["init", "-b", "main"], cloudSourceRepo);
-	runTool(
-		"git",
-		["config", "user.email", "hydrate@example.invalid"],
-		cloudSourceRepo,
-	);
+	runTool("git", ["config", "user.email", "hydrate@example.invalid"], cloudSourceRepo);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], cloudSourceRepo);
 	write(join(cloudSourceRepo, "README.md"), "cloud main\n");
 	runTool("git", ["add", "README.md"], cloudSourceRepo);
@@ -1454,11 +1268,7 @@ meta:
 
 	const sourceRepo = join(hydrateBridge, "repos", "source");
 	runTool("git", ["init", "-b", "main"], sourceRepo);
-	runTool(
-		"git",
-		["config", "user.email", "hydrate@example.invalid"],
-		sourceRepo,
-	);
+	runTool("git", ["config", "user.email", "hydrate@example.invalid"], sourceRepo);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], sourceRepo);
 	write(join(sourceRepo, "README.md"), "local main\n");
 	runTool("git", ["add", "README.md"], sourceRepo);
@@ -1473,11 +1283,7 @@ meta:
 		["rev-parse", "main^{commit}"],
 		cloudSourceRepo,
 	).stdout.trim();
-	const localMainCommit = runTool(
-		"git",
-		["rev-parse", "main^{commit}"],
-		sourceRepo,
-	).stdout.trim();
+	const localMainCommit = runTool("git", ["rev-parse", "main^{commit}"], sourceRepo).stdout.trim();
 	assert.notEqual(
 		cloudMainCommit,
 		localMainCommit,
@@ -1486,11 +1292,7 @@ meta:
 
 	const emptyFailSourceRepo = join(hydrateBridge, "repos", "source-empty-fail");
 	runTool("git", ["init", "-b", "main"], emptyFailSourceRepo);
-	runTool(
-		"git",
-		["config", "user.email", "hydrate@example.invalid"],
-		emptyFailSourceRepo,
-	);
+	runTool("git", ["config", "user.email", "hydrate@example.invalid"], emptyFailSourceRepo);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], emptyFailSourceRepo);
 	write(join(emptyFailSourceRepo, "README.md"), "empty fail source\n");
 	runTool("git", ["add", "README.md"], emptyFailSourceRepo);
@@ -1604,10 +1406,7 @@ meta:
 `,
 	);
 
-	const hydrateByName = run(
-		["hydrate-repo.workspace", "hydrate-by-name"],
-		hydrateBridge,
-	);
+	const hydrateByName = run(["hydrate-repo.workspace", "hydrate-by-name"], hydrateBridge);
 	assertOk(hydrateByName, "hydrate-repo.workspace exact name failed");
 	assert.match(
 		hydrateByName.stdout,
@@ -1617,22 +1416,12 @@ meta:
 		),
 	);
 	assert.equal(
-		readFileSync(
-			join(hydrateBridge, "workspace", "name-target", ".nosedive-ref"),
-			"utf8",
-		),
+		readFileSync(join(hydrateBridge, "workspace", "name-target", ".nosedive-ref"), "utf8"),
 		`id: ${nameRepoId}\n`,
 	);
 
-	const ambiguousName = run(
-		["hydrate-repo.workspace", "duplicate-name"],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		ambiguousName.status,
-		0,
-		"ambiguous repo name unexpectedly succeeded",
-	);
+	const ambiguousName = run(["hydrate-repo.workspace", "duplicate-name"], hydrateBridge);
+	assert.notEqual(ambiguousName.status, 0, "ambiguous repo name unexpectedly succeeded");
 	assert.match(
 		ambiguousName.stderr,
 		new RegExp(
@@ -1650,10 +1439,7 @@ meta:
 		"ambiguous repo name should not create second matching target path",
 	);
 
-	const hydrateCreated = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const hydrateCreated = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(hydrateCreated, "hydrate-repo.workspace create failed");
 	assert.match(
 		hydrateCreated.stdout,
@@ -1667,27 +1453,15 @@ meta:
 		false,
 		"deprecated meta.worktree-path should not win over meta.path",
 	);
-	const hydratedMarkerPath = join(
-		hydrateBridge,
-		"workspace",
-		"hydrated-target",
-		".nosedive-ref",
-	);
+	const hydratedMarkerPath = join(hydrateBridge, "workspace", "hydrated-target", ".nosedive-ref");
 	const hydratedTarget = join(hydrateBridge, "workspace", "hydrated-target");
-	assert.equal(
-		readFileSync(hydratedMarkerPath, "utf8"),
-		`id: ${hydrateRepoId}\n`,
-	);
+	assert.equal(readFileSync(hydratedMarkerPath, "utf8"), `id: ${hydrateRepoId}\n`);
 	const hydratedStatus = runTool(
 		"git",
 		["status", "--short", "--untracked-files=all"],
 		hydratedTarget,
 	).stdout;
-	assert.equal(
-		hydratedStatus,
-		"",
-		"repo ownership marker should not dirty the hydrated worktree",
-	);
+	assert.equal(hydratedStatus, "", "repo ownership marker should not dirty the hydrated worktree");
 	const hydratedExcludePathRaw = runTool(
 		"git",
 		["rev-parse", "--git-path", "info/exclude"],
@@ -1697,15 +1471,9 @@ meta:
 		? hydratedExcludePathRaw
 		: resolve(hydratedTarget, hydratedExcludePathRaw);
 	const hydratedExcludeText = readFileSync(hydratedExcludePath, "utf8");
-	assert.match(
-		hydratedExcludeText,
-		/# BEGIN nosedive-managed repo-marker exclude/,
-	);
+	assert.match(hydratedExcludeText, /# BEGIN nosedive-managed repo-marker exclude/);
 	assert.match(hydratedExcludeText, /^\.nosedive-ref$/m);
-	assert.match(
-		hydratedExcludeText,
-		/# END nosedive-managed repo-marker exclude/,
-	);
+	assert.match(hydratedExcludeText, /# END nosedive-managed repo-marker exclude/);
 	const hydrateCache = join(hydrateBridge, ".nosedive", "cache", hydrateRepoId);
 	const hydrateCacheOrigin = runTool(
 		"git",
@@ -1742,22 +1510,11 @@ meta:
 		["symbolic-ref", "-q", "HEAD"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	);
-	assert.notEqual(
-		detachedAfterCreate.status,
-		0,
-		"hydrated worktree should be detached",
-	);
+	assert.notEqual(detachedAfterCreate.status, 0, "hydrated worktree should be detached");
 	const peerWorktree = join(hydrateBridge, "workspace", "hydrated-peer");
-	runTool(
-		"git",
-		["worktree", "add", "--detach", peerWorktree, cloudMainCommit],
-		hydrateCache,
-	);
+	runTool("git", ["worktree", "add", "--detach", peerWorktree, cloudMainCommit], hydrateCache);
 
-	const hydrateNoop = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const hydrateNoop = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(hydrateNoop, "hydrate-repo.workspace noop failed");
 	assert.match(
 		hydrateNoop.stdout,
@@ -1771,10 +1528,7 @@ meta:
 		["hydrate-repo.workspace", hydrateRepoId, "--read-only"],
 		hydrateBridge,
 	);
-	assertOk(
-		hydrateReadOnly,
-		"hydrate-repo.workspace read-only hardening failed",
-	);
+	assertOk(hydrateReadOnly, "hydrate-repo.workspace read-only hardening failed");
 	assert.match(
 		hydrateReadOnly.stdout,
 		new RegExp(
@@ -1836,14 +1590,8 @@ meta:
 		"read-only hardening should enable Git worktree-local config",
 	);
 
-	const hydrateWritableRestore = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
-	assertOk(
-		hydrateWritableRestore,
-		"hydrate-repo.workspace writable restore failed",
-	);
+	const hydrateWritableRestore = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assertOk(hydrateWritableRestore, "hydrate-repo.workspace writable restore failed");
 	assert.match(
 		hydrateWritableRestore.stdout,
 		new RegExp(
@@ -1892,84 +1640,31 @@ meta:
 		["rev-parse", "HEAD"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	).stdout.trim();
-	assert.equal(
-		hydratedHeadAtRef,
-		releaseCommit,
-		"--at should retarget hydrated worktree commit",
-	);
+	assert.equal(hydratedHeadAtRef, releaseCommit, "--at should retarget hydrated worktree commit");
 
 	write(hydratedMarkerPath, `id: ${otherRepoId}\n`);
-	const markerMismatch = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		markerMismatch.status,
-		0,
-		"marker mismatch unexpectedly succeeded",
-	);
-	assert.match(
-		markerMismatch.stderr,
-		new RegExp(`marker mismatch for repo ${hydrateRepoId}`),
-	);
-	assert.equal(
-		readFileSync(hydratedMarkerPath, "utf8"),
-		`id: ${otherRepoId}\n`,
-	);
+	const markerMismatch = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assert.notEqual(markerMismatch.status, 0, "marker mismatch unexpectedly succeeded");
+	assert.match(markerMismatch.stderr, new RegExp(`marker mismatch for repo ${hydrateRepoId}`));
+	assert.equal(readFileSync(hydratedMarkerPath, "utf8"), `id: ${otherRepoId}\n`);
 
 	write(hydratedMarkerPath, `  id: ${hydrateRepoId}\n`);
-	const markerIndented = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		markerIndented.status,
-		0,
-		"indented marker unexpectedly succeeded",
-	);
-	assert.match(
-		markerIndented.stderr,
-		/invalid marker format .*no leading indentation is allowed/,
-	);
+	const markerIndented = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assert.notEqual(markerIndented.status, 0, "indented marker unexpectedly succeeded");
+	assert.match(markerIndented.stderr, /invalid marker format .*no leading indentation is allowed/);
 
 	write(hydratedMarkerPath, `id: ${hydrateRepoId}\nextra: nope\n`);
-	const markerExtraKey = run(
-		["hydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		markerExtraKey.status,
-		0,
-		"extra marker key unexpectedly succeeded",
-	);
-	assert.match(
-		markerExtraKey.stderr,
-		/invalid marker format .*exactly one top-level key 'id'/,
-	);
+	const markerExtraKey = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assert.notEqual(markerExtraKey.status, 0, "extra marker key unexpectedly succeeded");
+	assert.match(markerExtraKey.stderr, /invalid marker format .*exactly one top-level key 'id'/);
 
-	const missingRepo = run(
-		["hydrate-repo.workspace", "repo-does-not-exist"],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		missingRepo.status,
-		0,
-		"missing repo doc unexpectedly succeeded",
-	);
-	assert.match(
-		missingRepo.stderr,
-		/repo not found: repo-does-not-exist/,
-	);
+	const missingRepo = run(["hydrate-repo.workspace", "repo-does-not-exist"], hydrateBridge);
+	assert.notEqual(missingRepo.status, 0, "missing repo doc unexpectedly succeeded");
+	assert.match(missingRepo.stderr, /repo not found: repo-does-not-exist/);
 
-	const fallbackCreate = run(
-		["hydrate-repo.workspace", fallbackRepoId],
-		hydrateBridge,
-	);
+	const fallbackCreate = run(["hydrate-repo.workspace", fallbackRepoId], hydrateBridge);
 	assertOk(fallbackCreate, "hydrate-repo.workspace fallback path failed");
-	assert.equal(
-		existsSync(join(hydrateBridge, "workspace", "fallback-target", ".git")),
-		true,
-	);
+	assert.equal(existsSync(join(hydrateBridge, "workspace", "fallback-target", ".git")), true);
 	const fallbackCache = join(hydrateBridge, ".nosedive", "cache", fallbackRepoId);
 	assert.equal(
 		gitCommonDir(join(hydrateBridge, "workspace", "fallback-target")),
@@ -1983,29 +1678,17 @@ meta:
 	);
 
 	const staleTarget = join(hydrateBridge, "workspace", "stale-target");
-	const staleCache = join(
-		hydrateBridge,
-		".nosedive",
-		"cache",
-		staleWorktreeRepoId,
-	);
+	const staleCache = join(hydrateBridge, ".nosedive", "cache", staleWorktreeRepoId);
 	mkdirSync(dirname(staleCache), { recursive: true });
 	runTool("git", ["clone", "--bare", sourceRepo, staleCache], hydrateBridge);
-	runTool(
-		"git",
-		["worktree", "add", "--detach", staleTarget, localMainCommit],
-		staleCache,
-	);
+	runTool("git", ["worktree", "add", "--detach", staleTarget, localMainCommit], staleCache);
 	assert.equal(
 		existsSync(staleTarget),
 		true,
 		"stale fixture should create a registered worktree before deleting it",
 	);
 	rmSync(staleTarget, { recursive: true, force: true });
-	const staleHydrate = run(
-		["hydrate-repo.workspace", staleWorktreeRepoId],
-		hydrateBridge,
-	);
+	const staleHydrate = run(["hydrate-repo.workspace", staleWorktreeRepoId], hydrateBridge);
 	assertOk(
 		staleHydrate,
 		"hydrate-repo.workspace should prune missing registered worktree paths before create",
@@ -2023,17 +1706,12 @@ meta:
 		"stale registration recovery should recreate the worktree from the managed cache",
 	);
 	assert.equal(
-		runTool("git", ["status", "--short", "--untracked-files=all"], staleTarget)
-			.stdout,
+		runTool("git", ["status", "--short", "--untracked-files=all"], staleTarget).stdout,
 		"",
 		"repo ownership marker should not dirty a worktree created after stale registration recovery",
 	);
 
-	const unresolvedTarget = join(
-		hydrateBridge,
-		"workspace",
-		"unresolved-target",
-	);
+	const unresolvedTarget = join(hydrateBridge, "workspace", "unresolved-target");
 	write(
 		join(hydrateBridge, "kb", "repo-unresolved.md"),
 		`---
@@ -2052,16 +1730,10 @@ meta:
 		["hydrate-repo.workspace", unresolvedRepoId, "--at", "does-not-exist"],
 		hydrateBridge,
 	);
-	assert.notEqual(
-		unresolvedRef.status,
-		0,
-		"unresolved ref unexpectedly succeeded",
-	);
+	assert.notEqual(unresolvedRef.status, 0, "unresolved ref unexpectedly succeeded");
 	assert.match(
 		unresolvedRef.stderr,
-		new RegExp(
-			`failed to resolve ref for repo ${unresolvedRepoId}: ref=does-not-exist`,
-		),
+		new RegExp(`failed to resolve ref for repo ${unresolvedRepoId}: ref=does-not-exist`),
 	);
 	assert.equal(
 		existsSync(unresolvedTarget),
@@ -2085,25 +1757,13 @@ meta:
 ---
 `,
 	);
-	const emptyFailCache = join(
-		hydrateBridge,
-		".nosedive",
-		"cache",
-		emptyFailRepoId,
-	);
+	const emptyFailCache = join(hydrateBridge, ".nosedive", "cache", emptyFailRepoId);
 	mkdirSync(dirname(emptyFailCache), { recursive: true });
 	runTool("git", ["clone", "--bare", emptyFailSourceRepo, emptyFailCache], hydrateBridge);
-	const cacheGitDir = runTool(
-		"git",
-		["rev-parse", "--git-dir"],
-		emptyFailCache,
-	).stdout.trim();
+	const cacheGitDir = runTool("git", ["rev-parse", "--git-dir"], emptyFailCache).stdout.trim();
 	const cacheWorktreesPath = join(emptyFailCache, cacheGitDir, "worktrees");
 	write(cacheWorktreesPath, "block worktree dir creation\n");
-	const emptyDirFailure = run(
-		["hydrate-repo.workspace", emptyFailRepoId],
-		hydrateBridge,
-	);
+	const emptyDirFailure = run(["hydrate-repo.workspace", emptyFailRepoId], hydrateBridge);
 	assert.notEqual(
 		emptyDirFailure.status,
 		0,
@@ -2111,9 +1771,7 @@ meta:
 	);
 	assert.match(
 		emptyDirFailure.stderr,
-		new RegExp(
-			`failed to create worktree for repo ${emptyFailRepoId} at .*empty-fail-target`,
-		),
+		new RegExp(`failed to create worktree for repo ${emptyFailRepoId} at .*empty-fail-target`),
 	);
 	assert.equal(
 		readdirSync(emptyFailTarget).length,
@@ -2121,19 +1779,9 @@ meta:
 		"empty target directory should remain unchanged when worktree creation fails",
 	);
 
-	const unsafePath = run(
-		["hydrate-repo.workspace", unsafeRepoId],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		unsafePath.status,
-		0,
-		"unsafe target path unexpectedly succeeded",
-	);
-	assert.match(
-		unsafePath.stderr,
-		new RegExp(`unsafe target path for repo ${unsafeRepoId}`),
-	);
+	const unsafePath = run(["hydrate-repo.workspace", unsafeRepoId], hydrateBridge);
+	assert.notEqual(unsafePath.status, 0, "unsafe target path unexpectedly succeeded");
+	assert.match(unsafePath.stderr, new RegExp(`unsafe target path for repo ${unsafeRepoId}`));
 
 	write(hydratedMarkerPath, `id: ${hydrateRepoId}\n`);
 	assertOk(
@@ -2141,10 +1789,7 @@ meta:
 		"restore hydrated target on main before dehydrate tests failed",
 	);
 
-	const dehydrateById = run(
-		["dehydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const dehydrateById = run(["dehydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(dehydrateById, "dehydrate-repo.workspace by id failed");
 	assert.match(
 		dehydrateById.stdout,
@@ -2200,10 +1845,7 @@ meta:
 		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
 	);
 
-	const dehydrateNoop = run(
-		["dehydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const dehydrateNoop = run(["dehydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(dehydrateNoop, "dehydrate-repo.workspace noop failed");
 	assert.match(
 		dehydrateNoop.stdout,
@@ -2216,10 +1858,7 @@ meta:
 	);
 	const dirtyTarget = join(hydrateBridge, "workspace", "hydrated-target");
 	write(join(dirtyTarget, ".assertion-dirty"), "dirty\n");
-	const dirtyWithoutForce = run(
-		["dehydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const dirtyWithoutForce = run(["dehydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assert.notEqual(
 		dirtyWithoutForce.status,
 		0,
@@ -2231,10 +1870,7 @@ meta:
 		true,
 		"dirty target should remain after refusal",
 	);
-	const dirtyWithForce = run(
-		["dehydrate-repo.workspace", hydrateRepoId, "--force"],
-		hydrateBridge,
-	);
+	const dirtyWithForce = run(["dehydrate-repo.workspace", hydrateRepoId, "--force"], hydrateBridge);
 	assertOk(dirtyWithForce, "dirty dehydrate with --force failed");
 	assert.match(
 		dirtyWithForce.stdout,
@@ -2261,10 +1897,7 @@ meta:
 		],
 		aheadTarget,
 	);
-	const aheadWithoutForce = run(
-		["dehydrate-repo.workspace", hydrateRepoId],
-		hydrateBridge,
-	);
+	const aheadWithoutForce = run(["dehydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assert.notEqual(
 		aheadWithoutForce.status,
 		0,
@@ -2276,10 +1909,7 @@ meta:
 		true,
 		"ahead target should remain after refusal",
 	);
-	const aheadWithForce = run(
-		["dehydrate-repo.workspace", hydrateRepoId, "--force"],
-		hydrateBridge,
-	);
+	const aheadWithForce = run(["dehydrate-repo.workspace", hydrateRepoId, "--force"], hydrateBridge);
 	assertOk(aheadWithForce, "ahead dehydrate with --force failed");
 	assert.match(
 		aheadWithForce.stdout,
@@ -2297,22 +1927,11 @@ meta:
 		["dehydrate-repo.workspace", "../outside-dehydrate-target"],
 		hydrateBridge,
 	);
-	assert.notEqual(
-		unsafeOutside.status,
-		0,
-		"outside-workspace dehydrate unexpectedly succeeded",
-	);
+	assert.notEqual(unsafeOutside.status, 0, "outside-workspace dehydrate unexpectedly succeeded");
 	assert.match(unsafeOutside.stderr, /(workspace|outside|relative)/i);
 
-	const unsafeInside = run(
-		["dehydrate-repo.workspace", "workspace/not-owned"],
-		hydrateBridge,
-	);
-	assert.notEqual(
-		unsafeInside.status,
-		0,
-		"unowned in-workspace dehydrate unexpectedly succeeded",
-	);
+	const unsafeInside = run(["dehydrate-repo.workspace", "workspace/not-owned"], hydrateBridge);
+	assert.notEqual(unsafeInside.status, 0, "unowned in-workspace dehydrate unexpectedly succeeded");
 	assert.match(unsafeInside.stderr, /(marker|\.nosedive-ref|owned)/i);
 
 	const unsafeOutsideForce = run(
@@ -2378,11 +1997,7 @@ scopes:
 	);
 
 	const legacyScope = run(["apply", "--dry-run"], bridge);
-	assert.notEqual(
-		legacyScope.status,
-		0,
-		"legacy scope shorthand unexpectedly succeeded",
-	);
+	assert.notEqual(legacyScope.status, 0, "legacy scope shorthand unexpectedly succeeded");
 	assert.match(
 		legacyScope.stderr,
 		/legacy scope shorthand is not supported in .*legacy-scope\.md scopes\[0\]/,
@@ -2421,11 +2036,7 @@ Build the YAML-aware workspace work order.
 	assert.match(initHelp.stdout, /--headless skips prompts/);
 
 	const unknownInitOption = run(["init", "--bogus"], root, "");
-	assert.notEqual(
-		unknownInitOption.status,
-		0,
-		"init with unknown option unexpectedly succeeded",
-	);
+	assert.notEqual(unknownInitOption.status, 0, "init with unknown option unexpectedly succeeded");
 	assert.match(unknownInitOption.stderr, /unknown init option: --bogus/);
 
 	const initBridge = join(tmp, "init-bridge");
@@ -2439,9 +2050,7 @@ Build the YAML-aware workspace work order.
 	assert.match(initFresh.stdout, /Wrote \.nosediverc/);
 	assert.match(
 		initFresh.stdout,
-		new RegExp(
-			`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`,
-		),
+		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`),
 	);
 	const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
 	assert.equal(
@@ -2460,36 +2069,18 @@ Build the YAML-aware workspace work order.
 		].join("\n"),
 	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
-		assert.equal(
-			existsSync(join(initBridge, "kb", packageFoundationDoc)),
-			true,
-		);
+		assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
 	}
-	assert.equal(
-		existsSync(join(initBridge, "kb", packageNonFoundationDoc)),
-		false,
-	);
+	assert.equal(existsSync(join(initBridge, "kb", packageNonFoundationDoc)), false);
 	assert.equal(existsSync(join(initBridge, ".gitignore")), false);
-	const initExclude = readFileSync(
-		join(initBridge, ".git", "info", "exclude"),
-		"utf8",
-	);
-	assert.match(
-		initExclude,
-		/# BEGIN nosedive-managed package-foundation exclude/,
-	);
+	const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
+	assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
 	assert.match(initExclude, /^\.nosediverc$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
-	assert.match(
-		initExclude,
-		/# END nosedive-managed package-foundation exclude/,
-	);
-	assert.doesNotMatch(
-		initExclude,
-		new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"),
-	);
+	assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
+	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
 	const initGitStatus = runTool(
 		"git",
 		["status", "--ignored", "--short", "--untracked-files=all"],
@@ -2501,16 +2092,9 @@ Build the YAML-aware workspace work order.
 	}
 	assert.doesNotMatch(initGitStatus, /\.gitignore/);
 
-	const initReprompt = run(
-		["init"],
-		initBridge,
-		"\n\n\n\n\n\n\nbogus\ncopilot,claude\n",
-	);
+	const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
 	assertOk(initReprompt, "init re-run with invalid agent failed");
-	assert.match(
-		initReprompt.stderr,
-		/unknown agent\(s\): bogus \(options: copilot, claude\)/,
-	);
+	assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
 	const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
 	assert.match(repromptedRc, /workspace: \.\/workspace/);
 	assert.match(repromptedRc, /agents:\n  - copilot\n  - claude\n$/);
@@ -2518,31 +2102,17 @@ Build the YAML-aware workspace work order.
 	const headlessFreshBridge = join(tmp, "headless-fresh-bridge");
 	mkdirSync(headlessFreshBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], headlessFreshBridge);
-	runTool(
-		"git",
-		["config", "user.name", "Headless Person"],
-		headlessFreshBridge,
-	);
-	runTool(
-		"git",
-		["config", "user.email", "headless@example.invalid"],
-		headlessFreshBridge,
-	);
+	runTool("git", ["config", "user.name", "Headless Person"], headlessFreshBridge);
+	runTool("git", ["config", "user.email", "headless@example.invalid"], headlessFreshBridge);
 
-	const initHeadlessFresh = run(
-		["init", "--headless"],
-		headlessFreshBridge,
-		"",
-	);
+	const initHeadlessFresh = run(["init", "--headless"], headlessFreshBridge, "");
 	assertOk(initHeadlessFresh, "headless init on empty directory failed");
 	assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
 	assert.match(initHeadlessFresh.stdout, /Wrote \.nosediverc/);
 	assert.match(
 		initHeadlessFresh.stdout,
-		new RegExp(
-			`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`,
-		),
+		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`),
 	);
 	assert.equal(
 		readFileSync(join(headlessFreshBridge, ".nosediverc"), "utf8"),
@@ -2560,10 +2130,7 @@ Build the YAML-aware workspace work order.
 		].join("\n"),
 	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
-		assert.equal(
-			existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)),
-			true,
-		);
+		assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
 	}
 	const headlessFreshExclude = readFileSync(
 		join(headlessFreshBridge, ".git", "info", "exclude"),
@@ -2571,25 +2138,14 @@ Build the YAML-aware workspace work order.
 	);
 	assert.match(headlessFreshExclude, /^\.nosediverc$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
-		assert.match(
-			headlessFreshExclude,
-			new RegExp(`^kb/${packageFoundationDoc}$`, "m"),
-		);
+		assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
 
 	const headlessExistingBridge = join(tmp, "headless-existing-bridge");
 	mkdirSync(headlessExistingBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], headlessExistingBridge);
-	runTool(
-		"git",
-		["config", "user.name", "Detected Name"],
-		headlessExistingBridge,
-	);
-	runTool(
-		"git",
-		["config", "user.email", "detected@example.invalid"],
-		headlessExistingBridge,
-	);
+	runTool("git", ["config", "user.name", "Detected Name"], headlessExistingBridge);
+	runTool("git", ["config", "user.email", "detected@example.invalid"], headlessExistingBridge);
 	write(
 		join(headlessExistingBridge, ".nosediverc"),
 		`workspace: ./custom-workspace
@@ -2600,19 +2156,13 @@ agents:
 `,
 	);
 
-	const initHeadlessExisting = run(
-		["init", "--headless"],
-		headlessExistingBridge,
-		"",
-	);
+	const initHeadlessExisting = run(["init", "--headless"], headlessExistingBridge, "");
 	assertOk(initHeadlessExisting, "headless init with existing config failed");
 	assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
 	assert.match(
 		initHeadlessExisting.stdout,
-		new RegExp(
-			`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/custom-kb`,
-		),
+		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/custom-kb`),
 	);
 	assert.equal(
 		readFileSync(join(headlessExistingBridge, ".nosediverc"), "utf8"),
@@ -2630,12 +2180,7 @@ agents:
 		].join("\n"),
 	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
-		assert.equal(
-			existsSync(
-				join(headlessExistingBridge, "custom-kb", packageFoundationDoc),
-			),
-			true,
-		);
+		assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
 	}
 	const headlessExistingExclude = readFileSync(
 		join(headlessExistingBridge, ".git", "info", "exclude"),
@@ -2643,24 +2188,14 @@ agents:
 	);
 	assert.match(headlessExistingExclude, /^\.nosediverc$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
-		assert.match(
-			headlessExistingExclude,
-			new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"),
-		);
+		assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
 	}
 
 	const nonGitInit = join(tmp, "non-git-init");
 	mkdirSync(nonGitInit, { recursive: true });
 	const initOutsideGit = run(["init"], nonGitInit, "");
-	assert.notEqual(
-		initOutsideGit.status,
-		0,
-		"init outside git unexpectedly succeeded",
-	);
-	assert.match(
-		initOutsideGit.stderr,
-		/nosedive init must be run inside a git repository/,
-	);
+	assert.notEqual(initOutsideGit.status, 0, "init outside git unexpectedly succeeded");
+	assert.match(initOutsideGit.stderr, /nosedive init must be run inside a git repository/);
 } finally {
 	rmSync(tmp, { recursive: true, force: true });
 }

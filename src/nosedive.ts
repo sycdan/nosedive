@@ -1248,33 +1248,106 @@ function ensureSafeTargetPath(repoId: string, targetPath: string, workspaceDir: 
   }
 }
 
-function repoSourcePath(repoDoc: KbDoc, bridgeDir: string): string {
+interface RepoRemotes {
+  cloud?: string;
+  local?: string;
+}
+
+function repoRemotes(repoDoc: KbDoc): RepoRemotes {
   const remotes = repoDoc.metaRaw.remotes;
   if (!remotes || typeof remotes !== "object" || Array.isArray(remotes)) {
-    throw new Error(`repo ${repoDoc.id} is missing meta.remotes.local in ${repoDoc.relPath}`);
+    throw new Error(`repo ${repoDoc.id} is missing usable meta.remotes.cloud or meta.remotes.local in ${repoDoc.relPath}`);
   }
 
-  const local = scalarToString((remotes as Record<string, unknown>).local)?.trim();
-  if (!local) throw new Error(`repo ${repoDoc.id} is missing meta.remotes.local in ${repoDoc.relPath}`);
-
-  const resolved = resolveFrom(bridgeDir, local);
-  if (!existsSync(resolved)) {
-    throw new Error(`repo ${repoDoc.id} local source does not exist: ${formatPath(resolved)}`);
-  }
-  if (!statSync(resolved).isDirectory()) {
-    throw new Error(`repo ${repoDoc.id} local source is not a directory: ${formatPath(resolved)}`);
-  }
-  if (!gitOutput(resolved, ["rev-parse", "--git-dir"])) {
-    throw new Error(`repo ${repoDoc.id} local source is not a git repository: ${formatPath(resolved)}`);
+  const raw = remotes as Record<string, unknown>;
+  const cloud = scalarToString(raw.cloud)?.trim();
+  const local = scalarToString(raw.local)?.trim();
+  if (!cloud && !local) {
+    throw new Error(`repo ${repoDoc.id} is missing usable meta.remotes.cloud or meta.remotes.local in ${repoDoc.relPath}`);
   }
 
-  return resolved;
+  return { cloud, local };
+}
+
+function remoteLooksLikeUrl(remote: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(remote) || /^[^@\s]+@[^:\s]+:.+/.test(remote);
+}
+
+function resolveRemoteForGit(remote: string, bridgeDir: string): string {
+  return remoteLooksLikeUrl(remote) ? remote : resolveFrom(bridgeDir, remote);
+}
+
+function ensureLocalSeedUsable(repoId: string, sourcePath: string): void {
+  if (!existsSync(sourcePath)) {
+    throw new Error(`repo ${repoId} local seed does not exist: ${formatPath(sourcePath)}`);
+  }
+  if (!statSync(sourcePath).isDirectory()) {
+    throw new Error(`repo ${repoId} local seed is not a directory: ${formatPath(sourcePath)}`);
+  }
+  if (!gitOutput(sourcePath, ["rev-parse", "--git-dir"])) {
+    throw new Error(`repo ${repoId} local seed is not a git repository: ${formatPath(sourcePath)}`);
+  }
+}
+
+function managedCachePath(repoId: string, bridgeDir: string): string {
+  return join(bridgeDir, ".nosedive", "cache", repoId);
+}
+
+function cacheRemoteValue(repoDoc: KbDoc, bridgeDir: string): { remote: string; sourceKind: "cloud" | "local" } {
+  const remotes = repoRemotes(repoDoc);
+  if (remotes.cloud) return { remote: resolveRemoteForGit(remotes.cloud, bridgeDir), sourceKind: "cloud" };
+  if (!remotes.local) {
+    throw new Error(`repo ${repoDoc.id} is missing usable meta.remotes.cloud or meta.remotes.local in ${repoDoc.relPath}`);
+  }
+
+  const local = resolveRemoteForGit(remotes.local, bridgeDir);
+  ensureLocalSeedUsable(repoDoc.id, local);
+  return { remote: local, sourceKind: "local" };
+}
+
+function ensureOriginRemote(cachePath: string, remote: string, repoId: string): void {
+  const remotes = gitOutput(cachePath, ["remote"])?.split(/\r?\n/).filter(Boolean) ?? [];
+  if (!remotes.includes("origin")) {
+    gitRun(cachePath, ["remote", "add", "origin", remote], `failed to configure cache remote for repo ${repoId}`);
+    return;
+  }
+
+  const current = gitOutput(cachePath, ["remote", "get-url", "origin"]);
+  if (current !== remote) {
+    gitRun(cachePath, ["remote", "set-url", "origin", remote], `failed to configure cache remote for repo ${repoId}`);
+  }
+}
+
+function ensureManagedRepoCache(repoDoc: KbDoc, bridgeDir: string): string {
+  const cachePath = managedCachePath(repoDoc.id, bridgeDir);
+  const { remote, sourceKind } = cacheRemoteValue(repoDoc, bridgeDir);
+
+  if (!existsSync(cachePath)) {
+    mkdirSync(dirname(cachePath), { recursive: true });
+    gitRun(
+      dirname(cachePath),
+      ["clone", "--bare", remote, cachePath],
+      `failed to prepare managed cache for repo ${repoDoc.id} from meta.remotes.${sourceKind}=${remote}`,
+    );
+    ensureOriginRemote(cachePath, remote, repoDoc.id);
+    return cachePath;
+  }
+
+  if (!statSync(cachePath).isDirectory()) {
+    throw new Error(`repo ${repoDoc.id} managed cache is not a directory: ${formatPath(cachePath)}`);
+  }
+  if (!gitOutput(cachePath, ["rev-parse", "--git-dir"])) {
+    throw new Error(`repo ${repoDoc.id} managed cache is not a git repository: ${formatPath(cachePath)}`);
+  }
+
+  ensureOriginRemote(cachePath, remote, repoDoc.id);
+  return cachePath;
 }
 
 function expectedWorktreePath(repoDoc: KbDoc, bridgeDir: string): string {
-  const worktreePath = repoDoc.metaScalars["worktree-path"] ?? repoDoc.repoPath;
+  const worktreePath = repoDoc.repoPath ?? repoDoc.metaScalars["worktree-path"];
   if (!worktreePath) {
-    throw new Error(`repo ${repoDoc.id} is missing both meta.worktree-path and meta.path in ${repoDoc.relPath}`);
+    throw new Error(`repo ${repoDoc.id} is missing meta.path and deprecated meta.worktree-path fallback in ${repoDoc.relPath}`);
   }
   return resolveFrom(bridgeDir, worktreePath);
 }
@@ -1299,7 +1372,7 @@ function maybeFetchSource(sourcePath: string, repoId: string): void {
   });
   if (fetched.status !== 0) {
     const detail = fetched.stderr.trim() || fetched.stdout.trim() || "unknown git error";
-    console.error(`warning: fetch skipped for repo ${repoId} at ${formatPath(sourcePath)}: ${detail}`);
+    throw new Error(`failed to fetch managed cache for repo ${repoId} at ${formatPath(sourcePath)}: ${detail}`);
   }
 }
 
@@ -1396,7 +1469,7 @@ function hydrateRepoWorkspace(args: string[]): void {
     throw new Error(`repo id has no matching kb kind: repo doc: ${options.repoId}`);
   }
 
-  const sourcePath = repoSourcePath(repoDoc, rc.bridgeDir);
+  const sourcePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
   const targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
   ensureSafeTargetPath(options.repoId, targetPath, rc.workspaceDir);
   const commit = resolveRefCommit(sourcePath, options.repoId, options.at);

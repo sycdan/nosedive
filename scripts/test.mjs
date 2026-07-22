@@ -5,11 +5,12 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
@@ -77,6 +78,11 @@ function escapeRegExp(value) {
 
 function assertContainsPath(text, path) {
 	assert.match(text, new RegExp(escapeRegExp(path)));
+}
+
+function gitCommonDir(cwd) {
+	const raw = runTool("git", ["rev-parse", "--git-common-dir"], cwd).stdout.trim();
+	return realpathSync(isAbsolute(raw) ? raw : resolve(cwd, raw));
 }
 
 function assertGeneratedFrontmatter(text, filename, fields = []) {
@@ -1405,6 +1411,7 @@ meta:
 	const emptyFailRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9d";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
+	mkdirSync(join(hydrateBridge, "repos", "cloud-source"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "source"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "source-empty-fail"), {
 		recursive: true,
@@ -1417,6 +1424,23 @@ meta:
 	);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], hydrateBridge);
 
+	const cloudSourceRepo = join(hydrateBridge, "repos", "cloud-source");
+	runTool("git", ["init", "-b", "main"], cloudSourceRepo);
+	runTool(
+		"git",
+		["config", "user.email", "hydrate@example.invalid"],
+		cloudSourceRepo,
+	);
+	runTool("git", ["config", "user.name", "Hydrate Dev"], cloudSourceRepo);
+	write(join(cloudSourceRepo, "README.md"), "cloud main\n");
+	runTool("git", ["add", "README.md"], cloudSourceRepo);
+	runTool("git", ["commit", "-m", "cloud main commit"], cloudSourceRepo);
+	runTool("git", ["branch", "release/candidate"], cloudSourceRepo);
+	runTool("git", ["checkout", "release/candidate"], cloudSourceRepo);
+	write(join(cloudSourceRepo, "README.md"), "cloud release\n");
+	runTool("git", ["commit", "-am", "cloud release commit"], cloudSourceRepo);
+	runTool("git", ["checkout", "main"], cloudSourceRepo);
+
 	const sourceRepo = join(hydrateBridge, "repos", "source");
 	runTool("git", ["init", "-b", "main"], sourceRepo);
 	runTool(
@@ -1425,14 +1449,29 @@ meta:
 		sourceRepo,
 	);
 	runTool("git", ["config", "user.name", "Hydrate Dev"], sourceRepo);
-	write(join(sourceRepo, "README.md"), "main\n");
+	write(join(sourceRepo, "README.md"), "local main\n");
 	runTool("git", ["add", "README.md"], sourceRepo);
-	runTool("git", ["commit", "-m", "main commit"], sourceRepo);
+	runTool("git", ["commit", "-m", "local main commit"], sourceRepo);
 	runTool("git", ["branch", "release/candidate"], sourceRepo);
 	runTool("git", ["checkout", "release/candidate"], sourceRepo);
-	write(join(sourceRepo, "README.md"), "release\n");
-	runTool("git", ["commit", "-am", "release commit"], sourceRepo);
+	write(join(sourceRepo, "README.md"), "local release\n");
+	runTool("git", ["commit", "-am", "local release commit"], sourceRepo);
 	runTool("git", ["checkout", "main"], sourceRepo);
+	const cloudMainCommit = runTool(
+		"git",
+		["rev-parse", "main^{commit}"],
+		cloudSourceRepo,
+	).stdout.trim();
+	const localMainCommit = runTool(
+		"git",
+		["rev-parse", "main^{commit}"],
+		sourceRepo,
+	).stdout.trim();
+	assert.notEqual(
+		cloudMainCommit,
+		localMainCommit,
+		"cloud and local fixture repos should have distinct commits",
+	);
 
 	const emptyFailSourceRepo = join(hydrateBridge, "repos", "source-empty-fail");
 	runTool("git", ["init", "-b", "main"], emptyFailSourceRepo);
@@ -1461,9 +1500,10 @@ id: ${hydrateRepoId}
 name: hydrate
 gist: "Hydrate repo test fixture"
 meta:
-  path: workspace/legacy-target
-  worktree-path: workspace/hydrated-target
+  path: workspace/hydrated-target
+  worktree-path: workspace/legacy-target
   remotes:
+    cloud: repos/cloud-source
     local: repos/source
 ---
 `,
@@ -1476,7 +1516,7 @@ id: ${fallbackRepoId}
 name: fallback
 gist: "Legacy path fallback fixture"
 meta:
-  path: workspace/fallback-target
+  worktree-path: workspace/fallback-target
   remotes:
     local: repos/source
 ---
@@ -1512,7 +1552,7 @@ meta:
 	assert.equal(
 		existsSync(join(hydrateBridge, "workspace", "legacy-target")),
 		false,
-		"meta.path should not win over meta.worktree-path",
+		"deprecated meta.worktree-path should not win over meta.path",
 	);
 	const hydratedMarkerPath = join(
 		hydrateBridge,
@@ -1523,6 +1563,37 @@ meta:
 	assert.equal(
 		readFileSync(hydratedMarkerPath, "utf8"),
 		`id: ${hydrateRepoId}\n`,
+	);
+	const hydrateCache = join(hydrateBridge, ".nosedive", "cache", hydrateRepoId);
+	const hydrateCacheOrigin = runTool(
+		"git",
+		["remote", "get-url", "origin"],
+		hydrateCache,
+	).stdout.trim();
+	assert.equal(
+		hydrateCacheOrigin,
+		cloudSourceRepo,
+		"managed cache should prefer meta.remotes.cloud over local",
+	);
+	assert.equal(
+		gitCommonDir(join(hydrateBridge, "workspace", "hydrated-target")),
+		realpathSync(hydrateCache),
+		"hydrated worktree should be attached to the managed cache",
+	);
+	assert.notEqual(
+		gitCommonDir(join(hydrateBridge, "workspace", "hydrated-target")),
+		gitCommonDir(sourceRepo),
+		"hydrated worktree should not be attached directly to meta.remotes.local",
+	);
+	const hydratedHeadAfterCreate = runTool(
+		"git",
+		["rev-parse", "HEAD"],
+		join(hydrateBridge, "workspace", "hydrated-target"),
+	).stdout.trim();
+	assert.equal(
+		hydratedHeadAfterCreate,
+		cloudMainCommit,
+		"hydrated worktree should resolve default ref from the cloud-backed cache",
 	);
 
 	const detachedAfterCreate = spawnSync("git", ["symbolic-ref", "-q", "HEAD"], {
@@ -1602,7 +1673,7 @@ meta:
 	const releaseCommit = runTool(
 		"git",
 		["rev-parse", "release/candidate^{commit}"],
-		sourceRepo,
+		cloudSourceRepo,
 	).stdout.trim();
 	const hydrateAtRef = run(
 		["hydrate-repo.workspace", hydrateRepoId, "--at", "release/candidate"],
@@ -1699,6 +1770,17 @@ meta:
 		existsSync(join(hydrateBridge, "workspace", "fallback-target", ".git")),
 		true,
 	);
+	const fallbackCache = join(hydrateBridge, ".nosedive", "cache", fallbackRepoId);
+	assert.equal(
+		gitCommonDir(join(hydrateBridge, "workspace", "fallback-target")),
+		realpathSync(fallbackCache),
+		"local-only hydration should create the workspace worktree from the managed cache",
+	);
+	assert.notEqual(
+		gitCommonDir(join(hydrateBridge, "workspace", "fallback-target")),
+		gitCommonDir(sourceRepo),
+		"local-only hydration should not create a direct worktree from meta.remotes.local",
+	);
 
 	const unresolvedTarget = join(
 		hydrateBridge,
@@ -1756,17 +1838,21 @@ meta:
 ---
 `,
 	);
-	const sourceGitDir = runTool(
+	const emptyFailCache = join(
+		hydrateBridge,
+		".nosedive",
+		"cache",
+		emptyFailRepoId,
+	);
+	mkdirSync(dirname(emptyFailCache), { recursive: true });
+	runTool("git", ["clone", "--bare", emptyFailSourceRepo, emptyFailCache], hydrateBridge);
+	const cacheGitDir = runTool(
 		"git",
 		["rev-parse", "--git-dir"],
-		emptyFailSourceRepo,
+		emptyFailCache,
 	).stdout.trim();
-	const sourceWorktreesPath = join(
-		emptyFailSourceRepo,
-		sourceGitDir,
-		"worktrees",
-	);
-	write(sourceWorktreesPath, "block worktree dir creation\n");
+	const cacheWorktreesPath = join(emptyFailCache, cacheGitDir, "worktrees");
+	write(cacheWorktreesPath, "block worktree dir creation\n");
 	const emptyDirFailure = run(
 		["hydrate-repo.workspace", emptyFailRepoId],
 		hydrateBridge,

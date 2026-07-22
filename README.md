@@ -105,7 +105,12 @@ Usage:
 
 Behavior:
 
-- Path resolution prefers `meta.worktree-path`, then falls back to `meta.path`.
+- Path resolution uses canonical `meta.path`, with deprecated
+  `meta.worktree-path` accepted only as a compatibility fallback.
+- A managed git cache is prepared at `.nosedive/cache/<repo-id>` and workspace
+  worktrees are created from that cache.
+- `meta.remotes.cloud` is preferred as the cache upstream; `meta.remotes.local`
+  is only a seed source when no cloud remote is configured.
 - Target path must remain inside configured `workspace:` after canonical path
   resolution.
 - Hydration writes `.nosedive-ref` at repo root with `id: <repo-id>` for strict

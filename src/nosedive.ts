@@ -1314,8 +1314,29 @@ function parseDehydrateRepoWorkspaceArgs(args: string[]): DehydrateRepoWorkspace
 	return { repoRef, force };
 }
 
+interface GitCommandResult {
+	status: number | null;
+	stdout: string;
+	stderr: string;
+}
+
+const GIT_SAFE_BARE_CONFIG_ARGS = ["-c", "safe.bareRepository=all"] as const;
+
+function runGit(cwd: string, args: string[]): GitCommandResult {
+	const result = spawnSync("git", [...GIT_SAFE_BARE_CONFIG_ARGS, ...args], {
+		cwd: resolve(cwd),
+		encoding: "utf8",
+		env: cleanGitEnv(),
+	});
+	return {
+		status: result.status,
+		stdout: result.stdout,
+		stderr: result.stderr,
+	};
+}
+
 function gitRun(cwd: string, args: string[], label: string): string {
-	const result = spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() });
+	const result = runGit(cwd, args);
 	if (result.status === 0) return result.stdout.trim();
 	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
 	throw new Error(`${label}: ${detail}`);
@@ -1529,11 +1550,7 @@ function worktreeHasExpectedSource(targetPath: string, sourcePath: string): bool
 function maybeFetchSource(sourcePath: string, repoId: string): void {
 	const remotes = gitOutput(sourcePath, ["remote"]);
 	if (!remotes) return;
-	const fetched = spawnSync("git", ["fetch", "--all", "--prune"], {
-		cwd: sourcePath,
-		encoding: "utf8",
-		env: cleanGitEnv(),
-	});
+	const fetched = runGit(sourcePath, ["fetch", "--all", "--prune"]);
 	if (fetched.status !== 0) {
 		const detail = fetched.stderr.trim() || fetched.stdout.trim() || "unknown git error";
 		throw new Error(
@@ -2533,13 +2550,13 @@ function cleanGitEnv(): NodeJS.ProcessEnv {
 }
 
 function gitOutput(cwd: string, args: string[]): string | undefined {
-	const result = spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() });
+	const result = runGit(cwd, args);
 	if (result.status !== 0) return undefined;
 	return result.stdout.trim();
 }
 
 function gitOk(cwd: string, args: string[]): boolean {
-	return spawnSync("git", args, { cwd, encoding: "utf8", env: cleanGitEnv() }).status === 0;
+	return runGit(cwd, args).status === 0;
 }
 
 function gitRelPath(repoRoot: string, path: string): string {

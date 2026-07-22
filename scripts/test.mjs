@@ -50,7 +50,28 @@ function run(args, cwd, input) {
 	});
 }
 
+const gitSafeBareConfigArgs = ["-c", "safe.bareRepository=all"];
+
+function runGit(args, cwd, { expectOk = true } = {}) {
+	const env = { ...process.env };
+	for (const key of gitLocalEnvKeys) delete env[key];
+	const result = spawnSync("git", [...gitSafeBareConfigArgs, ...args], {
+		cwd,
+		encoding: "utf8",
+		env,
+	});
+	if (expectOk) {
+		assert.equal(
+			result.status,
+			0,
+			`git ${args.join(" ")} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+		);
+	}
+	return result;
+}
+
 function runTool(command, args, cwd) {
+	if (command === "git") return runGit(args, cwd);
 	const env = { ...process.env };
 	for (const key of gitLocalEnvKeys) delete env[key];
 	const result = spawnSync(command, args, { cwd, encoding: "utf8", env });
@@ -63,9 +84,7 @@ function runTool(command, args, cwd) {
 }
 
 function runGitUnchecked(args, cwd) {
-	const env = { ...process.env };
-	for (const key of gitLocalEnvKeys) delete env[key];
-	return spawnSync("git", args, { cwd, encoding: "utf8", env });
+	return runGit(args, cwd, { expectOk: false });
 }
 
 function assertOk(result, label) {

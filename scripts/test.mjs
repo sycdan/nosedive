@@ -55,7 +55,11 @@ const gitSafeBareConfigArgs = ["-c", "safe.bareRepository=all"];
 function runGit(args, cwd, { expectOk = true } = {}) {
 	const env = { ...process.env };
 	for (const key of gitLocalEnvKeys) delete env[key];
-	const result = spawnSync("git", [...gitSafeBareConfigArgs, ...args], { cwd, encoding: "utf8", env });
+	const result = spawnSync("git", [...gitSafeBareConfigArgs, ...args], {
+		cwd,
+		encoding: "utf8",
+		env,
+	});
 	if (expectOk) {
 		assert.equal(
 			result.status,

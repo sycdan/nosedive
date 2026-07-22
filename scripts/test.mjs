@@ -1412,6 +1412,7 @@ meta:
 	const nameRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9e";
 	const ambiguousRepoIdA = "019f8584-453f-79ea-9d53-5f1b20b4cd9f";
 	const ambiguousRepoIdB = "019f8584-453f-79ea-9d53-5f1b20b4cda0";
+	const staleWorktreeRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda1";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "cloud-source"), { recursive: true });
@@ -1581,6 +1582,20 @@ meta:
 ---
 `,
 	);
+	write(
+		join(hydrateBridge, "kb", "repo-stale-worktree.md"),
+		`---
+kind: repo
+id: ${staleWorktreeRepoId}
+name: stale-worktree
+gist: "Stale worktree registration fixture"
+meta:
+  path: workspace/stale-target
+  remotes:
+    local: repos/source
+---
+`,
+	);
 
 	const hydrateByName = run(
 		["hydrate-repo.workspace", "hydrate-by-name"],
@@ -1651,9 +1666,38 @@ meta:
 		"hydrated-target",
 		".nosedive-ref",
 	);
+	const hydratedTarget = join(hydrateBridge, "workspace", "hydrated-target");
 	assert.equal(
 		readFileSync(hydratedMarkerPath, "utf8"),
 		`id: ${hydrateRepoId}\n`,
+	);
+	const hydratedStatus = runTool(
+		"git",
+		["status", "--short", "--untracked-files=all"],
+		hydratedTarget,
+	).stdout;
+	assert.equal(
+		hydratedStatus,
+		"",
+		"repo ownership marker should not dirty the hydrated worktree",
+	);
+	const hydratedExcludePathRaw = runTool(
+		"git",
+		["rev-parse", "--git-path", "info/exclude"],
+		hydratedTarget,
+	).stdout.trim();
+	const hydratedExcludePath = isAbsolute(hydratedExcludePathRaw)
+		? hydratedExcludePathRaw
+		: resolve(hydratedTarget, hydratedExcludePathRaw);
+	const hydratedExcludeText = readFileSync(hydratedExcludePath, "utf8");
+	assert.match(
+		hydratedExcludeText,
+		/# BEGIN nosedive-managed repo-marker exclude/,
+	);
+	assert.match(hydratedExcludeText, /^\.nosedive-ref$/m);
+	assert.match(
+		hydratedExcludeText,
+		/# END nosedive-managed repo-marker exclude/,
 	);
 	const hydrateCache = join(hydrateBridge, ".nosedive", "cache", hydrateRepoId);
 	const hydrateCacheOrigin = runTool(
@@ -1871,6 +1915,53 @@ meta:
 		gitCommonDir(join(hydrateBridge, "workspace", "fallback-target")),
 		gitCommonDir(sourceRepo),
 		"local-only hydration should not create a direct worktree from meta.remotes.local",
+	);
+
+	const staleTarget = join(hydrateBridge, "workspace", "stale-target");
+	const staleCache = join(
+		hydrateBridge,
+		".nosedive",
+		"cache",
+		staleWorktreeRepoId,
+	);
+	mkdirSync(dirname(staleCache), { recursive: true });
+	runTool("git", ["clone", "--bare", sourceRepo, staleCache], hydrateBridge);
+	runTool(
+		"git",
+		["worktree", "add", "--detach", staleTarget, localMainCommit],
+		staleCache,
+	);
+	assert.equal(
+		existsSync(staleTarget),
+		true,
+		"stale fixture should create a registered worktree before deleting it",
+	);
+	rmSync(staleTarget, { recursive: true, force: true });
+	const staleHydrate = run(
+		["hydrate-repo.workspace", staleWorktreeRepoId],
+		hydrateBridge,
+	);
+	assertOk(
+		staleHydrate,
+		"hydrate-repo.workspace should prune missing registered worktree paths before create",
+	);
+	assert.match(
+		staleHydrate.stdout,
+		new RegExp(
+			`^created repo=${staleWorktreeRepoId} path=workspace[\\\\/]stale-target commit=[0-9a-f]{40}$`,
+			"m",
+		),
+	);
+	assert.equal(
+		gitCommonDir(staleTarget),
+		realpathSync(staleCache),
+		"stale registration recovery should recreate the worktree from the managed cache",
+	);
+	assert.equal(
+		runTool("git", ["status", "--short", "--untracked-files=all"], staleTarget)
+			.stdout,
+		"",
+		"repo ownership marker should not dirty a worktree created after stale registration recovery",
 	);
 
 	const unresolvedTarget = join(

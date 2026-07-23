@@ -90,6 +90,22 @@ Usage:
 - `agents` defaults to `copilot` (with `claude` as an optional additional
   target).
 
+### list-dives
+
+Print pickupable and working dives for an open effort.
+
+Usage:
+
+`nosedive list-dives <effort> [--include-historical] [--json]`
+
+- `<effort>` accepts an effort path, effort directory path, or leaf-first slug
+  chain.
+- The default output shows pickupable `pending-dives` from the effort
+  frontmatter plus working dives whose `meta.diver` is set.
+- `--include-historical` also scans preserved dive records for the effort so
+  the full progression can be inspected.
+- `--json` prints the same sections as structured data for agent workflows.
+
 ### hydrate-repo.workspace
 
 Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at

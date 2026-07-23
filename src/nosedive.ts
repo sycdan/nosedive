@@ -42,6 +42,7 @@ Commands:
   mint          Generate UUIDv7 with a specific timestamp encoded
   init          Create or edit .nosediverc interactively
   dump-backlog  Print the open efforts in the configured backlog
+  list-dives    Print pickupable and working dives for an effort
   pitch         Create a new effort in the backlog
   hydrate-repo.workspace  Hydrate one repo worktree from kb metadata
   dehydrate-repo.workspace  Remove one hydrated repo worktree from the workspace
@@ -628,6 +629,195 @@ function dumpBacklog(args: string[]): void {
 
 	const { backlogDir } = loadBacklogConfig(process.cwd());
 	console.log(formatBacklog(collectBacklog(backlogDir), verbose));
+}
+
+interface ListDivesOptions {
+	effortRef: string;
+	includeHistorical: boolean;
+	json: boolean;
+}
+
+interface ListedDive {
+	id: string;
+	name: string;
+	gist: string;
+	diver?: string;
+	scopes: string[];
+	source: string;
+}
+
+interface ListDivesResult {
+	effort: string;
+	pending: ListedDive[];
+	working: ListedDive[];
+	historical: ListedDive[];
+	warnings: string[];
+}
+
+function parseListDivesArgs(args: string[]): ListDivesOptions {
+	let effortRef: string | undefined;
+	let includeHistorical = false;
+	let json = false;
+
+	for (const arg of args) {
+		if (arg === "--include-historical") {
+			includeHistorical = true;
+			continue;
+		}
+		if (arg === "--json") {
+			json = true;
+			continue;
+		}
+		if (arg === "-h" || arg === "--help") {
+			console.log("Usage: nosedive list-dives <effort> [--include-historical] [--json]");
+			console.log("  Print pending pickup dives and working dives for an open effort.");
+			console.log("  --include-historical also prints preserved non-pending provenance dives.");
+			return { effortRef: "", includeHistorical, json };
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown list-dives option: ${arg}`);
+		if (effortRef) throw new Error(`unexpected list-dives argument: ${arg}`);
+		effortRef = arg;
+	}
+
+	if (!effortRef) throw new Error("list-dives requires an effort path or slug chain");
+	return { effortRef, includeHistorical, json };
+}
+
+function diveDocs(kbDocs: KbDoc[]): KbDoc[] {
+	return kbDocs.filter((doc) => doc.kind === "dive");
+}
+
+function formatScopeRef(scope: ScopeRef): string {
+	const bits = [scope.repoId];
+	if (scope.ref) bits.push(`@${scope.ref}`);
+	if (scope.readOnly) bits.push(":ro");
+	if (scope.path && scope.path !== ".") bits.push(` path=${scope.path}`);
+	return bits.join("");
+}
+
+function listedDive(doc: KbDoc): ListedDive {
+	return {
+		id: doc.id,
+		name: doc.name,
+		gist: doc.gist,
+		diver: doc.metaScalars.diver || undefined,
+		scopes: doc.scopes
+			.filter((scope) => scope.repoId !== ".")
+			.map((scope) => formatScopeRef(scope)),
+		source: doc.relPath,
+	};
+}
+
+function sameEffortRef(
+	effortRef: string | undefined,
+	effortPath: string,
+	bridgeDir: string,
+	backlogDir: string,
+): boolean {
+	if (!effortRef) return false;
+	try {
+		return resolveEffortPath(effortRef, bridgeDir, backlogDir, "dive effort") === effortPath;
+	} catch {
+		return false;
+	}
+}
+
+function collectListDives(
+	effortPath: string,
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	includeHistorical: boolean,
+): ListDivesResult {
+	if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
+	const effortDoc = parseMarkdownDoc(readFileSync(effortPath, "utf8"), effortPath);
+	const pendingIds = effortDoc.fm.lists["pending-dives"] ?? [];
+	const divesById = new Map(diveDocs(kbDocs).map((doc) => [doc.id, doc]));
+	const pending: ListedDive[] = [];
+	const warnings: string[] = [];
+	const pendingIdSet = new Set(pendingIds);
+
+	for (const id of pendingIds) {
+		const dive = divesById.get(id);
+		if (!dive) {
+			warnings.push(`pending dive ${id} is missing from kb`);
+			continue;
+		}
+		if (!sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir)) {
+			warnings.push(
+				`pending dive ${id} does not point back at ${effortRefFromPath(effortPath, rc.backlogDir)}`,
+			);
+			continue;
+		}
+		pending.push(listedDive(dive));
+	}
+
+	const matchingDives = diveDocs(kbDocs).filter((dive) =>
+		sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir!),
+	);
+	const working = matchingDives
+		.filter((dive) => Boolean(dive.metaScalars.diver) && !pendingIdSet.has(dive.id))
+		.map((dive) => listedDive(dive));
+	const historical = includeHistorical
+		? matchingDives
+				.filter(
+					(dive) =>
+						!pendingIdSet.has(dive.id) &&
+						!working.some((workingDive) => workingDive.id === dive.id),
+				)
+				.map((dive) => listedDive(dive))
+		: [];
+
+	return {
+		effort: effortRefFromPath(effortPath, rc.backlogDir),
+		pending,
+		working,
+		historical,
+		warnings,
+	};
+}
+
+function formatListedDive(dive: ListedDive): string {
+	const diver = dive.diver ? ` diver=${dive.diver}` : "";
+	const scopes = dive.scopes.length > 0 ? ` scopes=${dive.scopes.join(",")}` : "";
+	const gist = dive.gist ? ` - ${dive.gist}` : "";
+	return `  - ${dive.id} ${dive.name}${diver}${scopes}${gist}`;
+}
+
+function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {
+	lines.push(`${label}:`);
+	if (dives.length === 0) {
+		lines.push("  (none)");
+		return;
+	}
+	for (const dive of dives) lines.push(formatListedDive(dive));
+}
+
+function formatListDivesResult(result: ListDivesResult, includeHistorical: boolean): string {
+	const lines = [`Effort: ${result.effort}`];
+	appendDiveSection(lines, "Pending", result.pending);
+	appendDiveSection(lines, "Working", result.working);
+	if (includeHistorical) appendDiveSection(lines, "Historical", result.historical);
+	if (result.warnings.length > 0) {
+		lines.push("Warnings:");
+		for (const warning of result.warnings) lines.push(`  - ${warning}`);
+	}
+	return lines.join("\n");
+}
+
+function listDives(args: string[]): void {
+	const options = parseListDivesArgs(args);
+	if (!options.effortRef) return;
+
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
+	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+
+	const effortPath = resolveEffortPath(options.effortRef, rc.bridgeDir, rc.backlogDir);
+	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const result = collectListDives(effortPath, rc, kbDocs, options.includeHistorical);
+
+	if (options.json) console.log(JSON.stringify(result, null, 2));
+	else console.log(formatListDivesResult(result, options.includeHistorical));
 }
 
 function pascalFromSlug(slug: string): string {
@@ -2938,6 +3128,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 			break;
 		case "dump-backlog":
 			dumpBacklog(args);
+			break;
+		case "list-dives":
+			listDives(args);
 			break;
 		case "pitch":
 			pitch(args);

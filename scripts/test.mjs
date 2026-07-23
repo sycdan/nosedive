@@ -145,6 +145,7 @@ try {
 	assert.match(help.stdout, /Usage: nosedive <command>/);
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /init/);
+	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);
 	assert.match(help.stdout, /list-dives/);
 	assert.match(help.stdout, /pitch/);
@@ -256,6 +257,124 @@ current:
 		`id: active-dive
 `,
 	);
+
+	const explicitWhoami = run(["whoami"], join(bridge, "workspace", "writable", "app"));
+	assertOk(explicitWhoami, "whoami with explicit pilot fields failed");
+	assert.equal(
+		explicitWhoami.stdout,
+		`pilot-name: Pilot Person
+pilot-email: pilot@example.invalid
+`,
+	);
+	assert.equal(explicitWhoami.stderr, "");
+
+	const whoamiHelp = run(["whoami", "--help"], root);
+	assertOk(whoamiHelp, "whoami --help failed");
+	assert.match(whoamiHelp.stdout, /Usage: nosedive whoami/);
+
+	const unknownWhoamiOption = run(["whoami", "--bogus"], root, "");
+	assert.notEqual(
+		unknownWhoamiOption.status,
+		0,
+		"whoami with unknown option unexpectedly succeeded",
+	);
+	assert.match(unknownWhoamiOption.stderr, /unknown whoami option: --bogus/);
+
+	const unexpectedWhoamiArgument = run(["whoami", "extra"], root, "");
+	assert.notEqual(
+		unexpectedWhoamiArgument.status,
+		0,
+		"whoami with unexpected argument unexpectedly succeeded",
+	);
+	assert.match(unexpectedWhoamiArgument.stderr, /unexpected whoami argument: extra/);
+
+	const whoamiFallbackBridge = join(tmp, "whoami-fallback-bridge");
+	mkdirSync(whoamiFallbackBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], whoamiFallbackBridge);
+	runTool("git", ["config", "user.name", "Git Pilot"], whoamiFallbackBridge);
+	runTool("git", ["config", "user.email", "git-pilot@example.invalid"], whoamiFallbackBridge);
+	write(
+		join(whoamiFallbackBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	const fallbackRcBefore = readFileSync(join(whoamiFallbackBridge, ".nosediverc"), "utf8");
+	const fallbackExcludeBefore = readFileSync(
+		join(whoamiFallbackBridge, ".git", "info", "exclude"),
+		"utf8",
+	);
+	const whoamiFallback = run(["whoami"], whoamiFallbackBridge);
+	assertOk(whoamiFallback, "whoami git fallback failed");
+	assert.equal(
+		whoamiFallback.stdout,
+		`pilot-name: Git Pilot
+pilot-email: git-pilot@example.invalid
+`,
+	);
+	assert.match(whoamiFallback.stderr, /notice: pilot-name inferred from git config/);
+	assert.match(whoamiFallback.stderr, /notice: pilot-email inferred from git config/);
+	assert.equal(readFileSync(join(whoamiFallbackBridge, ".nosediverc"), "utf8"), fallbackRcBefore);
+	assert.equal(
+		readFileSync(join(whoamiFallbackBridge, ".git", "info", "exclude"), "utf8"),
+		fallbackExcludeBefore,
+	);
+	assert.equal(existsSync(join(whoamiFallbackBridge, "workspace", ".nosedive-ref")), false);
+
+	const whoamiPartialBridge = join(tmp, "whoami-partial-bridge");
+	mkdirSync(whoamiPartialBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], whoamiPartialBridge);
+	runTool("git", ["config", "user.name", "Ignored Git Pilot"], whoamiPartialBridge);
+	runTool("git", ["config", "user.email", "partial@example.invalid"], whoamiPartialBridge);
+	write(
+		join(whoamiPartialBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+pilot-name: Configured Pilot
+agents:
+  - copilot
+`,
+	);
+	const whoamiPartial = run(["whoami"], whoamiPartialBridge);
+	assertOk(whoamiPartial, "whoami partial fallback failed");
+	assert.equal(
+		whoamiPartial.stdout,
+		`pilot-name: Configured Pilot
+pilot-email: partial@example.invalid
+`,
+	);
+	assert.doesNotMatch(whoamiPartial.stderr, /pilot-name inferred/);
+	assert.match(whoamiPartial.stderr, /notice: pilot-email inferred from git config/);
+
+	const whoamiUnsetBridge = join(tmp, "whoami-unset-bridge");
+	mkdirSync(whoamiUnsetBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], whoamiUnsetBridge);
+	runTool("git", ["config", "user.name", "Only Git Name"], whoamiUnsetBridge);
+	runTool("git", ["config", "user.email", ""], whoamiUnsetBridge);
+	write(
+		join(whoamiUnsetBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	const whoamiUnset = run(["whoami"], whoamiUnsetBridge);
+	assert.notEqual(whoamiUnset.status, 0, "whoami with unset email unexpectedly succeeded");
+	assert.equal(
+		whoamiUnset.stdout,
+		`pilot-name: Only Git Name
+pilot-email: <unset>
+`,
+	);
+	assert.match(whoamiUnset.stderr, /notice: pilot-name inferred from git config/);
+	assert.match(whoamiUnset.stderr, /notice: pilot-email is not configured/);
+
 	write(
 		join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"),
 		`---

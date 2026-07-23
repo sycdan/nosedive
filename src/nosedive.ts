@@ -41,6 +41,7 @@ Commands:
   version       Print the package version
   mint          Generate UUIDv7 with a specific timestamp encoded
   init          Create or edit .nosediverc interactively
+  whoami        Print the bridge pilot identity
   dump-backlog  Print the open efforts in the configured backlog
   list-dives    Print pickupable and working dives for an effort
   pitch         Create a new effort in the backlog
@@ -314,8 +315,7 @@ function parseInitOptions(args: string[]): InitOptions {
 }
 
 function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
-	const detectedPilotName = gitOutput(bridgeDir, ["config", "user.name"]) ?? "";
-	const detectedPilotEmail = gitOutput(bridgeDir, ["config", "user.email"]) ?? "";
+	const detectedPilot = loadGitPilotIdentity(bridgeDir);
 	if (!existsSync(rcPath)) {
 		return {
 			workspace: DEFAULT_RC.workspace,
@@ -323,8 +323,8 @@ function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
 			kb: DEFAULT_RC.kb,
 			homeBranch: DEFAULT_RC["home-branch"],
 			workBranchPrefix: DEFAULT_RC["work-branch-prefix"],
-			pilotName: detectedPilotName,
-			pilotEmail: detectedPilotEmail,
+			pilotName: detectedPilot.pilotName,
+			pilotEmail: detectedPilot.pilotEmail,
 			agents: [...DEFAULT_RC.agents],
 		};
 	}
@@ -336,10 +336,17 @@ function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
 		kb: rc.scalars.kb ?? DEFAULT_RC.kb,
 		homeBranch: rc.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
 		workBranchPrefix: rc.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
-		pilotName: rc.scalars["pilot-name"] ?? detectedPilotName,
-		pilotEmail: rc.scalars["pilot-email"] ?? detectedPilotEmail,
+		pilotName: rc.scalars["pilot-name"] ?? detectedPilot.pilotName,
+		pilotEmail: rc.scalars["pilot-email"] ?? detectedPilot.pilotEmail,
 		agents:
 			rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
+	};
+}
+
+function loadGitPilotIdentity(bridgeDir: string): Pick<RcSettings, "pilotName" | "pilotEmail"> {
+	return {
+		pilotName: gitOutput(bridgeDir, ["config", "user.name"]) ?? "",
+		pilotEmail: gitOutput(bridgeDir, ["config", "user.email"]) ?? "",
 	};
 }
 
@@ -490,6 +497,79 @@ async function init(args: string[]): Promise<void> {
 			`Seeded ${seededFoundationDocs.length} foundation doc${seededFoundationDocs.length === 1 ? "" : "s"} into ${settings.kb}`,
 		);
 	}
+}
+
+// --- whoami ------------------------------------------------------------
+
+interface WhoamiOptions {
+	help: boolean;
+}
+
+type IdentitySource = "rc" | "git" | "unset";
+
+interface IdentityField {
+	key: "pilot-name" | "pilot-email";
+	value: string;
+	source: IdentitySource;
+}
+
+function parseWhoamiOptions(args: string[]): WhoamiOptions {
+	const options: WhoamiOptions = { help: false };
+	for (const arg of args) {
+		if (arg === "-h" || arg === "--help") {
+			options.help = true;
+			continue;
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown whoami option: ${arg}`);
+		throw new Error(`unexpected whoami argument: ${arg}`);
+	}
+	return options;
+}
+
+function resolveIdentityField(
+	key: IdentityField["key"],
+	configured: string | undefined,
+	detected: string,
+): IdentityField {
+	if (configured !== undefined) return { key, value: configured, source: "rc" };
+	if (detected) return { key, value: detected, source: "git" };
+	return { key, value: "<unset>", source: "unset" };
+}
+
+function whoami(args: string[]): void {
+	const options = parseWhoamiOptions(args);
+	if (options.help) {
+		console.log("Usage: nosedive whoami");
+		console.log("  Print the bridge pilot identity from .nosediverc, falling back to git config.");
+		return;
+	}
+
+	const rcPath = findBridgeConfig(process.cwd());
+	if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+
+	const bridgeDir = dirname(rcPath);
+	const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
+	const detected = loadGitPilotIdentity(bridgeDir);
+	const fields = [
+		resolveIdentityField("pilot-name", rc.scalars["pilot-name"], detected.pilotName),
+		resolveIdentityField("pilot-email", rc.scalars["pilot-email"], detected.pilotEmail),
+	];
+
+	for (const field of fields) console.log(`${field.key}: ${field.value}`);
+	for (const field of fields) {
+		if (field.source === "git") {
+			console.error(
+				`notice: ${field.key} inferred from git config; run \`nosedive init\` to persist it in .nosediverc`,
+			);
+		}
+		if (field.source === "unset") {
+			console.error(
+				`notice: ${field.key} is not configured in .nosediverc or git config; run \`nosedive init\` to persist it in .nosediverc`,
+			);
+		}
+	}
+
+	if (fields.some((field) => field.source === "unset")) process.exitCode = 1;
 }
 
 // --- efforts ---------------------------------------------------------------
@@ -3125,6 +3205,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 			break;
 		case "init":
 			await init(args);
+			break;
+		case "whoami":
+			whoami(args);
 			break;
 		case "dump-backlog":
 			dumpBacklog(args);

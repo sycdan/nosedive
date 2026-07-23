@@ -85,7 +85,7 @@ Usage:
 `nosedive init`
 
 - Prompts for workspace, backlog, kb, home branch, work branch prefix, and
-  `agents`.
+  pilot identity, and `agents`.
 - Existing values (or defaults) are shown and kept by pressing Enter.
 - `agents` defaults to `copilot` (with `claude` as an optional additional
   target).
@@ -105,6 +105,24 @@ Usage:
 - `--include-historical` also scans preserved dive records for the effort so
   the full progression can be inspected.
 - `--json` prints the same sections as structured data for agent workflows.
+
+### whoami
+
+Print the bridge pilot identity that nosedive will use from the current
+directory.
+
+Usage:
+
+`nosedive whoami`
+
+- Searches upward for the nearest `.nosediverc`.
+- Prints `pilot-name` and `pilot-email` from explicit bridge config.
+- Falls back per missing field to `git config user.name` or
+  `git config user.email` with a notice on stderr.
+- Prints `<unset>` and exits nonzero when a missing field cannot be inferred
+  from git config.
+- Does not modify `.nosediverc`, git excludes, backlog files, kb files, or
+  workspace markers.
 
 ### hydrate-repo.workspace
 

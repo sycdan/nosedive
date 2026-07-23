@@ -1321,6 +1321,7 @@ interface GitCommandResult {
 }
 
 const GIT_SAFE_BARE_CONFIG_ARGS = ["-c", "safe.bareRepository=all"] as const;
+const MANAGED_CACHE_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*";
 
 function runGit(cwd: string, args: string[]): GitCommandResult {
 	const result = spawnSync("git", [...GIT_SAFE_BARE_CONFIG_ARGS, ...args], {
@@ -1484,15 +1485,26 @@ function ensureOriginRemote(cachePath: string, remote: string, repoId: string): 
 			["remote", "add", "origin", remote],
 			`failed to configure cache remote for repo ${repoId}`,
 		);
-		return;
+	} else {
+		const current = gitOutput(cachePath, ["remote", "get-url", "origin"]);
+		if (current !== remote) {
+			gitRun(
+				cachePath,
+				["remote", "set-url", "origin", remote],
+				`failed to configure cache remote for repo ${repoId}`,
+			);
+		}
 	}
 
-	const current = gitOutput(cachePath, ["remote", "get-url", "origin"]);
-	if (current !== remote) {
+	const fetchRefspecs =
+		gitOutput(cachePath, ["config", "--get-all", "remote.origin.fetch"])
+			?.split(/\r?\n/)
+			.filter(Boolean) ?? [];
+	if (fetchRefspecs.length !== 1 || fetchRefspecs[0] !== MANAGED_CACHE_FETCH_REFSPEC) {
 		gitRun(
 			cachePath,
-			["remote", "set-url", "origin", remote],
-			`failed to configure cache remote for repo ${repoId}`,
+			["config", "--replace-all", "remote.origin.fetch", MANAGED_CACHE_FETCH_REFSPEC],
+			`failed to configure cache fetch refspec for repo ${repoId}`,
 		);
 	}
 }
@@ -1569,6 +1581,12 @@ function pruneStaleWorktrees(sourcePath: string, repoId: string): void {
 
 function resolveRefCommit(sourcePath: string, repoId: string, ref: string): string {
 	maybeFetchSource(sourcePath, repoId);
+	const remoteCommit = gitOutput(sourcePath, [
+		"rev-parse",
+		"--verify",
+		`refs/remotes/origin/${ref}^{commit}`,
+	]);
+	if (remoteCommit) return remoteCommit;
 	return gitRun(
 		sourcePath,
 		["rev-parse", "--verify", `${ref}^{commit}`],

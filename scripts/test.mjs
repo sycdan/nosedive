@@ -1262,6 +1262,7 @@ meta:
 	const ambiguousRepoIdA = "019f8584-453f-79ea-9d53-5f1b20b4cd9f";
 	const ambiguousRepoIdB = "019f8584-453f-79ea-9d53-5f1b20b4cda0";
 	const staleWorktreeRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda1";
+	const staleCacheRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda2";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "cloud-source"), { recursive: true });
@@ -1425,6 +1426,21 @@ meta:
 ---
 `,
 	);
+	write(
+		join(hydrateBridge, "kb", "repo-stale-cache.md"),
+		`---
+kind: repo
+id: ${staleCacheRepoId}
+name: stale-cache
+gist: "Stale cache fetch fixture"
+meta:
+  path: workspace/stale-cache-target
+  remotes:
+    cloud: repos/cloud-source
+    local: repos/source
+---
+`,
+	);
 
 	const hydrateByName = run(["hydrate-repo.workspace", "hydrate-by-name"], hydrateBridge);
 	assertOk(hydrateByName, "hydrate-repo.workspace exact name failed");
@@ -1524,6 +1540,69 @@ meta:
 		hydratedHeadAfterCreate,
 		cloudMainCommit,
 		"hydrated worktree should resolve default ref from the cloud-backed cache",
+	);
+
+	const staleCacheTarget = join(hydrateBridge, "workspace", "stale-cache-target");
+	const staleManagedCache = join(hydrateBridge, ".nosedive", "cache", staleCacheRepoId);
+	mkdirSync(dirname(staleManagedCache), { recursive: true });
+	runTool("git", ["clone", "--bare", sourceRepo, staleManagedCache], hydrateBridge);
+	runGitUnchecked(["config", "--unset-all", "remote.origin.fetch"], staleManagedCache);
+	runTool("git", ["branch", "local/work", localMainCommit], staleManagedCache);
+	assert.equal(
+		runTool("git", ["rev-parse", "main^{commit}"], staleManagedCache).stdout.trim(),
+		localMainCommit,
+		"stale cache fixture should start behind the cloud source",
+	);
+	assert.notEqual(
+		runGitUnchecked(["config", "--get-all", "remote.origin.fetch"], staleManagedCache).status,
+		0,
+		"stale cache fixture should start without a fetch refspec",
+	);
+	const staleCacheHydrate = run(["hydrate-repo.workspace", staleCacheRepoId], hydrateBridge);
+	assertOk(
+		staleCacheHydrate,
+		"hydrate-repo.workspace should repair and fetch stale managed cache refs",
+	);
+	assert.match(
+		staleCacheHydrate.stdout,
+		new RegExp(
+			`^created repo=${staleCacheRepoId} path=workspace[\\\\/]stale-cache-target commit=${cloudMainCommit}$`,
+			"m",
+		),
+	);
+	assert.equal(
+		runTool("git", ["config", "--get-all", "remote.origin.fetch"], staleManagedCache).stdout.trim(),
+		"+refs/heads/*:refs/remotes/origin/*",
+		"hydrate should repair the managed cache fetch refspec",
+	);
+	assert.equal(
+		runTool("git", ["remote", "get-url", "origin"], staleManagedCache).stdout.trim(),
+		cloudSourceRepo,
+		"hydrate should keep the managed cache pointed at the cloud remote",
+	);
+	assert.equal(
+		runTool(
+			"git",
+			["rev-parse", "refs/remotes/origin/main^{commit}"],
+			staleManagedCache,
+		).stdout.trim(),
+		cloudMainCommit,
+		"hydrate should fetch cloud main into the managed cache remote-tracking refs before resolving refs",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "main^{commit}"], staleManagedCache).stdout.trim(),
+		localMainCommit,
+		"hydrate should not overwrite local cache branches when fetching cloud refs",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "local/work^{commit}"], staleManagedCache).stdout.trim(),
+		localMainCommit,
+		"hydrate fetch pruning should not delete local cache work branches",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], staleCacheTarget).stdout.trim(),
+		cloudMainCommit,
+		"hydrate should create the worktree at the fetched cloud main commit",
 	);
 
 	const detachedAfterCreate = runGitUnchecked(

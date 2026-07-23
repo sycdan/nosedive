@@ -146,6 +146,7 @@ try {
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /init/);
 	assert.match(help.stdout, /dump-backlog/);
+	assert.match(help.stdout, /list-dives/);
 	assert.match(help.stdout, /pitch/);
 	assert.match(help.stdout, /hydrate-repo\.workspace/);
 	assert.match(help.stdout, /dehydrate-repo\.workspace/);
@@ -263,6 +264,10 @@ gist: "Exercise valid YAML: quoted effort gist"
 repos:
   - repo-writable
   - repo-readonly@develop:ro
+pending-dives:
+  - pending-dive
+  - missing-dive
+  - wrong-effort-dive
 ---
 
 # YAML frontmatter
@@ -447,6 +452,23 @@ meta:
 `,
 	);
 	write(
+		join(bridge, "kb", "pending-dive.md"),
+		`---
+kind: dive
+id: pending-dive
+name: yaml-frontmatter.pending
+gist: "Pending dive ready to pick up."
+scopes:
+  - repo-writable: {}
+meta:
+  effort: backlog/yaml-frontmatter/YamlFrontmatter.md
+  diver:
+---
+
+# Pending dive
+`,
+	);
+	write(
 		join(bridge, "kb", "foundation.md"),
 		`---
 kind: foundation
@@ -462,6 +484,40 @@ scopes:
 # Foundation Body
 
 Body rendered from valid YAML frontmatter.
+`,
+	);
+	write(
+		join(bridge, "kb", "completed-dive.md"),
+		`---
+kind: dive
+id: completed-dive
+name: yaml-frontmatter.completed
+gist: "Completed dive preserved as provenance."
+scopes:
+  - repo-writable: {}
+meta:
+  effort: backlog/yaml-frontmatter/YamlFrontmatter.md
+  diver:
+---
+
+# Completed dive
+`,
+	);
+	write(
+		join(bridge, "kb", "wrong-effort-dive.md"),
+		`---
+kind: dive
+id: wrong-effort-dive
+name: other-effort.wrong
+gist: "Wrong effort pending ref fixture."
+scopes:
+  - repo-writable: {}
+meta:
+  effort: backlog/other-effort/OtherEffort.md
+  diver:
+---
+
+# Wrong effort dive
 `,
 	);
 
@@ -531,6 +587,42 @@ Body rendered from valid YAML frontmatter.
 	assert.match(verboseBacklog.stdout, /\[shaping\] auth-refactor\.gogglebox/);
 	assert.doesNotMatch(verboseBacklog.stdout, /\[unknown\] gogglebox/);
 	assert.doesNotMatch(verboseBacklog.stdout, /\.artifacts/);
+
+	const listDives = run(["list-dives", "yaml-frontmatter"], bridge);
+	assertOk(listDives, "list-dives failed");
+	assert.match(listDives.stdout, /Effort: yaml-frontmatter\/YamlFrontmatter\.md/);
+	assert.match(listDives.stdout, /Pending:\n  - pending-dive yaml-frontmatter\.pending/);
+	assert.match(
+		listDives.stdout,
+		/Working:\n  - active-dive yaml-frontmatter\.abcdef diver=pilot@example\.invalid/,
+	);
+	assert.doesNotMatch(listDives.stdout, /completed-dive/);
+	assert.match(listDives.stdout, /pending dive missing-dive is missing from kb/);
+	assert.match(
+		listDives.stdout,
+		/pending dive wrong-effort-dive does not point back at yaml-frontmatter\/YamlFrontmatter\.md/,
+	);
+
+	const listDivesHistory = run(["list-dives", "yaml-frontmatter", "--include-historical"], bridge);
+	assertOk(listDivesHistory, "list-dives --include-historical failed");
+	assert.match(
+		listDivesHistory.stdout,
+		/Historical:\n  - completed-dive yaml-frontmatter\.completed/,
+	);
+
+	const listDivesJson = run(["list-dives", "yaml-frontmatter", "--json"], bridge);
+	assertOk(listDivesJson, "list-dives --json failed");
+	const parsedListDives = JSON.parse(listDivesJson.stdout);
+	assert.deepEqual(
+		parsedListDives.pending.map((dive) => dive.id),
+		["pending-dive"],
+	);
+	assert.deepEqual(
+		parsedListDives.working.map((dive) => dive.id),
+		["active-dive"],
+	);
+	assert.deepEqual(parsedListDives.historical, []);
+	assert.equal(parsedListDives.warnings.length, 2);
 
 	const apply = run(["apply"], bridge);
 	assertOk(apply, "apply failed");

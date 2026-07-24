@@ -721,6 +721,7 @@ interface ListedDive {
 	id: string;
 	name: string;
 	gist: string;
+	rel?: string;
 	diver?: string;
 	scopes: string[];
 	source: string;
@@ -775,11 +776,12 @@ function formatScopeRef(scope: ScopeRef): string {
 	return bits.join("");
 }
 
-function listedDive(doc: KbDoc): ListedDive {
+function listedDive(doc: KbDoc, rel?: string): ListedDive {
 	return {
 		id: doc.id,
 		name: doc.name,
 		gist: doc.gist,
+		rel,
 		diver: doc.metaScalars.diver || undefined,
 		scopes: doc.scopes
 			.filter((scope) => scope.repoId !== ".")
@@ -802,6 +804,8 @@ function sameEffortRef(
 	}
 }
 
+const DIVE_WORKING_RELS = new Set(["working", "reviewing"]);
+
 function collectListDives(
 	effortPath: string,
 	rc: NosediveRc,
@@ -809,58 +813,73 @@ function collectListDives(
 	includeHistorical: boolean,
 ): ListDivesResult {
 	if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
-	const effortDoc = parseMarkdownDoc(readFileSync(effortPath, "utf8"), effortPath);
-	const pendingIds = effortDoc.fm.lists["pending-dives"] ?? [];
-	const divesById = new Map(diveDocs(kbDocs).map((doc) => [doc.id, doc]));
-	const pending: ListedDive[] = [];
-	const warnings: string[] = [];
-	const pendingIdSet = new Set(pendingIds);
+	const effortText = readFileSync(effortPath, "utf8");
+	const links = parseLinkRefs(parseRawFrontmatterObject(effortText, effortPath).links, effortPath);
+	const dives = diveDocs(kbDocs);
+	const divesById = new Map(dives.map((doc) => [doc.id, doc]));
+	const kbIds = new Set(kbDocs.map((doc) => doc.id));
+	const effortLabel = effortRefFromPath(effortPath, rc.backlogDir);
 
-	for (const id of pendingIds) {
-		const dive = divesById.get(id);
+	const pending: ListedDive[] = [];
+	const working: ListedDive[] = [];
+	const provenance: ListedDive[] = [];
+	const warnings: string[] = [];
+	const linkedDiveIds = new Set<string>();
+
+	for (const link of links) {
+		const dive = divesById.get(link.id);
 		if (!dive) {
-			warnings.push(`pending dive ${id} is missing from kb`);
+			// A rel-tagged link asserts a pickupable/working dive, so a missing
+			// target is a broken dive ref worth surfacing. Bare provenance links
+			// to non-dive docs are ignored here.
+			if (link.rel && !kbIds.has(link.id)) {
+				warnings.push(`dive link ${link.id} is missing from kb`);
+			}
 			continue;
 		}
 		if (!sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir)) {
-			warnings.push(
-				`pending dive ${id} does not point back at ${effortRefFromPath(effortPath, rc.backlogDir)}`,
-			);
+			warnings.push(`dive link ${link.id} does not point back at ${effortLabel}`);
 			continue;
 		}
-		pending.push(listedDive(dive));
+		linkedDiveIds.add(dive.id);
+		if (link.rel === "pending") {
+			pending.push(listedDive(dive, link.rel));
+		} else if (DIVE_WORKING_RELS.has(link.rel ?? "") || dive.metaScalars.diver) {
+			working.push(listedDive(dive, link.rel));
+		} else {
+			provenance.push(listedDive(dive, link.rel));
+		}
 	}
 
-	const matchingDives = diveDocs(kbDocs).filter((dive) =>
-		sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir!),
-	);
-	const working = matchingDives
-		.filter((dive) => Boolean(dive.metaScalars.diver) && !pendingIdSet.has(dive.id))
-		.map((dive) => listedDive(dive));
-	const historical = includeHistorical
-		? matchingDives
-				.filter(
-					(dive) =>
-						!pendingIdSet.has(dive.id) &&
-						!working.some((workingDive) => workingDive.id === dive.id),
-				)
-				.map((dive) => listedDive(dive))
-		: [];
+	// Drift/superset scan: dives that name this effort but are not linked from it.
+	// A held (diver set) unlinked dive is a workon-safety hazard, so warn; the
+	// full progression view (--include-historical) also lists them.
+	for (const dive of dives) {
+		if (linkedDiveIds.has(dive.id)) continue;
+		if (!sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir)) continue;
+		if (dive.metaScalars.diver) {
+			warnings.push(
+				`held dive ${dive.id} points at ${effortLabel} but is not linked from the effort`,
+			);
+		}
+		provenance.push(listedDive(dive));
+	}
 
 	return {
-		effort: effortRefFromPath(effortPath, rc.backlogDir),
+		effort: effortLabel,
 		pending,
 		working,
-		historical,
+		historical: includeHistorical ? provenance : [],
 		warnings,
 	};
 }
 
 function formatListedDive(dive: ListedDive): string {
+	const rel = dive.rel ? ` rel=${dive.rel}` : "";
 	const diver = dive.diver ? ` diver=${dive.diver}` : "";
 	const scopes = dive.scopes.length > 0 ? ` scopes=${dive.scopes.join(",")}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
-	return `  - ${dive.id} ${dive.name}${diver}${scopes}${gist}`;
+	return `  - ${dive.id} ${dive.name}${rel}${diver}${scopes}${gist}`;
 }
 
 function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {
@@ -1137,6 +1156,12 @@ interface ScopeRef {
 	readOnly: boolean;
 	flags: string[];
 	render?: "body" | "gist";
+}
+
+interface LinkRef {
+	id: string;
+	rel?: string;
+	anchor?: string;
 }
 
 interface TargetDoc {
@@ -2388,6 +2413,63 @@ function parseScopeRefs(value: unknown, path: string): ScopeRef[] {
 	if (value === undefined || value === null) return [];
 	if (!Array.isArray(value)) throw new Error(`invalid scopes in ${path}: expected a YAML list`);
 	return value.map((scope, index) => parseScopeRef(scope, path, index));
+}
+
+function optionalLinkString(
+	value: Record<string, unknown>,
+	key: string,
+	label: string,
+): string | undefined {
+	if (!Object.hasOwn(value, key)) return undefined;
+	const scalar = scalarToString(value[key]);
+	if (scalar === undefined || scalar.trim() === "") {
+		throw new Error(`invalid link entry in ${label}: ${key} must be a non-empty string`);
+	}
+	return scalar;
+}
+
+function parseLinkRef(link: unknown, path: string, index: number): LinkRef {
+	const label = `${path} links[${index}]`;
+	if (typeof link === "string") {
+		const id = link.trim();
+		if (!id) throw new Error(`invalid link entry in ${label}: id must be non-empty`);
+		if (id.includes("#")) {
+			throw new Error(
+				`invalid link entry in ${label}: anchors are not allowed in string links; use '- <id>: { anchor: ... }'`,
+			);
+		}
+		return { id };
+	}
+	if (!link || typeof link !== "object" || Array.isArray(link)) {
+		throw new Error(
+			`invalid link entry in ${label}: expected a bare id string or a one-key object`,
+		);
+	}
+
+	const keys = Object.keys(link as Record<string, unknown>);
+	if (keys.length !== 1) {
+		throw new Error(`invalid link entry in ${label}: expected exactly one id key`);
+	}
+
+	const id = keys[0]!.trim();
+	if (!id) throw new Error(`invalid link entry in ${label}: id key must be non-empty`);
+
+	const rawValue = (link as Record<string, unknown>)[keys[0]!];
+	if (rawValue === null || rawValue === undefined) return { id };
+	if (typeof rawValue !== "object" || Array.isArray(rawValue)) {
+		throw new Error(`invalid link entry in ${label}: value for '${id}' must be a YAML object`);
+	}
+
+	const value = rawValue as Record<string, unknown>;
+	const rel = optionalLinkString(value, "rel", label);
+	const anchor = optionalLinkString(value, "anchor", label);
+	return { id, rel, anchor };
+}
+
+function parseLinkRefs(value: unknown, path: string): LinkRef[] {
+	if (value === undefined || value === null) return [];
+	if (!Array.isArray(value)) throw new Error(`invalid links in ${path}: expected a YAML list`);
+	return value.map((link, index) => parseLinkRef(link, path, index));
 }
 
 function defaultRender(kind: string): "body" | "gist" | undefined {

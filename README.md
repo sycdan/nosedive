@@ -100,10 +100,15 @@ Usage:
 
 - `<effort>` accepts an effort path, effort directory path, or leaf-first slug
   chain.
-- The default output shows pickupable `pending-dives` from the effort
-  frontmatter plus working dives whose `meta.diver` is set.
-- `--include-historical` also scans preserved dive records for the effort so
-  the full progression can be inspected.
+- Dives are read from the effort's `links:` frontmatter (the same durable link
+  list kb docs use). A link is a bare id or a `- <id>: { rel, anchor }` object;
+  only links resolving to `kind: dive` docs are considered.
+- The default output shows pickupable dives (`rel: pending`) and working dives
+  (`rel: working` or `rel: reviewing`, or any linked dive with `meta.diver`
+  set). It warns on broken dive links (missing from kb, or pointing at another
+  effort) and on held dives that name the effort but are not linked from it.
+- `--include-historical` also lists preserved provenance dives: linked dives
+  with no pickup role, plus any dive whose `meta.effort` resolves to the effort.
 - `--json` prints the same sections as structured data for agent workflows.
 
 ### whoami

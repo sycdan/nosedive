@@ -383,10 +383,16 @@ gist: "Exercise valid YAML: quoted effort gist"
 repos:
   - repo-writable
   - repo-readonly@develop:ro
-pending-dives:
-  - pending-dive
-  - missing-dive
-  - wrong-effort-dive
+links:
+  - pending-dive:
+      rel: pending
+  - active-dive:
+      rel: working
+  - completed-dive
+  - missing-dive:
+      rel: pending
+  - wrong-effort-dive:
+      rel: pending
 ---
 
 # YAML frontmatter
@@ -639,6 +645,23 @@ meta:
 # Wrong effort dive
 `,
 	);
+	write(
+		join(bridge, "kb", "orphan-held-dive.md"),
+		`---
+kind: dive
+id: orphan-held-dive
+name: yaml-frontmatter.orphan
+gist: "Held dive that names the effort but is not linked from it."
+scopes:
+  - repo-writable: {}
+meta:
+  effort: backlog/yaml-frontmatter/YamlFrontmatter.md
+  diver: other@example.invalid
+---
+
+# Orphan held dive
+`,
+	);
 
 	const dryRun = run(["apply", "--dry-run"], bridge);
 	assertOk(dryRun, "apply --dry-run failed");
@@ -710,16 +733,24 @@ meta:
 	const listDives = run(["list-dives", "yaml-frontmatter"], bridge);
 	assertOk(listDives, "list-dives failed");
 	assert.match(listDives.stdout, /Effort: yaml-frontmatter\/YamlFrontmatter\.md/);
-	assert.match(listDives.stdout, /Pending:\n  - pending-dive yaml-frontmatter\.pending/);
 	assert.match(
 		listDives.stdout,
-		/Working:\n  - active-dive yaml-frontmatter\.abcdef diver=pilot@example\.invalid/,
+		/Pending:\n  - pending-dive yaml-frontmatter\.pending rel=pending/,
+	);
+	assert.match(
+		listDives.stdout,
+		/Working:\n  - active-dive yaml-frontmatter\.abcdef rel=working diver=pilot@example\.invalid/,
 	);
 	assert.doesNotMatch(listDives.stdout, /completed-dive/);
-	assert.match(listDives.stdout, /pending dive missing-dive is missing from kb/);
+	assert.doesNotMatch(listDives.stdout, /Historical:/);
+	assert.match(listDives.stdout, /dive link missing-dive is missing from kb/);
 	assert.match(
 		listDives.stdout,
-		/pending dive wrong-effort-dive does not point back at yaml-frontmatter\/YamlFrontmatter\.md/,
+		/dive link wrong-effort-dive does not point back at yaml-frontmatter\/YamlFrontmatter\.md/,
+	);
+	assert.match(
+		listDives.stdout,
+		/held dive orphan-held-dive points at yaml-frontmatter\/YamlFrontmatter\.md but is not linked/,
 	);
 
 	const listDivesHistory = run(["list-dives", "yaml-frontmatter", "--include-historical"], bridge);
@@ -728,6 +759,7 @@ meta:
 		listDivesHistory.stdout,
 		/Historical:\n  - completed-dive yaml-frontmatter\.completed/,
 	);
+	assert.match(listDivesHistory.stdout, /orphan-held-dive yaml-frontmatter\.orphan/);
 
 	const listDivesJson = run(["list-dives", "yaml-frontmatter", "--json"], bridge);
 	assertOk(listDivesJson, "list-dives --json failed");
@@ -741,7 +773,7 @@ meta:
 		["active-dive"],
 	);
 	assert.deepEqual(parsedListDives.historical, []);
-	assert.equal(parsedListDives.warnings.length, 2);
+	assert.equal(parsedListDives.warnings.length, 3);
 
 	const apply = run(["apply"], bridge);
 	assertOk(apply, "apply failed");

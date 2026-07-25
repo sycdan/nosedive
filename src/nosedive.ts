@@ -488,21 +488,19 @@ function detectConfigShapeAt(bridgeDir: string): ConfigShapeInfo {
 	return { kind: "none" };
 }
 
-function migrationDocRelPath(kbPath: string, docId: string): string {
-	return join(kbPath, `${docId}.md`);
-}
-
-function migrationDocGist(docId: string): string | undefined {
+/**
+ * Full content of a migration's kb doc (gist + body), read directly from the
+ * installed package -- never seeded into a bridge's kb, so this is the only
+ * place a developer or agent sees it: inline in a failure, when it's
+ * actually actionable.
+ */
+function describeMigrationForError(docId: string): string {
 	const doc = packageMigrationDocs().find((d) => d.filename === `${docId}.md`);
-	if (!doc) return undefined;
-	return parseMarkdownFrontmatter(doc.content, doc.filename).scalars.gist;
-}
-
-function describeMigrationForError(kbPath: string, docId: string): string {
-	const gist = migrationDocGist(docId);
-	const lines = [`See ${migrationDocRelPath(kbPath, docId)} for details.`];
-	if (gist) lines.unshift(gist);
-	return lines.join("\n");
+	if (!doc) return `(kind: migration doc ${docId} not found in the installed nosedive package)`;
+	const parsed = parseMarkdownDoc(doc.content, doc.filename);
+	const gist = parsed.fm.scalars.gist;
+	const body = parsed.body.trim();
+	return [gist, "", body].filter((line): line is string => line !== undefined).join("\n");
 }
 
 function backupBeforeMigration(bridgeDir: string, migration: Migration, paths: string[]): void {
@@ -537,7 +535,7 @@ async function runMigration(migration: Migration, ctx: MigrationContext): Promis
  * shape or migration failure. Returns quickly with no I/O beyond the shape
  * check when the bridge is already current.
  */
-async function migrateBridgeConfig(bridgeDir: string, kbPath: string): Promise<void> {
+async function migrateBridgeConfig(bridgeDir: string): Promise<void> {
 	const shape = detectConfigShapeAt(bridgeDir);
 
 	if (shape.kind === "ambiguous") {
@@ -580,8 +578,8 @@ async function migrateBridgeConfig(bridgeDir: string, kbPath: string): Promise<v
 		} catch (err) {
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(
-				`migration '${migration.summary}' (v${migration.fromVersion}->v${migration.toVersion}) failed: ${detail}\n` +
-					describeMigrationForError(kbPath, migration.docId),
+				`migration '${migration.summary}' (v${migration.fromVersion}->v${migration.toVersion}) failed: ${detail}\n\n` +
+					describeMigrationForError(migration.docId),
 			);
 		}
 
@@ -694,39 +692,11 @@ function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] 
 	return seedPackageDocs(bridgeDir, kbPath, packageFoundationDocs());
 }
 
-/** Seed kind:migration docs plus their linked script artifacts (read-only reference copies; nosedive never executes these bridge-local copies). */
-function seedPackageMigrationDocs(bridgeDir: string, kbPath: string): string[] {
-	const docs = packageMigrationDocs();
-	const seeded = seedPackageDocs(bridgeDir, kbPath, docs);
-	if (seeded.length === 0) return seeded;
+const NOSEDIVE_DIR_GITIGNORE = ["cache/", `${MIGRATION_BACKUP_DIRNAME}/`, ""].join("\n");
 
-	const kbDir = resolveFrom(bridgeDir, kbPath);
-	const artifactPaths: string[] = [];
-	for (const doc of docs) {
-		const fm = parseMarkdownFrontmatter(doc.content, doc.filename);
-		const scriptFilename = fm.nested.meta?.script;
-		if (!scriptFilename) continue;
-		const sourcePath = join(packageRoot(), "kb", "artifacts", scriptFilename);
-		if (!existsSync(sourcePath)) continue;
-		const target = join(kbDir, "artifacts", scriptFilename);
-		writeFileAtomic(target, readFileSync(sourcePath, "utf8"));
-		artifactPaths.push(target);
-	}
-	return [...seeded, ...artifactPaths];
-}
-
-function peekConfiguredKbPath(bridgeDir: string): string {
-	const basePath = baseConfigPath(bridgeDir);
-	if (existsSync(basePath)) {
-		const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
-		if (base.scalars.kb) return base.scalars.kb;
-	}
-	const legacyPath = legacyConfigPath(bridgeDir);
-	if (existsSync(legacyPath)) {
-		const legacy = parseYamlBlock(readFileSync(legacyPath, "utf8"), legacyPath);
-		if (legacy.scalars.kb) return legacy.scalars.kb;
-	}
-	return DEFAULT_RC.kb;
+/** nosedive owns ignore rules for its own state under `.nosedive/`: the git cache and migration backups are local, `config.yaml` is not. */
+function writeNosediveDirGitignore(bridgeDir: string): void {
+	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
 async function init(args: string[]): Promise<void> {
@@ -751,7 +721,7 @@ async function init(args: string[]): Promise<void> {
 		throw new Error("nosedive init must be run inside a git repository");
 	}
 
-	await migrateBridgeConfig(bridgeDir, peekConfiguredKbPath(bridgeDir));
+	await migrateBridgeConfig(bridgeDir);
 
 	const settings = loadSplitRcSettings(bridgeDir);
 
@@ -780,25 +750,15 @@ async function init(args: string[]): Promise<void> {
 	const localPath = localConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_SCHEMA_VERSION));
 	writeFileAtomic(localPath, renderLocalConfig(settings));
+	writeNosediveDirGitignore(bridgeDir);
 	console.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
 
 	const seededFoundationDocs = seedPackageFoundationDocs(bridgeDir, settings.kb);
-	const seededMigrationDocs = seedPackageMigrationDocs(bridgeDir, settings.kb);
-	for (const warning of manageFoundationGitState([
-		localPath,
-		...seededFoundationDocs,
-		...seededMigrationDocs,
-	]))
+	for (const warning of manageFoundationGitState([localPath, ...seededFoundationDocs]))
 		console.error(`warning: ${warning}`);
 	if (seededFoundationDocs.length > 0) {
 		console.log(
 			`Seeded ${seededFoundationDocs.length} foundation doc${seededFoundationDocs.length === 1 ? "" : "s"} into ${settings.kb}`,
-		);
-	}
-	const migrationDocCount = packageMigrationDocs().length;
-	if (migrationDocCount > 0) {
-		console.log(
-			`Seeded ${migrationDocCount} migration doc${migrationDocCount === 1 ? "" : "s"} into ${settings.kb}`,
 		);
 	}
 }

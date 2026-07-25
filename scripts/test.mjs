@@ -2398,7 +2398,7 @@ Build the YAML-aware workspace work order.
 		initFresh.stdout,
 		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`),
 	);
-	assert.match(initFresh.stdout, /Seeded 1 migration doc into \.\/kb/);
+	assert.doesNotMatch(initFresh.stdout, /migration doc/);
 	const freshBase = readFileSync(join(initBridge, ".nosedive", "config.yaml"), "utf8");
 	assert.equal(
 		freshBase,
@@ -2422,33 +2422,52 @@ Build the YAML-aware workspace work order.
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
 	}
-	assert.equal(existsSync(join(initBridge, "kb", packageMigrationDoc)), true);
-	assert.equal(existsSync(join(initBridge, "kb", "artifacts", packageMigrationScript)), true);
+	// The migration doc/script are never manifested into a bridge's kb -- only
+	// surfaced inline in a failure, when they're actually actionable.
+	assert.equal(existsSync(join(initBridge, "kb", packageMigrationDoc)), false);
+	assert.equal(existsSync(join(initBridge, "kb", "artifacts")), false);
 	assert.equal(existsSync(join(initBridge, "kb", packageNonFoundationDoc)), false);
 	assert.equal(existsSync(join(initBridge, ".gitignore")), false);
+	assert.equal(
+		readFileSync(join(initBridge, ".nosedive", ".gitignore"), "utf8"),
+		["cache/", "migration-backups/", ""].join("\n"),
+	);
 	const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
 	assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
 	assert.match(initExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
-	assert.match(initExclude, new RegExp(`^kb/${packageMigrationDoc}$`, "m"));
-	assert.match(initExclude, new RegExp(`^kb/artifacts/${packageMigrationScript}$`, "m"));
 	assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
 	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
+	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageMigrationDoc}$`, "m"));
 	assert.doesNotMatch(initExclude, /\.nosedive\/config\.yaml/);
+	assert.doesNotMatch(initExclude, /\.nosedive\/\.gitignore/);
 	const initGitStatus = runTool(
 		"git",
 		["status", "--ignored", "--short", "--untracked-files=all"],
 		initBridge,
 	).stdout;
-	// The personal file is ignored; the base config is an ordinary trackable file.
+	// The personal file is ignored; the base config and .nosedive/.gitignore
+	// itself are ordinary trackable files. No root .gitignore is created.
 	assert.match(initGitStatus, /^!! \.nosedive\.local\.yaml$/m);
 	assert.match(initGitStatus, /^\?\? \.nosedive\/config\.yaml$/m);
+	assert.match(initGitStatus, /^\?\? \.nosedive\/\.gitignore$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
 	}
-	assert.doesNotMatch(initGitStatus, /\.gitignore/);
+	// .nosedive/'s own .gitignore covers the cache and migration-backups dirs.
+	mkdirSync(join(initBridge, ".nosedive", "cache"), { recursive: true });
+	mkdirSync(join(initBridge, ".nosedive", "migration-backups"), { recursive: true });
+	writeFileSync(join(initBridge, ".nosedive", "cache", "placeholder.txt"), "x", "utf8");
+	writeFileSync(join(initBridge, ".nosedive", "migration-backups", "placeholder.txt"), "x", "utf8");
+	const initGitStatusAfterDirs = runTool(
+		"git",
+		["status", "--ignored", "--short", "--untracked-files=all"],
+		initBridge,
+	).stdout;
+	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/cache\/placeholder\.txt$/m);
+	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/migration-backups\/placeholder\.txt$/m);
 
 	const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
 	assertOk(initReprompt, "init re-run with invalid agent failed");
@@ -2610,10 +2629,11 @@ current:
 		"workspace: ./workspace\n",
 	);
 
-	// A migration script failure surfaces the migration's summary plus a
-	// path to its seeded kb doc, so an agent hitting this can open the doc
-	// and act on it directly, and leaves the bridge unmigrated (recoverable
-	// from the pre-attempt backup) rather than partially written.
+	// A migration script failure surfaces the migration's summary plus the
+	// full content (gist + body) of its kb doc inline, so an agent hitting
+	// this can act on it directly without the doc needing to live anywhere
+	// in the bridge's kb, and leaves the bridge unmigrated (recoverable from
+	// the pre-attempt backup) rather than partially written.
 	const scriptFailureBridge = join(tmp, "script-failure-bridge");
 	mkdirSync(scriptFailureBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], scriptFailureBridge);
@@ -2636,7 +2656,10 @@ current:
 			initScriptFailure.stderr,
 			/migration '.*' \(v0->v1\) failed: simulated migration failure/,
 		);
-		assert.match(initScriptFailure.stderr, new RegExp(`kb[\\\\/]${packageMigrationDoc}`));
+		assert.match(initScriptFailure.stderr, /Split single \.nosediverc into checked-in/);
+		assert.match(initScriptFailure.stderr, /# Split Bridge Config/);
+		assert.match(initScriptFailure.stderr, /## Recovery/);
+		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
 		assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);
 		assert.equal(existsSync(join(scriptFailureBridge, ".nosedive", "config.yaml")), false);
 	} finally {

@@ -78,15 +78,32 @@ Example:
 
 ### init
 
-Create or edit `.nosediverc` in the current directory.
+Create, migrate, or edit bridge config in the current directory.
 
 Usage:
 
-`nosedive init`
+`nosedive init [--headless]`
 
-- Prompts for workspace, backlog, kb, home branch, work branch prefix, and
-  pilot identity, and `agents`.
-- Existing values (or defaults) are shown and kept by pressing Enter.
+- Bridge config is split across two files: `.nosedive/config.yaml` (checked
+  into git, team-shared — `workspace`, `backlog`, `kb`, `home-branch`,
+  `work-branch-prefix`, `agents`, and a `schema-version`) and
+  `.nosedive.local.yaml` (gitignored, personal — `pilot-name`, `pilot-email`).
+  `.nosedive/config.yaml`'s presence in a directory is what identifies that
+  directory as bridge root. `init` also writes `.nosedive/.gitignore`
+  (`cache/`, `migration-backups/`) every run.
+- Every run first migrates an out-of-date bridge config to the latest schema
+  — including the legacy single-file `.nosediverc` shape from older nosedive
+  versions — before prompting or writing. Already-current bridges are a cheap
+  no-op, so `init --headless` is safe to run at the start of every agent
+  session. A migration backs up whatever it's about to change under
+  `.nosedive/migration-backups/` first, and aborts with no writes at all if
+  the bridge's shape is ambiguous or doesn't match any known migration's
+  starting point.
+- Without `--headless`, prompts for workspace, backlog, kb, home branch, work
+  branch prefix, pilot identity, and `agents`; existing values (or defaults)
+  are shown and kept by pressing Enter.
+- `--headless` skips all prompts, keeping existing values or configured
+  defaults.
 - `agents` defaults to `copilot` (with `claude` as an optional additional
   target).
 
@@ -120,13 +137,14 @@ Usage:
 
 `nosedive whoami`
 
-- Searches upward for the nearest `.nosediverc`.
+- Searches upward for the nearest bridge config (`.nosedive/config.yaml` or
+  legacy `.nosediverc`).
 - Prints `pilot-name` and `pilot-email` from explicit bridge config.
 - Falls back per missing field to `git config user.name` or
   `git config user.email` with a notice on stderr.
 - Prints `<unset>` and exits nonzero when a missing field cannot be inferred
   from git config.
-- Does not modify `.nosediverc`, git excludes, backlog files, kb files, or
+- Does not modify bridge config, git excludes, backlog files, kb files, or
   workspace markers.
 
 ### hydrate-repo.workspace

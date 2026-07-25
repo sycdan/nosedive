@@ -28,6 +28,8 @@ const packageFoundationDocs = [
 ];
 const packageFoundationDocCount = packageFoundationDocs.length;
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";
+const packageMigrationDoc = "00000000-0061-77ed-a060-f803c8f5aa76.md";
+const packageMigrationScript = "00000000-0076-7dad-af72-3e32d35642f4.mjs";
 const gitLocalEnvKeys = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_COMMON_DIR",
@@ -2381,6 +2383,8 @@ Build the YAML-aware workspace work order.
 	assert.notEqual(unknownInitOption.status, 0, "init with unknown option unexpectedly succeeded");
 	assert.match(unknownInitOption.stderr, /unknown init option: --bogus/);
 
+	const wroteSplitFiles = /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/;
+
 	const initBridge = join(tmp, "init-bridge");
 	mkdirSync(initBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], initBridge);
@@ -2389,57 +2393,88 @@ Build the YAML-aware workspace work order.
 
 	const initFresh = run(["init"], initBridge, "\n\n\n\n\n\n\n\n");
 	assertOk(initFresh, "init on empty directory failed");
-	assert.match(initFresh.stdout, /Wrote \.nosediverc/);
+	assert.match(initFresh.stdout, wroteSplitFiles);
 	assert.match(
 		initFresh.stdout,
 		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`),
 	);
-	const freshRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
+	assert.doesNotMatch(initFresh.stdout, /migration doc/);
+	const freshBase = readFileSync(join(initBridge, ".nosedive", "config.yaml"), "utf8");
 	assert.equal(
-		freshRc,
+		freshBase,
 		[
+			"schema-version: 1",
 			"workspace: ./workspace",
 			"backlog: ./backlog",
 			"kb: ./kb",
 			"home-branch: main",
 			"work-branch-prefix: work/",
-			"pilot-name: Init Person",
-			"pilot-email: init@example.invalid",
 			"agents:",
 			"  - copilot",
 			"",
 		].join("\n"),
 	);
+	const freshLocal = readFileSync(join(initBridge, ".nosedive.local.yaml"), "utf8");
+	assert.equal(
+		freshLocal,
+		["pilot-name: Init Person", "pilot-email: init@example.invalid", ""].join("\n"),
+	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), true);
 	}
+	// The migration doc/script are never manifested into a bridge's kb -- only
+	// surfaced inline in a failure, when they're actually actionable.
+	assert.equal(existsSync(join(initBridge, "kb", packageMigrationDoc)), false);
+	assert.equal(existsSync(join(initBridge, "kb", "artifacts")), false);
 	assert.equal(existsSync(join(initBridge, "kb", packageNonFoundationDoc)), false);
 	assert.equal(existsSync(join(initBridge, ".gitignore")), false);
+	assert.equal(
+		readFileSync(join(initBridge, ".nosedive", ".gitignore"), "utf8"),
+		["cache/", "migration-backups/", ""].join("\n"),
+	);
 	const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
 	assert.match(initExclude, /# BEGIN nosedive-managed package-foundation exclude/);
-	assert.match(initExclude, /^\.nosediverc$/m);
+	assert.match(initExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
 	assert.match(initExclude, /# END nosedive-managed package-foundation exclude/);
 	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
+	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageMigrationDoc}$`, "m"));
+	assert.doesNotMatch(initExclude, /\.nosedive\/config\.yaml/);
+	assert.doesNotMatch(initExclude, /\.nosedive\/\.gitignore/);
 	const initGitStatus = runTool(
 		"git",
 		["status", "--ignored", "--short", "--untracked-files=all"],
 		initBridge,
 	).stdout;
-	assert.match(initGitStatus, /^!! \.nosediverc$/m);
+	// The personal file is ignored; the base config and .nosedive/.gitignore
+	// itself are ordinary trackable files. No root .gitignore is created.
+	assert.match(initGitStatus, /^!! \.nosedive\.local\.yaml$/m);
+	assert.match(initGitStatus, /^\?\? \.nosedive\/config\.yaml$/m);
+	assert.match(initGitStatus, /^\?\? \.nosedive\/\.gitignore$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(initGitStatus, new RegExp(`!! kb/${packageFoundationDoc}`));
 	}
-	assert.doesNotMatch(initGitStatus, /\.gitignore/);
+	// .nosedive/'s own .gitignore covers the cache and migration-backups dirs.
+	mkdirSync(join(initBridge, ".nosedive", "cache"), { recursive: true });
+	mkdirSync(join(initBridge, ".nosedive", "migration-backups"), { recursive: true });
+	writeFileSync(join(initBridge, ".nosedive", "cache", "placeholder.txt"), "x", "utf8");
+	writeFileSync(join(initBridge, ".nosedive", "migration-backups", "placeholder.txt"), "x", "utf8");
+	const initGitStatusAfterDirs = runTool(
+		"git",
+		["status", "--ignored", "--short", "--untracked-files=all"],
+		initBridge,
+	).stdout;
+	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/cache\/placeholder\.txt$/m);
+	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/migration-backups\/placeholder\.txt$/m);
 
 	const initReprompt = run(["init"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
 	assertOk(initReprompt, "init re-run with invalid agent failed");
 	assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
-	const repromptedRc = readFileSync(join(initBridge, ".nosediverc"), "utf8");
-	assert.match(repromptedRc, /workspace: \.\/workspace/);
-	assert.match(repromptedRc, /agents:\n  - copilot\n  - claude\n$/);
+	const repromptedBase = readFileSync(join(initBridge, ".nosedive", "config.yaml"), "utf8");
+	assert.match(repromptedBase, /workspace: \.\/workspace/);
+	assert.match(repromptedBase, /agents:\n  - copilot\n  - claude\n$/);
 
 	const headlessFreshBridge = join(tmp, "headless-fresh-bridge");
 	mkdirSync(headlessFreshBridge, { recursive: true });
@@ -2451,25 +2486,28 @@ Build the YAML-aware workspace work order.
 	assertOk(initHeadlessFresh, "headless init on empty directory failed");
 	assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
-	assert.match(initHeadlessFresh.stdout, /Wrote \.nosediverc/);
+	assert.match(initHeadlessFresh.stdout, wroteSplitFiles);
 	assert.match(
 		initHeadlessFresh.stdout,
 		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/kb`),
 	);
 	assert.equal(
-		readFileSync(join(headlessFreshBridge, ".nosediverc"), "utf8"),
+		readFileSync(join(headlessFreshBridge, ".nosedive", "config.yaml"), "utf8"),
 		[
+			"schema-version: 1",
 			"workspace: ./workspace",
 			"backlog: ./backlog",
 			"kb: ./kb",
 			"home-branch: main",
 			"work-branch-prefix: work/",
-			"pilot-name: Headless Person",
-			"pilot-email: headless@example.invalid",
 			"agents:",
 			"  - copilot",
 			"",
 		].join("\n"),
+	);
+	assert.equal(
+		readFileSync(join(headlessFreshBridge, ".nosedive.local.yaml"), "utf8"),
+		["pilot-name: Headless Person", "pilot-email: headless@example.invalid", ""].join("\n"),
 	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), true);
@@ -2478,11 +2516,15 @@ Build the YAML-aware workspace work order.
 		join(headlessFreshBridge, ".git", "info", "exclude"),
 		"utf8",
 	);
-	assert.match(headlessFreshExclude, /^\.nosediverc$/m);
+	assert.match(headlessFreshExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
 
+	// A legacy single-file bridge is auto-migrated to the split shape before
+	// headless init resolves and (re)writes settings -- this is the scenario
+	// an agent hits running `init --headless` at session start on an
+	// old bridge.
 	const headlessExistingBridge = join(tmp, "headless-existing-bridge");
 	mkdirSync(headlessExistingBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], headlessExistingBridge);
@@ -2495,31 +2537,37 @@ kb: ./custom-kb
 pilot-name: Existing Pilot
 agents:
   - claude
+current:
+  effort: some-effort/SomeEffort.md
 `,
 	);
 
 	const initHeadlessExisting = run(["init", "--headless"], headlessExistingBridge, "");
-	assertOk(initHeadlessExisting, "headless init with existing config failed");
+	assertOk(initHeadlessExisting, "headless init with existing legacy config failed");
 	assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
 	assert.match(
 		initHeadlessExisting.stdout,
 		new RegExp(`Seeded ${packageFoundationDocCount} foundation docs into \\.\\/custom-kb`),
 	);
+	assert.equal(existsSync(join(headlessExistingBridge, ".nosediverc")), false);
 	assert.equal(
-		readFileSync(join(headlessExistingBridge, ".nosediverc"), "utf8"),
+		readFileSync(join(headlessExistingBridge, ".nosedive", "config.yaml"), "utf8"),
 		[
+			"schema-version: 1",
 			"workspace: ./custom-workspace",
 			"backlog: ./backlog",
 			"kb: ./custom-kb",
 			"home-branch: main",
 			"work-branch-prefix: work/",
-			"pilot-name: Existing Pilot",
-			"pilot-email: detected@example.invalid",
 			"agents:",
 			"  - claude",
 			"",
 		].join("\n"),
+	);
+	assert.equal(
+		readFileSync(join(headlessExistingBridge, ".nosedive.local.yaml"), "utf8"),
+		["pilot-name: Existing Pilot", "pilot-email: detected@example.invalid", ""].join("\n"),
 	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)), true);
@@ -2528,9 +2576,94 @@ agents:
 		join(headlessExistingBridge, ".git", "info", "exclude"),
 		"utf8",
 	);
-	assert.match(headlessExistingExclude, /^\.nosediverc$/m);
+	assert.match(headlessExistingExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.match(headlessExistingExclude, new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"));
+	}
+	// The pre-migration file is preserved as a recovery backup.
+	const existingBackupRoot = join(headlessExistingBridge, ".nosedive", "migration-backups");
+	const existingBackupDirs = readdirSync(existingBackupRoot);
+	assert.equal(existingBackupDirs.length, 1);
+	assert.match(existingBackupDirs[0], /^v0-to-v1-/);
+	assert.match(
+		readFileSync(join(existingBackupRoot, existingBackupDirs[0], ".nosediverc"), "utf8"),
+		/pilot-name: Existing Pilot/,
+	);
+
+	// Re-running init on an already-migrated, already-current bridge is a
+	// no-op with respect to migration: no new backup is created.
+	const initHeadlessAgain = run(["init", "--headless"], headlessExistingBridge, "");
+	assertOk(initHeadlessAgain, "second headless init on migrated bridge failed");
+	assert.equal(readdirSync(existingBackupRoot).length, 1);
+
+	// Both a legacy file and a split base config present at once is
+	// unrecognized/ambiguous: init aborts loudly and writes nothing.
+	const ambiguousBridge = join(tmp, "ambiguous-bridge");
+	mkdirSync(ambiguousBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], ambiguousBridge);
+	write(join(ambiguousBridge, ".nosediverc"), "workspace: ./workspace\n");
+	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "schema-version: 1\n");
+	const initAmbiguous = run(["init", "--headless"], ambiguousBridge, "");
+	assert.notEqual(initAmbiguous.status, 0, "init with ambiguous config unexpectedly succeeded");
+	assert.match(initAmbiguous.stderr, /bridge config is ambiguous/);
+	assert.equal(
+		readFileSync(join(ambiguousBridge, ".nosediverc"), "utf8"),
+		"workspace: ./workspace\n",
+	);
+	assert.equal(
+		readFileSync(join(ambiguousBridge, ".nosedive", "config.yaml"), "utf8"),
+		"schema-version: 1\n",
+	);
+
+	// A split base config with no readable schema-version is likewise
+	// unrecognized: init refuses to guess rather than silently overwriting.
+	const unversionedBridge = join(tmp, "unversioned-bridge");
+	mkdirSync(unversionedBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], unversionedBridge);
+	write(join(unversionedBridge, ".nosedive", "config.yaml"), "workspace: ./workspace\n");
+	const initUnversioned = run(["init", "--headless"], unversionedBridge, "");
+	assert.notEqual(initUnversioned.status, 0, "init with unversioned config unexpectedly succeeded");
+	assert.match(initUnversioned.stderr, /no readable schema-version/);
+	assert.equal(
+		readFileSync(join(unversionedBridge, ".nosedive", "config.yaml"), "utf8"),
+		"workspace: ./workspace\n",
+	);
+
+	// A migration script failure surfaces the migration's summary plus the
+	// full content (gist + body) of its kb doc inline, so an agent hitting
+	// this can act on it directly without the doc needing to live anywhere
+	// in the bridge's kb, and leaves the bridge unmigrated (recoverable from
+	// the pre-attempt backup) rather than partially written.
+	const scriptFailureBridge = join(tmp, "script-failure-bridge");
+	mkdirSync(scriptFailureBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], scriptFailureBridge);
+	write(join(scriptFailureBridge, ".nosediverc"), "workspace: ./workspace\nkb: ./kb\n");
+	const migrationScriptPath = join(root, "kb", "artifacts", packageMigrationScript);
+	const originalMigrationScript = readFileSync(migrationScriptPath, "utf8");
+	try {
+		writeFileSync(
+			migrationScriptPath,
+			'export function migrate() { throw new Error("simulated migration failure"); }\n',
+			"utf8",
+		);
+		const initScriptFailure = run(["init", "--headless"], scriptFailureBridge, "");
+		assert.notEqual(
+			initScriptFailure.status,
+			0,
+			"init with a failing migration script unexpectedly succeeded",
+		);
+		assert.match(
+			initScriptFailure.stderr,
+			/migration '.*' \(v0->v1\) failed: simulated migration failure/,
+		);
+		assert.match(initScriptFailure.stderr, /Split single \.nosediverc into checked-in/);
+		assert.match(initScriptFailure.stderr, /# Split Bridge Config/);
+		assert.match(initScriptFailure.stderr, /## Recovery/);
+		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
+		assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);
+		assert.equal(existsSync(join(scriptFailureBridge, ".nosedive", "config.yaml")), false);
+	} finally {
+		writeFileSync(migrationScriptPath, originalMigrationScript, "utf8");
 	}
 
 	const nonGitInit = join(tmp, "non-git-init");

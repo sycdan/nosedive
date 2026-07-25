@@ -2,8 +2,8 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	existsSync,
 	mkdirSync,
@@ -66,6 +66,29 @@ const DEFAULT_RC = {
 	"work-branch-prefix": "work/",
 	agents: ["copilot"],
 };
+
+// --- bridge config shape -----------------------------------------------
+
+const SPLIT_CONFIG_DIRNAME = ".nosedive";
+const BASE_CONFIG_FILENAME = "config.yaml";
+const LOCAL_CONFIG_FILENAME = ".nosedive.local.yaml";
+const LEGACY_CONFIG_FILENAME = ".nosediverc";
+const MIGRATION_BACKUP_DIRNAME = "migration-backups";
+
+/** Schema version a freshly-migrated or freshly-init'd bridge ends up on. */
+const CURRENT_SCHEMA_VERSION = 1;
+
+const BASE_CONFIG_KNOWN_KEYS = [
+	"schema-version",
+	"workspace",
+	"backlog",
+	"kb",
+	"home-branch",
+	"work-branch-prefix",
+	"agents",
+] as const;
+
+const LOCAL_CONFIG_KNOWN_KEYS = ["pilot-name", "pilot-email"] as const;
 
 // --- frontmatter -----------------------------------------------------------
 
@@ -222,29 +245,77 @@ function formatPath(path: string): string {
 	return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel || "." : path;
 }
 
-function findBridgeConfig(start: string): string | undefined {
+function baseConfigPath(bridgeDir: string): string {
+	return join(bridgeDir, SPLIT_CONFIG_DIRNAME, BASE_CONFIG_FILENAME);
+}
+
+function localConfigPath(bridgeDir: string): string {
+	return join(bridgeDir, LOCAL_CONFIG_FILENAME);
+}
+
+function legacyConfigPath(bridgeDir: string): string {
+	return join(bridgeDir, LEGACY_CONFIG_FILENAME);
+}
+
+type ResolvedBridgeConfig =
+	| { shape: "split"; bridgeDir: string; basePath: string; localPath: string }
+	| { shape: "legacy"; bridgeDir: string; legacyPath: string };
+
+/**
+ * Walk upward from `start` looking for bridge config. Split-shape
+ * (`.nosedive/config.yaml`) takes priority over legacy (`.nosediverc`) at
+ * each directory, so a bridge mid-migration can't be shadowed by a stale
+ * legacy file left one level up.
+ */
+function findBridgeConfig(start: string): ResolvedBridgeConfig | undefined {
 	let dir = resolve(start);
-	while (true) {
-		const candidate = join(dir, ".nosediverc");
-		if (existsSync(candidate)) return candidate;
+	for (;;) {
+		const basePath = baseConfigPath(dir);
+		if (existsSync(basePath))
+			return { shape: "split", bridgeDir: dir, basePath, localPath: localConfigPath(dir) };
+		const legacyPath = legacyConfigPath(dir);
+		if (existsSync(legacyPath)) return { shape: "legacy", bridgeDir: dir, legacyPath };
 		const parent = dirname(dir);
 		if (parent === dir) return undefined;
 		dir = parent;
 	}
 }
 
-export function readNosediveRc(start: string): NosediveRc {
-	const rcPath = findBridgeConfig(start);
-	if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+function noBridgeConfigError(): Error {
+	return new Error(
+		`not inside a nosedive bridge: no ${SPLIT_CONFIG_DIRNAME}/${BASE_CONFIG_FILENAME} or ${LEGACY_CONFIG_FILENAME} found`,
+	);
+}
 
-	const bridgeDir = dirname(rcPath);
-	const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
+/** Merge base config with personal local overrides; local wins on conflicts. */
+function readSplitEffectiveYaml(basePath: string, localPath: string): SimpleYaml {
+	const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
+	const local = existsSync(localPath)
+		? parseYamlBlock(readFileSync(localPath, "utf8"), localPath)
+		: emptyYaml();
+	return {
+		scalars: { ...base.scalars, ...local.scalars },
+		lists: { ...base.lists, ...local.lists },
+		nested: { ...base.nested, ...local.nested },
+		nestedLists: { ...base.nestedLists, ...local.nestedLists },
+	};
+}
+
+export function readNosediveRc(start: string): NosediveRc {
+	const resolved = findBridgeConfig(start);
+	if (!resolved) throw noBridgeConfigError();
+
+	const bridgeDir = resolved.bridgeDir;
+	const rc =
+		resolved.shape === "split"
+			? readSplitEffectiveYaml(resolved.basePath, resolved.localPath)
+			: parseYamlBlock(readFileSync(resolved.legacyPath, "utf8"), resolved.legacyPath);
 	const workspace = rc.scalars.workspace;
 	const backlog = rc.scalars.backlog;
 	const kb = rc.scalars.kb;
 
 	return {
-		path: rcPath,
+		path: resolved.shape === "split" ? resolved.basePath : resolved.legacyPath,
 		bridgeDir,
 		workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
 		backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
@@ -262,12 +333,16 @@ export function readNosediveRc(start: string): NosediveRc {
 }
 
 export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurrent): void {
-	const rcPath = findBridgeConfig(start);
-	if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
+	const resolved = findBridgeConfig(start);
+	if (!resolved) throw noBridgeConfigError();
 
-	const doc = parseDocument(readFileSync(rcPath, "utf8"));
+	// `current.*` is transient per-developer state, so it belongs in the
+	// personal local file on a split bridge, and in the single file on a
+	// legacy one.
+	const targetPath = resolved.shape === "split" ? resolved.localPath : resolved.legacyPath;
+	const doc = parseDocument(existsSync(targetPath) ? readFileSync(targetPath, "utf8") : "");
 	if (doc.errors.length > 0)
-		throw new Error(`invalid YAML in ${rcPath}: ${doc.errors[0]?.message ?? "unknown error"}`);
+		throw new Error(`invalid YAML in ${targetPath}: ${doc.errors[0]?.message ?? "unknown error"}`);
 
 	if (!current?.effort) {
 		doc.deleteIn(["current"]);
@@ -276,7 +351,7 @@ export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurren
 		if (!current.effort) doc.deleteIn(["current", "effort"]);
 	}
 
-	writeFileAtomic(rcPath, doc.toString());
+	writeFileAtomic(targetPath, doc.toString());
 }
 
 // --- init --------------------------------------------------------------
@@ -314,33 +389,202 @@ function parseInitOptions(args: string[]): InitOptions {
 	return options;
 }
 
-function loadRcSettings(rcPath: string, bridgeDir: string): RcSettings {
+/** Load effective settings from the split config shape at `bridgeDir`, defaulting missing fields. */
+function loadSplitRcSettings(bridgeDir: string): RcSettings {
 	const detectedPilot = loadGitPilotIdentity(bridgeDir);
-	if (!existsSync(rcPath)) {
-		return {
-			workspace: DEFAULT_RC.workspace,
-			backlog: DEFAULT_RC.backlog,
-			kb: DEFAULT_RC.kb,
-			homeBranch: DEFAULT_RC["home-branch"],
-			workBranchPrefix: DEFAULT_RC["work-branch-prefix"],
-			pilotName: detectedPilot.pilotName,
-			pilotEmail: detectedPilot.pilotEmail,
-			agents: [...DEFAULT_RC.agents],
-		};
+	const basePath = baseConfigPath(bridgeDir);
+	const base = existsSync(basePath)
+		? parseYamlBlock(readFileSync(basePath, "utf8"), basePath)
+		: emptyYaml();
+	const localPath = localConfigPath(bridgeDir);
+	const local = existsSync(localPath)
+		? parseYamlBlock(readFileSync(localPath, "utf8"), localPath)
+		: emptyYaml();
+
+	return {
+		workspace: base.scalars.workspace ?? DEFAULT_RC.workspace,
+		backlog: base.scalars.backlog ?? DEFAULT_RC.backlog,
+		kb: base.scalars.kb ?? DEFAULT_RC.kb,
+		homeBranch: base.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
+		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
+		pilotName: local.scalars["pilot-name"] ?? detectedPilot.pilotName,
+		pilotEmail: local.scalars["pilot-email"] ?? detectedPilot.pilotEmail,
+		agents:
+			base.lists.agents && base.lists.agents.length > 0
+				? base.lists.agents
+				: [...DEFAULT_RC.agents],
+	};
+}
+
+function renderBaseConfig(settings: RcSettings, schemaVersion: number): string {
+	return [
+		`schema-version: ${schemaVersion}`,
+		`workspace: ${settings.workspace}`,
+		`backlog: ${settings.backlog}`,
+		`kb: ${settings.kb}`,
+		`home-branch: ${settings.homeBranch}`,
+		`work-branch-prefix: ${settings.workBranchPrefix}`,
+		`agents:`,
+		...settings.agents.map((agent) => `  - ${agent}`),
+		"",
+	].join("\n");
+}
+
+function renderLocalConfig(settings: RcSettings): string {
+	return [`pilot-name: ${settings.pilotName}`, `pilot-email: ${settings.pilotEmail}`, ""].join(
+		"\n",
+	);
+}
+
+// --- migrations ----------------------------------------------------------
+
+interface MigrationContext {
+	bridgeDir: string;
+}
+
+interface Migration {
+	fromVersion: number;
+	toVersion: number;
+	/** kind: migration kb doc id, read from the package (never seeded into a bridge's kb) for error output. */
+	docId: string;
+	/** Script artifact path, relative to the installed package root. */
+	scriptRelPath: string;
+	/** Short human-facing description, mirrors the doc's gist, for log/error output. */
+	summary: string;
+}
+
+const MIGRATIONS: Migration[] = [
+	{
+		fromVersion: 0,
+		toVersion: 1,
+		docId: "00000000-0061-77ed-a060-f803c8f5aa76",
+		scriptRelPath: join("kb", "artifacts", "00000000-0076-7dad-af72-3e32d35642f4.mjs"),
+		summary:
+			"Split single .nosediverc into checked-in .nosedive/config.yaml plus gitignored .nosedive.local.yaml",
+	},
+];
+
+type ConfigShapeInfo =
+	| { kind: "none" }
+	| { kind: "legacy" }
+	| { kind: "split"; version: number }
+	| { kind: "split-unversioned" }
+	| { kind: "ambiguous" };
+
+/** Detect config shape in `bridgeDir` only -- init never considers ancestor directories. */
+function detectConfigShapeAt(bridgeDir: string): ConfigShapeInfo {
+	const hasBase = existsSync(baseConfigPath(bridgeDir));
+	const hasLegacy = existsSync(legacyConfigPath(bridgeDir));
+
+	if (hasBase && hasLegacy) return { kind: "ambiguous" };
+	if (hasBase) {
+		const basePath = baseConfigPath(bridgeDir);
+		const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
+		const raw = base.scalars["schema-version"];
+		const version = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+		return Number.isInteger(version) ? { kind: "split", version } : { kind: "split-unversioned" };
+	}
+	if (hasLegacy) return { kind: "legacy" };
+	return { kind: "none" };
+}
+
+/**
+ * Full content of a migration's kb doc (gist + body), read directly from the
+ * installed package -- never seeded into a bridge's kb, so this is the only
+ * place a developer or agent sees it: inline in a failure, when it's
+ * actually actionable.
+ */
+function describeMigrationForError(docId: string): string {
+	const doc = packageMigrationDocs().find((d) => d.filename === `${docId}.md`);
+	if (!doc) return `(kind: migration doc ${docId} not found in the installed nosedive package)`;
+	const parsed = parseMarkdownDoc(doc.content, doc.filename);
+	const gist = parsed.fm.scalars.gist;
+	const body = parsed.body.trim();
+	return [gist, "", body].filter((line): line is string => line !== undefined).join("\n");
+}
+
+function backupBeforeMigration(bridgeDir: string, migration: Migration, paths: string[]): void {
+	const existing = paths.filter((p) => existsSync(p));
+	if (existing.length === 0) return;
+
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	const dir = join(
+		bridgeDir,
+		SPLIT_CONFIG_DIRNAME,
+		MIGRATION_BACKUP_DIRNAME,
+		`v${migration.fromVersion}-to-v${migration.toVersion}-${stamp}`,
+	);
+	for (const path of existing) {
+		writeFileAtomic(join(dir, basename(path)), readFileSync(path, "utf8"));
+	}
+}
+
+async function runMigration(migration: Migration, ctx: MigrationContext): Promise<void> {
+	const scriptPath = join(packageRoot(), migration.scriptRelPath);
+	const mod = (await import(pathToFileURL(scriptPath).href)) as {
+		migrate?: (ctx: MigrationContext) => void;
+	};
+	if (typeof mod.migrate !== "function")
+		throw new Error(`migration script ${migration.scriptRelPath} does not export migrate()`);
+	mod.migrate(ctx);
+}
+
+/**
+ * Run every pending migration for `bridgeDir`, in order, failing loudly (with
+ * no partial writes for the blocking step) on any unrecognized/ambiguous
+ * shape or migration failure. Returns quickly with no I/O beyond the shape
+ * check when the bridge is already current.
+ */
+async function migrateBridgeConfig(bridgeDir: string): Promise<void> {
+	const shape = detectConfigShapeAt(bridgeDir);
+
+	if (shape.kind === "ambiguous") {
+		throw new Error(
+			`bridge config is ambiguous: both ${formatPath(legacyConfigPath(bridgeDir))} and ` +
+				`${formatPath(baseConfigPath(bridgeDir))} exist. Remove or reconcile one manually before running init again.`,
+		);
+	}
+	if (shape.kind === "split-unversioned") {
+		throw new Error(
+			`${formatPath(baseConfigPath(bridgeDir))} exists but has no readable schema-version; ` +
+				`refusing to guess its migration state. Fix or remove it manually before running init again.`,
+		);
 	}
 
-	const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
-	return {
-		workspace: rc.scalars.workspace ?? DEFAULT_RC.workspace,
-		backlog: rc.scalars.backlog ?? DEFAULT_RC.backlog,
-		kb: rc.scalars.kb ?? DEFAULT_RC.kb,
-		homeBranch: rc.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
-		workBranchPrefix: rc.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
-		pilotName: rc.scalars["pilot-name"] ?? detectedPilot.pilotName,
-		pilotEmail: rc.scalars["pilot-email"] ?? detectedPilot.pilotEmail,
-		agents:
-			rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
-	};
+	let version =
+		shape.kind === "none" ? CURRENT_SCHEMA_VERSION : shape.kind === "legacy" ? 0 : shape.version;
+	if (version === CURRENT_SCHEMA_VERSION) return; // already current: no-op, no further I/O
+
+	const ctx: MigrationContext = { bridgeDir };
+	while (version < CURRENT_SCHEMA_VERSION) {
+		const migration = MIGRATIONS.find((m) => m.fromVersion === version);
+		if (!migration) {
+			const known = MIGRATIONS.map(
+				(m) => `  v${m.fromVersion}->v${m.toVersion}: ${m.summary}`,
+			).join("\n");
+			throw new Error(
+				`no migration path from schema version ${version} to ${CURRENT_SCHEMA_VERSION}; ` +
+					`bridge config is in an unrecognized state.\nKnown migrations:\n${known}`,
+			);
+		}
+
+		backupBeforeMigration(bridgeDir, migration, [
+			legacyConfigPath(bridgeDir),
+			baseConfigPath(bridgeDir),
+		]);
+
+		try {
+			await runMigration(migration, ctx);
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(
+				`migration '${migration.summary}' (v${migration.fromVersion}->v${migration.toVersion}) failed: ${detail}\n\n` +
+					describeMigrationForError(migration.docId),
+			);
+		}
+
+		version = migration.toVersion;
+	}
 }
 
 function loadGitPilotIdentity(bridgeDir: string): Pick<RcSettings, "pilotName" | "pilotEmail"> {
@@ -400,26 +644,11 @@ async function promptAgents(iter: LineIterator, current: string[]): Promise<stri
 	}
 }
 
-function renderRc(settings: RcSettings): string {
-	return [
-		`workspace: ${settings.workspace}`,
-		`backlog: ${settings.backlog}`,
-		`kb: ${settings.kb}`,
-		`home-branch: ${settings.homeBranch}`,
-		`work-branch-prefix: ${settings.workBranchPrefix}`,
-		`pilot-name: ${settings.pilotName}`,
-		`pilot-email: ${settings.pilotEmail}`,
-		`agents:`,
-		...settings.agents.map((agent) => `  - ${agent}`),
-		"",
-	].join("\n");
-}
-
 function packageRoot(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
-function packageFoundationDocs(): Array<{ filename: string; content: string }> {
+function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {
 	const kbDir = join(packageRoot(), "kb");
 	if (!existsSync(kbDir)) return [];
 
@@ -429,13 +658,24 @@ function packageFoundationDocs(): Array<{ filename: string; content: string }> {
 			const sourcePath = join(kbDir, entry.name);
 			const content = readFileSync(sourcePath, "utf8");
 			const fm = parseMarkdownFrontmatter(content, sourcePath);
-			return fm.scalars.kind === "foundation" ? { filename: entry.name, content } : undefined;
+			return fm.scalars.kind === kind ? { filename: entry.name, content } : undefined;
 		})
 		.filter((doc): doc is { filename: string; content: string } => doc !== undefined);
 }
 
-function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] {
-	const docs = packageFoundationDocs();
+function packageFoundationDocs(): Array<{ filename: string; content: string }> {
+	return packageDocsOfKind("foundation");
+}
+
+function packageMigrationDocs(): Array<{ filename: string; content: string }> {
+	return packageDocsOfKind("migration");
+}
+
+function seedPackageDocs(
+	bridgeDir: string,
+	kbPath: string,
+	docs: Array<{ filename: string; content: string }>,
+): string[] {
 	if (docs.length === 0) return [];
 
 	const kbDir = resolveFrom(bridgeDir, kbPath);
@@ -448,23 +688,42 @@ function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] 
 	});
 }
 
+function seedPackageFoundationDocs(bridgeDir: string, kbPath: string): string[] {
+	return seedPackageDocs(bridgeDir, kbPath, packageFoundationDocs());
+}
+
+const NOSEDIVE_DIR_GITIGNORE = ["cache/", `${MIGRATION_BACKUP_DIRNAME}/`, ""].join("\n");
+
+/** nosedive owns ignore rules for its own state under `.nosedive/`: the git cache and migration backups are local, `config.yaml` is not. */
+function writeNosediveDirGitignore(bridgeDir: string): void {
+	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
+}
+
 async function init(args: string[]): Promise<void> {
 	const options = parseInitOptions(args);
 	if (options.help) {
 		console.log("Usage: nosedive init [--headless]");
-		console.log("  Create or edit .nosediverc in the current directory.");
+		console.log(
+			"  Create, migrate, or edit bridge config (.nosedive/config.yaml + .nosedive.local.yaml) in the current directory.",
+		);
 		console.log(
 			"  Existing values (or built-in defaults) are shown as the default for each prompt; press Enter to keep it.",
 		);
 		console.log("  --headless skips prompts and writes existing values or configured defaults.");
+		console.log(
+			"  Every run first migrates an out-of-date bridge config to the latest schema (a no-op when already current).",
+		);
 		return;
 	}
 
-	const rcPath = join(process.cwd(), ".nosediverc");
-	if (!gitOutput(process.cwd(), ["rev-parse", "--show-toplevel"])) {
+	const bridgeDir = process.cwd();
+	if (!gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"])) {
 		throw new Error("nosedive init must be run inside a git repository");
 	}
-	const settings = loadRcSettings(rcPath, process.cwd());
+
+	await migrateBridgeConfig(bridgeDir);
+
+	const settings = loadSplitRcSettings(bridgeDir);
 
 	if (!options.headless) {
 		const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -487,10 +746,15 @@ async function init(args: string[]): Promise<void> {
 		}
 	}
 
-	writeFileAtomic(rcPath, renderRc(settings));
-	console.log(`Wrote ${formatPath(rcPath)}`);
-	const seededFoundationDocs = seedPackageFoundationDocs(process.cwd(), settings.kb);
-	for (const warning of manageFoundationGitState([rcPath, ...seededFoundationDocs]))
+	const basePath = baseConfigPath(bridgeDir);
+	const localPath = localConfigPath(bridgeDir);
+	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_SCHEMA_VERSION));
+	writeFileAtomic(localPath, renderLocalConfig(settings));
+	writeNosediveDirGitignore(bridgeDir);
+	console.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
+
+	const seededFoundationDocs = seedPackageFoundationDocs(bridgeDir, settings.kb);
+	for (const warning of manageFoundationGitState([localPath, ...seededFoundationDocs]))
 		console.error(`warning: ${warning}`);
 	if (seededFoundationDocs.length > 0) {
 		console.log(
@@ -544,27 +808,23 @@ function whoami(args: string[]): void {
 		return;
 	}
 
-	const rcPath = findBridgeConfig(process.cwd());
-	if (!rcPath) throw new Error("not inside a nosedive bridge: no .nosediverc found");
-
-	const bridgeDir = dirname(rcPath);
-	const rc = parseYamlBlock(readFileSync(rcPath, "utf8"), rcPath);
-	const detected = loadGitPilotIdentity(bridgeDir);
+	const rc = readNosediveRc(process.cwd());
+	const detected = loadGitPilotIdentity(rc.bridgeDir);
 	const fields = [
-		resolveIdentityField("pilot-name", rc.scalars["pilot-name"], detected.pilotName),
-		resolveIdentityField("pilot-email", rc.scalars["pilot-email"], detected.pilotEmail),
+		resolveIdentityField("pilot-name", rc.pilotName, detected.pilotName),
+		resolveIdentityField("pilot-email", rc.pilotEmail, detected.pilotEmail),
 	];
 
 	for (const field of fields) console.log(`${field.key}: ${field.value}`);
 	for (const field of fields) {
 		if (field.source === "git") {
 			console.error(
-				`notice: ${field.key} inferred from git config; run \`nosedive init\` to persist it in .nosediverc`,
+				`notice: ${field.key} inferred from git config; run \`nosedive init\` to persist it`,
 			);
 		}
 		if (field.source === "unset") {
 			console.error(
-				`notice: ${field.key} is not configured in .nosediverc or git config; run \`nosedive init\` to persist it in .nosediverc`,
+				`notice: ${field.key} is not configured in bridge config or git config; run \`nosedive init\` to persist it`,
 			);
 		}
 	}
@@ -2955,7 +3215,7 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	end: FOUNDATION_EXCLUDE_END,
 	header: [
 		"# owner: nosedive init",
-		"# reason: .nosediverc and package foundation docs are local bootstrap artifacts",
+		"# reason: .nosedive.local.yaml and package foundation docs are local bootstrap artifacts",
 	],
 };
 

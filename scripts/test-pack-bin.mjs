@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -61,6 +61,8 @@ const expectedFoundationDocs = [
 	"0000002d-c6c0-7354-a306-7624c2db8283.md",
 	"0000004c-4b40-7ee6-a8de-1f3b50de9a0b.md",
 ];
+const expectedMigrationDoc = "00000000-0061-77ed-a060-f803c8f5aa76.md";
+const expectedMigrationScript = "00000000-0076-7dad-af72-3e32d35642f4.mjs";
 
 try {
 	const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
@@ -74,18 +76,20 @@ try {
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive init --headless"],
 		initBridge,
 	);
-	assert.match(init.stdout, /Wrote \.nosediverc/);
+	assert.match(init.stdout, /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/);
 	assert.match(
 		init.stdout,
 		new RegExp(`Seeded ${expectedFoundationDocs.length} foundation docs into \\.\\/kb`),
 	);
+	assert.match(init.stdout, /Seeded 1 migration doc into \.\/kb/);
 	const seededFilenames = readdirSync(join(initBridge, "kb"))
 		.filter((filename) => filename.endsWith(".md"))
 		.sort();
-	assert.deepEqual(seededFilenames, expectedFoundationDocs);
+	assert.deepEqual(seededFilenames, [...expectedFoundationDocs, expectedMigrationDoc].sort());
+	assert.equal(existsSync(join(initBridge, "kb", "artifacts", expectedMigrationScript)), true);
 	assert.match(
 		readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8"),
-		/^\.nosediverc$/m,
+		/^\.nosedive\.local\.yaml$/m,
 	);
 	const seededDocs = seededFilenames
 		.filter((filename) => filename.endsWith(".md"))

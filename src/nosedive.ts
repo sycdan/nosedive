@@ -445,7 +445,7 @@ interface MigrationContext {
 interface Migration {
 	fromVersion: number;
 	toVersion: number;
-	/** kind: migration kb doc id, seeded into every bridge's kb like foundation docs. */
+	/** kind: migration kb doc id, read from the package (never seeded into a bridge's kb) for error output. */
 	docId: string;
 	/** Script artifact path, relative to the installed package root. */
 	scriptRelPath: string;
@@ -3215,7 +3215,7 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	end: FOUNDATION_EXCLUDE_END,
 	header: [
 		"# owner: nosedive init",
-		"# reason: .nosedive.local.yaml and package foundation/migration docs are local bootstrap artifacts",
+		"# reason: .nosedive.local.yaml and package foundation docs are local bootstrap artifacts",
 	],
 };
 

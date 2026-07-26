@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	existsSync,
+	chmodSync,
 	mkdirSync,
 	realpathSync,
 	readdirSync,
@@ -25,6 +26,9 @@ const FOUNDATION_EXCLUDE_BEGIN = "# BEGIN nosedive-managed package-foundation ex
 const FOUNDATION_EXCLUDE_END = "# END nosedive-managed package-foundation exclude";
 const REPO_MARKER_EXCLUDE_BEGIN = "# BEGIN nosedive-managed repo-marker exclude";
 const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclude";
+const PRE_PUSH_HOOK = '#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n';
+const MANUAL_PRE_PUSH_LINE = 'npx nosedive pre-push.hook "$@" || exit 1';
+const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 const GIT_LOCAL_ENV_KEYS = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_COMMON_DIR",
@@ -41,6 +45,9 @@ Commands:
   version       Print the package version
   mint          Generate UUIDv7 with a specific timestamp encoded
   init          Create or edit .nosediverc interactively
+  preflight     Install the bridge pre-push hook
+  render        Print a packaged kb document body by uuid
+  pre-push.hook Run bridge pre-push checks
   whoami        Print the bridge pilot identity
   dump-backlog  Print the open efforts in the configured backlog
   list-dives    Print pickupable and working dives for an effort
@@ -3189,6 +3196,258 @@ function gitOk(cwd: string, args: string[]): boolean {
 	return runGit(cwd, args).status === 0;
 }
 
+function gitCommonDir(cwd: string): string | undefined {
+	const raw = gitOutput(cwd, ["rev-parse", "--git-common-dir"]);
+	if (!raw) return undefined;
+	return resolveFrom(cwd, raw);
+}
+
+function renderPackageKbBody(id: string): string {
+	if (!uuidLike(id)) throw new Error(`render requires a UUID-shaped id: ${id}`);
+	const docPath = join(packageRoot(), "kb", `${id}.md`);
+	if (!existsSync(docPath)) throw new Error(`package kb doc not found: ${id}`);
+	if (!statSync(docPath).isFile()) throw new Error(`package kb doc is not a file: ${id}`);
+	return parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body;
+}
+
+function renderCommand(args: string[]): void {
+	const [id, ...extra] = args;
+	if (!id || extra.length > 0) throw new Error("render requires exactly one uuid");
+	process.stdout.write(renderPackageKbBody(id));
+}
+
+function printManualHookAdvice(reason: string): void {
+	console.error(`WARNING: ${reason}`);
+	console.error("Add this line to your existing pre-push hook setup:");
+	console.error(`  ${MANUAL_PRE_PUSH_LINE}`);
+}
+
+function preflight(_args: string[]): void {
+	const rc = readNosediveRc(process.cwd());
+	const hooksPath = gitOutput(rc.bridgeDir, ["config", "--get", "core.hooksPath"]);
+	if (hooksPath) {
+		printManualHookAdvice(
+			`core.hooksPath is set to ${hooksPath}; nosedive will not change it or write an ignored .git/hooks/pre-push.`,
+		);
+		return;
+	}
+
+	const commonDir = gitCommonDir(rc.bridgeDir);
+	if (!commonDir) throw new Error("nosedive preflight must be run inside a git-backed bridge");
+	const hookPath = join(commonDir, "hooks", "pre-push");
+	if (existsSync(hookPath)) {
+		const existing = readFileSync(hookPath, "utf8");
+		if (!existing.includes("nosedive-managed")) {
+			printManualHookAdvice(
+				`foreign pre-push hook exists at ${formatPath(hookPath)}; leaving it unchanged.`,
+			);
+			return;
+		}
+	}
+
+	mkdirSync(dirname(hookPath), { recursive: true });
+	writeFileAtomic(hookPath, PRE_PUSH_HOOK);
+	chmodSync(hookPath, 0o755);
+	console.log(`Installed nosedive pre-push hook: ${formatPath(hookPath)}`);
+}
+
+interface WorkspaceDiveMarker {
+	present: boolean;
+	id?: string;
+	error?: string;
+}
+
+function readWorkspaceDiveMarker(workspaceDir: string | undefined): WorkspaceDiveMarker {
+	if (!workspaceDir) return { present: false };
+	const markerPath = join(workspaceDir, ".nosedive-ref");
+	if (!existsSync(markerPath)) return { present: false };
+	try {
+		const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), markerPath);
+		const id = marker.scalars.id?.trim();
+		if (!id) return { present: true, error: `${formatPath(markerPath)} is missing id` };
+		if (!uuidLike(id))
+			return { present: true, error: `${formatPath(markerPath)} id is not UUID-shaped` };
+		return { present: true, id };
+	} catch (err) {
+		const detail = err instanceof Error ? err.message : String(err);
+		return { present: true, error: detail };
+	}
+}
+
+interface DiveWipScope {
+	repoId: string;
+	ref?: string;
+	readOnly: boolean;
+}
+
+interface DiveWipFailure {
+	repoId?: string;
+	repoPath?: string;
+	readOnly?: boolean;
+	reasons: string[];
+}
+
+function uniqueDiveWipScopes(scopes: ScopeRef[]): {
+	scopes: DiveWipScope[];
+	failures: DiveWipFailure[];
+} {
+	const byRepo = new Map<string, DiveWipScope>();
+	const failures: DiveWipFailure[] = [];
+
+	for (const scope of scopes) {
+		if (scope.repoId === ".") continue;
+		const existing = byRepo.get(scope.repoId);
+		if (!existing) {
+			byRepo.set(scope.repoId, {
+				repoId: scope.repoId,
+				ref: scope.ref,
+				readOnly: scope.readOnly,
+			});
+			continue;
+		}
+		if (existing.ref && scope.ref && existing.ref !== scope.ref) {
+			failures.push({
+				repoId: scope.repoId,
+				reasons: [`conflicting pinned refs in active dive: ${existing.ref} and ${scope.ref}`],
+			});
+		}
+		if (!existing.ref) existing.ref = scope.ref;
+		existing.readOnly = existing.readOnly && scope.readOnly;
+	}
+
+	return { scopes: [...byRepo.values()], failures };
+}
+
+function hydratedScopedRepoPath(
+	kbDocs: KbDoc[],
+	scope: DiveWipScope,
+	bridgeDir: string,
+	workspaceDir: string,
+): { path?: string; failure?: DiveWipFailure } {
+	const repoDoc = maybeResolveRepoDoc(kbDocs, scope.repoId);
+	if (!repoDoc) {
+		return {
+			failure: {
+				repoId: scope.repoId,
+				readOnly: scope.readOnly,
+				reasons: ["active dive scope names a repo with no kb repo doc; cannot check WIP"],
+			},
+		};
+	}
+
+	let targetPath: string;
+	try {
+		targetPath = expectedWorktreePath(repoDoc, bridgeDir);
+		ensureSafeTargetPath(scope.repoId, targetPath, workspaceDir);
+	} catch (err) {
+		const detail = err instanceof Error ? err.message : String(err);
+		return {
+			failure: {
+				repoId: scope.repoId,
+				readOnly: scope.readOnly,
+				reasons: [detail],
+			},
+		};
+	}
+
+	if (!existsSync(targetPath)) return {};
+	if (!statSync(targetPath).isDirectory()) {
+		return {
+			failure: {
+				repoId: scope.repoId,
+				repoPath: targetPath,
+				readOnly: scope.readOnly,
+				reasons: ["hydrated repo path exists but is not a directory"],
+			},
+		};
+	}
+	if (!gitOutput(targetPath, ["rev-parse", "--show-toplevel"])) return {};
+	return { path: targetPath };
+}
+
+function checkScopedRepoWip(scope: DiveWipScope, repoPath: string): DiveWipFailure | undefined {
+	const reasons: string[] = [];
+	const status = gitOutput(repoPath, ["status", "--porcelain"]);
+	if (status === undefined) {
+		reasons.push("could not read git status");
+	} else if (status.trim() !== "") {
+		reasons.push("dirty worktree");
+	}
+
+	if (!scope.ref) {
+		reasons.push("active dive scope is missing a pinned ref");
+	} else {
+		const ahead = gitOutput(repoPath, ["rev-list", `${scope.ref}..HEAD`]);
+		if (ahead === undefined) {
+			reasons.push(`could not compare ${scope.ref}..HEAD`);
+		} else if (ahead.trim() !== "") {
+			reasons.push(`commits ahead of pinned ref ${scope.ref}`);
+		}
+	}
+
+	if (reasons.length === 0) return undefined;
+	return { repoId: scope.repoId, repoPath, readOnly: scope.readOnly, reasons };
+}
+
+function checkDiveWip(): DiveWipFailure[] {
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+	if (!rc.workspaceDir) return [];
+
+	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
+	if (!marker.present) return [];
+	if (marker.error || !marker.id) {
+		return [{ reasons: [`broken active dive marker: ${marker.error ?? "missing id"}`] }];
+	}
+
+	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const activeDive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
+	if (!activeDive) {
+		return [{ reasons: [`broken active dive marker: no kind: dive doc found for ${marker.id}`] }];
+	}
+
+	const { scopes, failures } = uniqueDiveWipScopes(activeDive.scopes);
+	for (const scope of scopes) {
+		const scopedPath = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
+		if (scopedPath.failure) {
+			failures.push(scopedPath.failure);
+			continue;
+		}
+		if (!scopedPath.path) continue;
+		const failure = checkScopedRepoWip(scope, scopedPath.path);
+		if (failure) failures.push(failure);
+	}
+
+	return failures;
+}
+
+function printDiveWipFailure(failures: DiveWipFailure[]): void {
+	console.error("Push failed because the active dive has not been handed off.");
+	console.error("");
+	for (const failure of failures) {
+		const subject = failure.repoId
+			? `${failure.readOnly ? "read-only scoped repo" : "scoped repo"} ${failure.repoId}${failure.repoPath ? ` at ${formatPath(failure.repoPath)}` : ""}`
+			: "active dive";
+		console.error(`- ${subject}: ${failure.reasons.join("; ")}`);
+		if (failure.readOnly) {
+			console.error(
+				"  This read-only scope still contains work to preserve; consider re-scoping it writable.",
+			);
+		}
+	}
+	console.error("");
+	console.error(`Handoff runbook: ${HANDOFF_RUNBOOK_ID}`);
+	console.error("HINT: To learn more, run:");
+	console.error(`  npx nosedive render ${HANDOFF_RUNBOOK_ID}`);
+}
+
+function prePushHook(_args: string[]): void {
+	const failures = checkDiveWip();
+	if (failures.length === 0) return;
+	printDiveWipFailure(failures);
+	process.exit(1);
+}
+
 function gitRelPath(repoRoot: string, path: string): string {
 	return relative(repoRoot, path).replaceAll("\\", "/");
 }
@@ -3547,6 +3806,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 			break;
 		case "init":
 			await init(args);
+			break;
+		case "preflight":
+			preflight(args);
+			break;
+		case "render":
+			renderCommand(args);
+			break;
+		case "pre-push.hook":
+			prePushHook(args);
 			break;
 		case "whoami":
 			whoami(args);

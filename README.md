@@ -107,6 +107,67 @@ Usage:
 - `agents` defaults to `copilot` (with `claude` as an optional additional
   target).
 
+### preflight
+
+Install the bridge pre-push hook.
+
+Usage:
+
+`nosedive preflight`
+
+- Searches upward for the nearest bridge config and installs
+  `.git/hooks/pre-push` in that bridge's Git common directory.
+- The installed file is a LF-only executable shim:
+  `#!/bin/sh`, `# nosedive-managed`, and
+  `exec npx nosedive pre-push.hook "$@"`.
+- Re-running is idempotent: a managed hook is refreshed in place.
+- Existing foreign hooks are left unchanged. Preflight warns and tells the user
+  to add `npx nosedive pre-push.hook "$@" || exit 1` to their existing hook
+  setup.
+- If `core.hooksPath` is set, preflight does not change Git config and does not
+  write an ignored `.git/hooks/pre-push`; it prints the same manual wiring
+  guidance.
+- This slice only installs the hook. Migrations, ff-only pull, and entrypoint
+  regeneration remain on `init`/`apply` until later preflight slices move them.
+
+### render
+
+Print the body of a packaged nosedive KB document.
+
+Usage:
+
+`nosedive render <uuid>`
+
+- Reads `kb/<uuid>.md` from the installed nosedive package, not from the bridge
+  kb.
+- Prints only the markdown body; YAML frontmatter is stripped.
+- Used by agents and hook messages to point at package-owned runbooks without
+  copying them into a bridge.
+
+### pre-push.hook
+
+Run the bridge pre-push check registry.
+
+Usage:
+
+`nosedive pre-push.hook [remote-name] [remote-url]`
+
+- The installed Git hook passes Git's pre-push argv through, but v1 ignores
+  argv and stdin so it does not hang on ref-update input.
+- v1 has one check: dive-WIP. It reads the configured `workspace:` path, then
+  `<workspace>/.nosedive-ref`.
+- If no active dive marker exists, the command exits zero regardless of other
+  workspace contents.
+- If the marker names an active dive, only repos in that dive's scopes are
+  checked. Hydrated scoped repos block the push when dirty or when `HEAD` is
+  ahead of the scope's pinned `ref`; read-only scopes are checked too and are
+  named as read-only in the failure message.
+- Changes in repos outside the active dive scopes do not block. Missing or
+  unreadable active dive docs do block.
+- Rejections are concise and point at the packaged `handoff` runbook with:
+  `npx nosedive render <handoff-runbook-uuid>`. Git's normal
+  `git push --no-verify` bypass remains available.
+
 ### list-dives
 
 Print pickupable and working dives for an open effort.

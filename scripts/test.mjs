@@ -7,6 +7,7 @@ import {
 	readFileSync,
 	realpathSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,6 +31,7 @@ const packageFoundationDocCount = packageFoundationDocs.length;
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";
 const packageMigrationDoc = "00000000-0061-77ed-a060-f803c8f5aa76.md";
 const packageMigrationScript = "00000000-0076-7dad-af72-3e32d35642f4.mjs";
+const handoffRunbookId = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 const gitLocalEnvKeys = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_COMMON_DIR",
@@ -147,6 +149,9 @@ try {
 	assert.match(help.stdout, /Usage: nosedive <command>/);
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /init/);
+	assert.match(help.stdout, /preflight/);
+	assert.match(help.stdout, /render/);
+	assert.match(help.stdout, /pre-push\.hook/);
 	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);
 	assert.match(help.stdout, /list-dives/);
@@ -180,6 +185,282 @@ try {
 		mintedNow.stdout.trim(),
 		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
 	);
+
+	const renderedHandoff = run(["render", handoffRunbookId], root);
+	assertOk(renderedHandoff, "render handoff runbook failed");
+	assert.match(renderedHandoff.stdout, /^# Handoff/m);
+	assert.match(renderedHandoff.stdout, /meta\.patch-artifacts/);
+	assert.match(renderedHandoff.stdout, /dehydrate-repo\.workspace/);
+	assert.doesNotMatch(renderedHandoff.stdout, /^---/);
+	assert.doesNotMatch(renderedHandoff.stdout, /^kind: runbook/m);
+
+	const missingRender = run(["render", "019f9f95-ffff-7fff-bfff-ffffffffffff"], root);
+	assert.notEqual(missingRender.status, 0, "render missing package doc unexpectedly succeeded");
+	assert.match(missingRender.stderr, /package kb doc not found/);
+
+	const preflightBridge = join(tmp, "preflight-bridge");
+	mkdirSync(preflightBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], preflightBridge);
+	write(
+		join(preflightBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	const preflight = run(["preflight"], preflightBridge);
+	assertOk(preflight, "preflight install failed");
+	const installedHook = join(preflightBridge, ".git", "hooks", "pre-push");
+	assert.equal(
+		readFileSync(installedHook, "utf8"),
+		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n',
+	);
+	assert.equal(readFileSync(installedHook).includes(Buffer.from("\r\n")), false);
+	if (process.platform !== "win32") {
+		assert.notEqual(statSync(installedHook).mode & 0o111, 0, "installed hook should be executable");
+	}
+
+	const preflightAgain = run(["preflight"], preflightBridge);
+	assertOk(preflightAgain, "preflight idempotent refresh failed");
+	assert.equal(
+		readFileSync(installedHook, "utf8"),
+		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n',
+	);
+
+	const foreignHookBridge = join(tmp, "foreign-hook-bridge");
+	mkdirSync(foreignHookBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], foreignHookBridge);
+	write(
+		join(foreignHookBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	const foreignHook = join(foreignHookBridge, ".git", "hooks", "pre-push");
+	const foreignHookText = "#!/bin/sh\necho user-hook\n";
+	write(foreignHook, foreignHookText);
+	const foreignPreflight = run(["preflight"], foreignHookBridge);
+	assertOk(foreignPreflight, "preflight with foreign hook should warn but succeed");
+	assert.equal(readFileSync(foreignHook, "utf8"), foreignHookText);
+	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
+	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
+	assert.match(foreignPreflight.stderr, /npx nosedive pre-push\.hook "\$@" \|\| exit 1/);
+
+	const hooksPathBridge = join(tmp, "hooks-path-bridge");
+	mkdirSync(hooksPathBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], hooksPathBridge);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], hooksPathBridge);
+	write(
+		join(hooksPathBridge, ".nosediverc"),
+		`workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	const hooksPathPreflight = run(["preflight"], hooksPathBridge);
+	assertOk(hooksPathPreflight, "preflight with core.hooksPath should warn but succeed");
+	assert.equal(existsSync(join(hooksPathBridge, ".git", "hooks", "pre-push")), false);
+	assert.equal(
+		runTool("git", ["config", "--get", "core.hooksPath"], hooksPathBridge).stdout.trim(),
+		".githooks",
+	);
+	assert.match(hooksPathPreflight.stderr, /core\.hooksPath is set/);
+	assert.match(hooksPathPreflight.stderr, /Add this line to your existing pre-push hook setup/);
+
+	const wipBridge = join(tmp, "wip-bridge");
+	const scopedRepo = join(wipBridge, "workspace", "scoped");
+	const readonlyScopedRepo = join(wipBridge, "workspace", "readonly-scoped");
+	const unscopedRepo = join(wipBridge, "workspace", "unscoped");
+	mkdirSync(join(wipBridge, "kb"), { recursive: true });
+	mkdirSync(scopedRepo, { recursive: true });
+	mkdirSync(readonlyScopedRepo, { recursive: true });
+	mkdirSync(unscopedRepo, { recursive: true });
+	runTool("git", ["init", "-b", "main"], wipBridge);
+	runTool("git", ["init", "-b", "main"], scopedRepo);
+	runTool("git", ["init", "-b", "main"], readonlyScopedRepo);
+	runTool("git", ["init", "-b", "main"], unscopedRepo);
+	write(join(scopedRepo, "file.txt"), "base\n");
+	runTool("git", ["add", "file.txt"], scopedRepo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"base",
+		],
+		scopedRepo,
+	);
+	const scopedBase = runTool("git", ["rev-parse", "HEAD"], scopedRepo).stdout.trim();
+	write(join(readonlyScopedRepo, "file.txt"), "base\n");
+	runTool("git", ["add", "file.txt"], readonlyScopedRepo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"base",
+		],
+		readonlyScopedRepo,
+	);
+	const readonlyBase = runTool("git", ["rev-parse", "HEAD"], readonlyScopedRepo).stdout.trim();
+	write(join(unscopedRepo, "file.txt"), "base\n");
+	runTool("git", ["add", "file.txt"], unscopedRepo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"base",
+		],
+		unscopedRepo,
+	);
+	write(
+		join(wipBridge, ".nosediverc"),
+		`workspace: ./workspace
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	write(
+		join(wipBridge, "kb", "scoped-repo.md"),
+		`---
+kind: repo
+id: 019f9f96-0000-7000-8000-000000000001
+name: scoped
+gist: "Scoped repo"
+meta:
+  path: workspace/scoped
+---
+`,
+	);
+	write(
+		join(wipBridge, "kb", "readonly-scoped-repo.md"),
+		`---
+kind: repo
+id: 019f9f96-0000-7000-8000-000000000002
+name: readonly-scoped
+gist: "Read-only scoped repo"
+meta:
+  path: workspace/readonly-scoped
+---
+`,
+	);
+	write(
+		join(wipBridge, "kb", "unscoped-repo.md"),
+		`---
+kind: repo
+id: 019f9f96-0000-7000-8000-000000000003
+name: unscoped
+gist: "Unscoped repo"
+meta:
+  path: workspace/unscoped
+---
+`,
+	);
+	write(
+		join(wipBridge, "kb", "active-dive.md"),
+		`---
+kind: dive
+id: 019f9f96-0000-7000-8000-000000000010
+name: wip-test
+gist: "Dive WIP test"
+scopes:
+  - 019f9f96-0000-7000-8000-000000000001:
+      ref: ${scopedBase}
+      mode: rw
+  - 019f9f96-0000-7000-8000-000000000002:
+      ref: ${readonlyBase}
+      mode: ro
+---
+
+# WIP test dive
+`,
+	);
+
+	rmSync(join(wipBridge, "workspace", ".nosedive-ref"), { force: true });
+	write(join(unscopedRepo, "untracked.txt"), "unscoped change\n");
+	const noMarkerWip = run(
+		["pre-push.hook", "origin", "https://example.invalid/repo.git"],
+		wipBridge,
+		"stdin should be ignored\n",
+	);
+	assertOk(noMarkerWip, "pre-push.hook should pass without active dive marker");
+
+	write(
+		join(wipBridge, "workspace", ".nosedive-ref"),
+		"id: 019f9f96-0000-7000-8000-000000000010\n",
+	);
+	const unscopedOnlyWip = run(["pre-push.hook"], wipBridge);
+	assertOk(unscopedOnlyWip, "pre-push.hook should pass when only unscoped repo is dirty");
+
+	write(join(scopedRepo, "dirty.txt"), "scoped dirty\n");
+	const scopedDirty = run(["pre-push.hook"], wipBridge);
+	assert.equal(scopedDirty.status, 1);
+	assert.match(scopedDirty.stderr, /active dive has not been handed off/);
+	assert.match(scopedDirty.stderr, /scoped repo 019f9f96-0000-7000-8000-000000000001/);
+	assert.match(scopedDirty.stderr, /dirty worktree/);
+	assert.match(scopedDirty.stderr, new RegExp(`Handoff runbook: ${handoffRunbookId}`));
+	assert.match(scopedDirty.stderr, new RegExp(`npx nosedive render ${handoffRunbookId}`));
+	rmSync(join(scopedRepo, "dirty.txt"));
+
+	write(join(scopedRepo, "ahead.txt"), "ahead\n");
+	runTool("git", ["add", "ahead.txt"], scopedRepo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"ahead",
+		],
+		scopedRepo,
+	);
+	const scopedAhead = run(["pre-push.hook"], wipBridge);
+	assert.equal(scopedAhead.status, 1);
+	assert.match(scopedAhead.stderr, /commits ahead of pinned ref/);
+	runTool("git", ["reset", "--hard", scopedBase], scopedRepo);
+
+	write(join(readonlyScopedRepo, "readonly-dirty.txt"), "readonly dirty\n");
+	const readonlyDirty = run(["pre-push.hook"], wipBridge);
+	assert.equal(readonlyDirty.status, 1);
+	assert.match(readonlyDirty.stderr, /read-only scoped repo 019f9f96-0000-7000-8000-000000000002/);
+	assert.match(readonlyDirty.stderr, /consider re-scoping it writable/);
+	rmSync(join(readonlyScopedRepo, "readonly-dirty.txt"));
+
+	const pristineDive = run(["pre-push.hook"], wipBridge);
+	assertOk(pristineDive, "pre-push.hook should pass when active dive scoped repos are pristine");
+
+	write(
+		join(wipBridge, "workspace", ".nosedive-ref"),
+		"id: 019f9f96-0000-7000-8000-000000009999\n",
+	);
+	const brokenMarker = run(["pre-push.hook"], wipBridge);
+	assert.equal(brokenMarker.status, 1);
+	assert.match(brokenMarker.stderr, /broken active dive marker/);
+	assert.match(brokenMarker.stderr, /no kind: dive doc found/);
 
 	const bridge = join(tmp, "bridge");
 	mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });

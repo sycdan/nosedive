@@ -2774,7 +2774,10 @@ function recordProofResult(assertionPath: string, result: ProverHostResult): voi
 	});
 	doc.deleteIn(["meta", "last-proven-commit"]);
 
-	writeFileAtomic(assertionPath, `---\n${doc.toString().trimEnd()}\n---\n${block.body}`);
+	writeFileAtomic(
+		assertionPath,
+		`---\n${doc.toString({ lineWidth: 0 }).trimEnd()}\n---\n${block.body}`,
+	);
 }
 
 async function prove(args: string[]): Promise<void> {

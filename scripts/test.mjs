@@ -208,6 +208,8 @@ try {
 	const missingCwdProverId = "019fa101-0000-7000-8000-000000000021";
 	const outOfScopeAssertionId = "019fa101-0000-7000-8000-000000000012";
 	const outOfScopeProverId = "019fa101-0000-7000-8000-000000000022";
+	const proofAssertionGist =
+		"Proof runner executes a bridge-owned prover while keeping this intentionally long assertion gist on one YAML frontmatter line after recording proof metadata.";
 	mkdirSync(join(proofBridge, "kb", "artifacts"), { recursive: true });
 	mkdirSync(proofSource, { recursive: true });
 	runTool("git", ["init", "-b", "main"], proofBridge);
@@ -257,7 +259,7 @@ meta:
 kind: assertion
 id: ${proofAssertionId}
 name: proof-runner-direct-cli
-gist: "Proof runner executes a bridge-owned prover."
+gist: "${proofAssertionGist}"
 scopes:
   - ${proofRepoId}:
       mode: ro
@@ -379,7 +381,7 @@ links:
 	);
 	assert.match(verboseProofRun.stdout, /^exec cwd=.* git init -b main$/m);
 	assert.match(verboseProofRun.stdout, /^exec cwd=.* preflight$/m);
-	assert.match(verboseProofRun.stdout, /Gist: Proof runner executes a bridge-owned prover\./);
+	assert.match(verboseProofRun.stdout, new RegExp(`Gist: ${escapeRegExp(proofAssertionGist)}`));
 	assert.equal(
 		verboseProofRun.stdout.indexOf("exec cwd=") < verboseProofRun.stdout.indexOf("Proof passed:"),
 		true,
@@ -408,6 +410,7 @@ links:
 	const recordedAssertion = readFileSync(join(proofBridge, "kb", `${proofAssertionId}.md`), "utf8");
 	assert.match(recordedAssertion, /last-proven:/);
 	assert.doesNotMatch(recordedAssertion, /prover-sha256/);
+	assert.match(recordedAssertion, new RegExp(`^gist: "${escapeRegExp(proofAssertionGist)}"$`, "m"));
 	assert.match(recordedAssertion, new RegExp(`${proofRepoId}:\\n\\s+commit: ${proofCommit}`));
 	assert.doesNotMatch(recordedAssertion, /last-proven-commit/);
 

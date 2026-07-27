@@ -208,6 +208,7 @@ try {
 	const missingCwdProverId = "019fa101-0000-7000-8000-000000000021";
 	const outOfScopeAssertionId = "019fa101-0000-7000-8000-000000000012";
 	const outOfScopeProverId = "019fa101-0000-7000-8000-000000000022";
+	const bareUuidProverAssertionId = "019fa101-0000-7000-8000-000000000013";
 	const proofAssertionGist =
 		"Proof runner executes a bridge-owned prover while keeping this intentionally long assertion gist on one YAML frontmatter line after recording proof metadata.";
 	mkdirSync(join(proofBridge, "kb", "artifacts"), { recursive: true });
@@ -253,8 +254,9 @@ meta:
 ---
 `,
 	);
+	const proofAssertionPath = join(proofBridge, "kb", `${proofAssertionId}.md`);
 	write(
-		join(proofBridge, "kb", `${proofAssertionId}.md`),
+		proofAssertionPath,
 		`---
 kind: assertion
 id: ${proofAssertionId}
@@ -265,7 +267,7 @@ scopes:
       mode: ro
       ref: ${proofCommit}
 links:
-  - file://kb/artifacts/${proofProverId}.mjs:
+  - artifacts/${proofProverId}.mjs:
       rel: prover
 meta:
   parser-fixture:
@@ -277,6 +279,7 @@ meta:
 # Proof runner direct CLI assertion
 `,
 	);
+	write(proofAssertionPath, readFileSync(proofAssertionPath, "utf8").replaceAll("\n", "\r\n"));
 	const proofProverPath = join(proofBridge, "kb", "artifacts", `${proofProverId}.mjs`);
 	write(
 		proofProverPath,
@@ -289,11 +292,10 @@ meta:
   await ctx.exec("git", ["init", "-b", "main"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "init", "--headless"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
-  const hook = await ctx.fs.readText(ctx.path.join(sandbox.root, ".git", "hooks", "pre-push"));
-  ctx.assert.equal(
-    hook,
-    '#!/bin/sh\\n# nosedive-managed\\nexec npx nosedive pre-push.hook "$@"\\n',
-  );
+  const hookPath = ctx.path.join(sandbox.root, ".git", "hooks", "pre-push");
+  const expectedHook = '#!/bin/sh\\n# nosedive-managed\\nexec npx nosedive pre-push.hook "$@"\\n';
+  const hook = await ctx.fs.readText(hookPath);
+  ctx.assert.equal(hook, expectedHook);
   ctx.log("direct cli preflight succeeded");
 }
 `,
@@ -306,7 +308,7 @@ id: ${missingCwdAssertionId}
 name: proof-runner-requires-explicit-cwd
 gist: "Proof runner rejects ambient cwd use."
 links:
-  - file://kb/artifacts/${missingCwdProverId}.mjs:
+  - artifacts/${missingCwdProverId}.mjs:
       rel: prover
 ---
 
@@ -328,7 +330,7 @@ id: ${outOfScopeAssertionId}
 name: proof-runner-rejects-out-of-scope-repo
 gist: "Proof runner rejects repo access not named by assertion scopes."
 links:
-  - file://kb/artifacts/${outOfScopeProverId}.mjs:
+  - artifacts/${outOfScopeProverId}.mjs:
       rel: prover
 ---
 
@@ -340,6 +342,21 @@ links:
 		`export async function prove(ctx) {
   await ctx.repos.require("proof-target");
 }
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${bareUuidProverAssertionId}.md`),
+		`---
+kind: assertion
+id: ${bareUuidProverAssertionId}
+name: proof-runner-rejects-bare-uuid-prover-link
+gist: "Proof runner rejects bare UUID prover links."
+links:
+  - ${proofProverId}:
+      rel: prover
+---
+
+# Bare UUID prover assertion
 `,
 	);
 
@@ -368,8 +385,8 @@ links:
 	assert.match(proofRun.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
 	assert.equal(existsSync(join(proofBridge, "workspace", "proof-target")), true);
 	assert.doesNotMatch(
-		readFileSync(join(proofBridge, "kb", `${proofAssertionId}.md`), "utf8"),
-		/last-proven:/,
+		readFileSync(proofAssertionPath, "utf8"),
+		/last-run:/,
 		"non-recorded proof should not edit the assertion",
 	);
 
@@ -388,9 +405,9 @@ links:
 		"verbose exec lines should print during execution, before the proof result",
 	);
 	assert.equal(
-		verboseProofRun.stdout.indexOf("Proof passed:") < verboseProofRun.stdout.indexOf("Gist:"),
+		verboseProofRun.stdout.indexOf("Gist:") < verboseProofRun.stdout.indexOf("Proof passed:"),
 		true,
-		"verbose gist should print after the proof result",
+		"verbose gist should print before the proof result",
 	);
 
 	write(join(proofBridge, "outside-untracked.txt"), "outside\n");
@@ -407,11 +424,15 @@ links:
 	assertOk(proofRecord, "prove --record direct CLI assertion failed");
 	assert.match(proofRecord.stdout, /direct cli preflight succeeded/);
 	assert.match(proofRecord.stdout, new RegExp(`Proof recorded: ${proofAssertionId}`));
-	const recordedAssertion = readFileSync(join(proofBridge, "kb", `${proofAssertionId}.md`), "utf8");
-	assert.match(recordedAssertion, /last-proven:/);
+	const recordedAssertion = readFileSync(proofAssertionPath, "utf8");
+	assert.match(recordedAssertion, /last-run:/);
+	assert.match(recordedAssertion, /pass: true/);
 	assert.doesNotMatch(recordedAssertion, /prover-sha256/);
+	assert.doesNotMatch(recordedAssertion, /\\r/);
 	assert.match(recordedAssertion, new RegExp(`^gist: "${escapeRegExp(proofAssertionGist)}"$`, "m"));
-	assert.match(recordedAssertion, new RegExp(`${proofRepoId}:\\n\\s+commit: ${proofCommit}`));
+	assert.match(recordedAssertion, new RegExp(`commits:\\n\\s+${proofRepoId}: ${proofCommit}`));
+	assert.doesNotMatch(recordedAssertion, /inputs:/);
+	assert.doesNotMatch(recordedAssertion, /last-proven:/);
 	assert.doesNotMatch(recordedAssertion, /last-proven-commit/);
 
 	write(join(proofBridge, "workspace", "proof-target", "dirty.txt"), "dirty\n");
@@ -431,6 +452,10 @@ links:
 	const outOfScopeProof = run(["prove", outOfScopeAssertionId], proofBridge);
 	assert.notEqual(outOfScopeProof.status, 0, "out-of-scope repo access unexpectedly succeeded");
 	assert.match(outOfScopeProof.stderr, /does not scope it/);
+
+	const bareUuidProverProof = run(["prove", bareUuidProverAssertionId], proofBridge);
+	assert.notEqual(bareUuidProverProof.status, 0, "bare UUID prover link unexpectedly succeeded");
+	assert.match(bareUuidProverProof.stderr, /bare UUID links refer to KB markdown docs/);
 
 	const preflightBridge = join(tmp, "preflight-bridge");
 	mkdirSync(preflightBridge, { recursive: true });
@@ -512,6 +537,10 @@ agents:
 	const scopedRepo = join(wipBridge, "workspace", "scoped");
 	const readonlyScopedRepo = join(wipBridge, "workspace", "readonly-scoped");
 	const unscopedRepo = join(wipBridge, "workspace", "unscoped");
+	const scopedRepoId = "019f9f96-0000-7000-8000-000000000001";
+	const readonlyScopedRepoId = "019f9f96-0000-7000-8000-000000000002";
+	const unscopedRepoId = "019f9f96-0000-7000-8000-000000000003";
+	const activeDiveId = "019f9f96-0000-7000-8000-000000000010";
 	mkdirSync(join(wipBridge, "kb"), { recursive: true });
 	mkdirSync(scopedRepo, { recursive: true });
 	mkdirSync(readonlyScopedRepo, { recursive: true });
@@ -576,10 +605,10 @@ agents:
 `,
 	);
 	write(
-		join(wipBridge, "kb", "scoped-repo.md"),
+		join(wipBridge, "kb", `${scopedRepoId}.md`),
 		`---
 kind: repo
-id: 019f9f96-0000-7000-8000-000000000001
+id: ${scopedRepoId}
 name: scoped
 gist: "Scoped repo"
 meta:
@@ -588,10 +617,10 @@ meta:
 `,
 	);
 	write(
-		join(wipBridge, "kb", "readonly-scoped-repo.md"),
+		join(wipBridge, "kb", `${readonlyScopedRepoId}.md`),
 		`---
 kind: repo
-id: 019f9f96-0000-7000-8000-000000000002
+id: ${readonlyScopedRepoId}
 name: readonly-scoped
 gist: "Read-only scoped repo"
 meta:
@@ -600,10 +629,10 @@ meta:
 `,
 	);
 	write(
-		join(wipBridge, "kb", "unscoped-repo.md"),
+		join(wipBridge, "kb", `${unscopedRepoId}.md`),
 		`---
 kind: repo
-id: 019f9f96-0000-7000-8000-000000000003
+id: ${unscopedRepoId}
 name: unscoped
 gist: "Unscoped repo"
 meta:
@@ -612,17 +641,17 @@ meta:
 `,
 	);
 	write(
-		join(wipBridge, "kb", "active-dive.md"),
+		join(wipBridge, "kb", `${activeDiveId}.md`),
 		`---
 kind: dive
-id: 019f9f96-0000-7000-8000-000000000010
+id: ${activeDiveId}
 name: wip-test
 gist: "Dive WIP test"
 scopes:
-  - 019f9f96-0000-7000-8000-000000000001:
+  - ${scopedRepoId}:
       ref: ${scopedBase}
       mode: rw
-  - 019f9f96-0000-7000-8000-000000000002:
+  - ${readonlyScopedRepoId}:
       ref: ${readonlyBase}
       mode: ro
 ---
@@ -640,10 +669,7 @@ scopes:
 	);
 	assertOk(noMarkerWip, "pre-push.hook should pass without active dive marker");
 
-	write(
-		join(wipBridge, "workspace", ".nosedive-ref"),
-		"id: 019f9f96-0000-7000-8000-000000000010\n",
-	);
+	write(join(wipBridge, "workspace", ".nosedive-ref"), `id: ${activeDiveId}\n`);
 	const unscopedOnlyWip = run(["pre-push.hook"], wipBridge);
 	assertOk(unscopedOnlyWip, "pre-push.hook should pass when only unscoped repo is dirty");
 
@@ -651,7 +677,7 @@ scopes:
 	const scopedDirty = run(["pre-push.hook"], wipBridge);
 	assert.equal(scopedDirty.status, 1);
 	assert.match(scopedDirty.stderr, /active dive has not been handed off/);
-	assert.match(scopedDirty.stderr, /scoped repo 019f9f96-0000-7000-8000-000000000001/);
+	assert.match(scopedDirty.stderr, new RegExp(`scoped repo ${scopedRepoId}`));
 	assert.match(scopedDirty.stderr, /dirty worktree/);
 	assert.match(scopedDirty.stderr, new RegExp(`Handoff runbook: ${handoffRunbookId}`));
 	assert.match(scopedDirty.stderr, new RegExp(`npx nosedive render ${handoffRunbookId}`));
@@ -680,7 +706,7 @@ scopes:
 	write(join(readonlyScopedRepo, "readonly-dirty.txt"), "readonly dirty\n");
 	const readonlyDirty = run(["pre-push.hook"], wipBridge);
 	assert.equal(readonlyDirty.status, 1);
-	assert.match(readonlyDirty.stderr, /read-only scoped repo 019f9f96-0000-7000-8000-000000000002/);
+	assert.match(readonlyDirty.stderr, new RegExp(`read-only scoped repo ${readonlyScopedRepoId}`));
 	assert.match(readonlyDirty.stderr, /consider re-scoping it writable/);
 	rmSync(join(readonlyScopedRepo, "readonly-dirty.txt"));
 

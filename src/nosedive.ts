@@ -199,15 +199,23 @@ function parseYamlBlock(block: string, label: string): SimpleYaml {
 	}
 }
 
+function leadingMarkdownFrontmatter(text: string): MarkdownFrontmatterBlock | undefined {
+	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+	return match
+		? {
+				yaml: match[1] ?? "",
+				body: text.slice(match[0].length),
+			}
+		: undefined;
+}
+
 /** Parse leading `---` YAML frontmatter and return the body separately. */
 function parseMarkdownDoc(text: string, label = "markdown frontmatter"): MarkdownDoc {
-	if (!text.startsWith("---")) return { fm: emptyYaml(), body: text };
-	const end = text.indexOf("\n---", 3);
-	if (end === -1) return { fm: emptyYaml(), body: text };
-	const bodyStart = text.indexOf("\n", end + 4);
+	const block = leadingMarkdownFrontmatter(text);
+	if (!block) return { fm: emptyYaml(), body: text };
 	return {
-		fm: parseYamlBlock(text.slice(3, end), `frontmatter in ${label}`),
-		body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
+		fm: parseYamlBlock(block.yaml, `frontmatter in ${label}`),
+		body: block.body,
 	};
 }
 
@@ -216,21 +224,15 @@ function splitMarkdownFrontmatter(
 	label = "markdown document",
 ): MarkdownFrontmatterBlock {
 	if (!text.startsWith("---")) throw new Error(`${label} is missing YAML frontmatter`);
-	const end = text.indexOf("\n---", 3);
-	if (end === -1) throw new Error(`${label} has unterminated YAML frontmatter`);
-	const bodyStart = text.indexOf("\n", end + 4);
-	return {
-		yaml: text.slice(3, end),
-		body: bodyStart === -1 ? "" : text.slice(bodyStart + 1),
-	};
+	const block = leadingMarkdownFrontmatter(text);
+	if (!block) throw new Error(`${label} has unterminated YAML frontmatter`);
+	return block;
 }
 
 /** Parse only leading `---` YAML frontmatter. */
 function parseMarkdownFrontmatter(text: string, label = "markdown document"): SimpleYaml {
-	if (!text.startsWith("---")) return emptyYaml();
-	const end = text.indexOf("\n---", 3);
-	if (end === -1) return emptyYaml();
-	return parseYamlBlock(text.slice(3, end), `frontmatter in ${label}`);
+	const block = leadingMarkdownFrontmatter(text);
+	return block ? parseYamlBlock(block.yaml, `frontmatter in ${label}`) : emptyYaml();
 }
 
 /** Parse leading `---` YAML frontmatter into a flat string map. */
@@ -2675,14 +2677,20 @@ function assertionProverLink(assertion: KbDoc): LinkRef {
 	throw new Error(`assertion ${assertion.id} has more than one rel=prover link`);
 }
 
+function unsafeLinkPath(path: string): boolean {
+	return (
+		path.includes("\\") ||
+		path.includes("\0") ||
+		path.split("/").some((part) => part === ".." || part === "")
+	);
+}
+
 function resolveBridgeFileLink(bridgeDir: string, link: LinkRef, label: string): string {
-	if (!link.id.startsWith("file://")) {
-		throw new Error(`${label} must use file:// for now: ${link.id}`);
-	}
 	const relPath = link.id.slice("file://".length);
 	if (!relPath || isAbsolute(relPath)) {
 		throw new Error(`${label} must be a bridge-relative file:// link: ${link.id}`);
 	}
+	if (unsafeLinkPath(relPath)) throw new Error(`${label} has an unsafe path: ${link.id}`);
 	const path = resolveFrom(bridgeDir, relPath);
 	if (!isInsideDir(bridgeDir, path)) {
 		throw new Error(`${label} resolves outside the bridge: ${link.id}`);
@@ -2690,9 +2698,27 @@ function resolveBridgeFileLink(bridgeDir: string, link: LinkRef, label: string):
 	return path;
 }
 
-function resolveProverArtifact(bridgeDir: string, assertion: KbDoc): string {
+function resolveKbFileLink(bridgeDir: string, kbDir: string, link: LinkRef, label: string): string {
+	if (link.id.startsWith("file://")) return resolveBridgeFileLink(bridgeDir, link, label);
+	if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(link.id)) {
+		throw new Error(`${label} must be a KB-relative file path, not a URI: ${link.id}`);
+	}
+	if (uuidLike(link.id)) {
+		throw new Error(`${label} must name a prover file; bare UUID links refer to KB markdown docs`);
+	}
+	if (!link.id || isAbsolute(link.id) || unsafeLinkPath(link.id)) {
+		throw new Error(`${label} must be a safe KB-relative file path: ${link.id}`);
+	}
+	const path = resolveFrom(kbDir, link.id);
+	if (!isInsideDir(kbDir, path)) {
+		throw new Error(`${label} resolves outside the KB directory: ${link.id}`);
+	}
+	return path;
+}
+
+function resolveProverArtifact(bridgeDir: string, kbDir: string, assertion: KbDoc): string {
 	const link = assertionProverLink(assertion);
-	const path = resolveBridgeFileLink(bridgeDir, link, `assertion ${assertion.id} prover link`);
+	const path = resolveKbFileLink(bridgeDir, kbDir, link, `assertion ${assertion.id} prover link`);
 	if (!existsSync(path)) throw new Error(`prover artifact not found: ${formatPath(path)}`);
 	if (!statSync(path).isFile())
 		throw new Error(`prover artifact is not a file: ${formatPath(path)}`);
@@ -2763,16 +2789,17 @@ function recordProofResult(assertionPath: string, result: ProverHostResult): voi
 		);
 	}
 
-	const inputs: Record<string, { commit: string }> = {};
+	const commits: Record<string, string> = {};
 	for (const [repoId, input] of Object.entries(result.inputs)) {
-		inputs[repoId] = { commit: input.commit };
+		commits[repoId] = input.commit;
 	}
 
-	doc.setIn(["meta", "last-proven"], {
-		"exit-status": result.status,
-		inputs,
+	doc.setIn(["meta", "last-run"], {
+		pass: result.status === 0,
+		commits,
 	});
 	doc.deleteIn(["meta", "last-proven-commit"]);
+	doc.deleteIn(["meta", "last-proven"]);
 
 	writeFileAtomic(
 		assertionPath,
@@ -2787,7 +2814,7 @@ async function prove(args: string[]): Promise<void> {
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const assertion = findAssertionDoc(kbDocs, options.assertionId);
-	const proverPath = resolveProverArtifact(rc.bridgeDir, assertion);
+	const proverPath = resolveProverArtifact(rc.bridgeDir, rc.kbDir, assertion);
 	const runDir = proofRunTempDir();
 	const requestPath = join(runDir, "request.json");
 	const resultPath = join(runDir, "result.json");
@@ -2819,6 +2846,8 @@ async function prove(args: string[]): Promise<void> {
 		throw new Error(result.error ?? `proof failed with exit status ${result.status}`);
 	}
 
+	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
+
 	if (options.record) {
 		const dirty = Object.entries(result.inputs).filter(([, input]) => input.dirty);
 		if (dirty.length > 0) {
@@ -2834,7 +2863,6 @@ async function prove(args: string[]): Promise<void> {
 	} else {
 		console.log(`Proof passed: ${assertion.id}`);
 	}
-	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
 }
 
 function scopeForRepo(assertion: KbDoc, repoId: string): ScopeRef | undefined {

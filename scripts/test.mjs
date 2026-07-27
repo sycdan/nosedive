@@ -236,7 +236,7 @@ agents:
   - copilot
 `,
 	);
-	write(join(proofBridge, ".gitignore"), [".nosedive/", "workspace/", ""].join("\n"));
+	write(join(proofBridge, ".gitignore"), [".nosedive/", ""].join("\n"));
 	write(
 		join(proofBridge, "kb", "proof-repo.md"),
 		`---
@@ -390,6 +390,16 @@ links:
 		true,
 		"verbose gist should print after the proof result",
 	);
+
+	write(join(proofBridge, "outside-untracked.txt"), "outside\n");
+	const untrackedOutsideRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assert.notEqual(
+		untrackedOutsideRecord.status,
+		0,
+		"record with an untracked file outside workspace unexpectedly succeeded",
+	);
+	assert.match(untrackedOutsideRecord.stderr, /untracked files outside workspace/);
+	rmSync(join(proofBridge, "outside-untracked.txt"));
 
 	const proofRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
 	assertOk(proofRecord, "prove --record direct CLI assertion failed");

@@ -189,8 +189,9 @@ Usage:
   expose it. Accessed repos are tracked as proof inputs by exact commit SHA.
 - By default, proof runs are experimental and do not edit the assertion.
   `--record` writes `meta.last-proven.inputs.<repo-id>.commit`, refuses to
-  record if any accessed repo is dirty, and also requires a clean bridge with
-  the prover file checked in.
+  record if any accessed repo is dirty, and also requires the bridge's tracked
+  state to be clean with the prover file checked in. Untracked files under the
+  configured `workspace:` are allowed because hydration itself may create them.
 - `--verbose` prints the assertion id, gist, and each `ctx.exec` command before
   it runs.
 

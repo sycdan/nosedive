@@ -2710,7 +2710,31 @@ function readProverHostResult(path: string): ProverHostResult {
 	return JSON.parse(readFileSync(path, "utf8")) as ProverHostResult;
 }
 
-function assertBridgeRecordable(bridgeDir: string, proverPath: string): void {
+function bridgeStatusEntries(bridgeRoot: string): string[] {
+	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z"]);
+	if (result.status !== 0) {
+		const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
+		throw new Error(`refusing to record proof because bridge status failed: ${detail}`);
+	}
+	return result.stdout.split("\0").filter(Boolean);
+}
+
+function isAllowedRecordUntrackedPath(
+	bridgeRoot: string,
+	workspaceDir: string | undefined,
+	entry: string,
+): boolean {
+	if (!entry.startsWith("?? ")) return false;
+	if (!workspaceDir) return false;
+	const path = resolveFrom(bridgeRoot, entry.slice(3));
+	return isInsideDir(workspaceDir, path);
+}
+
+function assertBridgeRecordable(
+	bridgeDir: string,
+	workspaceDir: string | undefined,
+	proverPath: string,
+): void {
 	const bridgeRoot = gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"]);
 	if (!bridgeRoot) throw new Error("refusing to record proof because bridge is not a git repo");
 	const proverRelPath = gitRelPath(bridgeRoot, proverPath);
@@ -2719,9 +2743,13 @@ function assertBridgeRecordable(bridgeDir: string, proverPath: string): void {
 			`refusing to record proof because prover is not checked in: ${formatPath(proverPath)}`,
 		);
 	}
-	const status = gitOutput(bridgeRoot, ["status", "--porcelain"]);
-	if (status === undefined || status.trim() !== "") {
-		throw new Error("refusing to record proof because bridge worktree is dirty");
+	const blocking = bridgeStatusEntries(bridgeRoot).filter(
+		(entry) => !isAllowedRecordUntrackedPath(bridgeRoot, workspaceDir, entry),
+	);
+	if (blocking.length > 0) {
+		throw new Error(
+			`refusing to record proof because bridge has tracked/staged changes or untracked files outside workspace: ${blocking.join(", ")}`,
+		);
 	}
 }
 
@@ -2797,7 +2825,7 @@ async function prove(args: string[]): Promise<void> {
 					.join(", ")}`,
 			);
 		}
-		assertBridgeRecordable(rc.bridgeDir, proverPath);
+		assertBridgeRecordable(rc.bridgeDir, rc.workspaceDir, proverPath);
 		recordProofResult(assertion.path, result);
 		console.log(`Proof recorded: ${assertion.id}`);
 	} else {

@@ -269,11 +269,7 @@ scopes:
 links:
   - artifacts/${proofProverId}.mjs:
       rel: prover
-meta:
-  parser-fixture:
-    nested:
-      values:
-        - ok: true
+meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
 ---
 
 # Proof runner direct CLI assertion
@@ -427,6 +423,8 @@ links:
 	const recordedAssertion = readFileSync(proofAssertionPath, "utf8");
 	assert.match(recordedAssertion, /last-run:/);
 	assert.match(recordedAssertion, /pass: true/);
+	assert.match(recordedAssertion, /^meta:$/m);
+	assert.doesNotMatch(recordedAssertion, /^meta: \{/m);
 	assert.doesNotMatch(recordedAssertion, /prover-sha256/);
 	assert.doesNotMatch(recordedAssertion, /\\r/);
 	assert.match(recordedAssertion, new RegExp(`^gist: "${escapeRegExp(proofAssertionGist)}"$`, "m"));

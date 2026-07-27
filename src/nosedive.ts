@@ -19,7 +19,7 @@ import {
 	writeFileSync,
 	type Dirent,
 } from "node:fs";
-import { isSeq, parse as parseYaml, parseDocument } from "yaml";
+import { isSeq, parse as parseYaml, parseDocument, type ToStringOptions } from "yaml";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -77,6 +77,15 @@ const DEFAULT_RC = {
 	"work-branch-prefix": "work/",
 	agents: ["copilot"],
 };
+
+const YAML_STRINGIFY_OPTIONS = {
+	collectionStyle: "block",
+	lineWidth: 0,
+} as const satisfies ToStringOptions;
+
+function stringifyYaml(doc: { toString(options?: ToStringOptions): string }): string {
+	return doc.toString(YAML_STRINGIFY_OPTIONS);
+}
 
 // --- bridge config shape -----------------------------------------------
 
@@ -367,7 +376,7 @@ export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurren
 		if (!current.effort) doc.deleteIn(["current", "effort"]);
 	}
 
-	writeFileAtomic(targetPath, doc.toString());
+	writeFileAtomic(targetPath, stringifyYaml(doc));
 }
 
 // --- init --------------------------------------------------------------
@@ -1753,7 +1762,7 @@ function appendRepoToEffort(path: string, repo: EffortRepo): string {
 		throw new Error(`invalid effort repos in ${path}: expected a YAML list`);
 	}
 
-	const yaml = doc.toString({ lineWidth: 0 });
+	const yaml = stringifyYaml(doc);
 	writeFileAtomic(path, ["---", yaml.trimEnd(), "---", frontmatter.body].join("\n"));
 	return entry;
 }
@@ -2801,10 +2810,7 @@ function recordProofResult(assertionPath: string, result: ProverHostResult): voi
 	doc.deleteIn(["meta", "last-proven-commit"]);
 	doc.deleteIn(["meta", "last-proven"]);
 
-	writeFileAtomic(
-		assertionPath,
-		`---\n${doc.toString({ lineWidth: 0 }).trimEnd()}\n---\n${block.body}`,
-	);
+	writeFileAtomic(assertionPath, `---\n${stringifyYaml(doc).trimEnd()}\n---\n${block.body}`);
 }
 
 async function prove(args: string[]): Promise<void> {

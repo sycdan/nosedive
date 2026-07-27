@@ -168,6 +168,32 @@ Usage:
   `npx nosedive render <handoff-runbook-uuid>`. Git's normal
   `git push --no-verify` bypass remains available.
 
+### prove
+
+Run an executable proof for a bridge `kind: assertion` doc.
+
+Usage:
+
+`nosedive prove <assertion-uuid> [--record] [--verbose]`
+
+- The assertion must link exactly one bridge-owned single-file prover artifact
+  with `rel: prover`, currently as a bridge-relative `file://...` link.
+- The prover runs in an isolated child Node process and must export
+  `prove(ctx)`.
+- `ctx.exec(command, args, { cwd })` requires an explicit command working
+  directory; proof code should use context roots instead of ambient
+  `process.cwd()`.
+- Repositories are resolved through `ctx.repos.get(...)` or
+  `ctx.repos.require(...)` by repo id or kb repo `name`. The resolved repo must
+  be named by the assertion's scopes before the proof host will hydrate or
+  expose it. Accessed repos are tracked as proof inputs by exact commit SHA.
+- By default, proof runs are experimental and do not edit the assertion.
+  `--record` writes `meta.last-proven.inputs.<repo-id>.commit`, refuses to
+  record if any accessed repo is dirty, and also requires a clean bridge with
+  the prover file checked in.
+- `--verbose` prints the assertion id, gist, and each `ctx.exec` command before
+  it runs.
+
 ### list-dives
 
 Print pickupable and working dives for an open effort.

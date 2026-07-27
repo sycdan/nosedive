@@ -150,6 +150,7 @@ try {
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /init/);
 	assert.match(help.stdout, /preflight/);
+	assert.match(help.stdout, /prove/);
 	assert.match(help.stdout, /render/);
 	assert.match(help.stdout, /pre-push\.hook/);
 	assert.match(help.stdout, /whoami/);
@@ -197,6 +198,226 @@ try {
 	const missingRender = run(["render", "019f9f95-ffff-7fff-bfff-ffffffffffff"], root);
 	assert.notEqual(missingRender.status, 0, "render missing package doc unexpectedly succeeded");
 	assert.match(missingRender.stderr, /package kb doc not found/);
+
+	const proofBridge = join(tmp, "proof-bridge");
+	const proofSource = join(tmp, "proof-source");
+	const proofRepoId = "019fa101-0000-7000-8000-000000000001";
+	const proofAssertionId = "019fa101-0000-7000-8000-000000000010";
+	const proofProverId = "019fa101-0000-7000-8000-000000000020";
+	const missingCwdAssertionId = "019fa101-0000-7000-8000-000000000011";
+	const missingCwdProverId = "019fa101-0000-7000-8000-000000000021";
+	const outOfScopeAssertionId = "019fa101-0000-7000-8000-000000000012";
+	const outOfScopeProverId = "019fa101-0000-7000-8000-000000000022";
+	mkdirSync(join(proofBridge, "kb", "artifacts"), { recursive: true });
+	mkdirSync(proofSource, { recursive: true });
+	runTool("git", ["init", "-b", "main"], proofBridge);
+	runTool("git", ["init", "-b", "main"], proofSource);
+	write(join(proofSource, "file.txt"), "proof input\n");
+	runTool("git", ["add", "file.txt"], proofSource);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"proof input",
+		],
+		proofSource,
+	);
+	const proofCommit = runTool("git", ["rev-parse", "HEAD"], proofSource).stdout.trim();
+	write(
+		join(proofBridge, ".nosediverc"),
+		`workspace: ./workspace
+kb: ./kb
+agents:
+  - copilot
+`,
+	);
+	write(join(proofBridge, ".gitignore"), [".nosedive/", "workspace/", ""].join("\n"));
+	write(
+		join(proofBridge, "kb", "proof-repo.md"),
+		`---
+kind: repo
+id: ${proofRepoId}
+name: proof-target
+gist: "Proof target repo"
+meta:
+  path: workspace/proof-target
+  remotes:
+    local: "${proofSource.replaceAll("\\", "/")}"
+---
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${proofAssertionId}.md`),
+		`---
+kind: assertion
+id: ${proofAssertionId}
+name: proof-runner-direct-cli
+gist: "Proof runner executes a bridge-owned prover."
+scopes:
+  - ${proofRepoId}:
+      mode: ro
+      ref: ${proofCommit}
+links:
+  - file://kb/artifacts/${proofProverId}.mjs:
+      rel: prover
+meta:
+  parser-fixture:
+    nested:
+      values:
+        - ok: true
+---
+
+# Proof runner direct CLI assertion
+`,
+	);
+	const proofProverPath = join(proofBridge, "kb", "artifacts", `${proofProverId}.mjs`);
+	write(
+		proofProverPath,
+		`export async function prove(ctx) {
+  const repo = await ctx.repos.require("proof-target");
+  const input = await ctx.fs.readText(repo.resolve("file.txt"));
+  ctx.assert.match(input, /proof input/);
+
+  const sandbox = await ctx.sandbox.create(ctx.assertion.name);
+  await ctx.exec("git", ["init", "-b", "main"], { cwd: sandbox.root });
+  await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "init", "--headless"], { cwd: sandbox.root });
+  await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
+  const hook = await ctx.fs.readText(ctx.path.join(sandbox.root, ".git", "hooks", "pre-push"));
+  ctx.assert.equal(
+    hook,
+    '#!/bin/sh\\n# nosedive-managed\\nexec npx nosedive pre-push.hook "$@"\\n',
+  );
+  ctx.log("direct cli preflight succeeded");
+}
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${missingCwdAssertionId}.md`),
+		`---
+kind: assertion
+id: ${missingCwdAssertionId}
+name: proof-runner-requires-explicit-cwd
+gist: "Proof runner rejects ambient cwd use."
+links:
+  - file://kb/artifacts/${missingCwdProverId}.mjs:
+      rel: prover
+---
+
+# Missing cwd assertion
+`,
+	);
+	write(
+		join(proofBridge, "kb", "artifacts", `${missingCwdProverId}.mjs`),
+		`export async function prove(ctx) {
+  await ctx.exec("git", ["status"]);
+}
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${outOfScopeAssertionId}.md`),
+		`---
+kind: assertion
+id: ${outOfScopeAssertionId}
+name: proof-runner-rejects-out-of-scope-repo
+gist: "Proof runner rejects repo access not named by assertion scopes."
+links:
+  - file://kb/artifacts/${outOfScopeProverId}.mjs:
+      rel: prover
+---
+
+# Out-of-scope assertion
+`,
+	);
+	write(
+		join(proofBridge, "kb", "artifacts", `${outOfScopeProverId}.mjs`),
+		`export async function prove(ctx) {
+  await ctx.repos.require("proof-target");
+}
+`,
+	);
+
+	runTool("git", ["add", ".gitignore", ".nosediverc", "kb"], proofBridge);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"proof bridge fixtures",
+		],
+		proofBridge,
+	);
+
+	const proofRun = run(["prove", proofAssertionId], proofBridge);
+	assertOk(proofRun, "prove direct CLI assertion failed");
+	assert.match(proofRun.stdout, /^Proving: proof-runner-direct-cli$/m);
+	assert.doesNotMatch(proofRun.stdout, new RegExp(`Proving: .*${proofAssertionId}`));
+	assert.doesNotMatch(proofRun.stdout, /Gist:/);
+	assert.doesNotMatch(proofRun.stdout, /^exec cwd=/m);
+	assert.match(proofRun.stdout, /direct cli preflight succeeded/);
+	assert.match(proofRun.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
+	assert.equal(existsSync(join(proofBridge, "workspace", "proof-target")), true);
+	assert.doesNotMatch(
+		readFileSync(join(proofBridge, "kb", `${proofAssertionId}.md`), "utf8"),
+		/last-proven:/,
+		"non-recorded proof should not edit the assertion",
+	);
+
+	const verboseProofRun = run(["prove", proofAssertionId, "--verbose"], proofBridge);
+	assertOk(verboseProofRun, "prove --verbose direct CLI assertion failed");
+	assert.match(
+		verboseProofRun.stdout,
+		new RegExp(`Proving: proof-runner-direct-cli \\(${proofAssertionId}\\)`),
+	);
+	assert.match(verboseProofRun.stdout, /^exec cwd=.* git init -b main$/m);
+	assert.match(verboseProofRun.stdout, /^exec cwd=.* preflight$/m);
+	assert.match(verboseProofRun.stdout, /Gist: Proof runner executes a bridge-owned prover\./);
+	assert.equal(
+		verboseProofRun.stdout.indexOf("exec cwd=") < verboseProofRun.stdout.indexOf("Proof passed:"),
+		true,
+		"verbose exec lines should print during execution, before the proof result",
+	);
+	assert.equal(
+		verboseProofRun.stdout.indexOf("Proof passed:") < verboseProofRun.stdout.indexOf("Gist:"),
+		true,
+		"verbose gist should print after the proof result",
+	);
+
+	const proofRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assertOk(proofRecord, "prove --record direct CLI assertion failed");
+	assert.match(proofRecord.stdout, /direct cli preflight succeeded/);
+	assert.match(proofRecord.stdout, new RegExp(`Proof recorded: ${proofAssertionId}`));
+	const recordedAssertion = readFileSync(join(proofBridge, "kb", `${proofAssertionId}.md`), "utf8");
+	assert.match(recordedAssertion, /last-proven:/);
+	assert.doesNotMatch(recordedAssertion, /prover-sha256/);
+	assert.match(recordedAssertion, new RegExp(`${proofRepoId}:\\n\\s+commit: ${proofCommit}`));
+	assert.doesNotMatch(recordedAssertion, /last-proven-commit/);
+
+	write(join(proofBridge, "workspace", "proof-target", "dirty.txt"), "dirty\n");
+	const dirtyExperimentalProof = run(["prove", proofAssertionId], proofBridge);
+	assertOk(dirtyExperimentalProof, "non-recorded proof should allow dirty accessed repos");
+	const dirtyRecordedProof = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assert.notEqual(dirtyRecordedProof.status, 0, "dirty recorded proof unexpectedly succeeded");
+	assert.match(
+		dirtyRecordedProof.stderr,
+		/refusing to record proof because accessed repo\(s\) are dirty/,
+	);
+
+	const missingCwdProof = run(["prove", missingCwdAssertionId], proofBridge);
+	assert.notEqual(missingCwdProof.status, 0, "missing cwd prover unexpectedly succeeded");
+	assert.match(missingCwdProof.stderr, /ctx\.exec requires options\.cwd/);
+
+	const outOfScopeProof = run(["prove", outOfScopeAssertionId], proofBridge);
+	assert.notEqual(outOfScopeProof.status, 0, "out-of-scope repo access unexpectedly succeeded");
+	assert.match(outOfScopeProof.stderr, /does not scope it/);
 
 	const preflightBridge = join(tmp, "preflight-bridge");
 	mkdirSync(preflightBridge, { recursive: true });

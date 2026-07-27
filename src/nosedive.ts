@@ -1,16 +1,19 @@
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { createInterface } from "node:readline/promises";
+import * as nodePath from "node:path";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	existsSync,
 	chmodSync,
 	mkdirSync,
+	mkdtempSync,
 	realpathSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	renameSync,
 	statSync,
 	writeFileSync,
@@ -46,6 +49,7 @@ Commands:
   mint          Generate UUIDv7 with a specific timestamp encoded
   init          Create or edit .nosediverc interactively
   preflight     Install the bridge pre-push hook
+  prove         Run an assertion prover
   render        Print a packaged kb document body by uuid
   pre-push.hook Run bridge pre-push checks
   whoami        Print the bridge pilot identity
@@ -100,6 +104,7 @@ const LOCAL_CONFIG_KNOWN_KEYS = ["pilot-name", "pilot-email"] as const;
 // --- frontmatter -----------------------------------------------------------
 
 interface SimpleYaml {
+	raw: Record<string, unknown>;
 	scalars: Record<string, string>;
 	lists: Record<string, string[]>;
 	nested: Record<string, Record<string, string>>;
@@ -137,7 +142,7 @@ export interface NosediveRcCurrent {
 }
 
 function emptyYaml(): SimpleYaml {
-	return { scalars: {}, lists: {}, nested: {}, nestedLists: {} };
+	return { raw: {}, scalars: {}, lists: {}, nested: {}, nestedLists: {} };
 }
 
 function scalarToString(value: unknown): string | undefined {
@@ -150,6 +155,7 @@ function scalarToString(value: unknown): string | undefined {
 function normalizeYaml(value: unknown): SimpleYaml {
 	const out = emptyYaml();
 	if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+	out.raw = value as Record<string, unknown>;
 
 	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
 		if (Array.isArray(item)) {
@@ -301,6 +307,7 @@ function readSplitEffectiveYaml(basePath: string, localPath: string): SimpleYaml
 		? parseYamlBlock(readFileSync(localPath, "utf8"), localPath)
 		: emptyYaml();
 	return {
+		raw: { ...base.raw, ...local.raw },
 		scalars: { ...base.scalars, ...local.scalars },
 		lists: { ...base.lists, ...local.lists },
 		nested: { ...base.nested, ...local.nested },
@@ -1414,6 +1421,7 @@ interface KbDoc {
 	metaLists: Record<string, string[]>;
 	metaRaw: Record<string, unknown>;
 	scopes: ScopeRef[];
+	links: LinkRef[];
 }
 
 interface ScopeRef {
@@ -1571,7 +1579,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 			const path = join(kbDir, e.name);
 			const text = readFileSync(path, "utf8");
 			const fm = parseMarkdownFrontmatter(text, path);
-			const raw = parseRawFrontmatterObject(text, path);
+			const raw = fm.raw;
 			return {
 				path,
 				relPath: relative(bridgeDir, path),
@@ -1589,6 +1597,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 						? (raw.meta as Record<string, unknown>)
 						: {},
 				scopes: parseScopeRefs(raw.scopes, path),
+				links: fm.scalars.kind === "assertion" ? parseLinkRefs(raw.links, path) : [],
 			};
 		});
 }
@@ -2588,6 +2597,482 @@ function dehydrateRepoWorkspace(args: string[]): void {
 	console.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)}`);
 }
 
+interface ProveOptions {
+	assertionId: string;
+	record: boolean;
+	verbose: boolean;
+}
+
+interface ProverHostRequest {
+	bridgeDir: string;
+	kbDir: string;
+	workspaceDir?: string;
+	assertionId: string;
+	assertionName: string;
+	assertionPath: string;
+	proverPath: string;
+	resultPath: string;
+	verbose: boolean;
+}
+
+interface ProverHostRepoInput {
+	commit: string;
+	dirty: boolean;
+	path: string;
+}
+
+interface ProverHostResult {
+	status: number;
+	error?: string;
+	inputs: Record<string, ProverHostRepoInput>;
+}
+
+interface RepoContext {
+	id: string;
+	root: string;
+	resolve(path: string): string;
+}
+
+function parseProveArgs(args: string[]): ProveOptions {
+	let assertionId: string | undefined;
+	let record = false;
+	let verbose = false;
+
+	for (const arg of args) {
+		if (arg === "--record") {
+			record = true;
+			continue;
+		}
+		if (arg === "--verbose") {
+			verbose = true;
+			continue;
+		}
+		if (arg === "-h" || arg === "--help") {
+			throw new Error("Usage: nosedive prove <assertion-uuid> [--record] [--verbose]");
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown prove option: ${arg}`);
+		if (assertionId) throw new Error(`unexpected prove argument: ${arg}`);
+		assertionId = arg;
+	}
+
+	if (!assertionId) throw new Error("prove requires an assertion uuid");
+	if (!uuidLike(assertionId))
+		throw new Error(`prove requires a UUID-shaped assertion id: ${assertionId}`);
+	return { assertionId, record, verbose };
+}
+
+function findAssertionDoc(kbDocs: KbDoc[], assertionId: string): KbDoc {
+	const matches = kbDocs.filter((doc) => doc.kind === "assertion" && doc.id === assertionId);
+	if (matches.length === 1) return matches[0]!;
+	if (matches.length > 1) throw new Error(`assertion id is ambiguous: ${assertionId}`);
+	throw new Error(`assertion not found: ${assertionId}`);
+}
+
+function assertionProverLink(assertion: KbDoc): LinkRef {
+	const links = assertion.links.filter((link) => link.rel === "prover");
+	if (links.length === 1) return links[0]!;
+	if (links.length === 0) throw new Error(`assertion ${assertion.id} is missing a rel=prover link`);
+	throw new Error(`assertion ${assertion.id} has more than one rel=prover link`);
+}
+
+function resolveBridgeFileLink(bridgeDir: string, link: LinkRef, label: string): string {
+	if (!link.id.startsWith("file://")) {
+		throw new Error(`${label} must use file:// for now: ${link.id}`);
+	}
+	const relPath = link.id.slice("file://".length);
+	if (!relPath || isAbsolute(relPath)) {
+		throw new Error(`${label} must be a bridge-relative file:// link: ${link.id}`);
+	}
+	const path = resolveFrom(bridgeDir, relPath);
+	if (!isInsideDir(bridgeDir, path)) {
+		throw new Error(`${label} resolves outside the bridge: ${link.id}`);
+	}
+	return path;
+}
+
+function resolveProverArtifact(bridgeDir: string, assertion: KbDoc): string {
+	const link = assertionProverLink(assertion);
+	const path = resolveBridgeFileLink(bridgeDir, link, `assertion ${assertion.id} prover link`);
+	if (!existsSync(path)) throw new Error(`prover artifact not found: ${formatPath(path)}`);
+	if (!statSync(path).isFile())
+		throw new Error(`prover artifact is not a file: ${formatPath(path)}`);
+	return path;
+}
+
+function proofRunTempDir(): string {
+	return mkdtempSync(join(tmpdir(), "nosedive-proof-"));
+}
+
+function readProverHostResult(path: string): ProverHostResult {
+	if (!existsSync(path)) {
+		throw new Error(`proof host did not write a result file: ${formatPath(path)}`);
+	}
+	return JSON.parse(readFileSync(path, "utf8")) as ProverHostResult;
+}
+
+function assertBridgeRecordable(bridgeDir: string, proverPath: string): void {
+	const bridgeRoot = gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"]);
+	if (!bridgeRoot) throw new Error("refusing to record proof because bridge is not a git repo");
+	const proverRelPath = gitRelPath(bridgeRoot, proverPath);
+	if (!gitOk(bridgeRoot, ["ls-files", "--error-unmatch", "--", proverRelPath])) {
+		throw new Error(
+			`refusing to record proof because prover is not checked in: ${formatPath(proverPath)}`,
+		);
+	}
+	const status = gitOutput(bridgeRoot, ["status", "--porcelain"]);
+	if (status === undefined || status.trim() !== "") {
+		throw new Error("refusing to record proof because bridge worktree is dirty");
+	}
+}
+
+function recordProofResult(assertionPath: string, result: ProverHostResult): void {
+	const text = readFileSync(assertionPath, "utf8");
+	const block = splitMarkdownFrontmatter(text, assertionPath);
+	const doc = parseDocument(block.yaml);
+	if (doc.errors.length > 0) {
+		throw new Error(
+			`invalid YAML in frontmatter in ${assertionPath}: ${doc.errors[0]?.message ?? "unknown error"}`,
+		);
+	}
+
+	const inputs: Record<string, { commit: string }> = {};
+	for (const [repoId, input] of Object.entries(result.inputs)) {
+		inputs[repoId] = { commit: input.commit };
+	}
+
+	doc.setIn(["meta", "last-proven"], {
+		"exit-status": result.status,
+		inputs,
+	});
+	doc.deleteIn(["meta", "last-proven-commit"]);
+
+	writeFileAtomic(assertionPath, `---\n${doc.toString().trimEnd()}\n---\n${block.body}`);
+}
+
+async function prove(args: string[]): Promise<void> {
+	const options = parseProveArgs(args);
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
+
+	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const assertion = findAssertionDoc(kbDocs, options.assertionId);
+	const proverPath = resolveProverArtifact(rc.bridgeDir, assertion);
+	const runDir = proofRunTempDir();
+	const requestPath = join(runDir, "request.json");
+	const resultPath = join(runDir, "result.json");
+	const cliPath = join(packageRoot(), "dist", "cli.js");
+
+	const request: ProverHostRequest = {
+		bridgeDir: rc.bridgeDir,
+		kbDir: rc.kbDir,
+		workspaceDir: rc.workspaceDir,
+		assertionId: assertion.id,
+		assertionName: assertion.name,
+		assertionPath: assertion.path,
+		proverPath,
+		resultPath,
+		verbose: options.verbose,
+	};
+	writeFileAtomic(requestPath, `${JSON.stringify(request, null, 2)}\n`);
+
+	const child = spawnSync(process.execPath, [cliPath, "__prove-host", requestPath], {
+		cwd: rc.bridgeDir,
+		encoding: "utf8",
+		env: cleanGitEnv(),
+	});
+	if (child.stdout) process.stdout.write(child.stdout);
+	if (child.stderr) process.stderr.write(child.stderr);
+
+	const result = readProverHostResult(resultPath);
+	if (result.status !== 0 || child.status !== 0) {
+		throw new Error(result.error ?? `proof failed with exit status ${result.status}`);
+	}
+
+	if (options.record) {
+		const dirty = Object.entries(result.inputs).filter(([, input]) => input.dirty);
+		if (dirty.length > 0) {
+			throw new Error(
+				`refusing to record proof because accessed repo(s) are dirty: ${dirty
+					.map(([repoId]) => repoId)
+					.join(", ")}`,
+			);
+		}
+		assertBridgeRecordable(rc.bridgeDir, proverPath);
+		recordProofResult(assertion.path, result);
+		console.log(`Proof recorded: ${assertion.id}`);
+	} else {
+		console.log(`Proof passed: ${assertion.id}`);
+	}
+	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
+}
+
+function scopeForRepo(assertion: KbDoc, repoId: string): ScopeRef | undefined {
+	const scopes = assertion.scopes.filter((scope) => scope.repoId === repoId);
+	if (scopes.length === 0) return undefined;
+	const refs = [...new Set(scopes.map((scope) => scope.ref).filter(Boolean))];
+	if (refs.length > 1) {
+		throw new Error(`assertion ${assertion.id} has conflicting refs for scoped repo ${repoId}`);
+	}
+	return scopes[0];
+}
+
+function requiredScopeForRepo(assertion: KbDoc, repoDoc: KbDoc): ScopeRef {
+	const scope = scopeForRepo(assertion, repoDoc.id);
+	if (!scope) {
+		throw new Error(
+			`prover requested repo ${repoDoc.name || repoDoc.id} (${repoDoc.id}), but assertion ${assertion.id} does not scope it`,
+		);
+	}
+	return scope;
+}
+
+function ensureProverRepoHydrated(
+	repoDoc: KbDoc,
+	assertion: KbDoc,
+	request: ProverHostRequest,
+): string {
+	if (!request.workspaceDir) throw new Error(".nosediverc is missing workspace");
+	const repoId = repoDoc.id;
+	const scope = requiredScopeForRepo(assertion, repoDoc);
+	const targetPath = expectedWorktreePath(repoDoc, request.bridgeDir);
+	ensureSafeTargetPath(repoId, targetPath, request.workspaceDir);
+
+	if (existsSync(targetPath)) {
+		if (!statSync(targetPath).isDirectory()) {
+			throw new Error(
+				`unsafe target path for repo ${repoId}: target exists but is not a directory: ${formatPath(targetPath)}`,
+			);
+		}
+		if (gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) return targetPath;
+		if (!isDirEmpty(targetPath)) {
+			throw new Error(
+				`unsafe target path for repo ${repoId}: non-empty target is not a git worktree: ${formatPath(targetPath)}`,
+			);
+		}
+	}
+
+	const sourcePath = ensureManagedRepoCache(repoDoc, request.bridgeDir);
+	const ref = scope.ref ?? repoDoc.repoBaseBranch ?? "main";
+	const commit = resolveRefCommit(sourcePath, repoId, ref);
+	mkdirSync(dirname(targetPath), { recursive: true });
+	pruneStaleWorktrees(sourcePath, repoId);
+	gitRun(
+		sourcePath,
+		["worktree", "add", "--detach", targetPath, commit],
+		`failed to create worktree for repo ${repoId} at ${formatPath(targetPath)}`,
+	);
+	writeRepoMarker(targetPath, repoId);
+	ensureRepoMarkerExcluded(targetPath, repoId);
+	reconcilePushReadOnly(sourcePath, targetPath, scope.readOnly, repoId);
+	return targetPath;
+}
+
+function materializeProverRepoContext(
+	repoDoc: KbDoc,
+	assertion: KbDoc,
+	request: ProverHostRequest,
+	accessedRepos: Map<string, string>,
+): RepoContext {
+	const root = ensureProverRepoHydrated(repoDoc, assertion, request);
+	accessedRepos.set(repoDoc.id, root);
+	return {
+		id: repoDoc.id,
+		root,
+		resolve(path: string): string {
+			return resolveFrom(root, path);
+		},
+	};
+}
+
+function proofRepoInputs(accessedRepos: Map<string, string>): Record<string, ProverHostRepoInput> {
+	const inputs: Record<string, ProverHostRepoInput> = {};
+	for (const [repoId, root] of accessedRepos) {
+		const commit = gitRun(root, ["rev-parse", "HEAD"], `failed to read proof input ${repoId}`);
+		const status = gitOutput(root, ["status", "--porcelain"]);
+		inputs[repoId] = {
+			commit,
+			dirty: status === undefined ? true : status.trim() !== "",
+			path: root,
+		};
+	}
+	return inputs;
+}
+
+function shellishArg(arg: string): string {
+	if (/^[A-Za-z0-9_./:=@+-]+$/.test(arg)) return arg;
+	return JSON.stringify(arg);
+}
+
+function formatExecCommand(command: string, args: string[], cwd: string): string {
+	const rendered = [command, ...args].map(shellishArg).join(" ");
+	return `exec cwd=${formatPath(cwd)} ${rendered}`;
+}
+
+function createProverContext(request: ProverHostRequest) {
+	const kbDocs = loadKbDocs(request.kbDir, request.bridgeDir);
+	const assertion = findAssertionDoc(kbDocs, request.assertionId);
+	const accessedRepos = new Map<string, string>();
+	const sandboxes: string[] = [];
+
+	const ctx = {
+		assertion: {
+			id: assertion.id,
+			name: assertion.name,
+			path: assertion.path,
+			meta: assertion.metaRaw,
+			scopes: assertion.scopes,
+		},
+		bridge: {
+			root: request.bridgeDir,
+			resolve(path: string): string {
+				return resolveFrom(request.bridgeDir, path);
+			},
+		},
+		repos: {
+			async get(repoRef: string): Promise<RepoContext | undefined> {
+				const repoDoc = maybeResolveRepoDoc(kbDocs, repoRef);
+				if (!repoDoc) return undefined;
+				return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos);
+			},
+			async require(repoRef: string): Promise<RepoContext> {
+				const repoDoc = resolveRepoDoc(kbDocs, repoRef);
+				return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos);
+			},
+		},
+		sandbox: {
+			async create(name = "run"): Promise<{ root: string; resolve(path: string): string }> {
+				const safeName = name.replace(/[^A-Za-z0-9_.-]/g, "-") || "run";
+				const root = mkdtempSync(join(tmpdir(), `nosedive-proof-${safeName}-`));
+				sandboxes.push(root);
+				return {
+					root,
+					resolve(path: string): string {
+						return resolveFrom(root, path);
+					},
+				};
+			},
+		},
+		async exec(
+			command: string,
+			args: string[] = [],
+			options?: { cwd?: string; env?: Record<string, string>; expectExitCode?: number },
+		): Promise<{ status: number; stdout: string; stderr: string }> {
+			if (!options?.cwd) throw new Error("ctx.exec requires options.cwd");
+			if (request.verbose) console.log(formatExecCommand(command, args, options.cwd));
+			const env = { ...cleanGitEnv(), ...(options.env ?? {}) };
+			const spawnCommand = commandForSpawn(command, args);
+			const result = spawnSync(spawnCommand.command, spawnCommand.args, {
+				cwd: resolve(options.cwd),
+				encoding: "utf8",
+				env,
+			});
+			const status = result.status ?? 1;
+			const expected = options.expectExitCode ?? 0;
+			const stdout = spawnOutputText(result.stdout);
+			const stderr = spawnOutputText(result.stderr);
+			const execResult = {
+				status,
+				stdout,
+				stderr,
+			};
+			if (status !== expected) {
+				const detail =
+					stderr.trim() ||
+					stdout.trim() ||
+					(result.error instanceof Error ? result.error.message : undefined) ||
+					`exit status ${status}`;
+				throw new Error(
+					`command failed in ${formatPath(options.cwd)}: ${command} ${args.join(" ")}: ${detail}`,
+				);
+			}
+			return execResult;
+		},
+		fs: {
+			async readText(path: string): Promise<string> {
+				return readFileSync(path, "utf8");
+			},
+			async writeText(path: string, contents: string): Promise<void> {
+				mkdirSync(dirname(path), { recursive: true });
+				writeFileAtomic(path, contents);
+			},
+			async exists(path: string): Promise<boolean> {
+				return existsSync(path);
+			},
+		},
+		git: {
+			async init(path: string): Promise<void> {
+				await ctx.exec("git", ["init", "-b", "main"], { cwd: path });
+			},
+		},
+		path: nodePath,
+		assert: {
+			equal(actual: unknown, expected: unknown, message?: string): void {
+				if (actual !== expected) throw new Error(message ?? `expected ${expected}, got ${actual}`);
+			},
+			ok(value: unknown, message?: string): void {
+				if (!value) throw new Error(message ?? "expected value to be truthy");
+			},
+			match(value: string, pattern: RegExp, message?: string): void {
+				if (!pattern.test(value))
+					throw new Error(message ?? `expected ${value} to match ${pattern}`);
+			},
+		},
+		log(message: string): void {
+			console.log(message);
+		},
+	};
+
+	return {
+		ctx,
+		inputs(): Record<string, ProverHostRepoInput> {
+			return proofRepoInputs(accessedRepos);
+		},
+		cleanup(success: boolean): void {
+			if (!success) return;
+			for (const sandbox of sandboxes) rmSync(sandbox, { recursive: true, force: true });
+		},
+	};
+}
+
+async function proveHost(args: string[]): Promise<void> {
+	const [requestPath, ...extra] = args;
+	if (!requestPath || extra.length > 0) throw new Error("__prove-host requires one request path");
+
+	const request = JSON.parse(readFileSync(requestPath, "utf8")) as ProverHostRequest;
+	const session = createProverContext(request);
+	let status = 0;
+	let error: string | undefined;
+
+	try {
+		console.log(
+			request.verbose
+				? `Proving: ${request.assertionName} (${request.assertionId})`
+				: `Proving: ${request.assertionName}`,
+		);
+		const mod = (await import(pathToFileURL(request.proverPath).href)) as {
+			prove?: (ctx: unknown) => unknown | Promise<unknown>;
+		};
+		if (typeof mod.prove !== "function") {
+			throw new Error(`prover ${formatPath(request.proverPath)} must export prove(ctx)`);
+		}
+		await mod.prove(session.ctx);
+	} catch (err) {
+		status = 1;
+		error = err instanceof Error ? err.message : String(err);
+		console.error(error);
+	} finally {
+		session.cleanup(status === 0);
+		const result: ProverHostResult = {
+			status,
+			error,
+			inputs: session.inputs(),
+		};
+		writeFileAtomic(request.resultPath, `${JSON.stringify(result, null, 2)}\n`);
+	}
+
+	if (status !== 0) process.exit(status);
+}
+
 function optionalScopeString(
 	value: Record<string, unknown>,
 	key: string,
@@ -3194,6 +3679,33 @@ function gitOutput(cwd: string, args: string[]): string | undefined {
 
 function gitOk(cwd: string, args: string[]): boolean {
 	return runGit(cwd, args).status === 0;
+}
+
+function executableForSpawn(command: string): string {
+	if (process.platform === "win32" && (command === "npm" || command === "npx")) {
+		return `${command}.cmd`;
+	}
+	return command;
+}
+
+function commandForSpawn(command: string, args: string[]): { command: string; args: string[] } {
+	const resolvedCommand = executableForSpawn(command);
+	if (
+		process.platform === "win32" &&
+		(resolvedCommand.endsWith(".cmd") || resolvedCommand.endsWith(".bat"))
+	) {
+		return {
+			command: process.env.ComSpec || "cmd.exe",
+			args: ["/d", "/s", "/c", resolvedCommand, ...args],
+		};
+	}
+	return { command: resolvedCommand, args };
+}
+
+function spawnOutputText(value: unknown): string {
+	if (typeof value === "string") return value;
+	if (Buffer.isBuffer(value)) return value.toString("utf8");
+	return "";
 }
 
 function gitCommonDir(cwd: string): string | undefined {
@@ -3809,6 +4321,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 			break;
 		case "preflight":
 			preflight(args);
+			break;
+		case "prove":
+			await prove(args);
+			break;
+		case "__prove-host":
+			await proveHost(args);
 			break;
 		case "render":
 			renderCommand(args);

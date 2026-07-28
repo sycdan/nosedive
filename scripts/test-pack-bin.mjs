@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -53,14 +53,7 @@ assert.equal(
 	`npm pack output did not include a filename:\n${pack.stdout}`,
 );
 const packedPath = resolve(packed.filename);
-const initBridge = mkdtempSync(join(tmpdir(), "nosedive-pack-init-"));
-const expectedFoundationDocs = [
-	"00000000-0000-7434-9b1d-72a777ca61f7.md",
-	"0000000f-4240-7a62-8f61-a85b4c364560.md",
-	"0000001e-8480-79d6-8e3d-00222452c904.md",
-	"0000002d-c6c0-7354-a306-7624c2db8283.md",
-	"0000004c-4b40-7ee6-a8de-1f3b50de9a0b.md",
-];
+const seedBridge = mkdtempSync(join(tmpdir(), "nosedive-pack-seed-"));
 try {
 	const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
 	assert.match(help.stdout, /Usage: nosedive <command>/);
@@ -68,39 +61,24 @@ try {
 	assert.match(help.stdout, /pitch/);
 	assert.match(help.stdout, /add-repo/);
 
-	run("git", ["init", "-b", "main"], initBridge);
-	const init = runPackedNpm(
-		["exec", "--yes", "--package", packedPath, "-c", "nosedive init --headless"],
-		initBridge,
+	run("git", ["init", "-b", "main"], seedBridge);
+	const seed = runPackedNpm(
+		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless"],
+		seedBridge,
 	);
-	assert.match(init.stdout, /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/);
-	assert.match(
-		init.stdout,
-		new RegExp(`Seeded ${expectedFoundationDocs.length} foundation docs into \\.\\/kb`),
-	);
-	assert.doesNotMatch(init.stdout, /migration doc/);
-	const seededFilenames = readdirSync(join(initBridge, "kb"))
-		.filter((filename) => filename.endsWith(".md"))
-		.sort();
-	assert.deepEqual(seededFilenames, expectedFoundationDocs);
-	assert.equal(existsSync(join(initBridge, "kb", "artifacts")), false);
+	assert.match(seed.stdout, /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/);
+	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
+	assert.doesNotMatch(seed.stdout, /migration doc/);
+	assert.equal(existsSync(join(seedBridge, "kb")), false);
 	assert.equal(
-		readFileSync(join(initBridge, ".nosedive", ".gitignore"), "utf8"),
+		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),
 		["cache/", "migration-backups/", ""].join("\n"),
 	);
 	assert.match(
-		readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8"),
+		readFileSync(join(seedBridge, ".git", "info", "exclude"), "utf8"),
 		/^\.nosedive\.local\.yaml$/m,
-	);
-	const seededDocs = seededFilenames
-		.filter((filename) => filename.endsWith(".md"))
-		.map((filename) => readFileSync(join(initBridge, "kb", filename), "utf8"));
-	assert.equal(
-		seededDocs.some((content) => /^kind: foundation$/m.test(content)),
-		true,
-		`packed init did not seed any foundation docs:\n${init.stdout}\n${init.stderr}`,
 	);
 } finally {
 	rmSync(packed.filename, { force: true });
-	rmSync(initBridge, { recursive: true, force: true });
+	rmSync(seedBridge, { recursive: true, force: true });
 }

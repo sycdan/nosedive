@@ -76,29 +76,32 @@ Example:
 
 `npx -y nosedive@dev mint 1997-08-29T02:14:00-04:00`
 
-### init
+### seed
 
 Create, migrate, or edit bridge config in the current directory.
 
 Usage:
 
-`nosedive init [--headless]`
+`nosedive seed [--headless]`
 
 - Bridge config is split across two files: `.nosedive/config.yaml` (checked
   into git, team-shared — `workspace`, `backlog`, `kb`, `home-branch`,
   `work-branch-prefix`, `agents`, and a `schema-version`) and
   `.nosedive.local.yaml` (gitignored, personal — `pilot-name`, `pilot-email`).
   `.nosedive/config.yaml`'s presence in a directory is what identifies that
-  directory as bridge root. `init` also writes `.nosedive/.gitignore`
+  directory as bridge root. `seed` also writes `.nosedive/.gitignore`
   (`cache/`, `migration-backups/`) every run.
 - Every run first migrates an out-of-date bridge config to the latest schema
   — including the legacy single-file `.nosediverc` shape from older nosedive
   versions — before prompting or writing. Already-current bridges are a cheap
-  no-op, so `init --headless` is safe to run at the start of every agent
+  no-op, so `seed --headless` is safe to run at the start of every agent
   session. A migration backs up whatever it's about to change under
   `.nosedive/migration-backups/` first, and aborts with no writes at all if
   the bridge's shape is ambiguous or doesn't match any known migration's
   starting point.
+- `seed` does not copy packaged docs into the bridge KB. Agent instruction
+  files are expected to be managed by nosedive as ordinary files that can be
+  reviewed and checked into source control.
 - Without `--headless`, prompts for workspace, backlog, kb, home branch, work
   branch prefix, pilot identity, and `agents`; existing values (or defaults)
   are shown and kept by pressing Enter.
@@ -106,6 +109,17 @@ Usage:
   defaults.
 - `agents` defaults to `copilot` (with `claude` as an optional additional
   target).
+
+### init
+
+Deprecated alias for `seed`.
+
+Usage:
+
+`nosedive init [--headless]`
+
+- Prints a deprecation warning and then runs the same setup/migration path as
+  `seed`.
 
 ### preflight
 
@@ -127,8 +141,35 @@ Usage:
 - If `core.hooksPath` is set, preflight does not change Git config and does not
   write an ignored `.git/hooks/pre-push`; it prints the same manual wiring
   guidance.
-- This slice only installs the hook. Migrations, ff-only pull, and entrypoint
-  regeneration remain on `init`/`apply` until later preflight slices move them.
+- This slice only installs the hook. Config migrations are handled by `seed`;
+  agent instruction files are expected to be source-controlled files.
+
+### apply
+
+Deprecated.
+
+Usage:
+
+`nosedive apply [--dry-run]`
+
+- `apply` no longer writes agent instruction files. Running it without
+  `--dry-run` exits nonzero.
+- `--dry-run` remains as a read-only inspection path for now and prints a
+  deprecation warning.
+
+### nuke
+
+Remove managed bridge config.
+
+Usage:
+
+`nosedive nuke --config`
+
+- Fails unless `--config` is provided.
+- Removes `.nosediverc`, `.nosedive/config.yaml`, `.nosedive.local.yaml`, and
+  `.nosedive/.gitignore` when present.
+- Removes nosedive-managed config exclude blocks from Git's local
+  `.git/info/exclude`, including the older package-foundation exclude block.
 
 ### render
 

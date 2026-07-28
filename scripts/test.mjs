@@ -444,11 +444,23 @@ links:
 
 	const missingCwdProof = run(["prove", missingCwdAssertionId], proofBridge);
 	assert.notEqual(missingCwdProof.status, 0, "missing cwd prover unexpectedly succeeded");
-	assert.match(missingCwdProof.stderr, /ctx\.exec requires options\.cwd/);
+	assert.match(
+		missingCwdProof.stderr,
+		new RegExp(`Proof failed: proof-runner-requires-explicit-cwd \\(${missingCwdAssertionId}\\)`),
+	);
+	assert.match(missingCwdProof.stderr, /Reason: ctx\.exec requires options\.cwd/);
+	assert.doesNotMatch(missingCwdProof.stderr, /nosedive: ctx\.exec requires options\.cwd/);
 
 	const outOfScopeProof = run(["prove", outOfScopeAssertionId], proofBridge);
 	assert.notEqual(outOfScopeProof.status, 0, "out-of-scope repo access unexpectedly succeeded");
-	assert.match(outOfScopeProof.stderr, /does not scope it/);
+	assert.match(
+		outOfScopeProof.stderr,
+		new RegExp(
+			`Proof failed: proof-runner-rejects-out-of-scope-repo \\(${outOfScopeAssertionId}\\)`,
+		),
+	);
+	assert.match(outOfScopeProof.stderr, /Reason: .*does not scope it/);
+	assert.doesNotMatch(outOfScopeProof.stderr, /nosedive: .*does not scope it/);
 
 	const bareUuidProverProof = run(["prove", bareUuidProverAssertionId], proofBridge);
 	assert.notEqual(bareUuidProverProof.status, 0, "bare UUID prover link unexpectedly succeeded");

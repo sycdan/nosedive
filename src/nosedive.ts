@@ -2755,6 +2755,16 @@ function readProverHostResult(path: string): ProverHostResult {
 	return JSON.parse(readFileSync(path, "utf8")) as ProverHostResult;
 }
 
+function printProofFailure(
+	assertion: KbDoc,
+	result: ProverHostResult,
+	hostStatus: number | null,
+): void {
+	const status = result.status !== 0 ? result.status : (hostStatus ?? result.status);
+	console.error(`Proof failed: ${assertion.name} (${assertion.id})`);
+	console.error(`Reason: ${result.error ?? `proof failed with exit status ${status}`}`);
+}
+
 function bridgeStatusEntries(bridgeRoot: string): string[] {
 	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z"]);
 	if (result.status !== 0) {
@@ -2859,7 +2869,9 @@ async function prove(args: string[]): Promise<void> {
 
 	const result = readProverHostResult(resultPath);
 	if (result.status !== 0 || child.status !== 0) {
-		throw new Error(result.error ?? `proof failed with exit status ${result.status}`);
+		printProofFailure(assertion, result, child.status);
+		process.exitCode = 1;
+		return;
 	}
 
 	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
@@ -3134,7 +3146,6 @@ async function proveHost(args: string[]): Promise<void> {
 	} catch (err) {
 		status = 1;
 		error = err instanceof Error ? err.message : String(err);
-		console.error(error);
 	} finally {
 		session.cleanup(status === 0);
 		const result: ProverHostResult = {

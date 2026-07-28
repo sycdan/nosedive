@@ -27,6 +27,8 @@ const MANAGED_EXCLUDE_BEGIN = "# BEGIN nosedive-managed exclude";
 const MANAGED_EXCLUDE_END = "# END nosedive-managed exclude";
 const FOUNDATION_EXCLUDE_BEGIN = "# BEGIN nosedive-managed package-foundation exclude";
 const FOUNDATION_EXCLUDE_END = "# END nosedive-managed package-foundation exclude";
+const CONFIG_EXCLUDE_BEGIN = "# BEGIN nosedive-managed config exclude";
+const CONFIG_EXCLUDE_END = "# END nosedive-managed config exclude";
 const REPO_MARKER_EXCLUDE_BEGIN = "# BEGIN nosedive-managed repo-marker exclude";
 const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclude";
 const PRE_PUSH_HOOK = '#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n';
@@ -47,7 +49,8 @@ const USAGE = `Usage: nosedive <command>
 Commands:
   version       Print the package version
   mint          Generate UUIDv7 with a specific timestamp encoded
-  init          Create or edit .nosediverc interactively
+  seed          Create or migrate bridge config
+  init          Deprecated alias for seed
   preflight     Install the bridge pre-push hook
   prove         Run an assertion prover
   render        Print a packaged kb document body by uuid
@@ -59,8 +62,8 @@ Commands:
   hydrate-repo.workspace  Hydrate one repo worktree from kb metadata
   dehydrate-repo.workspace  Remove one hydrated repo worktree from the workspace
   add-repo      Add a kb repo to an effort's workspace
-  apply         Materialize scoped agent docs for the current effort
-  nuke          Reset managed local git state
+  apply         Deprecated; agent docs are checked into source control
+  nuke          Remove managed bridge config with --config
 `;
 
 const KNOWN_AGENTS = ["copilot", "claude"];
@@ -392,13 +395,13 @@ interface RcSettings {
 	agents: string[];
 }
 
-interface InitOptions {
+interface SeedOptions {
 	help: boolean;
 	headless: boolean;
 }
 
-function parseInitOptions(args: string[]): InitOptions {
-	const options: InitOptions = { help: false, headless: false };
+function parseSeedOptions(args: string[], command: "seed" | "init"): SeedOptions {
+	const options: SeedOptions = { help: false, headless: false };
 	for (const arg of args) {
 		if (arg === "-h" || arg === "--help") {
 			options.help = true;
@@ -408,8 +411,8 @@ function parseInitOptions(args: string[]): InitOptions {
 			options.headless = true;
 			continue;
 		}
-		if (arg.startsWith("--")) throw new Error(`unknown init option: ${arg}`);
-		throw new Error(`unexpected init argument: ${arg}`);
+		if (arg.startsWith("--")) throw new Error(`unknown ${command} option: ${arg}`);
+		throw new Error(`unexpected ${command} argument: ${arg}`);
 	}
 	return options;
 }
@@ -724,10 +727,11 @@ function writeNosediveDirGitignore(bridgeDir: string): void {
 	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
-async function init(args: string[]): Promise<void> {
-	const options = parseInitOptions(args);
+async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<void> {
+	const options = parseSeedOptions(args, command);
 	if (options.help) {
-		console.log("Usage: nosedive init [--headless]");
+		console.log(`Usage: nosedive ${command} [--headless]`);
+		if (command === "init") console.log("  Deprecated: use `nosedive seed` instead.");
 		console.log(
 			"  Create, migrate, or edit bridge config (.nosedive/config.yaml + .nosedive.local.yaml) in the current directory.",
 		);
@@ -741,9 +745,13 @@ async function init(args: string[]): Promise<void> {
 		return;
 	}
 
+	if (command === "init") {
+		console.error("warning: `nosedive init` is deprecated; use `nosedive seed` instead.");
+	}
+
 	const bridgeDir = process.cwd();
 	if (!gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"])) {
-		throw new Error("nosedive init must be run inside a git repository");
+		throw new Error(`nosedive ${command} must be run inside a git repository`);
 	}
 
 	await migrateBridgeConfig(bridgeDir);
@@ -778,14 +786,12 @@ async function init(args: string[]): Promise<void> {
 	writeNosediveDirGitignore(bridgeDir);
 	console.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
 
-	const seededFoundationDocs = seedPackageFoundationDocs(bridgeDir, settings.kb);
-	for (const warning of manageFoundationGitState([localPath, ...seededFoundationDocs]))
+	for (const warning of manageLocalConfigGitState([localPath]))
 		console.error(`warning: ${warning}`);
-	if (seededFoundationDocs.length > 0) {
-		console.log(
-			`Seeded ${seededFoundationDocs.length} foundation doc${seededFoundationDocs.length === 1 ? "" : "s"} into ${settings.kb}`,
-		);
-	}
+}
+
+async function init(args: string[]): Promise<void> {
+	await seed(args, "init");
 }
 
 // --- whoami ------------------------------------------------------------
@@ -844,12 +850,12 @@ function whoami(args: string[]): void {
 	for (const field of fields) {
 		if (field.source === "git") {
 			console.error(
-				`notice: ${field.key} inferred from git config; run \`nosedive init\` to persist it`,
+				`notice: ${field.key} inferred from git config; run \`nosedive seed\` to persist it`,
 			);
 		}
 		if (field.source === "unset") {
 			console.error(
-				`notice: ${field.key} is not configured in bridge config or git config; run \`nosedive init\` to persist it`,
+				`notice: ${field.key} is not configured in bridge config or git config; run \`nosedive seed\` to persist it`,
 			);
 		}
 	}
@@ -1674,7 +1680,7 @@ function parseAddRepoArgs(args: string[]): AddRepoOptions {
 	let effortRef: string | undefined;
 	let repoEntryRef: string | undefined;
 	let readOnly = false;
-	let shouldApply = true;
+	let shouldApply = false;
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
@@ -2749,31 +2755,26 @@ function readProverHostResult(path: string): ProverHostResult {
 	return JSON.parse(readFileSync(path, "utf8")) as ProverHostResult;
 }
 
-function bridgeStatusEntries(bridgeRoot: string): string[] {
-	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z"]);
+function printProofFailure(
+	assertion: KbDoc,
+	result: ProverHostResult,
+	hostStatus: number | null,
+): void {
+	const status = result.status !== 0 ? result.status : (hostStatus ?? result.status);
+	console.error(`Proof failed: ${assertion.name} (${assertion.id})`);
+	console.error(`Reason: ${result.error ?? `proof failed with exit status ${status}`}`);
+}
+
+function statusEntries(bridgeRoot: string, paths: string[]): string[] {
+	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z", "--", ...paths]);
 	if (result.status !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
-		throw new Error(`refusing to record proof because bridge status failed: ${detail}`);
+		throw new Error(`refusing to record proof because git status failed: ${detail}`);
 	}
 	return result.stdout.split("\0").filter(Boolean);
 }
 
-function isAllowedRecordUntrackedPath(
-	bridgeRoot: string,
-	workspaceDir: string | undefined,
-	entry: string,
-): boolean {
-	if (!entry.startsWith("?? ")) return false;
-	if (!workspaceDir) return false;
-	const path = resolveFrom(bridgeRoot, entry.slice(3));
-	return isInsideDir(workspaceDir, path);
-}
-
-function assertBridgeRecordable(
-	bridgeDir: string,
-	workspaceDir: string | undefined,
-	proverPath: string,
-): void {
+function assertProverRecordable(bridgeDir: string, proverPath: string): void {
 	const bridgeRoot = gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"]);
 	if (!bridgeRoot) throw new Error("refusing to record proof because bridge is not a git repo");
 	const proverRelPath = gitRelPath(bridgeRoot, proverPath);
@@ -2782,12 +2783,10 @@ function assertBridgeRecordable(
 			`refusing to record proof because prover is not checked in: ${formatPath(proverPath)}`,
 		);
 	}
-	const blocking = bridgeStatusEntries(bridgeRoot).filter(
-		(entry) => !isAllowedRecordUntrackedPath(bridgeRoot, workspaceDir, entry),
-	);
-	if (blocking.length > 0) {
+	const proverStatus = statusEntries(bridgeRoot, [proverRelPath]);
+	if (proverStatus.length > 0) {
 		throw new Error(
-			`refusing to record proof because bridge has tracked/staged changes or untracked files outside workspace: ${blocking.join(", ")}`,
+			`refusing to record proof because prover has uncommitted changes: ${proverStatus.join(", ")}`,
 		);
 	}
 }
@@ -2853,7 +2852,9 @@ async function prove(args: string[]): Promise<void> {
 
 	const result = readProverHostResult(resultPath);
 	if (result.status !== 0 || child.status !== 0) {
-		throw new Error(result.error ?? `proof failed with exit status ${result.status}`);
+		printProofFailure(assertion, result, child.status);
+		process.exitCode = 1;
+		return;
 	}
 
 	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
@@ -2867,7 +2868,7 @@ async function prove(args: string[]): Promise<void> {
 					.join(", ")}`,
 			);
 		}
-		assertBridgeRecordable(rc.bridgeDir, rc.workspaceDir, proverPath);
+		assertProverRecordable(rc.bridgeDir, proverPath);
 		recordProofResult(assertion.path, result);
 		console.log(`Proof recorded: ${assertion.id}`);
 	} else {
@@ -3128,7 +3129,6 @@ async function proveHost(args: string[]): Promise<void> {
 	} catch (err) {
 		status = 1;
 		error = err instanceof Error ? err.message : String(err);
-		console.error(error);
 	} finally {
 		session.cleanup(status === 0);
 		const result: ProverHostResult = {
@@ -4059,6 +4059,12 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	],
 };
 
+const CONFIG_EXCLUDE_SPEC: ManagedExcludeSpec = {
+	begin: CONFIG_EXCLUDE_BEGIN,
+	end: CONFIG_EXCLUDE_END,
+	header: ["# owner: nosedive seed", "# reason: .nosedive.local.yaml is personal bridge config"],
+};
+
 const REPO_MARKER_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	begin: REPO_MARKER_EXCLUDE_BEGIN,
 	end: REPO_MARKER_EXCLUDE_END,
@@ -4117,7 +4123,14 @@ function updateManagedExclude(
 		? rawExcludePath
 		: resolve(repoRoot, rawExcludePath);
 	const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
-	writeFileAtomic(excludePath, replaceManagedExcludeBlock(existing, filenames, spec));
+	const withoutLegacyConfigBlock =
+		spec.begin === CONFIG_EXCLUDE_SPEC.begin
+			? removeManagedExcludeBlocks(existing, FOUNDATION_EXCLUDE_SPEC)
+			: existing;
+	writeFileAtomic(
+		excludePath,
+		replaceManagedExcludeBlock(withoutLegacyConfigBlock, filenames, spec),
+	);
 }
 
 function manageGitState(paths: string[], spec: ManagedExcludeSpec): string[] {
@@ -4162,6 +4175,10 @@ function manageFoundationGitState(paths: string[]): string[] {
 	return manageGitState(paths, FOUNDATION_EXCLUDE_SPEC);
 }
 
+function manageLocalConfigGitState(paths: string[]): string[] {
+	return manageGitState(paths, CONFIG_EXCLUDE_SPEC);
+}
+
 function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[] {
 	const entries: string[] = [];
 	const lines = text.split(/\r?\n/);
@@ -4184,13 +4201,15 @@ function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[]
 	return [...new Set(entries)];
 }
 
-function nukeInstructions(): void {
-	const bridge = loadBridgeConfig(process.cwd());
-	const repoRoot = gitOutput(bridge.bridgeDir, ["rev-parse", "--show-toplevel"]);
+function nukeConfig(): void {
+	const resolved = findBridgeConfig(process.cwd());
+	if (!resolved) throw noBridgeConfigError();
+	const bridgeDir = resolved.bridgeDir;
+	const repoRoot = gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"]);
 	if (!repoRoot) throw new Error("nosedive nuke must be run inside a git-backed bridge");
 
 	const warnings: string[] = [];
-	let revertedFiles = 0;
+	let removedFiles = 0;
 
 	const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
 	if (!rawExcludePath) {
@@ -4200,31 +4219,26 @@ function nukeInstructions(): void {
 			? rawExcludePath
 			: resolve(repoRoot, rawExcludePath);
 		const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
-		const managedEntries = managedExcludeEntries(existing, AGENT_EXCLUDE_SPEC);
-
-		for (const rel of managedEntries) {
-			if (!gitOk(repoRoot, ["ls-files", "--error-unmatch", "--", rel])) continue;
-
-			if (!gitOk(repoRoot, ["update-index", "--no-skip-worktree", "--", rel])) {
-				warnings.push(`could not clear skip-worktree: ${join(repoRoot, rel)}`);
-				continue;
-			}
-
-			if (!gitOk(repoRoot, ["checkout", "--", rel])) {
-				warnings.push(`could not restore tracked file from git: ${join(repoRoot, rel)}`);
-				continue;
-			}
-
-			revertedFiles += 1;
-		}
-
-		const withoutManaged = removeManagedExcludeBlocks(existing, AGENT_EXCLUDE_SPEC);
+		const withoutLegacyConfigBlock = removeManagedExcludeBlocks(existing, FOUNDATION_EXCLUDE_SPEC);
+		const withoutManaged = removeManagedExcludeBlocks(
+			withoutLegacyConfigBlock,
+			CONFIG_EXCLUDE_SPEC,
+		);
 		if (withoutManaged !== existing) writeFileAtomic(excludePath, withoutManaged);
 	}
 
-	console.log(
-		`Nuked managed instruction state in bridge repo; reverted ${revertedFiles} tracked file${revertedFiles === 1 ? "" : "s"}.`,
-	);
+	for (const path of [
+		legacyConfigPath(bridgeDir),
+		localConfigPath(bridgeDir),
+		baseConfigPath(bridgeDir),
+		join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"),
+	]) {
+		if (!existsSync(path)) continue;
+		rmSync(path, { force: true });
+		removedFiles += 1;
+	}
+
+	console.log(`Nuked bridge config; removed ${removedFiles} file${removedFiles === 1 ? "" : "s"}.`);
 	if (warnings.length > 0) {
 		console.log("");
 		console.log("Warnings:");
@@ -4234,18 +4248,18 @@ function nukeInstructions(): void {
 
 interface NukeOptions {
 	help: boolean;
-	instructions: boolean;
+	config: boolean;
 }
 
 function parseNukeOptions(args: string[]): NukeOptions {
-	const options: NukeOptions = { help: false, instructions: false };
+	const options: NukeOptions = { help: false, config: false };
 	for (const arg of args) {
 		if (arg === "-h" || arg === "--help") {
 			options.help = true;
 			continue;
 		}
-		if (arg === "--instructions") {
-			options.instructions = true;
+		if (arg === "--config") {
+			options.config = true;
 			continue;
 		}
 		throw new Error(`unknown nuke option: ${arg}`);
@@ -4256,16 +4270,16 @@ function parseNukeOptions(args: string[]): NukeOptions {
 function nuke(args: string[]): void {
 	const options = parseNukeOptions(args);
 	if (options.help) {
-		console.log("Usage: nosedive nuke --instructions");
-		console.log("  Reset managed instruction-file git state to factory defaults.");
+		console.log("Usage: nosedive nuke --config");
+		console.log("  Remove bridge config files and nosedive-managed config exclude rules.");
 		return;
 	}
 
-	if (!options.instructions) {
-		throw new Error("nosedive nuke is destructive; rerun with --instructions");
+	if (!options.config) {
+		throw new Error("nosedive nuke is destructive; rerun with --config");
 	}
 
-	nukeInstructions();
+	nukeConfig();
 }
 
 function repoFrontmatter(
@@ -4306,12 +4320,24 @@ function applyWrite(): void {
 }
 
 function apply(args: string[]): void {
+	if (args.includes("-h") || args.includes("--help")) {
+		console.log("Usage: nosedive apply");
+		console.log(
+			"  Deprecated: agent instruction files are now expected to be checked into source control.",
+		);
+		return;
+	}
 	if (args.includes("--dry-run")) {
+		console.error(
+			"warning: `nosedive apply` is deprecated; --dry-run is read-only and will be removed later.",
+		);
 		applyDryRun();
 		return;
 	}
 
-	applyWrite();
+	throw new Error(
+		"nosedive apply is deprecated; check agent instruction files into source control instead",
+	);
 }
 
 function parseMintTimestamp(value: string): number {
@@ -4387,6 +4413,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 			break;
 		case "init":
 			await init(args);
+			break;
+		case "seed":
+			await seed(args);
 			break;
 		case "preflight":
 			preflight(args);

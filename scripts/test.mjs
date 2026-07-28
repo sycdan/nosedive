@@ -2047,10 +2047,13 @@ meta:
 	const ambiguousRepoIdB = "019f8584-453f-79ea-9d53-5f1b20b4cda0";
 	const staleWorktreeRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda1";
 	const staleCacheRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda2";
+	const trunkRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda3";
+	const defaultBranchRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda4";
 	mkdirSync(join(hydrateBridge, "kb"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "workspace"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "cloud-source"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "source"), { recursive: true });
+	mkdirSync(join(hydrateBridge, "repos", "master-source"), { recursive: true });
 	mkdirSync(join(hydrateBridge, "repos", "source-empty-fail"), {
 		recursive: true,
 	});
@@ -2094,6 +2097,19 @@ meta:
 		localMainCommit,
 		"cloud and local fixture repos should have distinct commits",
 	);
+
+	const masterSourceRepo = join(hydrateBridge, "repos", "master-source");
+	runTool("git", ["init", "-b", "master"], masterSourceRepo);
+	runTool("git", ["config", "user.email", "hydrate@example.invalid"], masterSourceRepo);
+	runTool("git", ["config", "user.name", "Hydrate Dev"], masterSourceRepo);
+	write(join(masterSourceRepo, "README.md"), "local master\n");
+	runTool("git", ["add", "README.md"], masterSourceRepo);
+	runTool("git", ["commit", "-m", "local master commit"], masterSourceRepo);
+	const localMasterCommit = runTool(
+		"git",
+		["rev-parse", "master^{commit}"],
+		masterSourceRepo,
+	).stdout.trim();
 
 	const emptyFailSourceRepo = join(hydrateBridge, "repos", "source-empty-fail");
 	runTool("git", ["init", "-b", "main"], emptyFailSourceRepo);
@@ -2225,6 +2241,36 @@ meta:
 ---
 `,
 	);
+	write(
+		join(hydrateBridge, "kb", "repo-trunk.md"),
+		`---
+kind: repo
+id: ${trunkRepoId}
+name: trunk
+gist: "Trunk default ref fixture"
+meta:
+  path: workspace/trunk-target
+  trunk: master
+  remotes:
+    local: repos/master-source
+---
+`,
+	);
+	write(
+		join(hydrateBridge, "kb", "repo-default-branch.md"),
+		`---
+kind: repo
+id: ${defaultBranchRepoId}
+name: default-branch
+gist: "Legacy default-branch ref fixture"
+meta:
+  path: workspace/default-branch-target
+  default-branch: master
+  remotes:
+    local: repos/master-source
+---
+`,
+	);
 
 	const hydrateByName = run(["hydrate-repo.workspace", "hydrate-by-name"], hydrateBridge);
 	assertOk(hydrateByName, "hydrate-repo.workspace exact name failed");
@@ -2238,6 +2284,30 @@ meta:
 	assert.equal(
 		readFileSync(join(hydrateBridge, "workspace", "name-target", ".nosedive-ref"), "utf8"),
 		`id: ${nameRepoId}\n`,
+	);
+
+	const hydrateTrunk = run(["hydrate-repo.workspace", trunkRepoId], hydrateBridge);
+	assertOk(hydrateTrunk, "hydrate-repo.workspace trunk default failed");
+	assert.equal(
+		runTool(
+			"git",
+			["rev-parse", "HEAD"],
+			join(hydrateBridge, "workspace", "trunk-target"),
+		).stdout.trim(),
+		localMasterCommit,
+		"hydrate should default to meta.trunk when --at is omitted",
+	);
+
+	const hydrateDefaultBranch = run(["hydrate-repo.workspace", defaultBranchRepoId], hydrateBridge);
+	assertOk(hydrateDefaultBranch, "hydrate-repo.workspace default-branch fallback failed");
+	assert.equal(
+		runTool(
+			"git",
+			["rev-parse", "HEAD"],
+			join(hydrateBridge, "workspace", "default-branch-target"),
+		).stdout.trim(),
+		localMasterCommit,
+		"hydrate should fall back to legacy meta.default-branch when --at is omitted",
 	);
 
 	const ambiguousName = run(["hydrate-repo.workspace", "duplicate-name"], hydrateBridge);

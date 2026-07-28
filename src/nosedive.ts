@@ -1599,7 +1599,10 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 				kind: fm.scalars.kind,
 				gist: fm.scalars.gist,
 				repoPath: fm.nested.meta?.path,
-				repoBaseBranch: fm.nested.meta?.["base-branch"],
+				repoBaseBranch:
+					fm.nested.meta?.trunk ??
+					fm.nested.meta?.["base-branch"] ??
+					fm.nested.meta?.["default-branch"],
 				effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
 				metaScalars: fm.nested.meta ?? {},
 				metaLists: fm.nestedLists.meta ?? {},
@@ -1821,7 +1824,7 @@ function addRepo(args: string[]): void {
 
 interface HydrateRepoWorkspaceOptions {
 	repoRef: string;
-	at: string;
+	at?: string;
 	readOnly: boolean;
 }
 
@@ -1845,7 +1848,7 @@ interface DehydrateRepoWorkspaceResult {
 
 function parseHydrateRepoWorkspaceArgs(args: string[]): HydrateRepoWorkspaceOptions {
 	let repoRef: string | undefined;
-	let at = "main";
+	let at: string | undefined;
 	let readOnly = false;
 
 	for (let i = 0; i < args.length; i += 1) {
@@ -2514,7 +2517,8 @@ function hydrateRepoWorkspace(args: string[]): void {
 	const sourcePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
 	const targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
 	ensureSafeTargetPath(repoId, targetPath, rc.workspaceDir);
-	const commit = resolveRefCommit(sourcePath, repoId, options.at);
+	const ref = options.at ?? repoDoc.repoBaseBranch ?? "main";
+	const commit = resolveRefCommit(sourcePath, repoId, ref);
 
 	let status: HydrateRepoWorkspaceResult["status"] = "noop";
 	let changed = false;

@@ -246,7 +246,9 @@ Usage:
 
 - `<repo-id-or-name>` is required and must match either a kb `kind: repo` `id`
   or an exact `name`; duplicate names fail as ambiguous.
-- `--at <ref>` chooses the source ref and defaults to `main`.
+- `--at <ref>` chooses the source ref. When omitted, hydration uses repo
+  `meta.trunk`, then legacy `meta.base-branch` or `meta.default-branch`, then
+  `main`.
 - `--read-only` sets the hydrated worktree's worktree-local
   `remote.origin.pushurl=no_push://disabled`.
 

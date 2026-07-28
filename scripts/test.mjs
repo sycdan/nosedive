@@ -406,19 +406,11 @@ links:
 	);
 
 	write(join(proofBridge, "outside-untracked.txt"), "outside\n");
-	const untrackedOutsideRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
-	assert.notEqual(
-		untrackedOutsideRecord.status,
-		0,
-		"record with an untracked file outside workspace unexpectedly succeeded",
-	);
-	assert.match(untrackedOutsideRecord.stderr, /untracked files outside workspace/);
+	const dirtyBridgeRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assertOk(dirtyBridgeRecord, "record with an unrelated dirty bridge unexpectedly failed");
+	assert.match(dirtyBridgeRecord.stdout, new RegExp(`Proof recorded: ${proofAssertionId}`));
 	rmSync(join(proofBridge, "outside-untracked.txt"));
 
-	const proofRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
-	assertOk(proofRecord, "prove --record direct CLI assertion failed");
-	assert.match(proofRecord.stdout, /direct cli preflight succeeded/);
-	assert.match(proofRecord.stdout, new RegExp(`Proof recorded: ${proofAssertionId}`));
 	const recordedAssertion = readFileSync(proofAssertionPath, "utf8");
 	assert.match(recordedAssertion, /last-run:/);
 	assert.match(recordedAssertion, /pass: true/);
@@ -431,6 +423,13 @@ links:
 	assert.doesNotMatch(recordedAssertion, /inputs:/);
 	assert.doesNotMatch(recordedAssertion, /last-proven:/);
 	assert.doesNotMatch(recordedAssertion, /last-proven-commit/);
+
+	const originalProver = readFileSync(proofProverPath, "utf8");
+	write(proofProverPath, `${originalProver}\n// dirty prover fixture\n`);
+	const dirtyProverRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assert.notEqual(dirtyProverRecord.status, 0, "dirty prover record unexpectedly succeeded");
+	assert.match(dirtyProverRecord.stderr, /prover has uncommitted changes/);
+	write(proofProverPath, originalProver);
 
 	write(join(proofBridge, "workspace", "proof-target", "dirty.txt"), "dirty\n");
 	const dirtyExperimentalProof = run(["prove", proofAssertionId], proofBridge);

@@ -2765,31 +2765,16 @@ function printProofFailure(
 	console.error(`Reason: ${result.error ?? `proof failed with exit status ${status}`}`);
 }
 
-function bridgeStatusEntries(bridgeRoot: string): string[] {
-	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z"]);
+function statusEntries(bridgeRoot: string, paths: string[]): string[] {
+	const result = runGit(bridgeRoot, ["status", "--porcelain", "-z", "--", ...paths]);
 	if (result.status !== 0) {
 		const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
-		throw new Error(`refusing to record proof because bridge status failed: ${detail}`);
+		throw new Error(`refusing to record proof because git status failed: ${detail}`);
 	}
 	return result.stdout.split("\0").filter(Boolean);
 }
 
-function isAllowedRecordUntrackedPath(
-	bridgeRoot: string,
-	workspaceDir: string | undefined,
-	entry: string,
-): boolean {
-	if (!entry.startsWith("?? ")) return false;
-	if (!workspaceDir) return false;
-	const path = resolveFrom(bridgeRoot, entry.slice(3));
-	return isInsideDir(workspaceDir, path);
-}
-
-function assertBridgeRecordable(
-	bridgeDir: string,
-	workspaceDir: string | undefined,
-	proverPath: string,
-): void {
+function assertProverRecordable(bridgeDir: string, proverPath: string): void {
 	const bridgeRoot = gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"]);
 	if (!bridgeRoot) throw new Error("refusing to record proof because bridge is not a git repo");
 	const proverRelPath = gitRelPath(bridgeRoot, proverPath);
@@ -2798,12 +2783,10 @@ function assertBridgeRecordable(
 			`refusing to record proof because prover is not checked in: ${formatPath(proverPath)}`,
 		);
 	}
-	const blocking = bridgeStatusEntries(bridgeRoot).filter(
-		(entry) => !isAllowedRecordUntrackedPath(bridgeRoot, workspaceDir, entry),
-	);
-	if (blocking.length > 0) {
+	const proverStatus = statusEntries(bridgeRoot, [proverRelPath]);
+	if (proverStatus.length > 0) {
 		throw new Error(
-			`refusing to record proof because bridge has tracked/staged changes or untracked files outside workspace: ${blocking.join(", ")}`,
+			`refusing to record proof because prover has uncommitted changes: ${proverStatus.join(", ")}`,
 		);
 	}
 }
@@ -2885,7 +2868,7 @@ async function prove(args: string[]): Promise<void> {
 					.join(", ")}`,
 			);
 		}
-		assertBridgeRecordable(rc.bridgeDir, rc.workspaceDir, proverPath);
+		assertProverRecordable(rc.bridgeDir, proverPath);
 		recordProofResult(assertion.path, result);
 		console.log(`Proof recorded: ${assertion.id}`);
 	} else {

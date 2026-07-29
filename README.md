@@ -48,293 +48,50 @@ _nosedive_ organizes work around two core concepts:
 
 ## Commands
 
-### pitch
-
-Create a new effort file in `backlog/`.
-
-Usage:
-
-`nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"] [--parent <parent>]`
-
-- `<slug>` is the effort directory name in kebab-case.
-- `--parent` can be an effort path, a domain directory path such as
-  `backlog/gogglebox`, or a leaf-first slug chain such as `baz-qux.foo-bar`.
-- Pitch writes the new effort file locally.
-
-### mint
-
-Generate UUIDv7 values with a specific timestamp encoded.
-
-Usage:
-
-`nosedive mint <timestamp> [count]`
-
-- `<timestamp>` accepts an ISO date string or Unix milliseconds.
-- `count` defaults to `1`.
-
-Example:
-
-`npx -y nosedive@dev mint 1997-08-29T02:14:00-04:00`
-
-### seed
-
-Create, migrate, or edit bridge config in the current directory.
-
-Usage:
-
-`nosedive seed [--headless]`
-
-- Bridge config is split across two files: `.nosedive/config.yaml` (checked
-  into git, team-shared — `workspace`, `backlog`, `kb`, `home-branch`,
-  `work-branch-prefix`, `agents`, and a `compatibility-level`) and
-  `.nosedive.local.yaml` (gitignored, personal — `pilot-name`, `pilot-email`).
-  `.nosedive/config.yaml`'s presence in a directory is what identifies that
-  directory as bridge root. `seed` also writes `.nosedive/.gitignore`
-  (`cache/`, `migration-backups/`) every run.
-- Every run first migrates an out-of-date bridge config to the latest compatibility level
-  — including the legacy single-file `.nosediverc` shape from older nosedive
-  versions — before prompting or writing. Already-current bridges are a cheap
-  no-op, so `seed --headless` is safe to run at the start of every agent
-  session. A migration backs up whatever it's about to change under
-  `.nosedive/migration-backups/` first, and aborts with no writes at all if
-  the bridge's shape is ambiguous or doesn't match any known migration's
-  starting point.
-- `seed` does not copy packaged docs into the bridge KB. Agent instruction
-  files are expected to be managed by nosedive as ordinary files that can be
-  reviewed and checked into source control.
-- Without `--headless`, prompts for workspace, backlog, kb, home branch, work
-  branch prefix, pilot identity, and `agents`; existing values (or defaults)
-  are shown and kept by pressing Enter.
-- `--headless` skips all prompts, keeping existing values or configured
-  defaults.
-- `agents` defaults to `copilot` (with `claude` as an optional additional
-  target).
-
-### init
-
-Deprecated alias for `seed`.
-
-Usage:
-
-`nosedive init [--headless]`
-
-- Prints a deprecation warning and then runs the same setup/migration path as
-  `seed`.
-
-### preflight
-
-Install the bridge pre-push hook.
-
-Usage:
-
-`nosedive preflight`
-
-- Searches upward for the nearest bridge config and installs
-  `.git/hooks/pre-push` in that bridge's Git common directory.
-- The installed file is a LF-only executable shim:
-  `#!/bin/sh`, `# nosedive-managed`, and
-  `exec npx nosedive pre-push.hook "$@"`.
-- Re-running is idempotent: a managed hook is refreshed in place.
-- Existing foreign hooks are left unchanged. Preflight warns and tells the user
-  to add `npx nosedive pre-push.hook "$@" || exit 1` to their existing hook
-  setup.
-- If `core.hooksPath` is set, preflight does not change Git config and does not
-  write an ignored `.git/hooks/pre-push`; it prints the same manual wiring
-  guidance.
-- This slice only installs the hook. Config migrations are handled by `seed`;
-  agent instruction files are expected to be source-controlled files.
-
-### apply
-
-Deprecated.
-
-Usage:
-
-`nosedive apply [--dry-run]`
-
-- `apply` no longer writes agent instruction files. Running it without
-  `--dry-run` exits nonzero.
-- `--dry-run` remains as a read-only inspection path for now and prints a
-  deprecation warning.
-
-### nuke
-
-Remove managed bridge config.
-
-Usage:
-
-`nosedive nuke --config`
-
-- Fails unless `--config` is provided.
-- Removes `.nosediverc`, `.nosedive/config.yaml`, `.nosedive.local.yaml`, and
-  `.nosedive/.gitignore` when present.
-- Removes nosedive-managed config exclude blocks from Git's local
-  `.git/info/exclude`, including the older package-foundation exclude block.
-
-### render
-
-Print the body of a packaged nosedive KB document.
-
-Usage:
-
-`nosedive render <uuid>`
-
-- Reads `kb/<uuid>.md` from the installed nosedive package, not from the bridge
-  kb.
-- Prints only the markdown body; YAML frontmatter is stripped.
-- Used by agents and hook messages to point at package-owned runbooks without
-  copying them into a bridge.
-
-### pre-push.hook
-
-Run the bridge pre-push check registry.
-
-Usage:
-
-`nosedive pre-push.hook [remote-name] [remote-url]`
-
-- The installed Git hook passes Git's pre-push argv through, but v1 ignores
-  argv and stdin so it does not hang on ref-update input.
-- v1 has one check: dive-WIP. It reads the configured `workspace:` path, then
-  `<workspace>/.nosedive-ref`.
-- If no active dive marker exists, the command exits zero regardless of other
-  workspace contents.
-- If the marker names an active dive, only repos in that dive's scopes are
-  checked. Hydrated scoped repos block the push when dirty or when `HEAD` is
-  ahead of the scope's pinned `ref`; read-only scopes are checked too and are
-  named as read-only in the failure message.
-- Changes in repos outside the active dive scopes do not block. Missing or
-  unreadable active dive docs do block.
-- Rejections are concise and point at the packaged `handoff` runbook with:
-  `npx nosedive render <handoff-runbook-uuid>`. Git's normal
-  `git push --no-verify` bypass remains available.
-
-### prove
-
-Run an executable proof for a bridge `kind: assertion` doc.
-
-Usage:
-
-`nosedive prove <assertion-uuid> [--record] [--verbose]`
-
-- The assertion must link exactly one bridge-owned single-file prover artifact
-  with `rel: prover`, currently as a bridge-relative `file://...` link.
-- The prover runs in an isolated child Node process and must export
-  `prove(ctx)`.
-- `ctx.exec(command, args, { cwd })` requires an explicit command working
-  directory; proof code should use context roots instead of ambient
-  `process.cwd()`.
-- Repositories are resolved through `ctx.repos.get(...)` or
-  `ctx.repos.require(...)` by repo id or kb repo `name`. The resolved repo must
-  be named by the assertion's scopes before the proof host will hydrate or
-  expose it. Accessed repos are tracked as proof inputs by exact commit SHA.
-- By default, proof runs are experimental and do not edit the assertion.
-  `--record` writes `meta.last-proven.inputs.<repo-id>.commit`, refuses to
-  record if any accessed repo is dirty, and also requires the bridge's tracked
-  state to be clean with the prover file checked in. Untracked files under the
-  configured `workspace:` are allowed because hydration itself may create them.
-- `--verbose` prints the assertion id, gist, and each `ctx.exec` command before
-  it runs.
-
-### list-dives
-
-Print pickupable and working dives for an open effort.
-
-Usage:
-
-`nosedive list-dives <effort> [--include-historical] [--json]`
-
-- `<effort>` accepts an effort path, effort directory path, or leaf-first slug
-  chain.
-- Dives are read from the effort's `links:` frontmatter (the same durable link
-  list kb docs use). A link is a bare id or a `- <id>: { rel, anchor }` object;
-  only links resolving to `kind: dive` docs are considered.
-- The default output shows pickupable dives (`rel: pending`) and working dives
-  (`rel: working` or `rel: reviewing`, or any linked dive with `meta.diver`
-  set). It warns on broken dive links (missing from kb, or pointing at another
-  effort) and on held dives that name the effort but are not linked from it.
-- `--include-historical` also lists preserved provenance dives: linked dives
-  with no pickup role, plus any dive whose `meta.effort` resolves to the effort.
-- `--json` prints the same sections as structured data for agent workflows.
-
-### whoami
-
-Print the bridge pilot identity that nosedive will use from the current
-directory.
-
-Latest contract: [whoami@1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md)
-
-Usage:
-
-`nosedive whoami`
-
-- Searches upward for the nearest bridge config (`.nosedive/config.yaml` or
-  legacy `.nosediverc`).
-- On compatibility-level bridges, resolves the latest compatible `whoami@N`
-  contract and follows that contract's output behavior.
-- Legacy `.nosediverc` bridges use the built-in compatibility level 0 behavior:
-  print `pilot-name` and `pilot-email` from bridge config, falling back per
-  missing field to `git config`.
-- Does not modify bridge config, git excludes, backlog files, kb files, or
-  workspace markers.
-
-### hydrate-repo.workspace
-
-Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at
-the resolved commit.
-
-Usage:
-
-`nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]`
-
-- `<repo-id-or-name>` is required and must match either a kb `kind: repo` `id`
-  or an exact `name`; duplicate names fail as ambiguous.
-- `--at <ref>` chooses the source ref. When omitted, hydration uses repo
-  `meta.trunk`, then legacy `meta.base-branch` or `meta.default-branch`, then
-  `main`.
-- `--read-only` sets the hydrated worktree's worktree-local
-  `remote.origin.pushurl=no_push://disabled`.
-
-Behavior:
-
-- Path resolution uses canonical `meta.path`, with deprecated
-  `meta.worktree-path` accepted only as a compatibility fallback.
-- A managed git cache is prepared at `.nosedive/cache/<repo-id>` for the
-  resolved repo id, and workspace worktrees are created from that cache.
-- `meta.remotes.cloud` is preferred as the cache upstream; `meta.remotes.local`
-  is only a seed source when no cloud remote is configured.
-- Target path must remain inside configured `workspace:` after canonical path
-  resolution.
-- Hydration writes `.nosedive-ref` at repo root with `id: <repo-id>` for strict
-  ownership checks on reuse.
-- Success status is always one of `created`, `updated`, or `noop`.
-
-### dehydrate-repo.workspace
-
-Remove one hydrated workspace checkout for a kb repo without touching managed
-cache or bridge metadata.
-
-Usage:
-
-`nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]`
-
-- `<repo-id-or-name-or-workspace-path>` is required and accepts either:
-  - a repo `id`
-  - an exact repo `name`
-  - a bridge-workspace-relative directory path (or `.nosedive-ref` path)
-    for an already hydrated checkout
-- `--force` bypasses local dirty/unpublished-work protection only.
-
-Behavior:
-
-- The command resolves and validates the configured workspace target for the
-  repo and requires the managed `.nosedive-ref` ownership marker before
-  removing anything.
-- Target paths must remain inside configured `workspace:` and cannot be
-  widened by `--force`.
-- Without `--force`, dehydration refuses to remove a checkout with uncommitted
-  changes or unpublished commits.
-- Success status is always one of `removed` or `noop`.
+Every user-facing command is defined by a `kind: contract` document in this
+package's [`kb/`](kb). The contract document is the single source of truth for
+what the command does and for its help text: `nosedive <command> --help` prints
+that document's body verbatim. To avoid documentation drift, this README links to
+the contracts rather than restating them.
+
+Contracts are named `<command>@<level>`. nosedive resolves the highest level
+that is compatible with the bridge's `compatibility-level`, so a bridge pins the
+behavior it gets. `nosedive <command>@<level>` selects one explicitly. Legacy
+`.nosediverc` bridges report compatibility level 0, have no matching contract,
+and stay on the built-in implementations.
+
+| Command | Contract | What it does |
+| --- | --- | --- |
+| `pitch` | [pitch@1](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Create a new effort file in `backlog/`. |
+| `mint` | [mint@1](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Generate UUIDv7 values with a specific timestamp encoded. |
+| `seed` | [seed@1](kb/019fadf5-e082-7558-945f-d136295b1ea5.md) | Create, migrate, or edit bridge config in the current directory. |
+| `init` | [init@1](kb/019fadf5-e084-7058-8788-af1dc5fb8384.md) | Deprecated alias for `seed`. |
+| `preflight` | [preflight@1](kb/019fadf5-e086-7c7b-812d-964284b06e58.md) | Install the bridge pre-push hook. |
+| `apply` | [apply@1](kb/019fadf5-e09a-777c-abdd-28e6fd2f7ab8.md) | Deprecated; only `--dry-run` remains, as a read-only inspection path. |
+| `nuke` | [nuke@1](kb/019fadf5-e09c-7989-80ae-a87afb01ea63.md) | Remove managed bridge config. |
+| `render` | [render@1](kb/019fadf5-e08a-7682-91f9-bb208cc306c9.md) | Print the body of a packaged nosedive KB document. |
+| `pre-push.hook` | [pre-push.hook@1](kb/019fadf5-e08c-7a33-a077-c545d9f764d5.md) | Run the bridge pre-push check registry. |
+| `prove` | [prove@1](kb/019fadf5-e088-7ee1-b8d6-4cb36ef24363.md) | Run an executable proof for a bridge `kind: assertion` doc. |
+| `list-dives` | [list-dives@1](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md) | Print pickupable and working dives for an open effort. |
+| `dump-backlog` | [dump-backlog@1](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md) | Print the open efforts in the configured backlog. |
+| `whoami` | [whoami@1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md) | Print the bridge pilot identity nosedive will use. |
+| `add-repo` | [add-repo@1](kb/019fadf5-e094-7176-afd0-94532d2bb149.md) | Add a kb repo to an effort's repo list. |
+| `hydrate-repo.workspace` | [hydrate-repo.workspace@1](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Hydrate one repo worktree from kb `kind: repo` metadata. |
+| `dehydrate-repo.workspace` | [dehydrate-repo.workspace@1](kb/019fadf5-e098-76f7-a4eb-d106bb6714a1.md) | Remove one hydrated workspace checkout. |
+
+`version` and `help` have no contract; they print the package version and the
+command list.
+
+### How a contract runs
+
+A contract links one or more artifacts with `rel: executor`. Each executor is a
+single-file ES module exporting `run(value, ctx)`, and they are applied in link
+order, each receiving the previous one's return value. The first receives
+`{ args, cwd }`, and the last must return `{ stdout, stderr, exitCode }`
+(`output` is accepted as a stdout alias). `ctx.invoke(command, args)` runs the
+built-in implementation with a capturing io and returns what it wrote, which is
+how most executors reuse the typechecked implementation rather than restating
+it.
 
 ## Development
 

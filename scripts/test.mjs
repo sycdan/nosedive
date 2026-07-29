@@ -20,6 +20,14 @@ const cli = join(root, "dist", "cli.js");
 const lib = join(root, "dist", "nosedive.js");
 const { readNosediveRc, writeNosediveRcCurrent } = await import(pathToFileURL(lib).href);
 const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
+/**
+ * Commands that must run with no bridge in scope have to run somewhere outside
+ * one. The repo root is not safe for that: bridge lookup walks upward, so a
+ * checkout nested inside somebody's bridge would resolve that bridge and route
+ * through contracts instead of builtins.
+ */
+const noBridge = join(tmp, "no-bridge");
+mkdirSync(noBridge, { recursive: true });
 const packageFoundationDocs = [
 	"00000000-0000-7434-9b1d-72a777ca61f7.md",
 	"0000000f-4240-7a62-8f61-a85b4c364560.md",
@@ -139,11 +147,11 @@ try {
 	assert.equal(importOnly.stdout, "", "library import unexpectedly wrote to stdout");
 	assert.equal(importOnly.stderr, "", "library import unexpectedly wrote to stderr");
 
-	const version = run(["version"], root);
+	const version = run(["version"], noBridge);
 	assertOk(version, "version command failed");
 	assert.match(version.stdout.trim(), /^(\d+\.\d+\.\d+(?:-\d+)?|0\.0\.0-dev)$/);
 
-	const help = run(["--help"], root);
+	const help = run(["--help"], noBridge);
 	assertOk(help, "--help command failed");
 	assert.match(help.stdout, /Usage: nosedive <command>/);
 	assert.match(help.stdout, /mint/);
@@ -162,7 +170,7 @@ try {
 	assert.match(help.stdout, /add-repo/);
 	assert.match(help.stdout, /nuke/);
 
-	const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], root);
+	const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], noBridge);
 	assertOk(minted, "mint command failed");
 	const mintedLines = minted.stdout.trim().split(/\r?\n/);
 	assert.equal(mintedLines.length, 2, "mint should print one UUID per line");
@@ -180,14 +188,14 @@ try {
 		"mint count mode should advance timestamps by 1ms and sort lexicographically",
 	);
 
-	const mintedNow = run(["mint"], root);
+	const mintedNow = run(["mint"], noBridge);
 	assertOk(mintedNow, "mint default timestamp command failed");
 	assert.match(
 		mintedNow.stdout.trim(),
 		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
 	);
 
-	const renderedHandoff = run(["render", handoffRunbookId], root);
+	const renderedHandoff = run(["render", handoffRunbookId], noBridge);
 	assertOk(renderedHandoff, "render handoff runbook failed");
 	assert.match(renderedHandoff.stdout, /^# Handoff/m);
 	assert.match(renderedHandoff.stdout, /meta\.patch-artifacts/);
@@ -195,7 +203,7 @@ try {
 	assert.doesNotMatch(renderedHandoff.stdout, /^---/);
 	assert.doesNotMatch(renderedHandoff.stdout, /^kind: runbook/m);
 
-	const missingRender = run(["render", "019f9f95-ffff-7fff-bfff-ffffffffffff"], root);
+	const missingRender = run(["render", "019f9f95-ffff-7fff-bfff-ffffffffffff"], noBridge);
 	assert.notEqual(missingRender.status, 0, "render missing package doc unexpectedly succeeded");
 	assert.match(missingRender.stderr, /package kb doc not found/);
 
@@ -971,6 +979,65 @@ nosedive-pilot-email: contract@example.invalid
 		"missing explicit whoami@2 contract unexpectedly succeeded",
 	);
 	assert.match(missingExplicitWhoamiContract.stderr, /contract not found: whoami@2/);
+
+	// Every user-facing command is documented by a level-1 contract, and help
+	// comes from that contract's body on both the contract and builtin routes.
+	const contractedCommands = [
+		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
+		["seed", /Usage: nosedive seed \[--headless\]/],
+		["init", /Usage: nosedive init \[--headless\]/],
+		["preflight", /Usage: nosedive preflight/],
+		["prove", /Usage: nosedive prove <assertion-uuid>/],
+		["render", /Usage: nosedive render <uuid>/],
+		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
+		["whoami", /Usage: nosedive whoami/],
+		["dump-backlog", /Usage: nosedive dump-backlog/],
+		["list-dives", /Usage: nosedive list-dives <effort>/],
+		["pitch", /Usage: nosedive pitch <slug>/],
+		["add-repo", /Usage: nosedive add-repo <repo-id-or-name>/],
+		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
+		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
+		["apply", /Usage: nosedive apply/],
+		["nuke", /Usage: nosedive nuke --config/],
+	];
+	for (const [command, usage] of contractedCommands) {
+		const explicitHelp = run([`${command}@1`, "--help"], whoamiContractBridge);
+		assertOk(explicitHelp, `${command}@1 --help failed`);
+		assert.match(explicitHelp.stdout, usage, `${command}@1 --help missing usage line`);
+		assert.doesNotMatch(
+			explicitHelp.stdout,
+			/^---$/m,
+			`${command}@1 --help leaked frontmatter delimiters`,
+		);
+
+		// Same help text whether a contract routed it or the builtin did.
+		const builtinHelp = run([command, "--help"], noBridge);
+		assertOk(builtinHelp, `${command} --help outside a bridge failed`);
+		assert.equal(
+			builtinHelp.stdout,
+			explicitHelp.stdout,
+			`${command} help differs between builtin and contract routes`,
+		);
+	}
+
+	// A legacy level-0 bridge has no matching contract and stays on the builtin.
+	const legacyRouteBridge = join(tmp, "legacy-route-bridge");
+	mkdirSync(legacyRouteBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], legacyRouteBridge);
+	runTool("git", ["config", "user.name", "Legacy Pilot"], legacyRouteBridge);
+	runTool("git", ["config", "user.email", "legacy@example.invalid"], legacyRouteBridge);
+	write(
+		join(legacyRouteBridge, ".nosediverc"),
+		"workspace: ./workspace\nbacklog: ./backlog\nkb: ./kb\n",
+	);
+	const legacyWhoami = run(["whoami"], legacyRouteBridge);
+	assertOk(legacyWhoami, "legacy bridge whoami failed");
+	assert.match(
+		legacyWhoami.stdout,
+		/^pilot-name: Legacy Pilot$/m,
+		"legacy level-0 bridge should use the builtin whoami, not whoami@1",
+	);
+	assert.doesNotMatch(legacyWhoami.stdout, /nosedive-pilot-name/);
 
 	write(
 		join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"),
@@ -2980,12 +3047,12 @@ Build the YAML-aware workspace work order.
 		/writable\s+workspace\/writable \(repo-writable, base develop\)/,
 	);
 
-	const seedHelp = run(["seed", "--help"], root);
+	const seedHelp = run(["seed", "--help"], noBridge);
 	assertOk(seedHelp, "seed --help failed");
 	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--headless\]/);
 	assert.match(seedHelp.stdout, /--headless skips prompts/);
 
-	const initHelp = run(["init", "--help"], root);
+	const initHelp = run(["init", "--help"], noBridge);
 	assertOk(initHelp, "init --help failed");
 	assert.match(initHelp.stdout, /Usage: nosedive init \[--headless\]/);
 	assert.match(initHelp.stdout, /Deprecated: use `nosedive seed` instead/);

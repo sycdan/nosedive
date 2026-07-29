@@ -14,13 +14,13 @@ export async function run(value, ctx) {
 
 	if (missing.length > 0) {
 		return {
-			output: `missing git config: ${missing.join(", ")}\n`,
+			stderr: `missing git config: ${missing.join(", ")}\n`,
 			exitCode: 1,
 		};
 	}
 
 	return {
-		output: `nosedive-pilot-name: ${name}\nnosedive-pilot-email: ${email}\n`,
+		stdout: `nosedive-pilot-name: ${name}\nnosedive-pilot-email: ${email}\n`,
 		exitCode: 0,
 	};
 }

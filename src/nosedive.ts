@@ -640,6 +640,32 @@ function loadGitPilotIdentity(bridgeDir: string): Pick<RcSettings, "pilotName" |
 
 type LineIterator = NodeJS.AsyncIterator<string>;
 
+// --- command io ------------------------------------------------------------
+
+/**
+ * Commands write through a `CommandIo` instead of touching `console` or
+ * `process` directly, so one implementation can serve the builtin dispatch
+ * path while another captures the same output for a contract executor.
+ */
+export interface CommandIo {
+	/** Write one stdout line. */
+	log(message?: string): void;
+	/** Write one stderr line. */
+	err(message: string): void;
+	/** Write raw stdout text, adding no newline. For replaying captured child output. */
+	writeOut(text: string): void;
+	/** Write raw stderr text, adding no newline. */
+	writeErr(text: string): void;
+	/**
+	 * Write `label` with no trailing newline and read one trimmed reply line,
+	 * or `undefined` once stdin reaches EOF.
+	 */
+	prompt(label: string): Promise<string | undefined>;
+	setExitCode(code: number): void;
+	/** Release any stdin reader this io opened. */
+	close(): void;
+}
+
 /**
  * Piped (non-TTY) stdin delivers every buffered line the instant the stream
  * is first resumed, but `rl.question()` only ever attaches a listener for
@@ -653,18 +679,106 @@ async function nextLine(iter: LineIterator): Promise<string | undefined> {
 	return done ? undefined : value.trim();
 }
 
-async function promptScalar(iter: LineIterator, label: string, current: string): Promise<string> {
-	process.stdout.write(`${label} [${current}]: `);
-	const line = await nextLine(iter);
+/**
+ * Prompting always goes straight to the real stdio, even for a capturing io:
+ * a buffered prompt would never reach the terminal before its own reply is
+ * read. Every command that prompts finishes prompting before it writes any
+ * result line, so this never interleaves with captured output.
+ */
+function createStdinPrompter(): { prompt: CommandIo["prompt"]; close: () => void } {
+	let iter: LineIterator | undefined;
+	let rl: ReturnType<typeof createInterface> | undefined;
+	return {
+		async prompt(label: string): Promise<string | undefined> {
+			if (!iter) {
+				rl = createInterface({ input: process.stdin, output: process.stdout });
+				iter = rl[Symbol.asyncIterator]();
+			}
+			process.stdout.write(label);
+			return nextLine(iter);
+		},
+		close(): void {
+			rl?.close();
+			rl = undefined;
+			iter = undefined;
+		},
+	};
+}
+
+/** Io for the builtin dispatch path: straight through to the real stdio. */
+export function createConsoleIo(): CommandIo {
+	const prompter = createStdinPrompter();
+	return {
+		log(message = ""): void {
+			console.log(message);
+		},
+		err(message: string): void {
+			console.error(message);
+		},
+		writeOut(text: string): void {
+			process.stdout.write(text);
+		},
+		writeErr(text: string): void {
+			process.stderr.write(text);
+		},
+		prompt: prompter.prompt,
+		setExitCode(code: number): void {
+			process.exitCode = code;
+		},
+		close: prompter.close,
+	};
+}
+
+export interface CapturedCommandOutput {
+	stdout: string;
+	stderr: string;
+	exitCode: number;
+}
+
+export interface CapturingCommandIo extends CommandIo {
+	captured(): CapturedCommandOutput;
+}
+
+/** Io for contract executors: buffers stdout/stderr so the host can return it. */
+export function createCapturingIo(): CapturingCommandIo {
+	const prompter = createStdinPrompter();
+	let stdout = "";
+	let stderr = "";
+	let exitCode = 0;
+	return {
+		log(message = ""): void {
+			stdout += `${message}\n`;
+		},
+		err(message: string): void {
+			stderr += `${message}\n`;
+		},
+		writeOut(text: string): void {
+			stdout += text;
+		},
+		writeErr(text: string): void {
+			stderr += text;
+		},
+		prompt: prompter.prompt,
+		setExitCode(code: number): void {
+			exitCode = code;
+		},
+		close: prompter.close,
+		captured(): CapturedCommandOutput {
+			return { stdout, stderr, exitCode };
+		},
+	};
+}
+
+async function promptScalar(io: CommandIo, label: string, current: string): Promise<string> {
+	const line = await io.prompt(`${label} [${current}]: `);
 	return !line ? current : line;
 }
 
-async function promptAgents(iter: LineIterator, current: string[]): Promise<string[]> {
+async function promptAgents(io: CommandIo, current: string[]): Promise<string[]> {
 	for (;;) {
-		process.stdout.write(
+		const line = await io.prompt(
 			`agents, comma-separated (options: ${KNOWN_AGENTS.join(", ")}) [${current.join(",")}]: `,
 		);
-		const line = await nextLine(iter);
 		if (line === undefined) return current;
 		const list =
 			line === ""
@@ -675,13 +789,11 @@ async function promptAgents(iter: LineIterator, current: string[]): Promise<stri
 						.filter(Boolean);
 		const unknown = list.filter((agent) => !KNOWN_AGENTS.includes(agent));
 		if (unknown.length > 0) {
-			console.error(
-				`unknown agent(s): ${unknown.join(", ")} (options: ${KNOWN_AGENTS.join(", ")})`,
-			);
+			io.err(`unknown agent(s): ${unknown.join(", ")} (options: ${KNOWN_AGENTS.join(", ")})`);
 			continue;
 		}
 		if (list.length === 0) {
-			console.error("select at least one agent");
+			io.err("select at least one agent");
 			continue;
 		}
 		return list;
@@ -736,10 +848,18 @@ interface ContractRunContext {
 		name: string;
 		path: string;
 	};
+	/**
+	 * Run a builtin command with a capturing io and return what it wrote. This
+	 * is how an executor reuses the typechecked implementation instead of
+	 * reimplementing it, and it avoids artifacts having to resolve a path back
+	 * into the package's own build output.
+	 */
+	invoke(command: string, args: string[]): Promise<CapturedCommandOutput>;
 }
 
 interface ContractRunOutput {
-	output: string;
+	stdout: string;
+	stderr: string;
 	exitCode: number;
 }
 
@@ -853,16 +973,57 @@ function renderContractHelp(contract: ContractDoc): void {
 	if (body) console.log(body);
 }
 
+/**
+ * Help text for a contracted command lives in its contract doc body and
+ * nowhere else, so `-h` reads the same regardless of whether this run routed
+ * through the contract or fell back to the builtin on a legacy bridge.
+ */
+function printCommandHelp(command: string, io: CommandIo): void {
+	const contract = packageContractDocs()
+		.filter((doc) => doc.command === command)
+		.sort((a, b) => b.compatibilityLevel - a.compatibilityLevel)[0];
+	if (!contract) throw new Error(`no packaged contract documents command: ${command}`);
+	io.log(contract.body.trim());
+}
+
+function isContractedCommand(command: string): boolean {
+	return packageContractDocs().some((doc) => doc.command === command);
+}
+
+function contractStreamField(
+	fields: Record<string, unknown>,
+	key: "stdout" | "stderr" | "output",
+	contract: ContractDoc,
+): string {
+	const value = fields[key];
+	if (value === undefined) return "";
+	if (typeof value !== "string") {
+		throw new Error(`contract ${contract.name} must return ${key} as a string`);
+	}
+	return value;
+}
+
+/**
+ * `output` is a stdout alias kept so contracts written against the original
+ * single-stream shape keep working; `stdout`/`stderr` are the current shape.
+ */
 function assertContractRunOutput(value: unknown, contract: ContractDoc): ContractRunOutput {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`contract ${contract.name} must return { output, exitCode }`);
+		throw new Error(`contract ${contract.name} must return { stdout, stderr, exitCode }`);
 	}
-	const output = (value as Record<string, unknown>).output;
-	const exitCode = (value as Record<string, unknown>).exitCode;
-	if (typeof output !== "string" || typeof exitCode !== "number" || !Number.isInteger(exitCode)) {
-		throw new Error(`contract ${contract.name} must return { output: string, exitCode: number }`);
+	const fields = value as Record<string, unknown>;
+	if (fields.stdout !== undefined && fields.output !== undefined) {
+		throw new Error(`contract ${contract.name} must not return both stdout and output`);
 	}
-	return { output, exitCode };
+	const exitCode = fields.exitCode;
+	if (typeof exitCode !== "number" || !Number.isInteger(exitCode)) {
+		throw new Error(`contract ${contract.name} must return exitCode as an integer`);
+	}
+	const stdout =
+		fields.stdout !== undefined
+			? contractStreamField(fields, "stdout", contract)
+			: contractStreamField(fields, "output", contract);
+	return { stdout, stderr: contractStreamField(fields, "stderr", contract), exitCode };
 }
 
 async function runContractPipeline(
@@ -881,6 +1042,7 @@ async function runContractPipeline(
 			name: contract.name,
 			path: contract.path,
 		},
+		invoke: invokeBuiltin,
 	};
 	const packageKbDir = join(packageRoot(), "kb");
 
@@ -907,10 +1069,8 @@ async function runContractPipeline(
 	}
 
 	const result = assertContractRunOutput(value, contract);
-	if (result.output) {
-		const stream = result.exitCode === 0 ? process.stdout : process.stderr;
-		stream.write(result.output);
-	}
+	if (result.stdout) process.stdout.write(result.stdout);
+	if (result.stderr) process.stderr.write(result.stderr);
 	if (result.exitCode !== 0) process.exitCode = result.exitCode;
 }
 
@@ -966,26 +1126,19 @@ function writeNosediveDirGitignore(bridgeDir: string): void {
 	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
-async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<void> {
+async function seed(
+	args: string[],
+	io: CommandIo,
+	command: "seed" | "init" = "seed",
+): Promise<void> {
 	const options = parseSeedOptions(args, command);
 	if (options.help) {
-		console.log(`Usage: nosedive ${command} [--headless]`);
-		if (command === "init") console.log("  Deprecated: use `nosedive seed` instead.");
-		console.log(
-			"  Create, migrate, or edit bridge config (.nosedive/config.yaml + .nosedive.local.yaml) in the current directory.",
-		);
-		console.log(
-			"  Existing values (or built-in defaults) are shown as the default for each prompt; press Enter to keep it.",
-		);
-		console.log("  --headless skips prompts and writes existing values or configured defaults.");
-		console.log(
-			"  Every run first migrates an out-of-date bridge config to the latest compatibility level (a no-op when already current).",
-		);
+		printCommandHelp(command, io);
 		return;
 	}
 
 	if (command === "init") {
-		console.error("warning: `nosedive init` is deprecated; use `nosedive seed` instead.");
+		io.err("warning: `nosedive init` is deprecated; use `nosedive seed` instead.");
 	}
 
 	const bridgeDir = process.cwd();
@@ -998,23 +1151,21 @@ async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<
 	const settings = loadSplitRcSettings(bridgeDir);
 
 	if (!options.headless) {
-		const rl = createInterface({ input: process.stdin, output: process.stdout });
 		try {
-			const iter = rl[Symbol.asyncIterator]();
-			settings.workspace = await promptScalar(iter, "workspace", settings.workspace);
-			settings.backlog = await promptScalar(iter, "backlog", settings.backlog);
-			settings.kb = await promptScalar(iter, "kb", settings.kb);
-			settings.homeBranch = await promptScalar(iter, "home-branch", settings.homeBranch);
+			settings.workspace = await promptScalar(io, "workspace", settings.workspace);
+			settings.backlog = await promptScalar(io, "backlog", settings.backlog);
+			settings.kb = await promptScalar(io, "kb", settings.kb);
+			settings.homeBranch = await promptScalar(io, "home-branch", settings.homeBranch);
 			settings.workBranchPrefix = await promptScalar(
-				iter,
+				io,
 				"work-branch-prefix",
 				settings.workBranchPrefix,
 			);
-			settings.pilotName = await promptScalar(iter, "pilot-name", settings.pilotName);
-			settings.pilotEmail = await promptScalar(iter, "pilot-email", settings.pilotEmail);
-			settings.agents = await promptAgents(iter, settings.agents);
+			settings.pilotName = await promptScalar(io, "pilot-name", settings.pilotName);
+			settings.pilotEmail = await promptScalar(io, "pilot-email", settings.pilotEmail);
+			settings.agents = await promptAgents(io, settings.agents);
 		} finally {
-			rl.close();
+			io.close();
 		}
 	}
 
@@ -1023,14 +1174,9 @@ async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeFileAtomic(localPath, renderLocalConfig(settings));
 	writeNosediveDirGitignore(bridgeDir);
-	console.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
+	io.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
 
-	for (const warning of manageLocalConfigGitState([localPath]))
-		console.error(`warning: ${warning}`);
-}
-
-async function init(args: string[]): Promise<void> {
-	await seed(args, "init");
+	for (const warning of manageLocalConfigGitState([localPath])) io.err(`warning: ${warning}`);
 }
 
 // --- whoami ------------------------------------------------------------
@@ -1070,11 +1216,10 @@ function resolveIdentityField(
 	return { key, value: "<unset>", source: "unset" };
 }
 
-function whoami(args: string[]): void {
+function whoami(args: string[], io: CommandIo): void {
 	const options = parseWhoamiOptions(args);
 	if (options.help) {
-		console.log("Usage: nosedive whoami");
-		console.log("  Print the bridge pilot identity from .nosediverc, falling back to git config.");
+		printCommandHelp("whoami", io);
 		return;
 	}
 
@@ -1085,21 +1230,19 @@ function whoami(args: string[]): void {
 		resolveIdentityField("pilot-email", rc.pilotEmail, detected.pilotEmail),
 	];
 
-	for (const field of fields) console.log(`${field.key}: ${field.value}`);
+	for (const field of fields) io.log(`${field.key}: ${field.value}`);
 	for (const field of fields) {
 		if (field.source === "git") {
-			console.error(
-				`notice: ${field.key} inferred from git config; run \`nosedive seed\` to persist it`,
-			);
+			io.err(`notice: ${field.key} inferred from git config; run \`nosedive seed\` to persist it`);
 		}
 		if (field.source === "unset") {
-			console.error(
+			io.err(
 				`notice: ${field.key} is not configured in bridge config or git config; run \`nosedive seed\` to persist it`,
 			);
 		}
 	}
 
-	if (fields.some((field) => field.source === "unset")) process.exitCode = 1;
+	if (fields.some((field) => field.source === "unset")) io.setExitCode(1);
 }
 
 // --- efforts ---------------------------------------------------------------
@@ -1232,13 +1375,13 @@ function formatBacklog(nodes: BacklogNode[], verbose: boolean): string {
 	return lines.join("\n");
 }
 
-function dumpBacklog(args: string[]): void {
+function dumpBacklog(args: string[], io: CommandIo): void {
 	const verbose = args.includes("--verbose");
 	const unknown = args.filter((arg) => arg !== "--verbose");
 	if (unknown.length > 0) throw new Error(`unknown dump-backlog option: ${unknown[0]}`);
 
 	const { backlogDir } = loadBacklogConfig(process.cwd());
-	console.log(formatBacklog(collectBacklog(backlogDir), verbose));
+	io.log(formatBacklog(collectBacklog(backlogDir), verbose));
 }
 
 interface ListDivesOptions {
@@ -1265,7 +1408,7 @@ interface ListDivesResult {
 	warnings: string[];
 }
 
-function parseListDivesArgs(args: string[]): ListDivesOptions {
+function parseListDivesArgs(args: string[], io: CommandIo): ListDivesOptions {
 	let effortRef: string | undefined;
 	let includeHistorical = false;
 	let json = false;
@@ -1280,9 +1423,7 @@ function parseListDivesArgs(args: string[]): ListDivesOptions {
 			continue;
 		}
 		if (arg === "-h" || arg === "--help") {
-			console.log("Usage: nosedive list-dives <effort> [--include-historical] [--json]");
-			console.log("  Print pending pickup dives and working dives for an open effort.");
-			console.log("  --include-historical also prints preserved non-pending provenance dives.");
+			printCommandHelp("list-dives", io);
 			return { effortRef: "", includeHistorical, json };
 		}
 		if (arg.startsWith("--")) throw new Error(`unknown list-dives option: ${arg}`);
@@ -1433,8 +1574,8 @@ function formatListDivesResult(result: ListDivesResult, includeHistorical: boole
 	return lines.join("\n");
 }
 
-function listDives(args: string[]): void {
-	const options = parseListDivesArgs(args);
+function listDives(args: string[], io: CommandIo): void {
+	const options = parseListDivesArgs(args, io);
 	if (!options.effortRef) return;
 
 	const rc = readNosediveRc(process.cwd());
@@ -1445,8 +1586,8 @@ function listDives(args: string[]): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const result = collectListDives(effortPath, rc, kbDocs, options.includeHistorical);
 
-	if (options.json) console.log(JSON.stringify(result, null, 2));
-	else console.log(formatListDivesResult(result, options.includeHistorical));
+	if (options.json) io.log(JSON.stringify(result, null, 2));
+	else io.log(formatListDivesResult(result, options.includeHistorical));
 }
 
 function pascalFromSlug(slug: string): string {
@@ -1626,7 +1767,7 @@ function renderPitchedEffort(slug: string, gist: string, pitchText: string): str
 	].join("\n");
 }
 
-function pitch(args: string[]): void {
+function pitch(args: string[], io: CommandIo): void {
 	const { slug, gist, pitch: pitchText, parent } = parsePitchArgs(args);
 	const { bridgeDir, backlogDir } = loadBacklogConfig(process.cwd());
 	const parentDir = parent ? resolveParentDir(parent, bridgeDir, backlogDir) : backlogDir;
@@ -1637,7 +1778,7 @@ function pitch(args: string[]): void {
 	const effortPath = join(effortDir, `${pascalFromSlug(slug)}.md`);
 	writeFileAtomic(effortPath, renderPitchedEffort(slug, gist, pitchText));
 
-	console.log(`Pitched ${formatPath(effortPath)}`);
+	io.log(`Pitched ${formatPath(effortPath)}`);
 }
 
 // --- apply -----------------------------------------------------------------
@@ -2047,7 +2188,7 @@ function resolveAddRepoEffort(
 	return { path: activePath, active: true };
 }
 
-function addRepo(args: string[]): void {
+function addRepo(args: string[], io: CommandIo): void {
 	const options = parseAddRepoArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
@@ -2061,12 +2202,12 @@ function addRepo(args: string[]): void {
 		readOnly: options.readOnly,
 	});
 
-	console.log(`Added ${repoDoc.id} to ${formatPath(effort.path)}`);
+	io.log(`Added ${repoDoc.id} to ${formatPath(effort.path)}`);
 
 	if (options.apply && effort.active && rc.workspaceDir) {
-		applyWrite();
+		applyWrite(io);
 	} else if (options.apply && !effort.active) {
-		console.log("Generated docs not updated because the target effort is not active.");
+		io.log("Generated docs not updated because the target effort is not active.");
 	}
 }
 
@@ -2752,7 +2893,7 @@ function reconcilePushReadOnly(
 	return true;
 }
 
-function hydrateRepoWorkspace(args: string[]): void {
+function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 	const options = parseHydrateRepoWorkspaceArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
@@ -2805,12 +2946,12 @@ function hydrateRepoWorkspace(args: string[]): void {
 		targetPath,
 		commit,
 	};
-	console.log(
+	io.log(
 		`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)} commit=${result.commit}`,
 	);
 }
 
-function dehydrateRepoWorkspace(args: string[]): void {
+function dehydrateRepoWorkspace(args: string[], io: CommandIo): void {
 	const options = parseDehydrateRepoWorkspaceArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
@@ -2837,7 +2978,7 @@ function dehydrateRepoWorkspace(args: string[]): void {
 	const repoId = repoDoc.id;
 	if (!existsSync(targetPath)) {
 		const noopResult: DehydrateRepoWorkspaceResult = { status: "noop", repoId, targetPath };
-		console.log(
+		io.log(
 			`${noopResult.status} repo=${noopResult.repoId} path=${formatPath(noopResult.targetPath)}`,
 		);
 		return;
@@ -2857,7 +2998,7 @@ function dehydrateRepoWorkspace(args: string[]): void {
 
 	removeHydratedWorktree(repoId, targetPath, options.force);
 	const result: DehydrateRepoWorkspaceResult = { status: "removed", repoId, targetPath };
-	console.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)}`);
+	io.log(`${result.status} repo=${result.repoId} path=${formatPath(result.targetPath)}`);
 }
 
 interface ProveOptions {
@@ -3003,10 +3144,11 @@ function printProofFailure(
 	assertion: KbDoc,
 	result: ProverHostResult,
 	hostStatus: number | null,
+	io: CommandIo,
 ): void {
 	const status = result.status !== 0 ? result.status : (hostStatus ?? result.status);
-	console.error(`Proof failed: ${assertion.name} (${assertion.id})`);
-	console.error(`Reason: ${result.error ?? `proof failed with exit status ${status}`}`);
+	io.err(`Proof failed: ${assertion.name} (${assertion.id})`);
+	io.err(`Reason: ${result.error ?? `proof failed with exit status ${status}`}`);
 }
 
 function statusEntries(bridgeRoot: string, paths: string[]): string[] {
@@ -3060,7 +3202,7 @@ function recordProofResult(assertionPath: string, result: ProverHostResult): voi
 	writeFileAtomic(assertionPath, `---\n${stringifyYaml(doc).trimEnd()}\n---\n${block.body}`);
 }
 
-async function prove(args: string[]): Promise<void> {
+async function prove(args: string[], io: CommandIo): Promise<void> {
 	const options = parseProveArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
@@ -3091,17 +3233,17 @@ async function prove(args: string[]): Promise<void> {
 		encoding: "utf8",
 		env: cleanGitEnv(),
 	});
-	if (child.stdout) process.stdout.write(child.stdout);
-	if (child.stderr) process.stderr.write(child.stderr);
+	if (child.stdout) io.writeOut(child.stdout);
+	if (child.stderr) io.writeErr(child.stderr);
 
 	const result = readProverHostResult(resultPath);
 	if (result.status !== 0 || child.status !== 0) {
-		printProofFailure(assertion, result, child.status);
-		process.exitCode = 1;
+		printProofFailure(assertion, result, child.status, io);
+		io.setExitCode(1);
 		return;
 	}
 
-	if (options.verbose && assertion.gist) console.log(`Gist: ${assertion.gist}`);
+	if (options.verbose && assertion.gist) io.log(`Gist: ${assertion.gist}`);
 
 	if (options.record) {
 		const dirty = Object.entries(result.inputs).filter(([, input]) => input.dirty);
@@ -3114,9 +3256,9 @@ async function prove(args: string[]): Promise<void> {
 		}
 		assertProverRecordable(rc.bridgeDir, proverPath);
 		recordProofResult(assertion.path, result);
-		console.log(`Proof recorded: ${assertion.id}`);
+		io.log(`Proof recorded: ${assertion.id}`);
 	} else {
-		console.log(`Proof passed: ${assertion.id}`);
+		io.log(`Proof passed: ${assertion.id}`);
 	}
 }
 
@@ -3771,57 +3913,54 @@ function createApplyPlan(): ApplyPlan {
 	return { bridge, repos, agentFiles, tags, targets, warnings };
 }
 
-function applyDryRun(): void {
+function applyDryRun(io: CommandIo): void {
 	const { bridge, repos, agentFiles, tags, targets, warnings } = createApplyPlan();
 
-	console.log("nosedive apply --dry-run");
-	console.log(`Bridge:    ${formatPath(bridge.bridgeDir)}`);
-	console.log(
+	io.log("nosedive apply --dry-run");
+	io.log(`Bridge:    ${formatPath(bridge.bridgeDir)}`);
+	io.log(
 		`Workspace: ${bridge.workspaceDir ? formatPath(bridge.workspaceDir) : "(not configured)"}`,
 	);
-	console.log(
-		`Backlog:   ${bridge.backlogDir ? formatPath(bridge.backlogDir) : "(not configured)"}`,
-	);
-	console.log(`KB:        ${formatPath(bridge.kbDir)}`);
-	console.log(`Home:      ${bridge.homeBranch ?? "(not configured)"}`);
-	console.log(`Work ref:  ${bridge.workBranchPrefix ?? "(not configured)"}`);
-	console.log(`Pilot:     ${bridge.pilotName ?? "(no name)"} <${bridge.pilotEmail ?? "no email"}>`);
-	console.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
-	console.log(`Dive:      ${bridge.activeDiveId ?? "(not configured)"}`);
-	console.log(`Tags:      ${tags.size > 0 ? [...tags].sort().join(", ") : "(none)"}`);
-	console.log("");
+	io.log(`Backlog:   ${bridge.backlogDir ? formatPath(bridge.backlogDir) : "(not configured)"}`);
+	io.log(`KB:        ${formatPath(bridge.kbDir)}`);
+	io.log(`Home:      ${bridge.homeBranch ?? "(not configured)"}`);
+	io.log(`Work ref:  ${bridge.workBranchPrefix ?? "(not configured)"}`);
+	io.log(`Pilot:     ${bridge.pilotName ?? "(no name)"} <${bridge.pilotEmail ?? "no email"}>`);
+	io.log(`Effort:    ${bridge.effortRef ?? "(not configured)"}`);
+	io.log(`Dive:      ${bridge.activeDiveId ?? "(not configured)"}`);
+	io.log(`Tags:      ${tags.size > 0 ? [...tags].sort().join(", ") : "(none)"}`);
+	io.log("");
 
-	console.log("Bridge docs:");
-	for (const filename of agentFiles)
-		console.log(`  ${join(formatPath(bridge.bridgeDir), filename)}`);
+	io.log("Bridge docs:");
+	for (const filename of agentFiles) io.log(`  ${join(formatPath(bridge.bridgeDir), filename)}`);
 	for (const item of (targets.get(bridge.bridgeDir) ?? []).sort((a, b) =>
 		a.doc.relPath.localeCompare(b.doc.relPath),
 	)) {
-		console.log(`    - ${item.doc.relPath} :${item.render}`);
+		io.log(`    - ${item.doc.relPath} :${item.render}`);
 	}
-	console.log("");
+	io.log("");
 
 	if (repos.length > 0) {
-		console.log("Repos:");
+		io.log("Repos:");
 		for (const repo of repos) {
 			const path = repo.repoPath ?? "(missing repo doc)";
 			const mode = repo.readOnly ? "read-only" : "writable";
 			const refSummary = repo.ref
 				? `ref ${repo.repoRef} (base ${repo.repoBaseBranch})`
 				: `base ${repo.repoBaseBranch}`;
-			console.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, ${refSummary})`);
+			io.log(`  ${mode.padEnd(9)} ${path} (${repo.id}, ${refSummary})`);
 		}
-		console.log("");
+		io.log("");
 	}
 
 	if (warnings.length > 0) {
-		console.log("");
-		console.log("Warnings:");
-		for (const warning of warnings) console.log(`  - ${warning}`);
+		io.log("");
+		io.log("Warnings:");
+		for (const warning of warnings) io.log(`  - ${warning}`);
 	}
 
-	console.log("");
-	console.log("No files written.");
+	io.log("");
+	io.log("No files written.");
 }
 
 function markdownList(items: string[]): string {
@@ -4035,24 +4174,25 @@ function renderPackageKbBody(id: string): string {
 	return parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body;
 }
 
-function renderCommand(args: string[]): void {
+function renderCommand(args: string[], io: CommandIo): void {
 	const [id, ...extra] = args;
 	if (!id || extra.length > 0) throw new Error("render requires exactly one uuid");
-	process.stdout.write(renderPackageKbBody(id));
+	io.writeOut(renderPackageKbBody(id));
 }
 
-function printManualHookAdvice(reason: string): void {
-	console.error(`WARNING: ${reason}`);
-	console.error("Add this line to your existing pre-push hook setup:");
-	console.error(`  ${MANUAL_PRE_PUSH_LINE}`);
+function printManualHookAdvice(reason: string, io: CommandIo): void {
+	io.err(`WARNING: ${reason}`);
+	io.err("Add this line to your existing pre-push hook setup:");
+	io.err(`  ${MANUAL_PRE_PUSH_LINE}`);
 }
 
-function preflight(_args: string[]): void {
+function preflight(_args: string[], io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
 	const hooksPath = gitOutput(rc.bridgeDir, ["config", "--get", "core.hooksPath"]);
 	if (hooksPath) {
 		printManualHookAdvice(
 			`core.hooksPath is set to ${hooksPath}; nosedive will not change it or write an ignored .git/hooks/pre-push.`,
+			io,
 		);
 		return;
 	}
@@ -4065,6 +4205,7 @@ function preflight(_args: string[]): void {
 		if (!existing.includes("nosedive-managed")) {
 			printManualHookAdvice(
 				`foreign pre-push hook exists at ${formatPath(hookPath)}; leaving it unchanged.`,
+				io,
 			);
 			return;
 		}
@@ -4073,7 +4214,7 @@ function preflight(_args: string[]): void {
 	mkdirSync(dirname(hookPath), { recursive: true });
 	writeFileAtomic(hookPath, PRE_PUSH_HOOK);
 	chmodSync(hookPath, 0o755);
-	console.log(`Installed nosedive pre-push hook: ${formatPath(hookPath)}`);
+	io.log(`Installed nosedive pre-push hook: ${formatPath(hookPath)}`);
 }
 
 interface WorkspaceDiveMarker {
@@ -4246,31 +4387,31 @@ function checkDiveWip(): DiveWipFailure[] {
 	return failures;
 }
 
-function printDiveWipFailure(failures: DiveWipFailure[]): void {
-	console.error("Push failed because the active dive has not been handed off.");
-	console.error("");
+function printDiveWipFailure(failures: DiveWipFailure[], io: CommandIo): void {
+	io.err("Push failed because the active dive has not been handed off.");
+	io.err("");
 	for (const failure of failures) {
 		const subject = failure.repoId
 			? `${failure.readOnly ? "read-only scoped repo" : "scoped repo"} ${failure.repoId}${failure.repoPath ? ` at ${formatPath(failure.repoPath)}` : ""}`
 			: "active dive";
-		console.error(`- ${subject}: ${failure.reasons.join("; ")}`);
+		io.err(`- ${subject}: ${failure.reasons.join("; ")}`);
 		if (failure.readOnly) {
-			console.error(
+			io.err(
 				"  This read-only scope still contains work to preserve; consider re-scoping it writable.",
 			);
 		}
 	}
-	console.error("");
-	console.error(`Handoff runbook: ${HANDOFF_RUNBOOK_ID}`);
-	console.error("HINT: To learn more, run:");
-	console.error(`  npx nosedive render ${HANDOFF_RUNBOOK_ID}`);
+	io.err("");
+	io.err(`Handoff runbook: ${HANDOFF_RUNBOOK_ID}`);
+	io.err("HINT: To learn more, run:");
+	io.err(`  npx nosedive render ${HANDOFF_RUNBOOK_ID}`);
 }
 
-function prePushHook(_args: string[]): void {
+function prePushHook(_args: string[], io: CommandIo): void {
 	const failures = checkDiveWip();
 	if (failures.length === 0) return;
-	printDiveWipFailure(failures);
-	process.exit(1);
+	printDiveWipFailure(failures, io);
+	io.setExitCode(1);
 }
 
 function gitRelPath(repoRoot: string, path: string): string {
@@ -4445,7 +4586,7 @@ function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[]
 	return [...new Set(entries)];
 }
 
-function nukeConfig(): void {
+function nukeConfig(io: CommandIo): void {
 	const resolved = findBridgeConfig(process.cwd());
 	if (!resolved) throw noBridgeConfigError();
 	const bridgeDir = resolved.bridgeDir;
@@ -4482,11 +4623,11 @@ function nukeConfig(): void {
 		removedFiles += 1;
 	}
 
-	console.log(`Nuked bridge config; removed ${removedFiles} file${removedFiles === 1 ? "" : "s"}.`);
+	io.log(`Nuked bridge config; removed ${removedFiles} file${removedFiles === 1 ? "" : "s"}.`);
 	if (warnings.length > 0) {
-		console.log("");
-		console.log("Warnings:");
-		for (const warning of warnings) console.log(`  - ${warning}`);
+		io.log("");
+		io.log("Warnings:");
+		for (const warning of warnings) io.log(`  - ${warning}`);
 	}
 }
 
@@ -4511,11 +4652,10 @@ function parseNukeOptions(args: string[]): NukeOptions {
 	return options;
 }
 
-function nuke(args: string[]): void {
+function nuke(args: string[], io: CommandIo): void {
 	const options = parseNukeOptions(args);
 	if (options.help) {
-		console.log("Usage: nosedive nuke --config");
-		console.log("  Remove bridge config files and nosedive-managed config exclude rules.");
+		printCommandHelp("nuke", io);
 		return;
 	}
 
@@ -4523,7 +4663,7 @@ function nuke(args: string[]): void {
 		throw new Error("nosedive nuke is destructive; rerun with --config");
 	}
 
-	nukeConfig();
+	nukeConfig(io);
 }
 
 function repoFrontmatter(
@@ -4539,7 +4679,7 @@ function repoFrontmatter(
 	};
 }
 
-function applyWrite(): void {
+function applyWrite(io: CommandIo): void {
 	const plan = createApplyPlan();
 	const generatedFiles: string[] = [];
 
@@ -4553,29 +4693,26 @@ function applyWrite(): void {
 
 	plan.warnings.push(...manageGeneratedGitState(generatedFiles));
 
-	console.log(
+	io.log(
 		`Wrote bridge docs: ${plan.agentFiles.map((filename) => join(formatPath(plan.bridge.bridgeDir), filename)).join(", ")}`,
 	);
 	if (plan.warnings.length > 0) {
-		console.log("");
-		console.log("Warnings:");
-		for (const warning of plan.warnings) console.log(`  - ${warning}`);
+		io.log("");
+		io.log("Warnings:");
+		for (const warning of plan.warnings) io.log(`  - ${warning}`);
 	}
 }
 
-function apply(args: string[]): void {
+function apply(args: string[], io: CommandIo): void {
 	if (args.includes("-h") || args.includes("--help")) {
-		console.log("Usage: nosedive apply");
-		console.log(
-			"  Deprecated: agent instruction files are now expected to be checked into source control.",
-		);
+		printCommandHelp("apply", io);
 		return;
 	}
 	if (args.includes("--dry-run")) {
-		console.error(
+		io.err(
 			"warning: `nosedive apply` is deprecated; --dry-run is read-only and will be removed later.",
 		);
-		applyDryRun();
+		applyDryRun(io);
 		return;
 	}
 
@@ -4616,12 +4753,10 @@ function uuid7AtMs(ms: number): string {
 	].join("-");
 }
 
-function mintId(args: string[]): void {
+function mintId(args: string[], io: CommandIo): void {
 	const [firstArg, secondArg] = args;
 	if (firstArg === "-h" || firstArg === "--help") {
-		console.log("Usage: nosedive mint [timestamp] [count]");
-		console.log("  [timestamp]: ISO date string or Unix milliseconds (default: now)");
-		console.log("  [count]: integer from 1 to 1000 (default: 1, one UUID per successive ms)");
+		printCommandHelp("mint", io);
 		return;
 	}
 
@@ -4638,10 +4773,50 @@ function mintId(args: string[]): void {
 		throw new Error("mint: timestamp out of UUIDv7 range");
 	}
 
-	for (let i = 0; i < count; i += 1) console.log(uuid7AtMs(baseMs + i));
+	for (let i = 0; i < count; i += 1) io.log(uuid7AtMs(baseMs + i));
 }
 
 // --- dispatch --------------------------------------------------------------
+
+type BuiltinCommand = (args: string[], io: CommandIo) => void | Promise<void>;
+
+/**
+ * The commands a contract can be written against. Built lazily so it can name
+ * hoisted declarations, and deliberately excluding `version`, `help`, and the
+ * internal `__prove-host`, which have no contracts.
+ */
+function builtinCommands(): Record<string, BuiltinCommand> {
+	return {
+		mint: mintId,
+		seed: (args, io) => seed(args, io, "seed"),
+		init: (args, io) => seed(args, io, "init"),
+		preflight,
+		prove,
+		render: renderCommand,
+		"pre-push.hook": prePushHook,
+		whoami,
+		"dump-backlog": dumpBacklog,
+		"list-dives": listDives,
+		pitch,
+		"add-repo": addRepo,
+		"hydrate-repo.workspace": hydrateRepoWorkspace,
+		"dehydrate-repo.workspace": dehydrateRepoWorkspace,
+		apply,
+		nuke,
+	};
+}
+
+async function invokeBuiltin(command: string, args: string[]): Promise<CapturedCommandOutput> {
+	const run = builtinCommands()[command];
+	if (!run) throw new Error(`unknown builtin command: ${command}`);
+	const io = createCapturingIo();
+	try {
+		await run(args, io);
+	} finally {
+		io.close();
+	}
+	return io.captured();
+}
 
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 	const [rawCommand, ...args] = argv;
@@ -4649,71 +4824,92 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 	if (parsedCommand && (await maybeRunContractCommand(parsedCommand, args))) return;
 	const command = parsedCommand?.name;
 
+	const io = createConsoleIo();
+	try {
+		await runBuiltinCli(command, args, io);
+	} finally {
+		io.close();
+	}
+}
+
+async function runBuiltinCli(
+	command: string | undefined,
+	args: string[],
+	io: CommandIo,
+): Promise<void> {
+	// Same rule the contract host applies before running an executor, so `-h`
+	// prints the command's contract body whichever route handled the run.
+	const helpOnly = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
+	if (command !== undefined && helpOnly && isContractedCommand(command)) {
+		printCommandHelp(command, io);
+		return;
+	}
+
 	switch (command) {
 		case "version":
 		case "--version":
 		case "-v":
-			console.log(version);
+			io.log(version);
 			break;
 		case "mint":
-			mintId(args);
+			mintId(args, io);
 			break;
 		case "init":
-			await init(args);
+			await seed(args, io, "init");
 			break;
 		case "seed":
-			await seed(args);
+			await seed(args, io, "seed");
 			break;
 		case "preflight":
-			preflight(args);
+			preflight(args, io);
 			break;
 		case "prove":
-			await prove(args);
+			await prove(args, io);
 			break;
 		case "__prove-host":
 			await proveHost(args);
 			break;
 		case "render":
-			renderCommand(args);
+			renderCommand(args, io);
 			break;
 		case "pre-push.hook":
-			prePushHook(args);
+			prePushHook(args, io);
 			break;
 		case "whoami":
-			whoami(args);
+			whoami(args, io);
 			break;
 		case "dump-backlog":
-			dumpBacklog(args);
+			dumpBacklog(args, io);
 			break;
 		case "list-dives":
-			listDives(args);
+			listDives(args, io);
 			break;
 		case "pitch":
-			pitch(args);
+			pitch(args, io);
 			break;
 		case "add-repo":
-			addRepo(args);
+			addRepo(args, io);
 			break;
 		case "hydrate-repo.workspace":
-			hydrateRepoWorkspace(args);
+			hydrateRepoWorkspace(args, io);
 			break;
 		case "dehydrate-repo.workspace":
-			dehydrateRepoWorkspace(args);
+			dehydrateRepoWorkspace(args, io);
 			break;
 		case "apply":
-			apply(args);
+			apply(args, io);
 			break;
 		case "nuke":
-			nuke(args);
+			nuke(args, io);
 			break;
 		case undefined:
 		case "help":
 		case "--help":
 		case "-h":
-			console.log(USAGE);
+			io.log(USAGE);
 			break;
 		default:
-			console.error(`Unknown command: ${command}\n\n${USAGE}`);
+			io.err(`Unknown command: ${command}\n\n${USAGE}`);
 			process.exit(1);
 	}
 }

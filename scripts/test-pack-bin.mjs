@@ -62,6 +62,8 @@ try {
 	assert.match(help.stdout, /add-repo/);
 
 	run("git", ["init", "-b", "main"], seedBridge);
+	run("git", ["config", "user.name", "Packed Pilot"], seedBridge);
+	run("git", ["config", "user.email", "packed@example.invalid"], seedBridge);
 	const seed = runPackedNpm(
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless"],
 		seedBridge,
@@ -77,6 +79,14 @@ try {
 	assert.match(
 		readFileSync(join(seedBridge, ".git", "info", "exclude"), "utf8"),
 		/^\.nosedive\.local\.yaml$/m,
+	);
+	const whoami = runPackedNpm(
+		["exec", "--yes", "--package", packedPath, "-c", "nosedive whoami"],
+		seedBridge,
+	);
+	assert.equal(
+		whoami.stdout,
+		"nosedive-pilot-name: Packed Pilot\nnosedive-pilot-email: packed@example.invalid\n",
 	);
 } finally {
 	rmSync(packed.filename, { force: true });

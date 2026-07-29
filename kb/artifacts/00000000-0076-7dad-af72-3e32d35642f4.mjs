@@ -1,7 +1,7 @@
 // Migration script for kb doc 00000000-0061-77ed-a060-f803c8f5aa76.
 //
-// Converts a legacy single `.nosediverc` bridge config (schema version 0)
-// into the split shape (schema version 1): a checked-in `.nosedive/config.yaml`
+// Converts a legacy single `.nosediverc` bridge config (compatibility level 0)
+// into the split shape (compatibility level 1): a checked-in `.nosedive/config.yaml`
 // carrying team-shared fields, plus a gitignored `.nosedive.local.yaml`
 // carrying personal fields (pilot-name, pilot-email).
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -44,7 +44,7 @@ export function migrate(ctx) {
 	// forward into the new shape.
 	delete remaining["current"];
 
-	const base = { "schema-version": 1 };
+	const base = { "compatibility-level": 1 };
 	for (const key of KNOWN_BASE_KEYS) {
 		if (key in remaining) {
 			base[key] = remaining[key];

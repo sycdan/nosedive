@@ -86,12 +86,12 @@ Usage:
 
 - Bridge config is split across two files: `.nosedive/config.yaml` (checked
   into git, team-shared — `workspace`, `backlog`, `kb`, `home-branch`,
-  `work-branch-prefix`, `agents`, and a `schema-version`) and
+  `work-branch-prefix`, `agents`, and a `compatibility-level`) and
   `.nosedive.local.yaml` (gitignored, personal — `pilot-name`, `pilot-email`).
   `.nosedive/config.yaml`'s presence in a directory is what identifies that
   directory as bridge root. `seed` also writes `.nosedive/.gitignore`
   (`cache/`, `migration-backups/`) every run.
-- Every run first migrates an out-of-date bridge config to the latest schema
+- Every run first migrates an out-of-date bridge config to the latest compatibility level
   — including the legacy single-file `.nosediverc` shape from older nosedive
   versions — before prompting or writing. Already-current bridges are a cheap
   no-op, so `seed --headless` is safe to run at the start of every agent
@@ -262,17 +262,19 @@ Usage:
 Print the bridge pilot identity that nosedive will use from the current
 directory.
 
+Latest contract: [whoami@1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md)
+
 Usage:
 
 `nosedive whoami`
 
 - Searches upward for the nearest bridge config (`.nosedive/config.yaml` or
   legacy `.nosediverc`).
-- Prints `pilot-name` and `pilot-email` from explicit bridge config.
-- Falls back per missing field to `git config user.name` or
-  `git config user.email` with a notice on stderr.
-- Prints `<unset>` and exits nonzero when a missing field cannot be inferred
-  from git config.
+- On compatibility-level bridges, resolves the latest compatible `whoami@N`
+  contract and follows that contract's output behavior.
+- Legacy `.nosediverc` bridges use the built-in compatibility level 0 behavior:
+  print `pilot-name` and `pilot-email` from bridge config, falling back per
+  missing field to `git config`.
 - Does not modify bridge config, git excludes, backlog files, kb files, or
   workspace markers.
 

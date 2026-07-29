@@ -98,11 +98,11 @@ const LOCAL_CONFIG_FILENAME = ".nosedive.local.yaml";
 const LEGACY_CONFIG_FILENAME = ".nosediverc";
 const MIGRATION_BACKUP_DIRNAME = "migration-backups";
 
-/** Schema version a freshly-migrated or freshly-init'd bridge ends up on. */
-const CURRENT_SCHEMA_VERSION = 1;
+/** Compatibility level a freshly-migrated or freshly-seeded bridge ends up on. */
+const CURRENT_COMPATIBILITY_LEVEL = 1;
 
 const BASE_CONFIG_KNOWN_KEYS = [
-	"schema-version",
+	"compatibility-level",
 	"workspace",
 	"backlog",
 	"kb",
@@ -136,6 +136,7 @@ interface MarkdownFrontmatterBlock {
 export interface NosediveRc {
 	path: string;
 	bridgeDir: string;
+	compatibilityLevel?: number;
 	workspaceDir?: string;
 	backlogDir?: string;
 	kbDir?: string;
@@ -329,6 +330,15 @@ function readSplitEffectiveYaml(basePath: string, localPath: string): SimpleYaml
 	};
 }
 
+function configCompatibilityLevel(config: SimpleYaml, label: string): number {
+	const raw = config.scalars["compatibility-level"];
+	const level = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+	if (!Number.isInteger(level) || level < 0) {
+		throw new Error(`${formatPath(label)} has no readable compatibility-level`);
+	}
+	return level;
+}
+
 export function readNosediveRc(start: string): NosediveRc {
 	const resolved = findBridgeConfig(start);
 	if (!resolved) throw noBridgeConfigError();
@@ -345,6 +355,8 @@ export function readNosediveRc(start: string): NosediveRc {
 	return {
 		path: resolved.shape === "split" ? resolved.basePath : resolved.legacyPath,
 		bridgeDir,
+		compatibilityLevel:
+			resolved.shape === "split" ? configCompatibilityLevel(rc, resolved.basePath) : 0,
 		workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
 		backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
@@ -444,9 +456,9 @@ function loadSplitRcSettings(bridgeDir: string): RcSettings {
 	};
 }
 
-function renderBaseConfig(settings: RcSettings, schemaVersion: number): string {
+function renderBaseConfig(settings: RcSettings, compatibilityLevel: number): string {
 	return [
-		`schema-version: ${schemaVersion}`,
+		`compatibility-level: ${compatibilityLevel}`,
 		`workspace: ${settings.workspace}`,
 		`backlog: ${settings.backlog}`,
 		`kb: ${settings.kb}`,
@@ -508,7 +520,7 @@ function detectConfigShapeAt(bridgeDir: string): ConfigShapeInfo {
 	if (hasBase) {
 		const basePath = baseConfigPath(bridgeDir);
 		const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
-		const raw = base.scalars["schema-version"];
+		const raw = base.scalars["compatibility-level"];
 		const version = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
 		return Number.isInteger(version) ? { kind: "split", version } : { kind: "split-unversioned" };
 	}
@@ -574,24 +586,28 @@ async function migrateBridgeConfig(bridgeDir: string): Promise<void> {
 	}
 	if (shape.kind === "split-unversioned") {
 		throw new Error(
-			`${formatPath(baseConfigPath(bridgeDir))} exists but has no readable schema-version; ` +
+			`${formatPath(baseConfigPath(bridgeDir))} exists but has no readable compatibility-level; ` +
 				`refusing to guess its migration state. Fix or remove it manually before running init again.`,
 		);
 	}
 
 	let version =
-		shape.kind === "none" ? CURRENT_SCHEMA_VERSION : shape.kind === "legacy" ? 0 : shape.version;
-	if (version === CURRENT_SCHEMA_VERSION) return; // already current: no-op, no further I/O
+		shape.kind === "none"
+			? CURRENT_COMPATIBILITY_LEVEL
+			: shape.kind === "legacy"
+				? 0
+				: shape.version;
+	if (version === CURRENT_COMPATIBILITY_LEVEL) return; // already current: no-op, no further I/O
 
 	const ctx: MigrationContext = { bridgeDir };
-	while (version < CURRENT_SCHEMA_VERSION) {
+	while (version < CURRENT_COMPATIBILITY_LEVEL) {
 		const migration = MIGRATIONS.find((m) => m.fromVersion === version);
 		if (!migration) {
 			const known = MIGRATIONS.map(
 				(m) => `  v${m.fromVersion}->v${m.toVersion}: ${m.summary}`,
 			).join("\n");
 			throw new Error(
-				`no migration path from schema version ${version} to ${CURRENT_SCHEMA_VERSION}; ` +
+				`no migration path from compatibility level ${version} to ${CURRENT_COMPATIBILITY_LEVEL}; ` +
 					`bridge config is in an unrecognized state.\nKnown migrations:\n${known}`,
 			);
 		}
@@ -699,6 +715,229 @@ function packageMigrationDocs(): Array<{ filename: string; content: string }> {
 	return packageDocsOfKind("migration");
 }
 
+interface ContractDoc extends KbDoc {
+	body: string;
+	command: string;
+	compatibilityLevel: number;
+}
+
+interface ParsedCommand {
+	name: string;
+	explicitCompatibilityLevel?: number;
+}
+
+interface ContractRunContext {
+	command: string;
+	cwd: string;
+	requestedCompatibilityLevel: number;
+	contractCompatibilityLevel: number;
+	contract: {
+		id?: string;
+		name: string;
+		path: string;
+	};
+}
+
+interface ContractRunOutput {
+	output: string;
+	exitCode: number;
+}
+
+function parseCommandToken(command: string | undefined): ParsedCommand | undefined {
+	if (command === undefined) return undefined;
+	const match = /^(.+)@([0-9]+)$/.exec(command);
+	if (!match) return { name: command };
+	return {
+		name: match[1]!,
+		explicitCompatibilityLevel: Number.parseInt(match[2]!, 10),
+	};
+}
+
+function parseContractName(
+	name: string | undefined,
+	label: string,
+): { command: string; compatibilityLevel: number } | undefined {
+	const match = /^(.+)@([0-9]+)$/.exec(name ?? "");
+	if (!match) return undefined;
+	const compatibilityLevel = Number.parseInt(match[2]!, 10);
+	if (!Number.isInteger(compatibilityLevel) || compatibilityLevel < 0) {
+		throw new Error(`invalid contract name in ${label}: ${name}`);
+	}
+	return { command: match[1]!, compatibilityLevel };
+}
+
+function packageContractDocs(): ContractDoc[] {
+	const packageKbDir = join(packageRoot(), "kb");
+	return packageDocsOfKind("contract").map((doc) => {
+		const path = join(packageKbDir, doc.filename);
+		const parsed = parseMarkdownDoc(doc.content, path);
+		const contractName = parseContractName(parsed.fm.scalars.name, path);
+		if (!contractName) {
+			throw new Error(`contract ${formatPath(path)} name must look like <command>@<level>`);
+		}
+		return {
+			path,
+			relPath: relative(packageRoot(), path),
+			id: parsed.fm.scalars.id,
+			name: parsed.fm.scalars.name,
+			kind: parsed.fm.scalars.kind,
+			gist: parsed.fm.scalars.gist,
+			repoPath: undefined,
+			repoBaseBranch: undefined,
+			effortRef: undefined,
+			metaScalars: parsed.fm.nested.meta ?? {},
+			metaLists: parsed.fm.nestedLists.meta ?? {},
+			metaRaw:
+				parsed.fm.raw.meta &&
+				typeof parsed.fm.raw.meta === "object" &&
+				!Array.isArray(parsed.fm.raw.meta)
+					? (parsed.fm.raw.meta as Record<string, unknown>)
+					: {},
+			scopes: parseScopeRefs(parsed.fm.raw.scopes, path),
+			links: parseLinkRefs(parsed.fm.raw.links, path),
+			body: parsed.body,
+			command: contractName.command,
+			compatibilityLevel: contractName.compatibilityLevel,
+		};
+	});
+}
+
+function bridgeCompatibilityLevel(start: string): number | undefined {
+	const resolved = findBridgeConfig(start);
+	if (!resolved) return undefined;
+	if (resolved.shape === "legacy") return 0;
+	const base = parseYamlBlock(readFileSync(resolved.basePath, "utf8"), resolved.basePath);
+	return configCompatibilityLevel(base, resolved.basePath);
+}
+
+function maybeBridgeCompatibilityLevel(start: string): number | undefined {
+	try {
+		return bridgeCompatibilityLevel(start);
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveContract(
+	command: string,
+	targetLevel: number,
+	exact: boolean,
+): ContractDoc | undefined {
+	const matches = packageContractDocs()
+		.filter((contract) => contract.command === command)
+		.filter((contract) =>
+			exact
+				? contract.compatibilityLevel === targetLevel
+				: contract.compatibilityLevel <= targetLevel,
+		)
+		.sort((a, b) => b.compatibilityLevel - a.compatibilityLevel);
+	const selected = matches[0];
+	if (!selected) return undefined;
+	const duplicates = matches.filter(
+		(contract) =>
+			contract.command === selected.command &&
+			contract.compatibilityLevel === selected.compatibilityLevel,
+	);
+	if (duplicates.length > 1) {
+		throw new Error(
+			`contract is ambiguous: ${selected.command}@${selected.compatibilityLevel} (${duplicates
+				.map((contract) => formatPath(contract.path))
+				.join(", ")})`,
+		);
+	}
+	return selected;
+}
+
+function renderContractHelp(contract: ContractDoc): void {
+	const body = contract.body.trim();
+	if (body) console.log(body);
+}
+
+function assertContractRunOutput(value: unknown, contract: ContractDoc): ContractRunOutput {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`contract ${contract.name} must return { output, exitCode }`);
+	}
+	const output = (value as Record<string, unknown>).output;
+	const exitCode = (value as Record<string, unknown>).exitCode;
+	if (typeof output !== "string" || typeof exitCode !== "number" || !Number.isInteger(exitCode)) {
+		throw new Error(`contract ${contract.name} must return { output: string, exitCode: number }`);
+	}
+	return { output, exitCode };
+}
+
+async function runContractPipeline(
+	contract: ContractDoc,
+	args: string[],
+	requestedCompatibilityLevel: number,
+): Promise<void> {
+	let value: unknown = { args, cwd: process.cwd() };
+	const ctx: ContractRunContext = {
+		command: contract.command,
+		cwd: process.cwd(),
+		requestedCompatibilityLevel,
+		contractCompatibilityLevel: contract.compatibilityLevel,
+		contract: {
+			id: contract.id,
+			name: contract.name,
+			path: contract.path,
+		},
+	};
+	const packageKbDir = join(packageRoot(), "kb");
+
+	for (const link of contract.links) {
+		const artifactPath = resolveKbFileLink(
+			packageRoot(),
+			packageKbDir,
+			link,
+			`contract ${contract.name} link`,
+		);
+		if (!existsSync(artifactPath)) {
+			throw new Error(`contract artifact not found: ${formatPath(artifactPath)}`);
+		}
+		if (!statSync(artifactPath).isFile()) {
+			throw new Error(`contract artifact is not a file: ${formatPath(artifactPath)}`);
+		}
+		const mod = (await import(pathToFileURL(artifactPath).href)) as {
+			run?: (value: unknown, ctx: ContractRunContext) => unknown | Promise<unknown>;
+		};
+		if (typeof mod.run !== "function") {
+			throw new Error(`contract artifact ${formatPath(artifactPath)} must export run(value, ctx)`);
+		}
+		value = await mod.run(value, ctx);
+	}
+
+	const result = assertContractRunOutput(value, contract);
+	if (result.output) {
+		const stream = result.exitCode === 0 ? process.stdout : process.stderr;
+		stream.write(result.output);
+	}
+	if (result.exitCode !== 0) process.exitCode = result.exitCode;
+}
+
+async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): Promise<boolean> {
+	const explicitLevel = parsed.explicitCompatibilityLevel;
+	const exact = explicitLevel !== undefined;
+	if (!exact && !packageContractDocs().some((contract) => contract.command === parsed.name)) {
+		return false;
+	}
+	const targetLevel = exact ? explicitLevel : maybeBridgeCompatibilityLevel(process.cwd());
+	if (targetLevel === undefined) return false;
+
+	const contract = resolveContract(parsed.name, targetLevel, exact);
+	if (!contract) {
+		if (exact) throw new Error(`contract not found: ${parsed.name}@${targetLevel}`);
+		return false;
+	}
+
+	if (args.length === 1 && (args[0] === "-h" || args[0] === "--help")) {
+		renderContractHelp(contract);
+		return true;
+	}
+
+	await runContractPipeline(contract, args, targetLevel);
+	return true;
+}
+
 function seedPackageDocs(
 	bridgeDir: string,
 	kbPath: string,
@@ -740,7 +979,7 @@ async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<
 		);
 		console.log("  --headless skips prompts and writes existing values or configured defaults.");
 		console.log(
-			"  Every run first migrates an out-of-date bridge config to the latest schema (a no-op when already current).",
+			"  Every run first migrates an out-of-date bridge config to the latest compatibility level (a no-op when already current).",
 		);
 		return;
 	}
@@ -781,7 +1020,7 @@ async function seed(args: string[], command: "seed" | "init" = "seed"): Promise<
 
 	const basePath = baseConfigPath(bridgeDir);
 	const localPath = localConfigPath(bridgeDir);
-	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_SCHEMA_VERSION));
+	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeFileAtomic(localPath, renderLocalConfig(settings));
 	writeNosediveDirGitignore(bridgeDir);
 	console.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
@@ -1617,7 +1856,10 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 						? (raw.meta as Record<string, unknown>)
 						: {},
 				scopes: parseScopeRefs(raw.scopes, path),
-				links: fm.scalars.kind === "assertion" ? parseLinkRefs(raw.links, path) : [],
+				links:
+					fm.scalars.kind === "assertion" || fm.scalars.kind === "contract"
+						? parseLinkRefs(raw.links, path)
+						: [],
 			};
 		});
 }
@@ -2723,7 +2965,9 @@ function resolveKbFileLink(bridgeDir: string, kbDir: string, link: LinkRef, labe
 		throw new Error(`${label} must be a KB-relative file path, not a URI: ${link.id}`);
 	}
 	if (uuidLike(link.id)) {
-		throw new Error(`${label} must name a prover file; bare UUID links refer to KB markdown docs`);
+		throw new Error(
+			`${label} must name an artifact file; bare UUID links refer to KB markdown docs`,
+		);
 	}
 	if (!link.id || isAbsolute(link.id) || unsafeLinkPath(link.id)) {
 		throw new Error(`${label} must be a safe KB-relative file path: ${link.id}`);
@@ -4400,7 +4644,10 @@ function mintId(args: string[]): void {
 // --- dispatch --------------------------------------------------------------
 
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
-	const [command, ...args] = argv;
+	const [rawCommand, ...args] = argv;
+	const parsedCommand = parseCommandToken(rawCommand);
+	if (parsedCommand && (await maybeRunContractCommand(parsedCommand, args))) return;
+	const command = parsedCommand?.name;
 
 	switch (command) {
 		case "version":

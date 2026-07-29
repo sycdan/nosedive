@@ -819,11 +819,11 @@ pilot-email: pilot@example.invalid
 	);
 	assert.equal(explicitWhoami.stderr, "");
 
-	const whoamiHelp = run(["whoami", "--help"], root);
+	const whoamiHelp = run(["whoami", "--help"], bridge);
 	assertOk(whoamiHelp, "whoami --help failed");
 	assert.match(whoamiHelp.stdout, /Usage: nosedive whoami/);
 
-	const unknownWhoamiOption = run(["whoami", "--bogus"], root, "");
+	const unknownWhoamiOption = run(["whoami", "--bogus"], bridge, "");
 	assert.notEqual(
 		unknownWhoamiOption.status,
 		0,
@@ -831,7 +831,7 @@ pilot-email: pilot@example.invalid
 	);
 	assert.match(unknownWhoamiOption.stderr, /unknown whoami option: --bogus/);
 
-	const unexpectedWhoamiArgument = run(["whoami", "extra"], root, "");
+	const unexpectedWhoamiArgument = run(["whoami", "extra"], bridge, "");
 	assert.notEqual(
 		unexpectedWhoamiArgument.status,
 		0,
@@ -925,6 +925,52 @@ pilot-email: <unset>
 	);
 	assert.match(whoamiUnset.stderr, /notice: pilot-name inferred from git config/);
 	assert.match(whoamiUnset.stderr, /notice: pilot-email is not configured/);
+
+	const whoamiContractBridge = join(tmp, "whoami-contract-bridge");
+	mkdirSync(join(whoamiContractBridge, ".nosedive"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], whoamiContractBridge);
+	runTool("git", ["config", "user.name", "Contract Pilot"], whoamiContractBridge);
+	runTool("git", ["config", "user.email", "contract@example.invalid"], whoamiContractBridge);
+	write(
+		join(whoamiContractBridge, ".nosedive", "config.yaml"),
+		`compatibility-level: 1
+workspace: ./workspace
+backlog: ./backlog
+kb: ./kb
+home-branch: main
+work-branch-prefix: work/
+agents:
+  - copilot
+`,
+	);
+	const whoamiContract = run(["whoami"], whoamiContractBridge);
+	assertOk(whoamiContract, "whoami contract route failed");
+	assert.equal(
+		whoamiContract.stdout,
+		`nosedive-pilot-name: Contract Pilot
+nosedive-pilot-email: contract@example.invalid
+`,
+	);
+	assert.equal(whoamiContract.stderr, "");
+
+	const whoamiContractHelp = run(["whoami", "--help"], whoamiContractBridge);
+	assertOk(whoamiContractHelp, "whoami contract help failed");
+	assert.match(whoamiContractHelp.stdout, /^# Whoami/m);
+	assert.match(whoamiContractHelp.stdout, /nosedive-pilot-name/);
+	assert.doesNotMatch(whoamiContractHelp.stdout, /^---/);
+
+	const explicitWhoamiContract = run(["whoami@1"], whoamiContractBridge);
+	assertOk(explicitWhoamiContract, "explicit whoami@1 contract route failed");
+	assert.equal(explicitWhoamiContract.stdout, whoamiContract.stdout);
+	assert.equal(explicitWhoamiContract.stderr, "");
+
+	const missingExplicitWhoamiContract = run(["whoami@2"], whoamiContractBridge);
+	assert.notEqual(
+		missingExplicitWhoamiContract.status,
+		0,
+		"missing explicit whoami@2 contract unexpectedly succeeded",
+	);
+	assert.match(missingExplicitWhoamiContract.stderr, /contract not found: whoami@2/);
 
 	write(
 		join(bridge, "backlog", "yaml-frontmatter", "YamlFrontmatter.md"),
@@ -2965,7 +3011,7 @@ Build the YAML-aware workspace work order.
 	assert.equal(
 		freshBase,
 		[
-			"schema-version: 1",
+			"compatibility-level: 1",
 			"workspace: ./workspace",
 			"backlog: ./backlog",
 			"kb: ./kb",
@@ -3053,7 +3099,7 @@ Build the YAML-aware workspace work order.
 	assert.equal(
 		readFileSync(join(headlessFreshBridge, ".nosedive", "config.yaml"), "utf8"),
 		[
-			"schema-version: 1",
+			"compatibility-level: 1",
 			"workspace: ./workspace",
 			"backlog: ./backlog",
 			"kb: ./kb",
@@ -3110,7 +3156,7 @@ current:
 	assert.equal(
 		readFileSync(join(headlessExistingBridge, ".nosedive", "config.yaml"), "utf8"),
 		[
-			"schema-version: 1",
+			"compatibility-level: 1",
 			"workspace: ./custom-workspace",
 			"backlog: ./backlog",
 			"kb: ./custom-kb",
@@ -3164,7 +3210,7 @@ current:
 	mkdirSync(ambiguousBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], ambiguousBridge);
 	write(join(ambiguousBridge, ".nosediverc"), "workspace: ./workspace\n");
-	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "schema-version: 1\n");
+	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 1\n");
 	const initAmbiguous = run(["seed", "--headless"], ambiguousBridge, "");
 	assert.notEqual(initAmbiguous.status, 0, "init with ambiguous config unexpectedly succeeded");
 	assert.match(initAmbiguous.stderr, /bridge config is ambiguous/);
@@ -3174,10 +3220,10 @@ current:
 	);
 	assert.equal(
 		readFileSync(join(ambiguousBridge, ".nosedive", "config.yaml"), "utf8"),
-		"schema-version: 1\n",
+		"compatibility-level: 1\n",
 	);
 
-	// A split base config with no readable schema-version is likewise
+	// A split base config with no readable compatibility-level is likewise
 	// unrecognized: init refuses to guess rather than silently overwriting.
 	const unversionedBridge = join(tmp, "unversioned-bridge");
 	mkdirSync(unversionedBridge, { recursive: true });
@@ -3185,7 +3231,7 @@ current:
 	write(join(unversionedBridge, ".nosedive", "config.yaml"), "workspace: ./workspace\n");
 	const initUnversioned = run(["seed", "--headless"], unversionedBridge, "");
 	assert.notEqual(initUnversioned.status, 0, "init with unversioned config unexpectedly succeeded");
-	assert.match(initUnversioned.stderr, /no readable schema-version/);
+	assert.match(initUnversioned.stderr, /no readable compatibility-level/);
 	assert.equal(
 		readFileSync(join(unversionedBridge, ".nosedive", "config.yaml"), "utf8"),
 		"workspace: ./workspace\n",

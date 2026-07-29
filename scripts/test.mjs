@@ -54,11 +54,20 @@ function write(path, content) {
 	writeFileSync(path, content, "utf8");
 }
 
+/**
+ * Runs the CLI with the ambient git environment stripped, the same way runGit
+ * and runTool do. Without this, a suite invoked from inside a git hook
+ * inherits GIT_DIR and friends, and every command the CLI shells out to reads
+ * the hook's repository instead of the fixture the test just built.
+ */
 function run(args, cwd, input) {
+	const env = { ...process.env };
+	for (const key of gitLocalEnvKeys) delete env[key];
 	return spawnSync(process.execPath, [cli, ...args], {
 		cwd,
 		encoding: "utf8",
 		input,
+		env,
 	});
 }
 

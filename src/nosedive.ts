@@ -111,8 +111,6 @@ const BASE_CONFIG_KNOWN_KEYS = [
 	"agents",
 ] as const;
 
-const LOCAL_CONFIG_KNOWN_KEYS = ["pilot-name", "pilot-email"] as const;
-
 // --- frontmatter -----------------------------------------------------------
 
 interface SimpleYaml {
@@ -315,21 +313,6 @@ function noBridgeConfigError(): Error {
 	);
 }
 
-/** Merge base config with personal local overrides; local wins on conflicts. */
-function readSplitEffectiveYaml(basePath: string, localPath: string): SimpleYaml {
-	const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
-	const local = existsSync(localPath)
-		? parseYamlBlock(readFileSync(localPath, "utf8"), localPath)
-		: emptyYaml();
-	return {
-		raw: { ...base.raw, ...local.raw },
-		scalars: { ...base.scalars, ...local.scalars },
-		lists: { ...base.lists, ...local.lists },
-		nested: { ...base.nested, ...local.nested },
-		nestedLists: { ...base.nestedLists, ...local.nestedLists },
-	};
-}
-
 function configCompatibilityLevel(config: SimpleYaml, label: string): number {
 	const raw = config.scalars["compatibility-level"];
 	const level = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
@@ -346,7 +329,7 @@ export function readNosediveRc(start: string): NosediveRc {
 	const bridgeDir = resolved.bridgeDir;
 	const rc =
 		resolved.shape === "split"
-			? readSplitEffectiveYaml(resolved.basePath, resolved.localPath)
+			? parseYamlBlock(readFileSync(resolved.basePath, "utf8"), resolved.basePath)
 			: parseYamlBlock(readFileSync(resolved.legacyPath, "utf8"), resolved.legacyPath);
 	const workspace = rc.scalars.workspace;
 	const backlog = rc.scalars.backlog;
@@ -431,14 +414,9 @@ function parseSeedOptions(args: string[], command: "seed" | "init"): SeedOptions
 
 /** Load effective settings from the split config shape at `bridgeDir`, defaulting missing fields. */
 function loadSplitRcSettings(bridgeDir: string): RcSettings {
-	const detectedPilot = loadGitPilotIdentity(bridgeDir);
 	const basePath = baseConfigPath(bridgeDir);
 	const base = existsSync(basePath)
 		? parseYamlBlock(readFileSync(basePath, "utf8"), basePath)
-		: emptyYaml();
-	const localPath = localConfigPath(bridgeDir);
-	const local = existsSync(localPath)
-		? parseYamlBlock(readFileSync(localPath, "utf8"), localPath)
 		: emptyYaml();
 
 	return {
@@ -447,8 +425,8 @@ function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		kb: base.scalars.kb ?? DEFAULT_RC.kb,
 		homeBranch: base.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
 		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
-		pilotName: local.scalars["pilot-name"] ?? detectedPilot.pilotName,
-		pilotEmail: local.scalars["pilot-email"] ?? detectedPilot.pilotEmail,
+		pilotName: "",
+		pilotEmail: "",
 		agents:
 			base.lists.agents && base.lists.agents.length > 0
 				? base.lists.agents
@@ -468,12 +446,6 @@ function renderBaseConfig(settings: RcSettings, compatibilityLevel: number): str
 		...settings.agents.map((agent) => `  - ${agent}`),
 		"",
 	].join("\n");
-}
-
-function renderLocalConfig(settings: RcSettings): string {
-	return [`pilot-name: ${settings.pilotName}`, `pilot-email: ${settings.pilotEmail}`, ""].join(
-		"\n",
-	);
 }
 
 // --- migrations ----------------------------------------------------------
@@ -499,8 +471,7 @@ const MIGRATIONS: Migration[] = [
 		toVersion: 1,
 		docId: "00000000-0061-77ed-a060-f803c8f5aa76",
 		scriptRelPath: join("kb", "artifacts", "00000000-0076-7dad-af72-3e32d35642f4.mjs"),
-		summary:
-			"Split single .nosediverc into checked-in .nosedive/config.yaml plus gitignored .nosedive.local.yaml",
+		summary: "Migrate single .nosediverc into checked-in .nosedive/config.yaml",
 	},
 ];
 
@@ -831,6 +802,7 @@ interface ContractDoc extends KbDoc {
 	body: string;
 	command: string;
 	compatibilityLevel: number;
+	usage: string;
 }
 
 interface ParsedCommand {
@@ -918,6 +890,7 @@ function packageContractDocs(): ContractDoc[] {
 			body: parsed.body,
 			command: contractName.command,
 			compatibilityLevel: contractName.compatibilityLevel,
+			usage: parsed.fm.nested.meta?.usage ?? "",
 		};
 	});
 }
@@ -968,9 +941,15 @@ function resolveContract(
 	return selected;
 }
 
-function renderContractHelp(contract: ContractDoc): void {
+function renderContractHelpText(contract: ContractDoc): string {
 	const body = contract.body.trim();
-	if (body) console.log(body);
+	const usage = contract.usage.trim();
+	return [body, usage].filter(Boolean).join("\n\n");
+}
+
+function renderContractHelp(contract: ContractDoc): void {
+	const help = renderContractHelpText(contract);
+	if (help) console.log(help);
 }
 
 /**
@@ -983,7 +962,7 @@ function printCommandHelp(command: string, io: CommandIo): void {
 		.filter((doc) => doc.command === command)
 		.sort((a, b) => b.compatibilityLevel - a.compatibilityLevel)[0];
 	if (!contract) throw new Error(`no packaged contract documents command: ${command}`);
-	io.log(contract.body.trim());
+	io.log(renderContractHelpText(contract));
 }
 
 function isContractedCommand(command: string): boolean {
@@ -1161,8 +1140,6 @@ async function seed(
 				"work-branch-prefix",
 				settings.workBranchPrefix,
 			);
-			settings.pilotName = await promptScalar(io, "pilot-name", settings.pilotName);
-			settings.pilotEmail = await promptScalar(io, "pilot-email", settings.pilotEmail);
 			settings.agents = await promptAgents(io, settings.agents);
 		} finally {
 			io.close();
@@ -1170,13 +1147,9 @@ async function seed(
 	}
 
 	const basePath = baseConfigPath(bridgeDir);
-	const localPath = localConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
-	writeFileAtomic(localPath, renderLocalConfig(settings));
 	writeNosediveDirGitignore(bridgeDir);
-	io.log(`Wrote ${formatPath(basePath)} and ${formatPath(localPath)}`);
-
-	for (const warning of manageLocalConfigGitState([localPath])) io.err(`warning: ${warning}`);
+	io.log(`Wrote ${formatPath(basePath)}`);
 }
 
 // --- whoami ------------------------------------------------------------
@@ -4451,7 +4424,10 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 const CONFIG_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	begin: CONFIG_EXCLUDE_BEGIN,
 	end: CONFIG_EXCLUDE_END,
-	header: ["# owner: nosedive seed", "# reason: .nosedive.local.yaml is personal bridge config"],
+	header: [
+		"# owner: nosedive seed",
+		"# reason: legacy .nosedive.local.yaml personal bridge config",
+	],
 };
 
 const REPO_MARKER_EXCLUDE_SPEC: ManagedExcludeSpec = {
@@ -4562,10 +4538,6 @@ function manageGeneratedGitState(paths: string[]): string[] {
 
 function manageFoundationGitState(paths: string[]): string[] {
 	return manageGitState(paths, FOUNDATION_EXCLUDE_SPEC);
-}
-
-function manageLocalConfigGitState(paths: string[]): string[] {
-	return manageGitState(paths, CONFIG_EXCLUDE_SPEC);
 }
 
 function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[] {

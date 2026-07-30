@@ -68,7 +68,8 @@ try {
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless"],
 		seedBridge,
 	);
-	assert.match(seed.stdout, /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/);
+	assert.match(seed.stdout, /Wrote \.nosedive[\\/]config\.yaml/);
+	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
 	assert.equal(existsSync(join(seedBridge, "kb")), false);
@@ -76,7 +77,8 @@ try {
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),
 		["cache/", "migration-backups/", ""].join("\n"),
 	);
-	assert.match(
+	assert.equal(existsSync(join(seedBridge, ".nosedive.local.yaml")), false);
+	assert.doesNotMatch(
 		readFileSync(join(seedBridge, ".git", "info", "exclude"), "utf8"),
 		/^\.nosedive\.local\.yaml$/m,
 	);

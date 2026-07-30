@@ -1,9 +1,7 @@
 // Migration script for kb doc 00000000-0061-77ed-a060-f803c8f5aa76.
 //
 // Converts a legacy single `.nosediverc` bridge config (compatibility level 0)
-// into the split shape (compatibility level 1): a checked-in `.nosedive/config.yaml`
-// carrying team-shared fields, plus a gitignored `.nosedive.local.yaml`
-// carrying personal fields (pilot-name, pilot-email).
+// into the level-1 checked-in `.nosedive/config.yaml` shape.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
@@ -29,13 +27,6 @@ export function migrate(ctx) {
 	const legacyPath = join(bridgeDir, ".nosediverc");
 	const legacy = parse(readFileSync(legacyPath, "utf8")) ?? {};
 
-	// Omit rather than default-blank an absent personal field: nosedive's
-	// settings resolution falls back to git identity only when a key is
-	// genuinely missing, not when it's present-but-empty.
-	const local = {};
-	if (typeof legacy["pilot-name"] === "string") local["pilot-name"] = legacy["pilot-name"];
-	if (typeof legacy["pilot-email"] === "string") local["pilot-email"] = legacy["pilot-email"];
-
 	const remaining = { ...legacy };
 	delete remaining["pilot-name"];
 	delete remaining["pilot-email"];
@@ -54,6 +45,5 @@ export function migrate(ctx) {
 	Object.assign(base, remaining); // preserve any other unrecognized keys as-is
 
 	writeFileAtomic(join(bridgeDir, ".nosedive", "config.yaml"), stringify(base));
-	writeFileAtomic(join(bridgeDir, ".nosedive.local.yaml"), stringify(local));
 	rmSync(legacyPath, { force: true });
 }

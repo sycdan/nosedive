@@ -962,6 +962,12 @@ agents:
   - copilot
 `,
 	);
+	write(
+		join(whoamiContractBridge, ".nosedive.local.yaml"),
+		`pilot-name: Local Pilot
+pilot-email: local@example.invalid
+`,
+	);
 	const whoamiContract = run(["whoami"], whoamiContractBridge);
 	assertOk(whoamiContract, "whoami contract route failed");
 	assert.equal(
@@ -974,8 +980,13 @@ nosedive-pilot-email: contract@example.invalid
 
 	const whoamiContractHelp = run(["whoami", "--help"], whoamiContractBridge);
 	assertOk(whoamiContractHelp, "whoami contract help failed");
-	assert.match(whoamiContractHelp.stdout, /^# Whoami/m);
+	assert.match(whoamiContractHelp.stdout, /^# Whoami/);
 	assert.match(whoamiContractHelp.stdout, /nosedive-pilot-name/);
+	assert.ok(
+		whoamiContractHelp.stdout.indexOf("Usage: nosedive whoami") >
+			whoamiContractHelp.stdout.indexOf("# Whoami"),
+		"whoami usage should print after the contract body",
+	);
 	assert.doesNotMatch(whoamiContractHelp.stdout, /^---/);
 
 	const explicitWhoamiContract = run(["whoami@1"], whoamiContractBridge);
@@ -991,17 +1002,15 @@ nosedive-pilot-email: contract@example.invalid
 	);
 	assert.match(missingExplicitWhoamiContract.stderr, /contract not found: whoami@2/);
 
-	// Every user-facing command is documented by a level-1 contract, and help
+	// Legacy-compatible commands are documented by level-0 contracts, and help
 	// comes from that contract's body on both the contract and builtin routes.
-	const contractedCommands = [
+	const level0ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
-		["seed", /Usage: nosedive seed \[--headless\]/],
 		["init", /Usage: nosedive init \[--headless\]/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-uuid>/],
 		["render", /Usage: nosedive render <uuid>/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
-		["whoami", /Usage: nosedive whoami/],
 		["dump-backlog", /Usage: nosedive dump-backlog/],
 		["list-dives", /Usage: nosedive list-dives <effort>/],
 		["pitch", /Usage: nosedive pitch <slug>/],
@@ -1009,16 +1018,43 @@ nosedive-pilot-email: contract@example.invalid
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
 		["apply", /Usage: nosedive apply/],
-		["nuke", /Usage: nosedive nuke --config/],
 	];
-	for (const [command, usage] of contractedCommands) {
-		const explicitHelp = run([`${command}@1`, "--help"], whoamiContractBridge);
-		assertOk(explicitHelp, `${command}@1 --help failed`);
-		assert.match(explicitHelp.stdout, usage, `${command}@1 --help missing usage line`);
+	const level1ContractedCommands = [
+		["seed", /Usage: nosedive seed \[--headless\]/],
+		["nuke", /Usage: nosedive nuke --config/],
+		["whoami", /Usage: nosedive whoami/],
+	];
+	const contractedCommands = [
+		...level0ContractedCommands.map(([command, usage]) => [command, usage, 0]),
+		...level1ContractedCommands.map(([command, usage]) => [command, usage, 1]),
+	];
+	const contractHelpLinks = {
+		init: /\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
+		preflight: /\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
+		"pre-push.hook": /\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
+		seed: /\[`whoami@1`\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/,
+	};
+	for (const [command, usage, level] of contractedCommands) {
+		const explicitHelp = run([`${command}@${level}`, "--help"], whoamiContractBridge);
+		assertOk(explicitHelp, `${command}@${level} --help failed`);
+		assert.match(explicitHelp.stdout, usage, `${command}@${level} --help missing usage line`);
+		const expectedLink = contractHelpLinks[command];
+		if (expectedLink) {
+			assert.match(
+				explicitHelp.stdout,
+				expectedLink,
+				`${command}@${level} --help missing kb doc link`,
+			);
+		}
+		assert.match(explicitHelp.stdout, /^# /, `${command}@${level} --help should start with body`);
+		assert.ok(
+			explicitHelp.stdout.indexOf("Usage: nosedive") > explicitHelp.stdout.indexOf("# "),
+			`${command}@${level} --help should print usage after body`,
+		);
 		assert.doesNotMatch(
 			explicitHelp.stdout,
 			/^---$/m,
-			`${command}@1 --help leaked frontmatter delimiters`,
+			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
 
 		// Same help text whether a contract routed it or the builtin did.
@@ -1031,7 +1067,7 @@ nosedive-pilot-email: contract@example.invalid
 		);
 	}
 
-	// A legacy level-0 bridge has no matching contract and stays on the builtin.
+	// whoami has no level-0 contract, so a legacy bridge stays on the builtin.
 	const legacyRouteBridge = join(tmp, "legacy-route-bridge");
 	mkdirSync(legacyRouteBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], legacyRouteBridge);
@@ -3089,7 +3125,7 @@ Build the YAML-aware workspace work order.
 	assert.notEqual(unknownSeedOption.status, 0, "seed with unknown option unexpectedly succeeded");
 	assert.match(unknownSeedOption.stderr, /unknown seed option: --bogus/);
 
-	const wroteSplitFiles = /Wrote \.nosedive[\\/]config\.yaml and \.nosedive\.local\.yaml/;
+	const wroteConfigFile = /Wrote \.nosedive[\\/]config\.yaml/;
 
 	const initBridge = join(tmp, "init-bridge");
 	mkdirSync(initBridge, { recursive: true });
@@ -3099,7 +3135,8 @@ Build the YAML-aware workspace work order.
 
 	const initFresh = run(["seed"], initBridge, "\n\n\n\n\n\n\n\n");
 	assertOk(initFresh, "init on empty directory failed");
-	assert.match(initFresh.stdout, wroteSplitFiles);
+	assert.match(initFresh.stdout, wroteConfigFile);
+	assert.doesNotMatch(initFresh.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(initFresh.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(initFresh.stdout, /migration doc/);
 	const freshBase = readFileSync(join(initBridge, ".nosedive", "config.yaml"), "utf8");
@@ -3117,11 +3154,7 @@ Build the YAML-aware workspace work order.
 			"",
 		].join("\n"),
 	);
-	const freshLocal = readFileSync(join(initBridge, ".nosedive.local.yaml"), "utf8");
-	assert.equal(
-		freshLocal,
-		["pilot-name: Init Person", "pilot-email: init@example.invalid", ""].join("\n"),
-	);
+	assert.equal(existsSync(join(initBridge, ".nosedive.local.yaml")), false);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(initBridge, "kb", packageFoundationDoc)), false);
 	}
@@ -3136,12 +3169,12 @@ Build the YAML-aware workspace work order.
 		["cache/", "migration-backups/", ""].join("\n"),
 	);
 	const initExclude = readFileSync(join(initBridge, ".git", "info", "exclude"), "utf8");
-	assert.match(initExclude, /# BEGIN nosedive-managed config exclude/);
-	assert.match(initExclude, /^\.nosedive\.local\.yaml$/m);
+	assert.doesNotMatch(initExclude, /# BEGIN nosedive-managed config exclude/);
+	assert.doesNotMatch(initExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
-	assert.match(initExclude, /# END nosedive-managed config exclude/);
+	assert.doesNotMatch(initExclude, /# END nosedive-managed config exclude/);
 	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageNonFoundationDoc}$`, "m"));
 	assert.doesNotMatch(initExclude, new RegExp(`^kb/${packageMigrationDoc}$`, "m"));
 	assert.doesNotMatch(initExclude, /\.nosedive\/config\.yaml/);
@@ -3151,9 +3184,9 @@ Build the YAML-aware workspace work order.
 		["status", "--ignored", "--short", "--untracked-files=all"],
 		initBridge,
 	).stdout;
-	// The personal file is ignored; the base config and .nosedive/.gitignore
-	// itself are ordinary trackable files. No root .gitignore is created.
-	assert.match(initGitStatus, /^!! \.nosedive\.local\.yaml$/m);
+	// The base config and .nosedive/.gitignore itself are ordinary trackable
+	// files. No root .gitignore or personal local config is created.
+	assert.doesNotMatch(initGitStatus, /\.nosedive\.local\.yaml/);
 	assert.match(initGitStatus, /^\?\? \.nosedive\/config\.yaml$/m);
 	assert.match(initGitStatus, /^\?\? \.nosedive\/\.gitignore$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
@@ -3172,7 +3205,7 @@ Build the YAML-aware workspace work order.
 	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/cache\/placeholder\.txt$/m);
 	assert.match(initGitStatusAfterDirs, /^!! \.nosedive\/migration-backups\/placeholder\.txt$/m);
 
-	const initReprompt = run(["seed"], initBridge, "\n\n\n\n\n\n\nbogus\ncopilot,claude\n");
+	const initReprompt = run(["seed"], initBridge, "\n\n\n\n\nbogus\ncopilot,claude\n");
 	assertOk(initReprompt, "init re-run with invalid agent failed");
 	assert.match(initReprompt.stderr, /unknown agent\(s\): bogus \(options: copilot, claude\)/);
 	const repromptedBase = readFileSync(join(initBridge, ".nosedive", "config.yaml"), "utf8");
@@ -3189,7 +3222,8 @@ Build the YAML-aware workspace work order.
 	assertOk(initHeadlessFresh, "headless init on empty directory failed");
 	assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
-	assert.match(initHeadlessFresh.stdout, wroteSplitFiles);
+	assert.match(initHeadlessFresh.stdout, wroteConfigFile);
+	assert.doesNotMatch(initHeadlessFresh.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /Seeded .*foundation docs/);
 	assert.equal(
 		readFileSync(join(headlessFreshBridge, ".nosedive", "config.yaml"), "utf8"),
@@ -3205,10 +3239,7 @@ Build the YAML-aware workspace work order.
 			"",
 		].join("\n"),
 	);
-	assert.equal(
-		readFileSync(join(headlessFreshBridge, ".nosedive.local.yaml"), "utf8"),
-		["pilot-name: Headless Person", "pilot-email: headless@example.invalid", ""].join("\n"),
-	);
+	assert.equal(existsSync(join(headlessFreshBridge, ".nosedive.local.yaml")), false);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), false);
 	}
@@ -3216,7 +3247,7 @@ Build the YAML-aware workspace work order.
 		join(headlessFreshBridge, ".git", "info", "exclude"),
 		"utf8",
 	);
-	assert.match(headlessFreshExclude, /^\.nosedive\.local\.yaml$/m);
+	assert.doesNotMatch(headlessFreshExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.doesNotMatch(headlessFreshExclude, new RegExp(`^kb/${packageFoundationDoc}$`, "m"));
 	}
@@ -3262,10 +3293,7 @@ current:
 			"",
 		].join("\n"),
 	);
-	assert.equal(
-		readFileSync(join(headlessExistingBridge, ".nosedive.local.yaml"), "utf8"),
-		["pilot-name: Existing Pilot", "pilot-email: detected@example.invalid", ""].join("\n"),
-	);
+	assert.equal(existsSync(join(headlessExistingBridge, ".nosedive.local.yaml")), false);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(
 			existsSync(join(headlessExistingBridge, "custom-kb", packageFoundationDoc)),
@@ -3276,7 +3304,7 @@ current:
 		join(headlessExistingBridge, ".git", "info", "exclude"),
 		"utf8",
 	);
-	assert.match(headlessExistingExclude, /^\.nosedive\.local\.yaml$/m);
+	assert.doesNotMatch(headlessExistingExclude, /^\.nosedive\.local\.yaml$/m);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.doesNotMatch(
 			headlessExistingExclude,
@@ -3359,7 +3387,7 @@ current:
 			initScriptFailure.stderr,
 			/migration '.*' \(v0->v1\) failed: simulated migration failure/,
 		);
-		assert.match(initScriptFailure.stderr, /Split single \.nosediverc into checked-in/);
+		assert.match(initScriptFailure.stderr, /Migrate single \.nosediverc into checked-in/);
 		assert.match(initScriptFailure.stderr, /# Split Bridge Config/);
 		assert.match(initScriptFailure.stderr, /## Recovery/);
 		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
@@ -3381,7 +3409,7 @@ current:
 	);
 	const nukeConfig = run(["nuke", "--config"], nukeConfigBridge, "");
 	assertOk(nukeConfig, "nuke --config failed");
-	assert.match(nukeConfig.stdout, /Nuked bridge config; removed 3 files/);
+	assert.match(nukeConfig.stdout, /Nuked bridge config; removed 2 files/);
 	assert.equal(existsSync(join(nukeConfigBridge, ".nosedive", "config.yaml")), false);
 	assert.equal(existsSync(join(nukeConfigBridge, ".nosedive", ".gitignore")), false);
 	assert.equal(existsSync(join(nukeConfigBridge, ".nosedive.local.yaml")), false);

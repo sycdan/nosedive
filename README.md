@@ -51,33 +51,34 @@ _nosedive_ organizes work around two core concepts:
 Every user-facing command is defined by a `kind: contract` document in this
 package's [`kb/`](kb). The contract document is the single source of truth for
 what the command does and for its help text: `nosedive <command> --help` prints
-that document's body verbatim. To avoid documentation drift, this README links to
-the contracts rather than restating them.
+that document's body followed by its `meta.usage`. To avoid documentation drift,
+this README links to the contracts rather than restating them.
 
 Contracts are named `<command>@<level>`. nosedive resolves the highest level
 that is compatible with the bridge's `compatibility-level`, so a bridge pins the
 behavior it gets. `nosedive <command>@<level>` selects one explicitly. Legacy
-`.nosediverc` bridges report compatibility level 0, have no matching contract,
-and stay on the built-in implementations.
+`.nosediverc` bridges report compatibility level 0, so they use `@0` contracts
+where present and stay on built-in implementations for commands without a
+matching contract.
 
 | Command | Contract | What it does |
 | --- | --- | --- |
-| `pitch` | [pitch@1](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Create a new effort file in `backlog/`. |
-| `mint` | [mint@1](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Generate UUIDv7 values with a specific timestamp encoded. |
+| `pitch` | [pitch@0](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Create a new effort file in `backlog/`. |
+| `mint` | [mint@0](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Generate UUIDv7 values with a specific timestamp encoded. |
 | `seed` | [seed@1](kb/019fadf5-e082-7558-945f-d136295b1ea5.md) | Create, migrate, or edit bridge config in the current directory. |
-| `init` | [init@1](kb/019fadf5-e084-7058-8788-af1dc5fb8384.md) | Deprecated alias for `seed`. |
-| `preflight` | [preflight@1](kb/019fadf5-e086-7c7b-812d-964284b06e58.md) | Install the bridge pre-push hook. |
-| `apply` | [apply@1](kb/019fadf5-e09a-777c-abdd-28e6fd2f7ab8.md) | Deprecated; only `--dry-run` remains, as a read-only inspection path. |
+| `init` | [init@0](kb/019fadf5-e084-7058-8788-af1dc5fb8384.md) | Deprecated alias for `seed`. |
+| `preflight` | [preflight@0](kb/019fadf5-e086-7c7b-812d-964284b06e58.md) | Install the bridge pre-push hook. |
+| `apply` | [apply@0](kb/019fadf5-e09a-777c-abdd-28e6fd2f7ab8.md) | Deprecated; only `--dry-run` remains, as a read-only inspection path. |
 | `nuke` | [nuke@1](kb/019fadf5-e09c-7989-80ae-a87afb01ea63.md) | Remove managed bridge config. |
-| `render` | [render@1](kb/019fadf5-e08a-7682-91f9-bb208cc306c9.md) | Print the body of a packaged nosedive KB document. |
-| `pre-push.hook` | [pre-push.hook@1](kb/019fadf5-e08c-7a33-a077-c545d9f764d5.md) | Run the bridge pre-push check registry. |
-| `prove` | [prove@1](kb/019fadf5-e088-7ee1-b8d6-4cb36ef24363.md) | Run an executable proof for a bridge `kind: assertion` doc. |
-| `list-dives` | [list-dives@1](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md) | Print pickupable and working dives for an open effort. |
-| `dump-backlog` | [dump-backlog@1](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md) | Print the open efforts in the configured backlog. |
+| `render` | [render@0](kb/019fadf5-e08a-7682-91f9-bb208cc306c9.md) | Print the body of a packaged nosedive KB document. |
+| `pre-push.hook` | [pre-push.hook@0](kb/019fadf5-e08c-7a33-a077-c545d9f764d5.md) | Run the bridge pre-push check registry. |
+| `prove` | [prove@0](kb/019fadf5-e088-7ee1-b8d6-4cb36ef24363.md) | Run an executable proof for a bridge `kind: assertion` doc. |
+| `list-dives` | [list-dives@0](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md) | Print pickupable and working dives for an open effort. |
+| `dump-backlog` | [dump-backlog@0](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md) | Print the open efforts in the configured backlog. |
 | `whoami` | [whoami@1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md) | Print the bridge pilot identity nosedive will use. |
-| `add-repo` | [add-repo@1](kb/019fadf5-e094-7176-afd0-94532d2bb149.md) | Add a kb repo to an effort's repo list. |
-| `hydrate-repo.workspace` | [hydrate-repo.workspace@1](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Hydrate one repo worktree from kb `kind: repo` metadata. |
-| `dehydrate-repo.workspace` | [dehydrate-repo.workspace@1](kb/019fadf5-e098-76f7-a4eb-d106bb6714a1.md) | Remove one hydrated workspace checkout. |
+| `add-repo` | [add-repo@0](kb/019fadf5-e094-7176-afd0-94532d2bb149.md) | Add a kb repo to an effort's repo list. |
+| `hydrate-repo.workspace` | [hydrate-repo.workspace@0](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Hydrate one repo worktree from kb `kind: repo` metadata. |
+| `dehydrate-repo.workspace` | [dehydrate-repo.workspace@0](kb/019fadf5-e098-76f7-a4eb-d106bb6714a1.md) | Remove one hydrated workspace checkout. |
 
 `version` and `help` have no contract; they print the package version and the
 command list.

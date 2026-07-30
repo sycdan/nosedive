@@ -749,6 +749,7 @@ scopes:
 
 	const bridge = join(tmp, "bridge");
 	mkdirSync(join(bridge, "workspace", "writable", "app"), { recursive: true });
+	mkdirSync(join(bridge, "workspace", "bare-uuid"), { recursive: true });
 	mkdirSync(join(bridge, "workspace", "readonly", "app"), { recursive: true });
 	mkdirSync(join(bridge, "backlog", "yaml-frontmatter"), { recursive: true });
 	mkdirSync(join(bridge, "backlog", "other-effort"), { recursive: true });
@@ -761,6 +762,7 @@ scopes:
 	mkdirSync(join(bridge, "kb"), { recursive: true });
 
 	const writableRoot = join(bridge, "workspace", "writable");
+	const bareUuidScopeRepoId = "019fb4d5-1f00-7000-8000-000000000001";
 	const readonlyRoot = join(bridge, "workspace", "readonly");
 	const bridgeExclude = join(bridge, ".git", "info", "exclude");
 	const writableExclude = join(writableRoot, ".git", "info", "exclude");
@@ -1133,6 +1135,18 @@ meta:
 `,
 	);
 	write(
+		join(bridge, "kb", `${bareUuidScopeRepoId}.md`),
+		`---
+kind: repo
+id: ${bareUuidScopeRepoId}
+name: bare-uuid
+gist: "Bare UUID scoped repo."
+meta:
+  path: workspace/bare-uuid
+---
+`,
+	);
+	write(
 		join(bridge, "kb", "convention.md"),
 		`---
 kind: convention
@@ -1238,6 +1252,7 @@ name: yaml-frontmatter.abcdef
 gist: "Active dive for apply tests."
 scopes:
   - repo-writable: {}
+  - ${bareUuidScopeRepoId}
   - repo-readonly:
       ref: develop
       mode: ro
@@ -1346,6 +1361,10 @@ meta:
 	assert.doesNotMatch(dryRun.stdout, /Sessions:/);
 	assert.doesNotMatch(dryRun.stdout, /Session:/);
 	assert.match(dryRun.stdout, /writable\s+workspace\/writable \(repo-writable, base develop\)/);
+	assert.match(
+		dryRun.stdout,
+		new RegExp(`writable\\s+workspace/bare-uuid \\(${bareUuidScopeRepoId}, base main\\)`),
+	);
 	assert.match(
 		dryRun.stdout,
 		/read-only workspace\/readonly \(repo-readonly, ref develop \(base main\)\)/,

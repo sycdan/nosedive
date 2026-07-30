@@ -3557,8 +3557,12 @@ function optionalScopeFlags(value: Record<string, unknown>, label: string): stri
 function parseScopeRef(scope: unknown, path: string, index: number): ScopeRef {
 	const label = `${path} scopes[${index}]`;
 	if (typeof scope === "string") {
+		const repoId = scope.trim();
+		if (uuidLike(repoId)) {
+			return { repoId, path: "", readOnly: false, flags: [] };
+		}
 		throw new Error(
-			`legacy scope shorthand is not supported in ${label}; use '- <repo-id>: { ... }' object form`,
+			`legacy scope shorthand is not supported in ${label}; use a bare UUID or '- <repo-id>: { ... }' object form`,
 		);
 	}
 	if (!scope || typeof scope !== "object" || Array.isArray(scope)) {

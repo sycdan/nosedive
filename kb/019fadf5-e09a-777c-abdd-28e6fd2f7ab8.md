@@ -1,13 +1,12 @@
 ---
-kind: contract
+kind: command
 id: 019fadf5-e09a-777c-abdd-28e6fd2f7ab8
 name: apply@0
 gist: "Deprecated; no longer writes agent instruction files. Only `--dry-run` remains, as a read-only inspection path."
 
 meta:
   usage: |-
-    Usage: nosedive apply
-      Deprecated: agent instruction files are now expected to be checked into source control.
+    nosedive apply
 scopes: []
 links:
   - artifacts/019fadf5-e09b-74e4-a26e-81698df2ea8a.mjs:

@@ -44,27 +44,7 @@ const GIT_LOCAL_ENV_KEYS = [
 	"GIT_WORK_TREE",
 ];
 
-const USAGE = `Usage: nosedive <command>
-
-Commands:
-  version       Print the package version
-  mint          Generate UUIDv7 with a specific timestamp encoded
-  seed          Create or migrate bridge config
-  init          Deprecated alias for seed
-  preflight     Install the bridge pre-push hook
-  prove         Run an assertion prover
-  render        Print a packaged kb document body by uuid
-  pre-push.hook Run bridge pre-push checks
-  whoami        Print the bridge pilot identity
-  dump-backlog  Print the open efforts in the configured backlog
-  list-dives    Print pickupable and working dives for an effort
-  pitch         Create a new effort in the backlog
-  hydrate-repo.workspace  Hydrate one repo worktree from kb metadata
-  dehydrate-repo.workspace  Remove one hydrated repo worktree from the workspace
-  add-repo      Add a kb repo to an effort's workspace
-  apply         Deprecated; agent docs are checked into source control
-  nuke          Remove managed bridge config with --config
-`;
+const USAGE_HEADER = "Usage: nosedive <command>";
 
 const KNOWN_AGENTS = ["copilot", "claude"];
 const AGENT_FILENAMES: Record<string, string> = {
@@ -616,7 +596,7 @@ type LineIterator = NodeJS.AsyncIterator<string>;
 /**
  * Commands write through a `CommandIo` instead of touching `console` or
  * `process` directly, so one implementation can serve the builtin dispatch
- * path while another captures the same output for a contract executor.
+ * path while another captures the same output for a command executor.
  */
 export interface CommandIo {
 	/** Write one stdout line. */
@@ -710,7 +690,7 @@ export interface CapturingCommandIo extends CommandIo {
 	captured(): CapturedCommandOutput;
 }
 
-/** Io for contract executors: buffers stdout/stderr so the host can return it. */
+/** Io for command executors: buffers stdout/stderr so the host can return it. */
 export function createCapturingIo(): CapturingCommandIo {
 	const prompter = createStdinPrompter();
 	let stdout = "";
@@ -814,7 +794,15 @@ interface ContractRunContext {
 	command: string;
 	cwd: string;
 	requestedCompatibilityLevel: number;
+	commandCompatibilityLevel: number;
+	commandDoc: {
+		id?: string;
+		name: string;
+		path: string;
+	};
+	/** @deprecated Use commandCompatibilityLevel. */
 	contractCompatibilityLevel: number;
+	/** @deprecated Use commandDoc. */
 	contract: {
 		id?: string;
 		name: string;
@@ -853,19 +841,19 @@ function parseContractName(
 	if (!match) return undefined;
 	const compatibilityLevel = Number.parseInt(match[2]!, 10);
 	if (!Number.isInteger(compatibilityLevel) || compatibilityLevel < 0) {
-		throw new Error(`invalid contract name in ${label}: ${name}`);
+		throw new Error(`invalid command name in ${label}: ${name}`);
 	}
 	return { command: match[1]!, compatibilityLevel };
 }
 
 function packageContractDocs(): ContractDoc[] {
 	const packageKbDir = join(packageRoot(), "kb");
-	return packageDocsOfKind("contract").map((doc) => {
+	return packageDocsOfKind("command").map((doc) => {
 		const path = join(packageKbDir, doc.filename);
 		const parsed = parseMarkdownDoc(doc.content, path);
 		const contractName = parseContractName(parsed.fm.scalars.name, path);
 		if (!contractName) {
-			throw new Error(`contract ${formatPath(path)} name must look like <command>@<level>`);
+			throw new Error(`command ${formatPath(path)} name must look like <command>@<level>`);
 		}
 		return {
 			path,
@@ -933,7 +921,7 @@ function resolveContract(
 	);
 	if (duplicates.length > 1) {
 		throw new Error(
-			`contract is ambiguous: ${selected.command}@${selected.compatibilityLevel} (${duplicates
+			`command is ambiguous: ${selected.command}@${selected.compatibilityLevel} (${duplicates
 				.map((contract) => formatPath(contract.path))
 				.join(", ")})`,
 		);
@@ -944,7 +932,39 @@ function resolveContract(
 function renderContractHelpText(contract: ContractDoc): string {
 	const body = contract.body.trim();
 	const usage = contract.usage.trim();
-	return [body, usage].filter(Boolean).join("\n\n");
+	const gist = contract.gist.trim();
+	const usageLine = usage ? `Usage: ${usage}` : "";
+	const usageBlock = [usageLine, gist].filter(Boolean).join("\n\n");
+	const longestBacktickRun = Math.max(
+		2,
+		...[...body.matchAll(/`+/g)].map((match) => match[0].length),
+	);
+	const fence = "`".repeat(longestBacktickRun + 1);
+	const bodyBlock = body ? [`${fence}md`, body, fence].join("\n") : "";
+	return [bodyBlock, usageBlock].filter(Boolean).join("\n\n");
+}
+
+function latestContractDocs(): ContractDoc[] {
+	const latestByCommand = new Map<string, ContractDoc>();
+	for (const contract of packageContractDocs()) {
+		const existing = latestByCommand.get(contract.command);
+		if (!existing || contract.compatibilityLevel > existing.compatibilityLevel) {
+			latestByCommand.set(contract.command, contract);
+		}
+	}
+	return [...latestByCommand.values()].sort((a, b) => a.command.localeCompare(b.command));
+}
+
+function renderTopLevelHelpText(): string {
+	const contracts = latestContractDocs();
+	const commandWidth = Math.max(0, ...contracts.map((contract) => contract.command.length));
+	const lines = [USAGE_HEADER, "", "Commands:"];
+	for (const contract of contracts) {
+		const command = contract.command.padEnd(commandWidth);
+		lines.push(`  ${command}  ${contract.gist}`);
+	}
+	lines.push("", "Run `nosedive <command> --help` for details on a command.");
+	return `${lines.join("\n")}\n`;
 }
 
 function renderContractHelp(contract: ContractDoc): void {
@@ -953,15 +973,15 @@ function renderContractHelp(contract: ContractDoc): void {
 }
 
 /**
- * Help text for a contracted command lives in its contract doc body and
- * nowhere else, so `-h` reads the same regardless of whether this run routed
- * through the contract or fell back to the builtin on a legacy bridge.
+ * Help text for a command lives in its command doc body and nowhere else, so
+ * `-h` reads the same regardless of whether this run routed through the command
+ * doc or fell back to the builtin on a legacy bridge.
  */
 function printCommandHelp(command: string, io: CommandIo): void {
 	const contract = packageContractDocs()
 		.filter((doc) => doc.command === command)
 		.sort((a, b) => b.compatibilityLevel - a.compatibilityLevel)[0];
-	if (!contract) throw new Error(`no packaged contract documents command: ${command}`);
+	if (!contract) throw new Error(`no packaged command document for command: ${command}`);
 	io.log(renderContractHelpText(contract));
 }
 
@@ -977,26 +997,26 @@ function contractStreamField(
 	const value = fields[key];
 	if (value === undefined) return "";
 	if (typeof value !== "string") {
-		throw new Error(`contract ${contract.name} must return ${key} as a string`);
+		throw new Error(`command ${contract.name} must return ${key} as a string`);
 	}
 	return value;
 }
 
 /**
- * `output` is a stdout alias kept so contracts written against the original
+ * `output` is a stdout alias kept so command docs written against the original
  * single-stream shape keep working; `stdout`/`stderr` are the current shape.
  */
 function assertContractRunOutput(value: unknown, contract: ContractDoc): ContractRunOutput {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`contract ${contract.name} must return { stdout, stderr, exitCode }`);
+		throw new Error(`command ${contract.name} must return { stdout, stderr, exitCode }`);
 	}
 	const fields = value as Record<string, unknown>;
 	if (fields.stdout !== undefined && fields.output !== undefined) {
-		throw new Error(`contract ${contract.name} must not return both stdout and output`);
+		throw new Error(`command ${contract.name} must not return both stdout and output`);
 	}
 	const exitCode = fields.exitCode;
 	if (typeof exitCode !== "number" || !Number.isInteger(exitCode)) {
-		throw new Error(`contract ${contract.name} must return exitCode as an integer`);
+		throw new Error(`command ${contract.name} must return exitCode as an integer`);
 	}
 	const stdout =
 		fields.stdout !== undefined
@@ -1015,6 +1035,12 @@ async function runContractPipeline(
 		command: contract.command,
 		cwd: process.cwd(),
 		requestedCompatibilityLevel,
+		commandCompatibilityLevel: contract.compatibilityLevel,
+		commandDoc: {
+			id: contract.id,
+			name: contract.name,
+			path: contract.path,
+		},
 		contractCompatibilityLevel: contract.compatibilityLevel,
 		contract: {
 			id: contract.id,
@@ -1030,19 +1056,19 @@ async function runContractPipeline(
 			packageRoot(),
 			packageKbDir,
 			link,
-			`contract ${contract.name} link`,
+			`command ${contract.name} link`,
 		);
 		if (!existsSync(artifactPath)) {
-			throw new Error(`contract artifact not found: ${formatPath(artifactPath)}`);
+			throw new Error(`command artifact not found: ${formatPath(artifactPath)}`);
 		}
 		if (!statSync(artifactPath).isFile()) {
-			throw new Error(`contract artifact is not a file: ${formatPath(artifactPath)}`);
+			throw new Error(`command artifact is not a file: ${formatPath(artifactPath)}`);
 		}
 		const mod = (await import(pathToFileURL(artifactPath).href)) as {
 			run?: (value: unknown, ctx: ContractRunContext) => unknown | Promise<unknown>;
 		};
 		if (typeof mod.run !== "function") {
-			throw new Error(`contract artifact ${formatPath(artifactPath)} must export run(value, ctx)`);
+			throw new Error(`command artifact ${formatPath(artifactPath)} must export run(value, ctx)`);
 		}
 		value = await mod.run(value, ctx);
 	}
@@ -1064,7 +1090,7 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 
 	const contract = resolveContract(parsed.name, targetLevel, exact);
 	if (!contract) {
-		if (exact) throw new Error(`contract not found: ${parsed.name}@${targetLevel}`);
+		if (exact) throw new Error(`command not found: ${parsed.name}@${targetLevel}`);
 		return false;
 	}
 
@@ -1971,7 +1997,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 						: {},
 				scopes: parseScopeRefs(raw.scopes, path),
 				links:
-					fm.scalars.kind === "assertion" || fm.scalars.kind === "contract"
+					fm.scalars.kind === "assertion" || fm.scalars.kind === "command"
 						? parseLinkRefs(raw.links, path)
 						: [],
 			};
@@ -4757,9 +4783,9 @@ function mintId(args: string[], io: CommandIo): void {
 type BuiltinCommand = (args: string[], io: CommandIo) => void | Promise<void>;
 
 /**
- * The commands a contract can be written against. Built lazily so it can name
+ * The commands a command doc can be written against. Built lazily so it can name
  * hoisted declarations, and deliberately excluding `version`, `help`, and the
- * internal `__prove-host`, which have no contracts.
+ * internal `__prove-host`, which have no command docs.
  */
 function builtinCommands(): Record<string, BuiltinCommand> {
 	return {
@@ -4813,8 +4839,8 @@ async function runBuiltinCli(
 	args: string[],
 	io: CommandIo,
 ): Promise<void> {
-	// Same rule the contract host applies before running an executor, so `-h`
-	// prints the command's contract body whichever route handled the run.
+	// Same rule the command doc host applies before running an executor, so `-h`
+	// prints the command doc body whichever route handled the run.
 	const helpOnly = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
 	if (command !== undefined && helpOnly && isContractedCommand(command)) {
 		printCommandHelp(command, io);
@@ -4882,10 +4908,10 @@ async function runBuiltinCli(
 		case "help":
 		case "--help":
 		case "-h":
-			io.log(USAGE);
+			io.log(renderTopLevelHelpText());
 			break;
 		default:
-			io.err(`Unknown command: ${command}\n\n${USAGE}`);
+			io.err(`Unknown command: ${command}\n\n${renderTopLevelHelpText()}`);
 			process.exit(1);
 	}
 }

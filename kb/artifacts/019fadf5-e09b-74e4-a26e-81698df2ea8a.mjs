@@ -1,7 +1,7 @@
 /**
- * Executor for the `apply` contract. The command itself stays in the
+ * Executor for the `apply` command doc. The command itself stays in the
  * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the contract host.
+ * captured streams back to the command doc host.
  */
 export async function run(value, ctx) {
 	return ctx.invoke("apply", value.args);

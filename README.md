@@ -26,7 +26,7 @@ infra repo at once. Today that means:
 
 _nosedive_ addresses these by making the unit of work a first-class, on-disk object,
 creating effort-scoped multi-repo workspaces, and by routing developer actions through
-explicit, contract-checked commands that are equally safe for a human or an agent to run.
+explicit, command-doc-checked commands that are equally safe for a human or an agent to run.
 
 ## Efforts and dives
 
@@ -48,20 +48,21 @@ _nosedive_ organizes work around two core concepts:
 
 ## Commands
 
-Every user-facing command is defined by a `kind: contract` document in this
-package's [`kb/`](kb). The contract document is the single source of truth for
+Every user-facing command is defined by a `kind: command` document in this
+package's [`kb/`](kb). The command document is the single source of truth for
 what the command does and for its help text: `nosedive <command> --help` prints
-that document's body followed by its `meta.usage`. To avoid documentation drift,
-this README links to the contracts rather than restating them.
+that document's body in a markdown fence, followed by `Usage: <meta.usage>` and
+the document gist. To avoid documentation drift, this README links to the
+command docs rather than restating them.
 
-Contracts are named `<command>@<level>`. nosedive resolves the highest level
+Command docs are named `<command>@<level>`. nosedive resolves the highest level
 that is compatible with the bridge's `compatibility-level`, so a bridge pins the
 behavior it gets. `nosedive <command>@<level>` selects one explicitly. Legacy
-`.nosediverc` bridges report compatibility level 0, so they use `@0` contracts
+`.nosediverc` bridges report compatibility level 0, so they use `@0` command docs
 where present and stay on built-in implementations for commands without a
-matching contract.
+matching command doc.
 
-| Command | Contract | What it does |
+| Command | Command doc | What it does |
 | --- | --- | --- |
 | `pitch` | [pitch@0](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Create a new effort file in `backlog/`. |
 | `mint` | [mint@0](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Generate UUIDv7 values with a specific timestamp encoded. |
@@ -80,12 +81,12 @@ matching contract.
 | `hydrate-repo.workspace` | [hydrate-repo.workspace@0](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Hydrate one repo worktree from kb `kind: repo` metadata. |
 | `dehydrate-repo.workspace` | [dehydrate-repo.workspace@0](kb/019fadf5-e098-76f7-a4eb-d106bb6714a1.md) | Remove one hydrated workspace checkout. |
 
-`version` and `help` have no contract; they print the package version and the
+`version` and `help` have no command doc; they print the package version and the
 command list.
 
-### How a contract runs
+### How a command doc runs
 
-A contract links one or more artifacts with `rel: executor`. Each executor is a
+A command doc links one or more artifacts with `rel: executor`. Each executor is a
 single-file ES module exporting `run(value, ctx)`, and they are applied in link
 order, each receiving the previous one's return value. The first receives
 `{ args, cwd }`, and the last must return `{ stdout, stderr, exitCode }`

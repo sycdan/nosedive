@@ -24,7 +24,7 @@ const tmp = mkdtempSync(join(tmpdir(), "nosedive-test-"));
  * Commands that must run with no bridge in scope have to run somewhere outside
  * one. The repo root is not safe for that: bridge lookup walks upward, so a
  * checkout nested inside somebody's bridge would resolve that bridge and route
- * through contracts instead of builtins.
+ * through command docs instead of builtins.
  */
 const noBridge = join(tmp, "no-bridge");
 mkdirSync(noBridge, { recursive: true });
@@ -163,6 +163,7 @@ try {
 	const help = run(["--help"], noBridge);
 	assertOk(help, "--help command failed");
 	assert.match(help.stdout, /Usage: nosedive <command>/);
+	assert.match(help.stdout, /Commands:/);
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /seed/);
 	assert.match(help.stdout, /init/);
@@ -178,6 +179,10 @@ try {
 	assert.match(help.stdout, /dehydrate-repo\.workspace/);
 	assert.match(help.stdout, /add-repo/);
 	assert.match(help.stdout, /nuke/);
+	assert.match(help.stdout, /seed\s+Create, migrate, or edit bridge config/);
+	assert.match(help.stdout, /whoami\s+Returns dev-identifying fields from git config/);
+	assert.doesNotMatch(help.stdout, /\b[a-z][\w.-]*@\d+\b/);
+	assert.match(help.stdout, /Run `nosedive <command> --help` for details on a command\./);
 
 	const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], noBridge);
 	assertOk(minted, "mint command failed");
@@ -969,7 +974,7 @@ pilot-email: local@example.invalid
 `,
 	);
 	const whoamiContract = run(["whoami"], whoamiContractBridge);
-	assertOk(whoamiContract, "whoami contract route failed");
+	assertOk(whoamiContract, "whoami command route failed");
 	assert.equal(
 		whoamiContract.stdout,
 		`nosedive-pilot-name: Contract Pilot
@@ -979,18 +984,18 @@ nosedive-pilot-email: contract@example.invalid
 	assert.equal(whoamiContract.stderr, "");
 
 	const whoamiContractHelp = run(["whoami", "--help"], whoamiContractBridge);
-	assertOk(whoamiContractHelp, "whoami contract help failed");
-	assert.match(whoamiContractHelp.stdout, /^# Whoami/);
+	assertOk(whoamiContractHelp, "whoami command help failed");
+	assert.match(whoamiContractHelp.stdout, /^`{3,}md\n\n?# Whoami/);
 	assert.match(whoamiContractHelp.stdout, /nosedive-pilot-name/);
 	assert.ok(
 		whoamiContractHelp.stdout.indexOf("Usage: nosedive whoami") >
 			whoamiContractHelp.stdout.indexOf("# Whoami"),
-		"whoami usage should print after the contract body",
+		"whoami usage should print after the command body",
 	);
 	assert.doesNotMatch(whoamiContractHelp.stdout, /^---/);
 
 	const explicitWhoamiContract = run(["whoami@1"], whoamiContractBridge);
-	assertOk(explicitWhoamiContract, "explicit whoami@1 contract route failed");
+	assertOk(explicitWhoamiContract, "explicit whoami@1 command route failed");
 	assert.equal(explicitWhoamiContract.stdout, whoamiContract.stdout);
 	assert.equal(explicitWhoamiContract.stderr, "");
 
@@ -998,12 +1003,12 @@ nosedive-pilot-email: contract@example.invalid
 	assert.notEqual(
 		missingExplicitWhoamiContract.status,
 		0,
-		"missing explicit whoami@2 contract unexpectedly succeeded",
+		"missing explicit whoami@2 command unexpectedly succeeded",
 	);
-	assert.match(missingExplicitWhoamiContract.stderr, /contract not found: whoami@2/);
+	assert.match(missingExplicitWhoamiContract.stderr, /command not found: whoami@2/);
 
-	// Legacy-compatible commands are documented by level-0 contracts, and help
-	// comes from that contract's body on both the contract and builtin routes.
+	// Legacy-compatible commands are documented by level-0 command docs, and help
+	// comes from that command doc's body on both the command and builtin routes.
 	const level0ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
 		["init", /Usage: nosedive init \[--headless\]/],
@@ -1028,28 +1033,76 @@ nosedive-pilot-email: contract@example.invalid
 		...level0ContractedCommands.map(([command, usage]) => [command, usage, 0]),
 		...level1ContractedCommands.map(([command, usage]) => [command, usage, 1]),
 	];
+	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
+		const docText = readFileSync(join(root, "kb", docName), "utf8");
+		if (!/^kind: command$/m.test(docText)) continue;
+		assert.doesNotMatch(
+			docText,
+			/^  usage: \|-\n    Usage:/m,
+			`${docName} meta.usage should not include the rendered Usage: prefix`,
+		);
+		assert.match(
+			docText,
+			/^  usage: \|-\n    nosedive /m,
+			`${docName} meta.usage should start with the bare command shape`,
+		);
+	}
 	const contractHelpLinks = {
-		init: /\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
-		preflight: /\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
-		"pre-push.hook": /\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
-		seed: /\[`whoami@1`\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/,
+		init: [/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/],
+		preflight: [/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/],
+		"pre-push.hook": [/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/],
+		seed: [
+			/\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/,
+			/\[`init@0`\]\(019fadf5-e084-7058-8788-af1dc5fb8384\.md\)/,
+		],
 	};
 	for (const [command, usage, level] of contractedCommands) {
 		const explicitHelp = run([`${command}@${level}`, "--help"], whoamiContractBridge);
 		assertOk(explicitHelp, `${command}@${level} --help failed`);
 		assert.match(explicitHelp.stdout, usage, `${command}@${level} --help missing usage line`);
-		const expectedLink = contractHelpLinks[command];
-		if (expectedLink) {
+		for (const expectedLink of contractHelpLinks[command] ?? []) {
 			assert.match(
 				explicitHelp.stdout,
 				expectedLink,
 				`${command}@${level} --help missing kb doc link`,
 			);
 		}
-		assert.match(explicitHelp.stdout, /^# /, `${command}@${level} --help should start with body`);
+		const openingFence = explicitHelp.stdout.slice(0, explicitHelp.stdout.indexOf("\n"));
+		assert.match(
+			openingFence,
+			/^`{3,}md$/,
+			`${command}@${level} --help should start with a markdown fence`,
+		);
+		const closingFence = openingFence.slice(0, -"md".length);
+		assert.match(
+			explicitHelp.stdout,
+			new RegExp(`^${escapeRegExp(openingFence)}\\n\\n?# `),
+			`${command}@${level} --help should fence the command body`,
+		);
+		assert.match(
+			explicitHelp.stdout,
+			new RegExp(`\\n${escapeRegExp(closingFence)}\\n\\nUsage: nosedive`),
+			`${command}@${level} --help should close the markdown fence before usage`,
+		);
 		assert.ok(
 			explicitHelp.stdout.indexOf("Usage: nosedive") > explicitHelp.stdout.indexOf("# "),
 			`${command}@${level} --help should print usage after body`,
+		);
+		const usageTail = explicitHelp.stdout.slice(explicitHelp.stdout.indexOf("Usage: nosedive"));
+		assert.match(
+			usageTail,
+			/^Usage: nosedive[^\n]*\n\n\S/m,
+			`${command}@${level} --help should print bare gist after usage`,
+		);
+		assert.doesNotMatch(
+			usageTail,
+			/^[ \t]{2,}\S/m,
+			`${command}@${level} --help usage section should not contain extra indented prose`,
+		);
+		assert.doesNotMatch(
+			usageTail,
+			/\ngist:/i,
+			`${command}@${level} --help should not prefix the gist`,
 		);
 		assert.doesNotMatch(
 			explicitHelp.stdout,
@@ -1057,17 +1110,17 @@ nosedive-pilot-email: contract@example.invalid
 			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
 
-		// Same help text whether a contract routed it or the builtin did.
+		// Same help text whether a command doc routed it or the builtin did.
 		const builtinHelp = run([command, "--help"], noBridge);
 		assertOk(builtinHelp, `${command} --help outside a bridge failed`);
 		assert.equal(
 			builtinHelp.stdout,
 			explicitHelp.stdout,
-			`${command} help differs between builtin and contract routes`,
+			`${command} help differs between builtin and command routes`,
 		);
 	}
 
-	// whoami has no level-0 contract, so a legacy bridge stays on the builtin.
+	// whoami has no level-0 command doc, so a legacy bridge stays on the builtin.
 	const legacyRouteBridge = join(tmp, "legacy-route-bridge");
 	mkdirSync(legacyRouteBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], legacyRouteBridge);
@@ -3114,12 +3167,19 @@ Build the YAML-aware workspace work order.
 	const seedHelp = run(["seed", "--help"], noBridge);
 	assertOk(seedHelp, "seed --help failed");
 	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--headless\]/);
-	assert.match(seedHelp.stdout, /--headless skips prompts/);
+	assert.match(
+		seedHelp.stdout,
+		/Usage: nosedive seed \[--headless\]\n\nCreate, migrate, or edit bridge config/,
+	);
 
 	const initHelp = run(["init", "--help"], noBridge);
 	assertOk(initHelp, "init --help failed");
 	assert.match(initHelp.stdout, /Usage: nosedive init \[--headless\]/);
-	assert.match(initHelp.stdout, /Deprecated: use `nosedive seed` instead/);
+	assert.match(initHelp.stdout, /Deprecated alias for \[`seed`\]/);
+	assert.match(
+		initHelp.stdout,
+		/Usage: nosedive init \[--headless\]\n\nDeprecated alias for `seed`/,
+	);
 
 	const unknownSeedOption = run(["seed", "--bogus"], root, "");
 	assert.notEqual(unknownSeedOption.status, 0, "seed with unknown option unexpectedly succeeded");

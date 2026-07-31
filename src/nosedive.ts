@@ -357,7 +357,7 @@ export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurren
 	writeFileAtomic(targetPath, stringifyYaml(doc));
 }
 
-// --- init --------------------------------------------------------------
+// --- seed --------------------------------------------------------------
 
 interface RcSettings {
 	workspace: string;
@@ -375,7 +375,7 @@ interface SeedOptions {
 	headless: boolean;
 }
 
-function parseSeedOptions(args: string[], command: "seed" | "init"): SeedOptions {
+function parseSeedOptions(args: string[]): SeedOptions {
 	const options: SeedOptions = { help: false, headless: false };
 	for (const arg of args) {
 		if (arg === "-h" || arg === "--help") {
@@ -386,8 +386,8 @@ function parseSeedOptions(args: string[], command: "seed" | "init"): SeedOptions
 			options.headless = true;
 			continue;
 		}
-		if (arg.startsWith("--")) throw new Error(`unknown ${command} option: ${arg}`);
-		throw new Error(`unexpected ${command} argument: ${arg}`);
+		if (arg.startsWith("--")) throw new Error(`unknown seed option: ${arg}`);
+		throw new Error(`unexpected seed argument: ${arg}`);
 	}
 	return options;
 }
@@ -432,6 +432,7 @@ function renderBaseConfig(settings: RcSettings, compatibilityLevel: number): str
 
 interface MigrationContext {
 	bridgeDir: string;
+	mintUuid: () => string;
 }
 
 interface Migration {
@@ -445,13 +446,26 @@ interface Migration {
 	summary: string;
 }
 
+interface MigrationRunSummary {
+	sourceDir?: string;
+	copiedFiles?: string[];
+	effortCount?: number;
+	backlogDocId?: string;
+	bridgeRepo?: {
+		id?: string;
+		status?: string;
+		remotes?: string[];
+	};
+	manualCleanup?: string;
+}
+
 const MIGRATIONS: Migration[] = [
 	{
 		fromVersion: 0,
 		toVersion: 1,
 		docId: "00000000-0061-77ed-a060-f803c8f5aa76",
 		scriptRelPath: join("kb", "artifacts", "00000000-0076-7dad-af72-3e32d35642f4.mjs"),
-		summary: "Migrate single .nosediverc into checked-in .nosedive/config.yaml",
+		summary: "Seed v1 bridge config and migrate legacy backlog efforts into KB docs",
 	},
 ];
 
@@ -462,7 +476,7 @@ type ConfigShapeInfo =
 	| { kind: "split-unversioned" }
 	| { kind: "ambiguous" };
 
-/** Detect config shape in `bridgeDir` only -- init never considers ancestor directories. */
+/** Detect config shape in `bridgeDir` only -- seed never considers ancestor directories. */
 function detectConfigShapeAt(bridgeDir: string): ConfigShapeInfo {
 	const hasBase = existsSync(baseConfigPath(bridgeDir));
 	const hasLegacy = existsSync(legacyConfigPath(bridgeDir));
@@ -494,30 +508,58 @@ function describeMigrationForError(docId: string): string {
 	return [gist, "", body].filter((line): line is string => line !== undefined).join("\n");
 }
 
-function backupBeforeMigration(bridgeDir: string, migration: Migration, paths: string[]): void {
-	const existing = paths.filter((p) => existsSync(p));
-	if (existing.length === 0) return;
-
-	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const dir = join(
-		bridgeDir,
-		SPLIT_CONFIG_DIRNAME,
-		MIGRATION_BACKUP_DIRNAME,
-		`v${migration.fromVersion}-to-v${migration.toVersion}-${stamp}`,
-	);
-	for (const path of existing) {
-		writeFileAtomic(join(dir, basename(path)), readFileSync(path, "utf8"));
-	}
+function migrationDocPath(migration: Migration): string {
+	return join(packageRoot(), "kb", `${migration.docId}.md`);
 }
 
-async function runMigration(migration: Migration, ctx: MigrationContext): Promise<void> {
+function createUuid7Minter(): () => string {
+	let lastMs = 0;
+	return () => {
+		const now = Math.max(Date.now(), lastMs + 1);
+		lastMs = now;
+		if (now > UUID7_MAX_TIMESTAMP_MS) throw new Error("mint: timestamp out of UUIDv7 range");
+		return uuid7AtMs(now);
+	};
+}
+
+async function runMigration(
+	migration: Migration,
+	ctx: MigrationContext,
+): Promise<MigrationRunSummary | undefined> {
 	const scriptPath = join(packageRoot(), migration.scriptRelPath);
 	const mod = (await import(pathToFileURL(scriptPath).href)) as {
-		migrate?: (ctx: MigrationContext) => void;
+		migrate?: (ctx: MigrationContext) => void | MigrationRunSummary;
 	};
 	if (typeof mod.migrate !== "function")
 		throw new Error(`migration script ${migration.scriptRelPath} does not export migrate()`);
-	mod.migrate(ctx);
+	return mod.migrate(ctx) ?? undefined;
+}
+
+function hasLegacyBacklogContent(bridgeDir: string): boolean {
+	return ["backlog", "efforts"].some((name) => {
+		const path = join(bridgeDir, name);
+		return existsSync(path) && statSync(path).isDirectory();
+	});
+}
+
+function printMigrationSummary(
+	io: CommandIo,
+	migration: Migration,
+	summary: MigrationRunSummary,
+): void {
+	io.log(`Migration ${migration.docId} complete.`);
+	if (summary.sourceDir) io.log(`Source: ${summary.sourceDir}`);
+	if (summary.effortCount !== undefined) io.log(`Efforts copied: ${summary.effortCount}`);
+	if (summary.backlogDocId) io.log(`Backlog doc: ${summary.backlogDocId}`);
+	if (summary.bridgeRepo?.id) {
+		const status = summary.bridgeRepo.status ? `${summary.bridgeRepo.status} ` : "";
+		io.log(`Bridge repo: ${status}${summary.bridgeRepo.id}`);
+	}
+	if (summary.copiedFiles && summary.copiedFiles.length > 0) {
+		io.log("Copied files:");
+		for (const file of summary.copiedFiles) io.log(`  - ${file}`);
+	}
+	if (summary.manualCleanup) io.log(summary.manualCleanup);
 }
 
 /**
@@ -526,31 +568,31 @@ async function runMigration(migration: Migration, ctx: MigrationContext): Promis
  * shape or migration failure. Returns quickly with no I/O beyond the shape
  * check when the bridge is already current.
  */
-async function migrateBridgeConfig(bridgeDir: string): Promise<void> {
+async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Promise<void> {
 	const shape = detectConfigShapeAt(bridgeDir);
 
 	if (shape.kind === "ambiguous") {
 		throw new Error(
 			`bridge config is ambiguous: both ${formatPath(legacyConfigPath(bridgeDir))} and ` +
-				`${formatPath(baseConfigPath(bridgeDir))} exist. Remove or reconcile one manually before running init again.`,
+				`${formatPath(baseConfigPath(bridgeDir))} exist. Remove ${formatPath(legacyConfigPath(bridgeDir))} manually before running seed again.`,
 		);
 	}
 	if (shape.kind === "split-unversioned") {
 		throw new Error(
 			`${formatPath(baseConfigPath(bridgeDir))} exists but has no readable compatibility-level; ` +
-				`refusing to guess its migration state. Fix or remove it manually before running init again.`,
+				`refusing to guess its migration state. Fix or remove it manually before running seed again.`,
 		);
 	}
 
 	let version =
-		shape.kind === "none"
-			? CURRENT_COMPATIBILITY_LEVEL
-			: shape.kind === "legacy"
-				? 0
+		shape.kind === "legacy" || (shape.kind === "none" && hasLegacyBacklogContent(bridgeDir))
+			? 0
+			: shape.kind === "none"
+				? CURRENT_COMPATIBILITY_LEVEL
 				: shape.version;
 	if (version === CURRENT_COMPATIBILITY_LEVEL) return; // already current: no-op, no further I/O
 
-	const ctx: MigrationContext = { bridgeDir };
+	const ctx: MigrationContext = { bridgeDir, mintUuid: createUuid7Minter() };
 	while (version < CURRENT_COMPATIBILITY_LEVEL) {
 		const migration = MIGRATIONS.find((m) => m.fromVersion === version);
 		if (!migration) {
@@ -563,13 +605,10 @@ async function migrateBridgeConfig(bridgeDir: string): Promise<void> {
 			);
 		}
 
-		backupBeforeMigration(bridgeDir, migration, [
-			legacyConfigPath(bridgeDir),
-			baseConfigPath(bridgeDir),
-		]);
-
 		try {
-			await runMigration(migration, ctx);
+			io.log(`Running migration ${formatPath(migrationDocPath(migration))}...`);
+			const summary = await runMigration(migration, ctx);
+			if (summary) printMigrationSummary(io, migration, summary);
 		} catch (err) {
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(
@@ -1131,27 +1170,19 @@ function writeNosediveDirGitignore(bridgeDir: string): void {
 	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
-async function seed(
-	args: string[],
-	io: CommandIo,
-	command: "seed" | "init" = "seed",
-): Promise<void> {
-	const options = parseSeedOptions(args, command);
+async function seed(args: string[], io: CommandIo): Promise<void> {
+	const options = parseSeedOptions(args);
 	if (options.help) {
-		printCommandHelp(command, io);
+		printCommandHelp("seed", io);
 		return;
-	}
-
-	if (command === "init") {
-		io.err("warning: `nosedive init` is deprecated; use `nosedive seed` instead.");
 	}
 
 	const bridgeDir = process.cwd();
 	if (!gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"])) {
-		throw new Error(`nosedive ${command} must be run inside a git repository`);
+		throw new Error("nosedive seed must be run inside a git repository");
 	}
 
-	await migrateBridgeConfig(bridgeDir);
+	await migrateBridgeConfig(bridgeDir, io);
 
 	const settings = loadSplitRcSettings(bridgeDir);
 
@@ -1996,10 +2027,7 @@ function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 						? (raw.meta as Record<string, unknown>)
 						: {},
 				scopes: parseScopeRefs(raw.scopes, path),
-				links:
-					fm.scalars.kind === "assertion" || fm.scalars.kind === "command"
-						? parseLinkRefs(raw.links, path)
-						: [],
+				links: parseLinkRefs(raw.links, path),
 			};
 		});
 }
@@ -3644,9 +3672,12 @@ function parseLinkRef(link: unknown, path: string, index: number): LinkRef {
 		const id = link.trim();
 		if (!id) throw new Error(`invalid link entry in ${label}: id must be non-empty`);
 		if (id.includes("#")) {
-			throw new Error(
-				`invalid link entry in ${label}: anchors are not allowed in string links; use '- <id>: { anchor: ... }'`,
-			);
+			const [target, ...anchorParts] = id.split("#");
+			const anchor = anchorParts.join("#");
+			if (!target || !anchor) {
+				throw new Error(`invalid link entry in ${label}: id and anchor must be non-empty`);
+			}
+			return { id: target, anchor };
 		}
 		return { id };
 	}
@@ -4442,7 +4473,7 @@ const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	begin: FOUNDATION_EXCLUDE_BEGIN,
 	end: FOUNDATION_EXCLUDE_END,
 	header: [
-		"# owner: nosedive init",
+		"# owner: nosedive seed",
 		"# reason: .nosedive.local.yaml and package foundation docs are local bootstrap artifacts",
 	],
 };
@@ -4790,8 +4821,7 @@ type BuiltinCommand = (args: string[], io: CommandIo) => void | Promise<void>;
 function builtinCommands(): Record<string, BuiltinCommand> {
 	return {
 		mint: mintId,
-		seed: (args, io) => seed(args, io, "seed"),
-		init: (args, io) => seed(args, io, "init"),
+		seed,
 		preflight,
 		prove,
 		render: renderCommand,
@@ -4856,11 +4886,8 @@ async function runBuiltinCli(
 		case "mint":
 			mintId(args, io);
 			break;
-		case "init":
-			await seed(args, io, "init");
-			break;
 		case "seed":
-			await seed(args, io, "seed");
+			await seed(args, io);
 			break;
 		case "preflight":
 			preflight(args, io);

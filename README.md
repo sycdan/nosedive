@@ -67,7 +67,6 @@ matching command doc.
 | `pitch` | [pitch@0](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Create a new effort file in `backlog/`. |
 | `mint` | [mint@0](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Generate UUIDv7 values with a specific timestamp encoded. |
 | `seed` | [seed@1](kb/019fadf5-e082-7558-945f-d136295b1ea5.md) | Create, migrate, or edit bridge config in the current directory. |
-| `init` | [init@0](kb/019fadf5-e084-7058-8788-af1dc5fb8384.md) | Deprecated alias for `seed`. |
 | `preflight` | [preflight@0](kb/019fadf5-e086-7c7b-812d-964284b06e58.md) | Install the bridge pre-push hook. |
 | `apply` | [apply@0](kb/019fadf5-e09a-777c-abdd-28e6fd2f7ab8.md) | Deprecated; only `--dry-run` remains, as a read-only inspection path. |
 | `nuke` | [nuke@1](kb/019fadf5-e09c-7989-80ae-a87afb01ea63.md) | Remove managed bridge config. |

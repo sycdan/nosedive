@@ -166,7 +166,7 @@ try {
 	assert.match(help.stdout, /Commands:/);
 	assert.match(help.stdout, /mint/);
 	assert.match(help.stdout, /seed/);
-	assert.match(help.stdout, /init/);
+	assert.doesNotMatch(help.stdout, /^  init\b/m);
 	assert.match(help.stdout, /preflight/);
 	assert.match(help.stdout, /prove/);
 	assert.match(help.stdout, /render/);
@@ -1011,7 +1011,6 @@ nosedive-pilot-email: contract@example.invalid
 	// comes from that command doc's body on both the command and builtin routes.
 	const level0ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
-		["init", /Usage: nosedive init \[--headless\]/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-uuid>/],
 		["render", /Usage: nosedive render <uuid>/],
@@ -1048,13 +1047,9 @@ nosedive-pilot-email: contract@example.invalid
 		);
 	}
 	const contractHelpLinks = {
-		init: [/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/],
 		preflight: [/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/],
 		"pre-push.hook": [/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/],
-		seed: [
-			/\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/,
-			/\[`init@0`\]\(019fadf5-e084-7058-8788-af1dc5fb8384\.md\)/,
-		],
+		seed: [/\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/],
 	};
 	for (const [command, usage, level] of contractedCommands) {
 		const explicitHelp = run([`${command}@${level}`, "--help"], whoamiContractBridge);
@@ -3173,13 +3168,8 @@ Build the YAML-aware workspace work order.
 	);
 
 	const initHelp = run(["init", "--help"], noBridge);
-	assertOk(initHelp, "init --help failed");
-	assert.match(initHelp.stdout, /Usage: nosedive init \[--headless\]/);
-	assert.match(initHelp.stdout, /Deprecated alias for \[`seed`\]/);
-	assert.match(
-		initHelp.stdout,
-		/Usage: nosedive init \[--headless\]\n\nDeprecated alias for `seed`/,
-	);
+	assert.notEqual(initHelp.status, 0, "init --help unexpectedly succeeded");
+	assert.match(initHelp.stderr, /Unknown command: init/);
 
 	const unknownSeedOption = run(["seed", "--bogus"], root, "");
 	assert.notEqual(unknownSeedOption.status, 0, "seed with unknown option unexpectedly succeeded");
@@ -3338,6 +3328,14 @@ current:
 	assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
 	assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
 	assert.doesNotMatch(initHeadlessExisting.stdout, /Seeded .*foundation docs/);
+	assert.match(
+		initHeadlessExisting.stdout,
+		/Running migration .*00000000-0061-77ed-a060-f803c8f5aa76\.md/,
+	);
+	assert.match(
+		initHeadlessExisting.stdout,
+		/Migration 00000000-0061-77ed-a060-f803c8f5aa76 complete\./,
+	);
 	assert.equal(existsSync(join(headlessExistingBridge, ".nosediverc")), false);
 	assert.equal(
 		readFileSync(join(headlessExistingBridge, ".nosedive", "config.yaml"), "utf8"),
@@ -3371,24 +3369,187 @@ current:
 			new RegExp(`^custom-kb/${packageFoundationDoc}$`, "m"),
 		);
 	}
-	// The pre-migration file is preserved as a recovery backup.
-	const existingBackupRoot = join(headlessExistingBridge, ".nosedive", "migration-backups");
-	const existingBackupDirs = readdirSync(existingBackupRoot);
-	assert.equal(existingBackupDirs.length, 1);
-	assert.match(existingBackupDirs[0], /^v0-to-v1-/);
-	assert.match(
-		readFileSync(join(existingBackupRoot, existingBackupDirs[0], ".nosediverc"), "utf8"),
-		/pilot-name: Existing Pilot/,
-	);
-
-	// Re-running init on an already-migrated, already-current bridge is a
-	// no-op with respect to migration: no new backup is created.
+	// Re-running seed on an already-migrated, already-current bridge is a
+	// no-op with respect to migration.
 	const initHeadlessAgain = run(["seed", "--headless"], headlessExistingBridge, "");
 	assertOk(initHeadlessAgain, "second headless init on migrated bridge failed");
-	assert.equal(readdirSync(existingBackupRoot).length, 1);
+	assert.doesNotMatch(initHeadlessAgain.stdout, /Running migration/);
+
+	// A bridge with no config but an existing tracked backlog is treated as
+	// compatibility level 0 and copied into KB docs during seed.
+	const backlogBridge = join(tmp, "backlog-bridge");
+	const bridgeRepoId = "00000000-0000-7000-8000-000000000111";
+	const effortRepoId = "00000000-0000-7000-8000-000000000222";
+	const childEffortId = "00000000-0000-7000-8000-000000000333";
+	const relatedEffortId = "00000000-0000-7000-8000-000000000444";
+	mkdirSync(backlogBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], backlogBridge);
+	runTool("git", ["config", "user.name", "Backlog Person"], backlogBridge);
+	runTool("git", ["config", "user.email", "backlog@example.invalid"], backlogBridge);
+	runTool(
+		"git",
+		["remote", "add", "origin", "https://example.com/dan/backlog-bridge.git"],
+		backlogBridge,
+	);
+	write(
+		join(backlogBridge, "kb", `${bridgeRepoId}.md`),
+		`---
+kind: repo
+id: ${bridgeRepoId}
+name: bridge-existing
+gist: Existing bridge repo doc.
+meta:
+  path: workspace/__self
+  remotes:
+    cloud: https://example.com/dan/backlog-bridge.git
+---
+
+# Bridge Existing
+`,
+	);
+	write(
+		join(backlogBridge, "kb", `${effortRepoId}.md`),
+		`---
+kind: repo
+id: ${effortRepoId}
+name: alpha
+gist: Alpha repo.
+meta:
+  path: workspace/alpha
+---
+
+# Alpha
+`,
+	);
+	write(
+		join(backlogBridge, "backlog", "project", "Project.md"),
+		`---
+gist: Main gist
+repos:
+  - alpha:ro
+links:
+  - ${relatedEffortId}:
+      rel: related
+priority: high
+---
+
+# Project Title
+
+Main body.
+`,
+	);
+	write(
+		join(backlogBridge, "backlog", "project", "main-effort", "MainEffort.md"),
+		`---
+id: ${childEffortId}
+name: Stale Name
+gist: Child gist
+repos:
+  - alpha@main:rw
+owner: dana
+---
+
+# Main Effort Title
+
+Child body.
+`,
+	);
+	runTool("git", ["add", "kb", "backlog"], backlogBridge);
+	runTool("git", ["commit", "-m", "legacy backlog"], backlogBridge);
+
+	const backlogSeed = run(["seed", "--headless"], backlogBridge, "");
+	assertOk(backlogSeed, "seed with tracked backlog failed");
+	assert.match(backlogSeed.stdout, /Running migration .*00000000-0061-77ed-a060-f803c8f5aa76\.md/);
+	assert.match(backlogSeed.stdout, /Source: backlog/);
+	assert.match(backlogSeed.stdout, /Efforts copied: 2/);
+	assert.match(backlogSeed.stdout, new RegExp(`Bridge repo: reused ${bridgeRepoId}`));
+	assert.match(backlogSeed.stdout, /Copied files:/);
+	assert.match(backlogSeed.stdout, /project\/Project\.md/);
+	assert.match(backlogSeed.stdout, /project\/main-effort\/MainEffort\.md/);
+	assert.match(backlogSeed.stdout, /Legacy backlog\/ remains after copying/);
+	const backlogDocMatch = /Backlog doc: ([0-9a-f-]{36})/.exec(backlogSeed.stdout);
+	assert.ok(backlogDocMatch, "seed did not print backlog doc id");
+	const backlogDocId = backlogDocMatch[1];
+	assert.equal(existsSync(join(backlogBridge, "backlog", "project", "Project.md")), true);
+
+	const kbTexts = readdirSync(join(backlogBridge, "kb"))
+		.filter((name) => name.endsWith(".md"))
+		.map((name) => [name, readFileSync(join(backlogBridge, "kb", name), "utf8")]);
+	const topEffort = kbTexts.find(
+		([, text]) => /^kind: effort$/m.test(text) && /^name: project$/m.test(text),
+	);
+	assert.ok(topEffort, "top-level effort doc was not created");
+	const topEffortId = /^id: ([0-9a-f-]{36})$/m.exec(topEffort[1])?.[1];
+	assert.ok(topEffortId, "top-level effort id was not minted");
+	assert.notEqual(topEffortId, childEffortId);
+	assert.equal(topEffort[0], `${topEffortId}.md`);
+	assert.match(topEffort[1], /^gist: Main gist$/m);
+	assert.match(topEffort[1], new RegExp(`\\nscopes:\\n  - ${effortRepoId}\\n`));
+	assert.match(topEffort[1], new RegExp(`${relatedEffortId}:\\n      rel: related`));
+	assert.match(topEffort[1], new RegExp(`${childEffortId}:\\n      rel: child`));
+	assert.match(topEffort[1], /meta:\n  priority: high/);
+
+	const childDoc = readFileSync(join(backlogBridge, "kb", `${childEffortId}.md`), "utf8");
+	assert.match(childDoc, /^kind: effort$/m);
+	assert.match(childDoc, new RegExp(`^id: ${childEffortId}$`, "m"));
+	assert.match(childDoc, /^name: main-effort\.project$/m);
+	assert.match(childDoc, /^gist: Child gist$/m);
+	assert.match(childDoc, new RegExp(`\\nscopes:\\n  - ${effortRepoId}\\n`));
+	assert.match(childDoc, new RegExp(`${topEffortId}:\\n      rel: parent`));
+	assert.match(childDoc, /meta:\n  name: Stale Name\n  owner: dana/);
+
+	const backlogDoc = readFileSync(join(backlogBridge, "kb", `${backlogDocId}.md`), "utf8");
+	assert.match(backlogDoc, /^kind: backlog$/m);
+	assert.match(backlogDoc, /^name: backlog\.backlog-bridge$/m);
+	assert.match(backlogDoc, new RegExp(`\\nscopes:\\n  - ${bridgeRepoId}\\n`));
+	assert.match(backlogDoc, new RegExp(`${topEffortId}:\\n      rel: has-main-effort`));
+	assert.match(backlogDoc, new RegExp(`- \\[Project Title\\]\\(${topEffortId}\\.md\\): Main gist`));
+	assert.match(
+		backlogDoc,
+		new RegExp(`  - \\[Main Effort Title\\]\\(${childEffortId}\\.md\\): Child gist`),
+	);
+
+	// If backlog/ is absent, seed falls back to efforts/ and can mint the
+	// bridge repo doc from the current worktree.
+	const effortsBridge = join(tmp, "efforts-bridge");
+	mkdirSync(effortsBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], effortsBridge);
+	runTool("git", ["config", "user.name", "Efforts Person"], effortsBridge);
+	runTool("git", ["config", "user.email", "efforts@example.invalid"], effortsBridge);
+	write(
+		join(effortsBridge, "efforts", "solo", "Solo.md"),
+		`---
+gist: Solo gist
+---
+
+# Solo
+`,
+	);
+	const effortsSeed = run(["seed", "--headless"], effortsBridge, "");
+	assertOk(effortsSeed, "seed with efforts fallback failed");
+	assert.match(effortsSeed.stdout, /Source: efforts/);
+	assert.match(effortsSeed.stdout, /Bridge repo: created [0-9a-f-]{36}/);
+	assert.match(effortsSeed.stdout, /Efforts copied: 1/);
+	assert.match(effortsSeed.stdout, /solo\/Solo\.md/);
+
+	// Dirty managed migration targets abort before any migration writes.
+	const dirtyManagedBridge = join(tmp, "dirty-managed-bridge");
+	mkdirSync(dirtyManagedBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], dirtyManagedBridge);
+	write(join(dirtyManagedBridge, "efforts", "solo", "Solo.md"), "# Solo\n");
+	write(join(dirtyManagedBridge, "kb", "dirty.md"), "# Dirty\n");
+	const dirtyManagedSeed = run(["seed", "--headless"], dirtyManagedBridge, "");
+	assert.notEqual(
+		dirtyManagedSeed.status,
+		0,
+		"seed with dirty managed target unexpectedly succeeded",
+	);
+	assert.match(dirtyManagedSeed.stderr, /managed migration paths are dirty/);
+	assert.match(dirtyManagedSeed.stderr, /kb: \?\? kb\/dirty\.md/);
+	assert.equal(existsSync(join(dirtyManagedBridge, ".nosedive", "config.yaml")), false);
 
 	// Both a legacy file and a split base config present at once is
-	// unrecognized/ambiguous: init aborts loudly and writes nothing.
+	// unrecognized/ambiguous: seed aborts loudly and writes nothing.
 	const ambiguousBridge = join(tmp, "ambiguous-bridge");
 	mkdirSync(ambiguousBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], ambiguousBridge);
@@ -3397,6 +3558,7 @@ current:
 	const initAmbiguous = run(["seed", "--headless"], ambiguousBridge, "");
 	assert.notEqual(initAmbiguous.status, 0, "init with ambiguous config unexpectedly succeeded");
 	assert.match(initAmbiguous.stderr, /bridge config is ambiguous/);
+	assert.match(initAmbiguous.stderr, /Remove .*\.nosediverc manually before running seed again/);
 	assert.equal(
 		readFileSync(join(ambiguousBridge, ".nosediverc"), "utf8"),
 		"workspace: ./workspace\n",
@@ -3407,7 +3569,7 @@ current:
 	);
 
 	// A split base config with no readable compatibility-level is likewise
-	// unrecognized: init refuses to guess rather than silently overwriting.
+	// unrecognized: seed refuses to guess rather than silently overwriting.
 	const unversionedBridge = join(tmp, "unversioned-bridge");
 	mkdirSync(unversionedBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], unversionedBridge);
@@ -3423,8 +3585,8 @@ current:
 	// A migration script failure surfaces the migration's summary plus the
 	// full content (gist + body) of its kb doc inline, so an agent hitting
 	// this can act on it directly without the doc needing to live anywhere
-	// in the bridge's kb, and leaves the bridge unmigrated (recoverable from
-	// the pre-attempt backup) rather than partially written.
+	// in the bridge's kb, and leaves the bridge unmigrated rather than
+	// partially written.
 	const scriptFailureBridge = join(tmp, "script-failure-bridge");
 	mkdirSync(scriptFailureBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], scriptFailureBridge);
@@ -3447,9 +3609,12 @@ current:
 			initScriptFailure.stderr,
 			/migration '.*' \(v0->v1\) failed: simulated migration failure/,
 		);
-		assert.match(initScriptFailure.stderr, /Migrate single \.nosediverc into checked-in/);
-		assert.match(initScriptFailure.stderr, /# Split Bridge Config/);
-		assert.match(initScriptFailure.stderr, /## Recovery/);
+		assert.match(
+			initScriptFailure.stderr,
+			/Seed v1 bridge config and migrate legacy backlog efforts/,
+		);
+		assert.match(initScriptFailure.stderr, /# Seed v1 Bridge/);
+		assert.match(initScriptFailure.stderr, /## Clean Gate/);
 		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
 		assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);
 		assert.equal(existsSync(join(scriptFailureBridge, ".nosedive", "config.yaml")), false);

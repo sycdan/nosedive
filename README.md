@@ -4,6 +4,25 @@
 
 # Nosedive: intentional velocity
 
+Imagine:
+```bash
+$ npx nosedive jump "on auto sync backend" --target testing
+Hi <Pilot>, N[o]O[rdinaryS[oftware]E[engineer] here!
+<is first run: yes> I see you're new here -- welcome! Let's pack your 'chute first.
+                    <opencode run "follow the onboarding runbook">
+Lemme look some stuff up, then I'll help you frame, shape, build and deploy A$$ to sandbox.
+Reading kb...
+Ok, let's dive in!
+Framing questions...
+Building expectations...
+Writing assertions...
+Passing gates...
+Outcome:
+- all gates passed
+- all CRITs hit
+- ewt-services PR, awaiting review|merge
+```
+
 ⚠️ This repo is currently undergoing active development and may undergo breaking changes without warning. ⚠️
 
 **_nosedive_ turns a plain notes repo into a hub for cross-repo work** — a place where a

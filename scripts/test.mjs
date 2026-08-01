@@ -536,6 +536,11 @@ links:
 	assert.doesNotMatch(proofRun.stdout, /Gist:/);
 	assert.doesNotMatch(proofRun.stdout, /^exec cwd=/m);
 	assert.match(proofRun.stdout, /direct cli preflight succeeded/);
+	assert.equal(
+		proofRun.stdout.indexOf("Proving:") < proofRun.stdout.indexOf("direct cli preflight succeeded"),
+		true,
+		"prove should print its start line before prover ctx.log output",
+	);
 	assert.match(proofRun.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
 	assert.equal(existsSync(join(proofBridge, "workspace", "proof-target")), true);
 	assert.doesNotMatch(

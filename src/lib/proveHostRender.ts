@@ -24,7 +24,7 @@ import {
 import { cleanGitEnv, writeFileAtomic } from "./renderPlan.js";
 import { maybeResolveRepoDoc, resolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
 
-export function createProverContext(request: ProverHostRequest) {
+export function createProverContext(request: ProverHostRequest, io: CommandIo) {
 	const kbDocs = loadKbDocs(request.kbDir, request.bridgeDir);
 	const assertion = findAssertionDoc(kbDocs, request.assertionId);
 	const accessedRepos = new Map<string, string>();
@@ -84,7 +84,7 @@ export function createProverContext(request: ProverHostRequest) {
 			options?: { cwd?: string; env?: Record<string, string>; expectExitCode?: number },
 		): Promise<{ status: number; stdout: string; stderr: string }> {
 			if (!options?.cwd) throw new Error("ctx.exec requires options.cwd");
-			if (request.verbose) console.log(formatExecCommand(command, args, options.cwd));
+			if (request.verbose) io.log(formatExecCommand(command, args, options.cwd));
 			const env = { ...cleanGitEnv(), ...(options.env ?? {}) };
 			const spawnCommand = commandForSpawn(command, args);
 			const result = spawnSync(spawnCommand.command, spawnCommand.args, {
@@ -144,7 +144,7 @@ export function createProverContext(request: ProverHostRequest) {
 			},
 		},
 		log(message: string): void {
-			console.log(message);
+			io.log(message);
 		},
 	};
 
@@ -177,7 +177,7 @@ export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 	if (!requestPath || extra.length > 0) throw new Error("_prove-host requires one request path");
 
 	const request = JSON.parse(readFileSync(requestPath, "utf8")) as ProverHostRequest;
-	const session = createProverContext(request);
+	const session = createProverContext(request, io);
 	let status = 0;
 	let error: string | undefined;
 

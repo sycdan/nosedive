@@ -1,8 +1,4 @@
-/**
- * Processor for the `dump-backlog@0` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("dump-backlog", value.args);
+/** @see [../a1c8b50b-6ee2-5f91-b861-8d2546c17527.md](../a1c8b50b-6ee2-5f91-b861-8d2546c17527.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda6186e721bb1aa70c10306da4b(value.args);
 }

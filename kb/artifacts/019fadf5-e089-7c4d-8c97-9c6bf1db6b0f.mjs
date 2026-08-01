@@ -1,8 +1,4 @@
-/**
- * Executor for the `prove` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("prove", value.args);
+/** @see [../af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md](../af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda618717a58b4ce9afa78abdf86(value.args);
 }

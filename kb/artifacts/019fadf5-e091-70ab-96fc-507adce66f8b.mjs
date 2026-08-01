@@ -1,8 +1,4 @@
-/**
- * Executor for the `list-dives` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("list-dives", value.args);
+/** @see [../ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md](../ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda6187075c58b67f7f408af2718(value.args);
 }

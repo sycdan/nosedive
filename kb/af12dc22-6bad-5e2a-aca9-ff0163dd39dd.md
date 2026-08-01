@@ -1,13 +1,12 @@
 ---
 kind: command
-id: 019fadf5-e088-7ee1-b8d6-4cb36ef24363
+id: af12dc22-6bad-5e2a-aca9-ff0163dd39dd
 name: prove@1
 gist: "Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits."
 scopes: []
 meta:
   usage: nosedive prove <assertion-uuid> [--record] [--verbose]
-  processors:
-    - kb/artifacts/019fadf5-e089-7c4d-8c97-9c6bf1db6b0f.mjs
+  handler: kb/artifacts/019fadf5-e089-7c4d-8c97-9c6bf1db6b0f.mjs
 ---
 
 # Prove

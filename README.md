@@ -79,41 +79,41 @@ that is compatible with the bridge's `compatibility-level`, so a bridge pins the
 behavior it gets. `nosedive <command>@<level>` selects one explicitly. Legacy
 `.nosediverc` bridges report compatibility level 0, so they use `@0` command docs
 where present and stay on built-in implementations for commands without a
-matching command doc.
+matching command doc. Command doc UUIDs are deterministic: the package reads its
+stable `.nosedive-ref` id and derives `kb/<uuid>.md` from
+`command:<command>@<level>`, so command lookup does not need a full KB scan.
 
 | Command | Doc | Status | What it does |
 | --- | --- | --- | --- |
-| `pitch` | [L1](kb/019fadf5-e092-74de-9f9d-8a56c868664e.md) | Current | Create a new effort file in `backlog/`. |
-| `mint` | [L1](kb/019fadf5-e080-796c-9eca-bb521daf84bf.md) | Current | Generate UUIDv7 values with a specific timestamp encoded. |
-| `seed` | [L1](kb/019fadf5-e082-7558-945f-d136295b1ea5.md) | Current | Create, migrate, or edit bridge config in the current directory. |
-| `preflight` | [L1](kb/019fadf5-e086-7c7b-812d-964284b06e58.md) | Current | Install the bridge pre-push hook. |
-| `apply` | [L0](kb/019fadf5-e09a-777c-abdd-28e6fd2f7ab8.md) | Deprecated | Only `--dry-run` remains, as a read-only inspection path. |
-| `nuke` | [L1](kb/019fadf5-e09c-7989-80ae-a87afb01ea63.md) | Current | Remove managed bridge config. |
-| `render` | [L1](kb/019fadf5-e08a-7682-91f9-bb208cc306c9.md) | Current | Print the body of a packaged nosedive KB document. |
-| `pre-push.hook` | [L1](kb/019fadf5-e08c-7a33-a077-c545d9f764d5.md) | Current | Run the bridge pre-push check registry. |
-| `prove` | [L1](kb/019fadf5-e088-7ee1-b8d6-4cb36ef24363.md) | Current | Run an executable proof for a bridge `kind: assertion` doc. |
-| `list-dives` | [L1](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md) | Current | Print pickupable and working dives for an open effort. |
-| `dump-backlog` | [L1](kb/019fba9e-d800-74e8-a5bc-5752f1e0f4d8.md) | Current | Render the configured backlog memo from bridge KB. |
-| `dump-backlog` | [L0](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md) | Deprecated | Walk the legacy `backlog:` directory and print an effort tree. |
-| `update-backlog` | [L1](kb/019fbe0d-c000-7d11-86f2-8f90f227163a.md) | Current | Regenerate the configured backlog memo from bridge KB effort docs. |
-| `whoami` | [L1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md) | Current | Print the bridge pilot identity nosedive will use. |
-| `add-repo` | [L1](kb/019fadf5-e094-7176-afd0-94532d2bb149.md) | Current | Add a kb repo to an effort's repo list. |
-| `hydrate-repo.workspace` | [L1](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Current | Hydrate one repo worktree from kb `kind: repo` metadata. |
-| `dehydrate-repo.workspace` | [L1](kb/019fadf5-e098-76f7-a4eb-d106bb6714a1.md) | Current | Remove one hydrated workspace checkout. |
+| `pitch` | [L1](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | Current | Create a new effort file in `backlog/`. |
+| `mint` | [L1](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | Current | Generate UUIDv7 values with a specific timestamp encoded. |
+| `seed` | [L1](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | Current | Create, migrate, or edit bridge config in the current directory. |
+| `preflight` | [L1](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | Current | Install the bridge pre-push hook. |
+| `apply` | [L0](kb/87d1019d-d2cd-509f-8f52-6fd99ea13268.md) | Deprecated | Only `--dry-run` remains, as a read-only inspection path. |
+| `nuke` | [L1](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | Current | Remove managed bridge config. |
+| `render` | [L1](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | Current | Print the body of a packaged nosedive KB document. |
+| `pre-push.hook` | [L1](kb/9c07d8f1-61d4-531c-a926-863ce61e4785.md) | Current | Run the bridge pre-push check registry. |
+| `prove` | [L1](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | Current | Run an executable proof for a bridge `kind: assertion` doc. |
+| `list-dives` | [L1](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | Current | Print pickupable and working dives for an open effort. |
+| `dump-backlog` | [L1](kb/d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) | Current | Render the configured backlog memo from bridge KB. |
+| `dump-backlog` | [L0](kb/a1c8b50b-6ee2-5f91-b861-8d2546c17527.md) | Deprecated | Walk the legacy `backlog:` directory and print an effort tree. |
+| `update-backlog` | [L1](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | Current | Regenerate the configured backlog memo from bridge KB effort docs. |
+| `whoami` | [L1](kb/a40303c1-1362-523f-b095-49178354f878.md) | Current | Print the bridge pilot identity nosedive will use. |
+| `add-repo` | [L1](kb/cb7c5823-486f-52af-b3bc-0f368f277b0e.md) | Current | Add a kb repo to an effort's repo list. |
+| `hydrate-repo.workspace` | [L1](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | Current | Hydrate one repo worktree from kb `kind: repo` metadata. |
+| `dehydrate-repo.workspace` | [L1](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | Current | Remove one hydrated workspace checkout. |
 
 `version` and `help` have no command doc; they print the package version and the
 command list.
 
 ### How a command doc runs
 
-A command doc lists one or more repo-root processor artifacts under
-`meta.processors`. Each processor is a single-file ES module exporting
-`run(value, ctx)`, and they are applied in list order, each receiving the
-previous one's return value. The first receives `{ args, cwd }`, and the last
-must return `{ stdout, stderr, exitCode }` (`output` is accepted as a stdout
-alias). `ctx.invoke(command, args)` runs the built-in implementation with a
-capturing io and returns what it wrote, which is how most processors reuse the
-typechecked implementation rather than restating it.
+A command doc names one repo-root handler artifact under `meta.handler`. The
+handler is a single-file ES module exporting `handle(value, ctx)`. It receives
+`{ args, cwd }` and must return `{ stdout, stderr, exitCode }` (`output` is
+accepted as a stdout alias). Handlers call uuid-named internal implementations
+through `ctx.impl` and shared named helpers through `ctx.lib`; command behavior
+belongs in `src/impl` and `src/lib`, not in the user-facing handler artifact.
 
 ## Development
 

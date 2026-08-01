@@ -1,8 +1,4 @@
-/**
- * Executor for the `mint` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("mint", value.args);
+/** @see [../e8909eff-aee5-54f2-9ce2-85c2582e39f0.md](../e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbe0dc0027cd9994862a51e6ed74d(value.args);
 }

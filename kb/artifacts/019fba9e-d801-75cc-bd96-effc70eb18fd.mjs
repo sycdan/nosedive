@@ -1,7 +1,4 @@
-/**
- * Processor for `dump-backlog@1`. The bridge's configured `backlog:` value is
- * a KB memo id at L1, so the typechecked host renders that memo body.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("dump-backlog.memo", value.args);
+/** @see [../d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md](../d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda618757f8381ba00575878a87f(value.args);
 }

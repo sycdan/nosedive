@@ -1,15 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const kbDir = join(root, "kb");
-const sourceText = readFileSync(join(root, "src", "nosedive.ts"), "utf8");
+const sourceText = readFileSync(join(root, "src", "lib", "commands.ts"), "utf8");
 const currentLevelMatch = /\bconst CURRENT_COMPATIBILITY_LEVEL = ([0-9]+);/.exec(sourceText);
+const projectRef = frontmatterish(readFileSync(join(root, ".nosedive-ref"), "utf8"));
 
 if (!currentLevelMatch) {
-	throw new Error("could not read CURRENT_COMPATIBILITY_LEVEL from src/nosedive.ts");
+	throw new Error("could not read CURRENT_COMPATIBILITY_LEVEL from src/lib/commands.ts");
 }
 
 const currentLevel = Number.parseInt(currentLevelMatch[1], 10);
@@ -17,6 +19,50 @@ const failures = [];
 
 function fail(message) {
 	failures.push(message);
+}
+
+function frontmatterish(text) {
+	const values = {};
+	for (const line of text.split(/\r?\n/)) {
+		const match = /^([A-Za-z0-9_-]+):\s*(.*?)\s*$/.exec(line);
+		if (match) values[match[1]] = match[2];
+	}
+	return values;
+}
+
+function uuidBytes(uuid) {
+	const hex = uuid.replace(/-/g, "");
+	if (!/^[0-9a-f]{32}$/i.test(hex)) {
+		fail(`.nosedive-ref id must be a UUID: ${uuid}`);
+		return Buffer.alloc(16);
+	}
+	return Buffer.from(hex, "hex");
+}
+
+function formatUuid(bytes) {
+	const hex = bytes.toString("hex");
+	return [
+		hex.slice(0, 8),
+		hex.slice(8, 12),
+		hex.slice(12, 16),
+		hex.slice(16, 20),
+		hex.slice(20),
+	].join("-");
+}
+
+function namespacedUuid(namespace, name) {
+	const bytes = createHash("sha1")
+		.update(uuidBytes(namespace))
+		.update(name)
+		.digest()
+		.subarray(0, 16);
+	bytes[6] = (bytes[6] & 0x0f) | 0x50;
+	bytes[8] = (bytes[8] & 0x3f) | 0x80;
+	return formatUuid(bytes);
+}
+
+function commandDocId(command, level) {
+	return namespacedUuid(projectRef.id ?? "", `command:${command}@${level}`);
 }
 
 function frontmatter(text, label) {
@@ -72,7 +118,10 @@ function commandFrontmatterOrder(text, filename) {
 		fail(`${filename} command frontmatter must put scopes before meta`);
 	}
 	if (/^links:\r?\n(?:[ \t].*\r?\n)*[ \t]+rel: executor$/m.test(frontmatter)) {
-		fail(`${filename} command processors must live in meta.processors, not links`);
+		fail(`${filename} command handler must live in meta.handler, not links`);
+	}
+	if (/^  processors:/m.test(frontmatter)) {
+		fail(`${filename} command must use meta.handler, not meta.processors`);
 	}
 }
 
@@ -100,12 +149,19 @@ for (const filename of readdirSync(kbDir)
 		if (/\s{2,}|\r|\n/.test(String(raw.meta?.usage ?? ""))) {
 			fail(`${filename} command meta.usage must be a single line`);
 		}
-		if (!Array.isArray(raw.meta?.processors) || raw.meta.processors.length === 0) {
-			fail(`${filename} command must have a non-empty meta.processors list`);
+		if (typeof raw.meta?.handler !== "string" || !raw.meta.handler.startsWith("kb/artifacts/")) {
+			fail(`${filename} command must have meta.handler as a repo-root kb/artifacts path`);
 		} else {
-			for (const processor of raw.meta.processors) {
-				if (typeof processor !== "string" || !processor.startsWith("kb/artifacts/")) {
-					fail(`${filename} processor must be a repo-root kb/artifacts path: ${processor}`);
+			const handlerPath = join(root, raw.meta.handler);
+			if (!existsSync(handlerPath)) {
+				fail(`${filename} handler does not exist: ${raw.meta.handler}`);
+			} else {
+				const handlerText = readFileSync(handlerPath, "utf8");
+				if (!/export\s+async\s+function\s+handle\s*\(/.test(handlerText)) {
+					fail(`${filename} handler must export async function handle(value, ctx)`);
+				}
+				if (/\bctx\.invoke\s*\(/.test(handlerText)) {
+					fail(`${filename} handler must call ctx.impl, not ctx.invoke: ${raw.meta.handler}`);
 				}
 			}
 		}
@@ -144,6 +200,14 @@ const docsByCommandLevel = new Map();
 for (const doc of commandDocs) {
 	if (doc.level > currentLevel) {
 		fail(`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel}`);
+	}
+
+	const expectedId = commandDocId(doc.command, doc.level);
+	if (doc.id !== expectedId) {
+		fail(`${doc.name} id must be deterministic command id ${expectedId}`);
+	}
+	if (doc.filename !== `${expectedId}.md`) {
+		fail(`${doc.name} filename must be ${expectedId}.md`);
 	}
 
 	const commandDocsForName = docsByCommand.get(doc.command) ?? [];

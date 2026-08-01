@@ -1059,14 +1059,14 @@ nosedive-pilot-email: contract@example.invalid
 	}
 	const contractHelpLinks = {
 		preflight: [
-			/\[`pre-push\.hook`\]\(019fadf5-e08c-7a33-a077-c545d9f764d5\.md\)/,
-			/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
+			/\[`pre-push\.hook`\]\(9c07d8f1-61d4-531c-a926-863ce61e4785\.md\)/,
+			/\[`seed`\]\(34c8e9fb-9629-5767-9a81-914f78c63b68\.md\)/,
 		],
 		"pre-push.hook": [
 			/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
-			/\[`render`\]\(019fadf5-e08a-7682-91f9-bb208cc306c9\.md\)/,
+			/\[`render`\]\(9b0241b2-f03f-5594-a537-60a3b4372ee9\.md\)/,
 		],
-		seed: [/\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/],
+		seed: [/\]\(a40303c1-1362-523f-b095-49178354f878\.md\)/],
 	};
 	for (const [command, usage, level] of contractedCommands) {
 		const explicitHelp = run([`${command}@${level}`, "--help"], whoamiContractBridge);

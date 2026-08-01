@@ -1,8 +1,4 @@
-/**
- * Executor for the `add-repo` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("add-repo", value.args);
+/** @see [../cb7c5823-486f-52af-b3bc-0f368f277b0e.md](../cb7c5823-486f-52af-b3bc-0f368f277b0e.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda618737f89ac5ead2ad38ad2f3(value.args);
 }

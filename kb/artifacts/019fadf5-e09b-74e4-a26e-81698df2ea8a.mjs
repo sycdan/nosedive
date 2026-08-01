@@ -1,8 +1,4 @@
-/**
- * Executor for the `apply` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("apply", value.args);
+/** @see [../87d1019d-d2cd-509f-8f52-6fd99ea13268.md](../87d1019d-d2cd-509f-8f52-6fd99ea13268.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda6186b7fea985679b24b936fb3(value.args);
 }

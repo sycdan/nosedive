@@ -1,8 +1,4 @@
-/**
- * Executor for the `nuke` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("nuke", value.args);
+/** @see [../3570e756-f8e7-5e95-b911-09d7d116cd23.md](../3570e756-f8e7-5e95-b911-09d7d116cd23.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda6186a7715a90bae871ababa12(value.args);
 }

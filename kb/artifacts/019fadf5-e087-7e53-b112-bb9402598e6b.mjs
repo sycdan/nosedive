@@ -1,8 +1,4 @@
-/**
- * Executor for the `preflight` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("preflight", value.args);
+/** @see [../d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md](../d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda61874795ea8c14dc2dc0a3e3b(value.args);
 }

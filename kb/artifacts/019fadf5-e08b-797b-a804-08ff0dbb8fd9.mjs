@@ -1,8 +1,4 @@
-/**
- * Executor for the `render` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("render", value.args);
+/** @see [../9b0241b2-f03f-5594-a537-60a3b4372ee9.md](../9b0241b2-f03f-5594-a537-60a3b4372ee9.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda6186c72d9ade992daf8bf44e7(value.args);
 }

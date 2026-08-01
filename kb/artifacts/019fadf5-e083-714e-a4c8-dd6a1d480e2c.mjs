@@ -1,8 +1,4 @@
-/**
- * Executor for the `seed` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("seed", value.args);
+/** @see [../34c8e9fb-9629-5767-9a81-914f78c63b68.md](../34c8e9fb-9629-5767-9a81-914f78c63b68.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda618697f89966cb17124c03a11(value.args);
 }

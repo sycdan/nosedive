@@ -1,8 +1,4 @@
-/**
- * Executor for the `hydrate-repo.workspace` command doc. The command itself stays in the
- * typechecked nosedive source; this runs it with a capturing io and hands the
- * captured streams back to the command doc host.
- */
-export async function run(value, ctx) {
-	return ctx.invoke("hydrate-repo.workspace", value.args);
+/** @see [../c4e93002-2925-58bd-9b70-d917017a9fc7.md](../c4e93002-2925-58bd-9b70-d917017a9fc7.md) */
+export async function handle(value, ctx) {
+	return ctx.impl.i019fbda61872778a961977b23f2fa89e(value.args);
 }

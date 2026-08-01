@@ -19,7 +19,8 @@
 	},
 	"files": [
 		"dist",
-		"kb"
+		"kb",
+		".nosedive-ref"
 	],
 	"engines": {
 		"node": ">=22"

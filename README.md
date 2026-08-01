@@ -95,6 +95,7 @@ matching command doc.
 | `list-dives` | [L1](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md) | Current | Print pickupable and working dives for an open effort. |
 | `dump-backlog` | [L1](kb/019fba9e-d800-74e8-a5bc-5752f1e0f4d8.md) | Current | Render the configured backlog memo from bridge KB. |
 | `dump-backlog` | [L0](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md) | Deprecated | Walk the legacy `backlog:` directory and print an effort tree. |
+| `update-backlog` | [L1](kb/019fbe0d-c000-7d11-86f2-8f90f227163a.md) | Current | Regenerate the configured backlog memo from bridge KB effort docs. |
 | `whoami` | [L1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md) | Current | Print the bridge pilot identity nosedive will use. |
 | `add-repo` | [L1](kb/019fadf5-e094-7176-afd0-94532d2bb149.md) | Current | Add a kb repo to an effort's repo list. |
 | `hydrate-repo.workspace` | [L1](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md) | Current | Hydrate one repo worktree from kb `kind: repo` metadata. |

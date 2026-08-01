@@ -1016,6 +1016,7 @@ nosedive-pilot-email: contract@example.invalid
 		["render", /Usage: nosedive render <uuid>/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
 		["dump-backlog", /Usage: nosedive dump-backlog$/m],
+		["update-backlog", /Usage: nosedive update-backlog/],
 		["list-dives", /Usage: nosedive list-dives <effort>/],
 		["pitch", /Usage: nosedive pitch <slug>/],
 		["add-repo", /Usage: nosedive add-repo <repo-id-or-name>/],
@@ -3577,6 +3578,47 @@ Child body.
 			`  - [Main Effort Title](${childEffortId}.md): Child gist`,
 			"",
 		].join("\n"),
+	);
+	const betaEffortId = "00000000-0000-7000-8000-000000000555";
+	write(
+		join(backlogBridge, "kb", `${betaEffortId}.md`),
+		`---
+kind: effort
+id: ${betaEffortId}
+name: beta
+gist: Beta gist
+---
+
+# Beta
+
+Beta body.
+`,
+	);
+	write(
+		join(backlogBridge, "kb", `${backlogMemoId}.md`),
+		`---
+kind: memo
+id: ${backlogMemoId}
+name: backlog.backlog-bridge
+gist: Current backlog for backlog-bridge.
+---
+
+# Stale
+`,
+	);
+	const updateBacklog = run(["update-backlog"], backlogBridge);
+	assertOk(updateBacklog, "update-backlog failed");
+	assert.match(updateBacklog.stdout, new RegExp(`Updated backlog memo: kb/${backlogMemoId}\\.md`));
+	const updatedBacklogMemo = readFileSync(join(backlogBridge, "kb", `${backlogMemoId}.md`), "utf8");
+	assert.match(updatedBacklogMemo, new RegExp(`kb/${betaEffortId}\\.md:\\n      rel: main-effort`));
+	assert.match(updatedBacklogMemo, new RegExp(`- \\[Beta\\]\\(${betaEffortId}\\.md\\): Beta gist`));
+	assert.match(updatedBacklogMemo, /### Gogglebox/);
+	assert.doesNotMatch(updatedBacklogMemo, /# Stale/);
+	const updatedDumpedBacklog = run(["dump-backlog"], backlogBridge);
+	assertOk(updatedDumpedBacklog, "dump-backlog after update-backlog failed");
+	assert.match(
+		updatedDumpedBacklog.stdout,
+		new RegExp(`- \\[Beta\\]\\(${betaEffortId}\\.md\\): Beta gist`),
 	);
 
 	// If backlog/ is absent, seed falls back to efforts/ and can mint the

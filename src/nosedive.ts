@@ -1472,6 +1472,166 @@ function dumpBacklogMemo(args: string[], io: CommandIo): void {
 	io.writeOut(parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body);
 }
 
+interface BacklogKbEffort {
+	doc: KbDoc;
+	title: string;
+	segments: string[];
+}
+
+interface BacklogKbDisplayNode {
+	slug: string;
+	effort?: BacklogKbEffort;
+	children: Map<string, BacklogKbDisplayNode>;
+}
+
+function firstMarkdownHeading(body: string, fallback: string): string {
+	const match = /^#\s+(.+?)\s*$/m.exec(body);
+	return match?.[1]?.trim() || fallback;
+}
+
+function posixRelPath(from: string, to: string): string {
+	return relative(from, to).replaceAll("\\", "/");
+}
+
+function effortDocTitle(doc: KbDoc, leafSlug: string): string {
+	const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), doc.path).body;
+	return firstMarkdownHeading(body, titleFromSlug(leafSlug));
+}
+
+function effortHasParentLink(doc: KbDoc): boolean {
+	return doc.links.some((link) => link.rel === "parent");
+}
+
+function loadBacklogKbEfforts(kbDocs: KbDoc[]): BacklogKbEffort[] {
+	return kbDocs
+		.filter((doc) => doc.kind === "effort")
+		.map((doc) => {
+			if (!doc.id) throw new Error(`effort doc is missing id: ${formatPath(doc.path)}`);
+			if (!uuidLike(doc.id)) throw new Error(`effort doc id is not UUID-shaped: ${doc.id}`);
+			if (!doc.name) throw new Error(`effort doc is missing name: ${formatPath(doc.path)}`);
+			const leafFirst = doc.name.split(".").filter(Boolean);
+			if (leafFirst.length === 0) {
+				throw new Error(`effort doc name has no readable slug chain: ${formatPath(doc.path)}`);
+			}
+			const segments = [...leafFirst].reverse();
+			return { doc, title: effortDocTitle(doc, leafFirst[0]!), segments };
+		})
+		.sort((a, b) => a.segments.join("/").localeCompare(b.segments.join("/")));
+}
+
+function insertBacklogKbEffort(root: BacklogKbDisplayNode, effort: BacklogKbEffort): void {
+	let node = root;
+	for (const slug of effort.segments) {
+		let child = node.children.get(slug);
+		if (!child) {
+			child = { slug, children: new Map() };
+			node.children.set(slug, child);
+		}
+		node = child;
+	}
+	if (node.effort) throw new Error(`duplicate effort name in kb: ${effort.doc.name}`);
+	node.effort = effort;
+}
+
+function appendBacklogKbEffortLine(lines: string[], effort: BacklogKbEffort, depth = 0): void {
+	const indent = "  ".repeat(depth);
+	const gist = effort.doc.gist ? `: ${effort.doc.gist}` : "";
+	lines.push(`${indent}- [${effort.title}](${basename(effort.doc.path)})${gist}`);
+}
+
+function sortedBacklogKbChildren(node: BacklogKbDisplayNode): BacklogKbDisplayNode[] {
+	return [...node.children.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+function appendBacklogKbDisplayNode(lines: string[], node: BacklogKbDisplayNode, depth = 0): void {
+	if (!node.effort && depth === 0) {
+		if (lines.at(-1) !== "") lines.push("");
+		lines.push(`### ${titleFromSlug(node.slug)}`, "");
+		for (const child of sortedBacklogKbChildren(node)) appendBacklogKbDisplayNode(lines, child, 0);
+		if (lines.at(-1) !== "") lines.push("");
+		return;
+	}
+
+	if (!node.effort) {
+		lines.push(`${"  ".repeat(depth)}- **${titleFromSlug(node.slug)}**`);
+		for (const child of sortedBacklogKbChildren(node))
+			appendBacklogKbDisplayNode(lines, child, depth + 1);
+		return;
+	}
+
+	appendBacklogKbEffortLine(lines, node.effort, depth);
+	for (const child of sortedBacklogKbChildren(node))
+		appendBacklogKbDisplayNode(lines, child, depth + 1);
+}
+
+function renderUpdatedBacklogMemo(
+	rc: NosediveRc,
+	memo: MarkdownDoc,
+	memoId: string,
+	kbDocs: KbDoc[],
+): string {
+	const efforts = loadBacklogKbEfforts(kbDocs);
+	const root: BacklogKbDisplayNode = { slug: "", children: new Map() };
+	for (const effort of efforts) insertBacklogKbEffort(root, effort);
+
+	const topEfforts = efforts.filter((effort) => !effortHasParentLink(effort.doc));
+	const links = topEfforts.map((effort) => ({
+		[posixRelPath(rc.bridgeDir, effort.doc.path)]: { rel: "main-effort" },
+	}));
+	const lines = ["# Backlog", "", "## Current efforts", ""];
+	if (efforts.length === 0) {
+		lines.push("No current efforts.");
+	} else {
+		for (const node of sortedBacklogKbChildren(root)) appendBacklogKbDisplayNode(lines, node);
+		while (lines.at(-1) === "") lines.pop();
+	}
+
+	const name = memo.fm.scalars.name || `backlog.${basename(rc.bridgeDir)}`;
+	const gist = memo.fm.scalars.gist || `Current backlog for ${basename(rc.bridgeDir)}.`;
+	return [
+		"---",
+		"kind: memo",
+		`id: ${memoId}`,
+		`name: ${quoteYamlString(name)}`,
+		`gist: ${quoteYamlString(gist)}`,
+		...(links.length > 0
+			? [
+					"links:",
+					...links.flatMap((link) => {
+						const [target, value] = Object.entries(link)[0]!;
+						return [`  - ${target}:`, `      rel: ${value.rel}`];
+					}),
+				]
+			: []),
+		"---",
+		"",
+		`${lines.join("\n")}\n`,
+	].join("\n");
+}
+
+function updateBacklog(args: string[], io: CommandIo): void {
+	if (args.length > 0) throw new Error(`unexpected update-backlog argument: ${args[0]}`);
+
+	const rc = readNosediveRc(process.cwd());
+	const memoId = rc.backlog;
+	if (!memoId) throw new Error("update-backlog requires a configured backlog memo id");
+	if (!uuidLike(memoId))
+		throw new Error(`update-backlog requires a UUID-shaped backlog memo id: ${memoId}`);
+	if (!rc.kbDir) throw new Error("update-backlog requires a configured kb directory");
+
+	const memoPath = join(rc.kbDir, `${memoId}.md`);
+	if (!existsSync(memoPath)) throw new Error(`bridge backlog memo not found: ${memoId}`);
+	if (!statSync(memoPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${memoId}`);
+	const memo = parseMarkdownDoc(readFileSync(memoPath, "utf8"), memoPath);
+	if (memo.fm.scalars.kind && memo.fm.scalars.kind !== "memo") {
+		throw new Error(`configured backlog doc must be kind: memo: ${memoId}`);
+	}
+
+	const content = renderUpdatedBacklogMemo(rc, memo, memoId, loadKbDocs(rc.kbDir, rc.bridgeDir));
+	writeFileAtomic(memoPath, content);
+	io.log(`Updated backlog memo: ${posixRelPath(rc.bridgeDir, memoPath)}`);
+}
+
 interface ListDivesOptions {
 	effortRef: string;
 	includeHistorical: boolean;
@@ -4887,6 +5047,7 @@ function builtinCommands(): Record<string, BuiltinCommand> {
 		whoami,
 		"dump-backlog": dumpBacklog,
 		"dump-backlog.memo": dumpBacklogMemo,
+		"update-backlog": updateBacklog,
 		"list-dives": listDives,
 		pitch,
 		"add-repo": addRepo,
@@ -4968,6 +5129,9 @@ async function runBuiltinCli(
 			break;
 		case "dump-backlog":
 			dumpBacklog(args, io);
+			break;
+		case "update-backlog":
+			updateBacklog(args, io);
 			break;
 		case "list-dives":
 			listDives(args, io);

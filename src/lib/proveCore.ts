@@ -13,10 +13,12 @@ import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
 	gitRun,
+	resolveRepoDoc,
 	runGit,
 	uuidLike,
 } from "./repoWorkspaceCore.js";
 import {
+	ensureReusableExistingTarget,
 	ProveOptions,
 	ensureRepoMarkerExcluded,
 	expectedWorktreePath,
@@ -55,6 +57,16 @@ export interface RepoContext {
 	id: string;
 	root: string;
 	resolve(path: string): string;
+}
+
+export function repoContextForRoot(repoDoc: KbDoc, root: string): RepoContext {
+	return {
+		id: repoDoc.id,
+		root,
+		resolve(path: string): string {
+			return resolveFrom(root, path);
+		},
+	};
 }
 
 export function parseProveArgs(args: string[]): ProveOptions {
@@ -252,16 +264,63 @@ export function requiredScopeForRepo(assertion: KbDoc, repoDoc: KbDoc): ScopeRef
 	return scope;
 }
 
+export function validateExistingProverRepo(
+	repoId: string,
+	scope: ScopeRef,
+	targetPath: string,
+	commit: string,
+): string[] {
+	const mergeBase = runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]);
+	if (mergeBase.status === 1) {
+		throw new Error(
+			`scoped repo ${repoId} at ${formatPath(targetPath)} cannot prove assertion pinned at ${commit}: pinned commit is not reachable from HEAD`,
+		);
+	}
+	if (mergeBase.status !== 0) {
+		const detail = mergeBase.stderr.trim() || mergeBase.stdout.trim() || "unknown git error";
+		throw new Error(
+			`failed to check pinned commit reachability for scoped repo ${repoId} at ${formatPath(targetPath)}: ${detail}`,
+		);
+	}
+
+	const warnings: string[] = [];
+	const head = gitRun(
+		targetPath,
+		["rev-parse", "HEAD"],
+		`failed to inspect HEAD for scoped repo ${repoId}`,
+	);
+	if (head !== commit) {
+		warnings.push(
+			`scoped repo ${repoId} at ${formatPath(targetPath)} is ahead of pinned commit ${commit}${scope.ref ? ` (${scope.ref})` : ""}; continuing`,
+		);
+	}
+
+	const status = gitOutput(targetPath, ["status", "--porcelain"]);
+	if (status === undefined) {
+		warnings.push(
+			`could not read dirty status for scoped repo ${repoId} at ${formatPath(targetPath)}; continuing`,
+		);
+	} else if (status.trim() !== "") {
+		warnings.push(`scoped repo ${repoId} at ${formatPath(targetPath)} is dirty; continuing`);
+	}
+
+	return warnings;
+}
+
 export function ensureProverRepoHydrated(
 	repoDoc: KbDoc,
 	assertion: KbDoc,
 	request: ProverHostRequest,
+	warnings: string[] = [],
 ): string {
 	if (!request.workspaceDir) throw new Error(".nosediverc is missing workspace");
 	const repoId = repoDoc.id;
 	const scope = requiredScopeForRepo(assertion, repoDoc);
 	const targetPath = expectedWorktreePath(repoDoc, request.bridgeDir);
 	ensureSafeTargetPath(repoId, targetPath, request.workspaceDir);
+	const sourcePath = ensureManagedRepoCache(repoDoc, request.bridgeDir);
+	const ref = scope.ref ?? repoDoc.repoBaseBranch ?? "main";
+	const commit = resolveRefCommit(sourcePath, repoId, ref);
 
 	if (existsSync(targetPath)) {
 		if (!statSync(targetPath).isDirectory()) {
@@ -269,7 +328,12 @@ export function ensureProverRepoHydrated(
 				`unsafe target path for repo ${repoId}: target exists but is not a directory: ${formatPath(targetPath)}`,
 			);
 		}
-		if (gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) return targetPath;
+		if (gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) {
+			ensureReusableExistingTarget(repoId, targetPath, sourcePath);
+			warnings.push(...validateExistingProverRepo(repoId, scope, targetPath, commit));
+			reconcilePushReadOnly(sourcePath, targetPath, scope.readOnly, repoId);
+			return targetPath;
+		}
 		if (!isDirEmpty(targetPath)) {
 			throw new Error(
 				`unsafe target path for repo ${repoId}: non-empty target is not a git worktree: ${formatPath(targetPath)}`,
@@ -277,9 +341,6 @@ export function ensureProverRepoHydrated(
 		}
 	}
 
-	const sourcePath = ensureManagedRepoCache(repoDoc, request.bridgeDir);
-	const ref = scope.ref ?? repoDoc.repoBaseBranch ?? "main";
-	const commit = resolveRefCommit(sourcePath, repoId, ref);
 	mkdirSync(dirname(targetPath), { recursive: true });
 	pruneStaleWorktrees(sourcePath, repoId);
 	gitRun(
@@ -298,16 +359,27 @@ export function materializeProverRepoContext(
 	assertion: KbDoc,
 	request: ProverHostRequest,
 	accessedRepos: Map<string, string>,
+	warnings: string[] = [],
 ): RepoContext {
-	const root = ensureProverRepoHydrated(repoDoc, assertion, request);
+	const root = ensureProverRepoHydrated(repoDoc, assertion, request, warnings);
 	accessedRepos.set(repoDoc.id, root);
-	return {
-		id: repoDoc.id,
-		root,
-		resolve(path: string): string {
-			return resolveFrom(root, path);
-		},
-	};
+	return repoContextForRoot(repoDoc, root);
+}
+
+export function prehydrateAssertionScopedRepos(
+	kbDocs: KbDoc[],
+	assertion: KbDoc,
+	request: ProverHostRequest,
+	accessedRepos: Map<string, string>,
+	warnings: string[],
+): void {
+	const seen = new Set<string>();
+	for (const scope of assertion.scopes) {
+		if (scope.repoId === "." || seen.has(scope.repoId)) continue;
+		seen.add(scope.repoId);
+		const repoDoc = resolveRepoDoc(kbDocs, scope.repoId);
+		materializeProverRepoContext(repoDoc, assertion, request, accessedRepos, warnings);
+	}
 }
 
 export function proofRepoInputs(

@@ -17,7 +17,9 @@ import {
 	findAssertionDoc,
 	formatExecCommand,
 	materializeProverRepoContext,
+	prehydrateAssertionScopedRepos,
 	proofRepoInputs,
+	repoContextForRoot,
 } from "./proveCore.js";
 import { cleanGitEnv, writeFileAtomic } from "./renderPlan.js";
 import { maybeResolveRepoDoc, resolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
@@ -26,7 +28,14 @@ export function createProverContext(request: ProverHostRequest) {
 	const kbDocs = loadKbDocs(request.kbDir, request.bridgeDir);
 	const assertion = findAssertionDoc(kbDocs, request.assertionId);
 	const accessedRepos = new Map<string, string>();
+	const warnings: string[] = [];
 	const sandboxes: string[] = [];
+
+	function contextForRepo(repoDoc: KbDoc): RepoContext {
+		const existingRoot = accessedRepos.get(repoDoc.id);
+		if (existingRoot) return repoContextForRoot(repoDoc, existingRoot);
+		return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos, warnings);
+	}
 
 	const ctx = {
 		assertion: {
@@ -46,11 +55,11 @@ export function createProverContext(request: ProverHostRequest) {
 			async get(repoRef: string): Promise<RepoContext | undefined> {
 				const repoDoc = maybeResolveRepoDoc(kbDocs, repoRef);
 				if (!repoDoc) return undefined;
-				return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos);
+				return contextForRepo(repoDoc);
 			},
 			async require(repoRef: string): Promise<RepoContext> {
 				const repoDoc = resolveRepoDoc(kbDocs, repoRef);
-				return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos);
+				return contextForRepo(repoDoc);
 			},
 		},
 		sandbox: {
@@ -138,6 +147,12 @@ export function createProverContext(request: ProverHostRequest) {
 
 	return {
 		ctx,
+		prehydrate(): void {
+			prehydrateAssertionScopedRepos(kbDocs, assertion, request, accessedRepos, warnings);
+		},
+		warnings(): string[] {
+			return warnings;
+		},
 		inputs(): Record<string, ProverHostRepoInput> {
 			return proofRepoInputs(accessedRepos);
 		},
@@ -158,6 +173,8 @@ export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 	let error: string | undefined;
 
 	try {
+		session.prehydrate();
+		for (const warning of session.warnings()) io.err(`WARNING: ${warning}`);
 		io.log(
 			request.verbose
 				? `Proving: ${request.assertionName} (${request.assertionId})`

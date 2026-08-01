@@ -232,7 +232,11 @@ try {
 
 	const proofBridge = join(tmp, "proof-bridge");
 	const proofSource = join(tmp, "proof-source");
+	const prehydrateSource = join(tmp, "prehydrate-source");
+	const unreachableSource = join(tmp, "unreachable-source");
 	const proofRepoId = "019fa101-0000-7000-8000-000000000001";
+	const prehydrateRepoId = "019fa101-0000-7000-8000-000000000002";
+	const unreachableRepoId = "019fa101-0000-7000-8000-000000000003";
 	const proofAssertionId = "019fa101-0000-7000-8000-000000000010";
 	const proofProverId = "019fa101-0000-7000-8000-000000000020";
 	const missingCwdAssertionId = "019fa101-0000-7000-8000-000000000011";
@@ -240,12 +244,20 @@ try {
 	const outOfScopeAssertionId = "019fa101-0000-7000-8000-000000000012";
 	const outOfScopeProverId = "019fa101-0000-7000-8000-000000000022";
 	const bareUuidProverAssertionId = "019fa101-0000-7000-8000-000000000013";
+	const prehydrateAssertionId = "019fa101-0000-7000-8000-000000000014";
+	const prehydrateProverId = "019fa101-0000-7000-8000-000000000024";
+	const unreachableAssertionId = "019fa101-0000-7000-8000-000000000015";
+	const unreachableProverId = "019fa101-0000-7000-8000-000000000025";
 	const proofAssertionGist =
 		"Proof runner executes a bridge-owned prover while keeping this intentionally long assertion gist on one YAML frontmatter line after recording proof metadata.";
 	mkdirSync(join(proofBridge, "kb", "artifacts"), { recursive: true });
 	mkdirSync(proofSource, { recursive: true });
+	mkdirSync(prehydrateSource, { recursive: true });
+	mkdirSync(unreachableSource, { recursive: true });
 	runTool("git", ["init", "-b", "main"], proofBridge);
 	runTool("git", ["init", "-b", "main"], proofSource);
+	runTool("git", ["init", "-b", "main"], prehydrateSource);
+	runTool("git", ["init", "-b", "main"], unreachableSource);
 	write(join(proofSource, "file.txt"), "proof input\n");
 	runTool("git", ["add", "file.txt"], proofSource);
 	runTool(
@@ -262,6 +274,38 @@ try {
 		proofSource,
 	);
 	const proofCommit = runTool("git", ["rev-parse", "HEAD"], proofSource).stdout.trim();
+	write(join(prehydrateSource, "file.txt"), "prehydrated input\n");
+	runTool("git", ["add", "file.txt"], prehydrateSource);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"prehydrated input",
+		],
+		prehydrateSource,
+	);
+	const prehydrateCommit = runTool("git", ["rev-parse", "HEAD"], prehydrateSource).stdout.trim();
+	write(join(unreachableSource, "file.txt"), "reachable pinned input\n");
+	runTool("git", ["add", "file.txt"], unreachableSource);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"reachable pinned input",
+		],
+		unreachableSource,
+	);
+	const unreachableCommit = runTool("git", ["rev-parse", "HEAD"], unreachableSource).stdout.trim();
 	write(
 		join(proofBridge, ".nosediverc"),
 		`workspace: ./workspace
@@ -282,6 +326,34 @@ meta:
   path: workspace/proof-target
   remotes:
     local: "${proofSource.replaceAll("\\", "/")}"
+---
+`,
+	);
+	write(
+		join(proofBridge, "kb", "prehydrate-repo.md"),
+		`---
+kind: repo
+id: ${prehydrateRepoId}
+name: prehydrate-target
+gist: "Prehydrated proof target repo"
+meta:
+  path: workspace/prehydrated-target
+  remotes:
+    local: "${prehydrateSource.replaceAll("\\", "/")}"
+---
+`,
+	);
+	write(
+		join(proofBridge, "kb", "unreachable-repo.md"),
+		`---
+kind: repo
+id: ${unreachableRepoId}
+name: unreachable-target
+gist: "Unreachable proof target repo"
+meta:
+  path: workspace/unreachable-target
+  remotes:
+    local: "${unreachableSource.replaceAll("\\", "/")}"
 ---
 `,
 	);
@@ -324,6 +396,60 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
   const hook = await ctx.fs.readText(hookPath);
   ctx.assert.equal(hook, expectedHook);
   ctx.log("direct cli preflight succeeded");
+}
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${prehydrateAssertionId}.md`),
+		`---
+kind: assertion
+id: ${prehydrateAssertionId}
+name: proof-runner-prehydrates-scoped-repos
+gist: "Proof runner hydrates assertion-scoped repos before invoking the prover artifact."
+scopes:
+  - ${prehydrateRepoId}:
+      mode: ro
+      ref: ${prehydrateCommit}
+links:
+  - kb/artifacts/${prehydrateProverId}.mjs:
+      rel: prover
+---
+
+# Prehydrate assertion
+`,
+	);
+	write(
+		join(proofBridge, "kb", "artifacts", `${prehydrateProverId}.mjs`),
+		`export async function prove(ctx) {
+  const input = await ctx.fs.readText(ctx.bridge.resolve("workspace/prehydrated-target/file.txt"));
+  ctx.assert.match(input, /prehydrated input/);
+  ctx.log("artifact saw prehydrated scoped repo");
+}
+`,
+	);
+	write(
+		join(proofBridge, "kb", `${unreachableAssertionId}.md`),
+		`---
+kind: assertion
+id: ${unreachableAssertionId}
+name: proof-runner-rejects-unreachable-existing-scope
+gist: "Proof runner rejects an existing scoped repo checkout that cannot reach the assertion pin."
+scopes:
+  - ${unreachableRepoId}:
+      mode: ro
+      ref: ${unreachableCommit}
+links:
+  - kb/artifacts/${unreachableProverId}.mjs:
+      rel: prover
+---
+
+# Unreachable pin assertion
+`,
+	);
+	write(
+		join(proofBridge, "kb", "artifacts", `${unreachableProverId}.mjs`),
+		`export async function prove(ctx) {
+  ctx.log("unreachable artifact should not run");
 }
 `,
 	);
@@ -416,6 +542,44 @@ links:
 		"non-recorded proof should not edit the assertion",
 	);
 
+	const prehydrateRun = run(["prove", prehydrateAssertionId], proofBridge);
+	assertOk(prehydrateRun, "prove should prehydrate scoped repos before artifact execution");
+	assert.match(prehydrateRun.stdout, /artifact saw prehydrated scoped repo/);
+	assert.equal(
+		existsSync(join(proofBridge, "workspace", "prehydrated-target", ".git")),
+		true,
+		"scoped repo should be hydrated even when the prover never requests it",
+	);
+
+	const unreachableInitialRun = run(["prove", unreachableAssertionId], proofBridge);
+	assertOk(unreachableInitialRun, "unreachable fixture initial hydration failed");
+	const unreachableTarget = join(proofBridge, "workspace", "unreachable-target");
+	runTool("git", ["checkout", "--orphan", "unrelated-proof"], unreachableTarget);
+	runTool("git", ["rm", "-r", "--force", "--quiet", "."], unreachableTarget);
+	write(join(unreachableTarget, "unrelated.txt"), "unrelated\n");
+	runTool("git", ["add", "-A"], unreachableTarget);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"unrelated proof head",
+		],
+		unreachableTarget,
+	);
+	const unreachableProof = run(["prove", unreachableAssertionId], proofBridge);
+	assert.notEqual(
+		unreachableProof.status,
+		0,
+		"unreachable existing scoped repo unexpectedly passed",
+	);
+	assert.match(unreachableProof.stderr, /pinned commit is not reachable from HEAD/);
+	assert.doesNotMatch(unreachableProof.stdout, /unreachable artifact should not run/);
+
 	const verboseProofRun = run(["prove", proofAssertionId, "--verbose"], proofBridge);
 	assertOk(verboseProofRun, "prove --verbose direct CLI assertion failed");
 	assert.match(
@@ -462,9 +626,29 @@ links:
 	assert.match(dirtyProverRecord.stderr, /prover has uncommitted changes/);
 	write(proofProverPath, originalProver);
 
+	write(join(proofBridge, "workspace", "proof-target", "ahead.txt"), "ahead\n");
+	runTool("git", ["add", "ahead.txt"], join(proofBridge, "workspace", "proof-target"));
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"-m",
+			"ahead proof target",
+		],
+		join(proofBridge, "workspace", "proof-target"),
+	);
+	const aheadProof = run(["prove", proofAssertionId], proofBridge);
+	assertOk(aheadProof, "non-recorded proof should allow scoped repos ahead of the pin");
+	assert.match(aheadProof.stderr, /WARNING: scoped repo .* is ahead of pinned commit/);
+
 	write(join(proofBridge, "workspace", "proof-target", "dirty.txt"), "dirty\n");
 	const dirtyExperimentalProof = run(["prove", proofAssertionId], proofBridge);
 	assertOk(dirtyExperimentalProof, "non-recorded proof should allow dirty accessed repos");
+	assert.match(dirtyExperimentalProof.stderr, /WARNING: scoped repo .* is dirty; continuing/);
 	const dirtyRecordedProof = run(["prove", proofAssertionId, "--record"], proofBridge);
 	assert.notEqual(dirtyRecordedProof.status, 0, "dirty recorded proof unexpectedly succeeded");
 	assert.match(

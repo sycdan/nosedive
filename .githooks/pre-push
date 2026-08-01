@@ -3,6 +3,20 @@
 # Bypass a one-off with `git push --no-verify`.
 set -e
 
+if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+	echo "pre-push: working tree is dirty; commit or stash changes before pushing."
+	git status --short
+	exit 1
+fi
+
+echo "pre-push: regenerate command surface"
+npm run commands:surface
+if ! git diff --quiet -- README.md; then
+	echo "pre-push: README.md command surface was stale; review and commit the regenerated README."
+	git diff -- README.md
+	exit 1
+fi
+
 echo "pre-push: format check + typecheck + build + test"
 npm run format:check
 npm run typecheck

@@ -289,7 +289,7 @@ scopes:
       mode: ro
       ref: ${proofCommit}
 links:
-  - artifacts/${proofProverId}.mjs:
+  - kb/artifacts/${proofProverId}.mjs:
       rel: prover
 meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
 ---
@@ -326,7 +326,7 @@ id: ${missingCwdAssertionId}
 name: proof-runner-requires-explicit-cwd
 gist: "Proof runner rejects ambient cwd use."
 links:
-  - artifacts/${missingCwdProverId}.mjs:
+  - kb/artifacts/${missingCwdProverId}.mjs:
       rel: prover
 ---
 
@@ -348,7 +348,7 @@ id: ${outOfScopeAssertionId}
 name: proof-runner-rejects-out-of-scope-repo
 gist: "Proof runner rejects repo access not named by assertion scopes."
 links:
-  - artifacts/${outOfScopeProverId}.mjs:
+  - kb/artifacts/${outOfScopeProverId}.mjs:
       rel: prover
 ---
 
@@ -485,7 +485,7 @@ links:
 
 	const bareUuidProverProof = run(["prove", bareUuidProverAssertionId], proofBridge);
 	assert.notEqual(bareUuidProverProof.status, 0, "bare UUID prover link unexpectedly succeeded");
-	assert.match(bareUuidProverProof.stderr, /bare UUID links refer to KB markdown docs/);
+	assert.match(bareUuidProverProof.stderr, /repo-root relative path, not a bare UUID/);
 
 	const preflightBridge = join(tmp, "preflight-bridge");
 	mkdirSync(preflightBridge, { recursive: true });
@@ -1134,7 +1134,7 @@ nosedive-pilot-email: contract@example.invalid
 		}
 	}
 
-	// whoami has no level-0 command doc, so a legacy bridge stays on the builtin.
+	// whoami@0 preserves the legacy output shape for compatibility-level 0 bridges.
 	const legacyRouteBridge = join(tmp, "legacy-route-bridge");
 	mkdirSync(legacyRouteBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], legacyRouteBridge);
@@ -1149,7 +1149,7 @@ nosedive-pilot-email: contract@example.invalid
 	assert.match(
 		legacyWhoami.stdout,
 		/^pilot-name: Legacy Pilot$/m,
-		"legacy level-0 bridge should use the builtin whoami, not whoami@1",
+		"legacy level-0 bridge should use whoami@0, not whoami@1",
 	);
 	assert.doesNotMatch(legacyWhoami.stdout, /nosedive-pilot-name/);
 
@@ -3520,8 +3520,8 @@ Child body.
 	assert.equal(topEffort[0], `${topEffortId}.md`);
 	assert.match(topEffort[1], /^gist: Main gist$/m);
 	assert.match(topEffort[1], new RegExp(`\\nscopes:\\n  - ${effortRepoId}\\n`));
-	assert.match(topEffort[1], new RegExp(`${relatedEffortId}:\\n      rel: related`));
-	assert.match(topEffort[1], new RegExp(`${childEffortId}:\\n      rel: child`));
+	assert.match(topEffort[1], new RegExp(`kb/${relatedEffortId}\\.md:\\n      rel: related`));
+	assert.match(topEffort[1], new RegExp(`kb/${childEffortId}\\.md:\\n      rel: child`));
 	assert.match(topEffort[1], /meta:\n  priority: high/);
 
 	const goggleboxEffort = kbTexts.find(
@@ -3538,7 +3538,7 @@ Child body.
 	assert.match(childDoc, /^name: main-effort\.project$/m);
 	assert.match(childDoc, /^gist: Child gist$/m);
 	assert.match(childDoc, new RegExp(`\\nscopes:\\n  - ${effortRepoId}\\n`));
-	assert.match(childDoc, new RegExp(`${topEffortId}:\\n      rel: parent`));
+	assert.match(childDoc, new RegExp(`kb/${topEffortId}\\.md:\\n      rel: parent`));
 	assert.match(childDoc, /meta:\n  name: Stale Name\n  owner: dana/);
 
 	const backlogMemo = readFileSync(join(backlogBridge, "kb", `${backlogMemoId}.md`), "utf8");

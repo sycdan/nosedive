@@ -6,12 +6,17 @@ import YAML from "yaml";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const kbDir = join(root, "kb");
-const sourceText = readFileSync(join(root, "src", "lib", "commands.ts"), "utf8");
-const currentLevelMatch = /\bconst CURRENT_COMPATIBILITY_LEVEL = ([0-9]+);/.exec(sourceText);
+const libDir = join(root, "src", "lib");
+const legacyCommandPath = join(libDir, "legacyCommand.ts");
+const currentLevelMatch = readdirSync(libDir)
+	.filter((filename) => filename.endsWith(".ts"))
+	.map((filename) => readFileSync(join(libDir, filename), "utf8"))
+	.map((sourceText) => /\bexport const CURRENT_COMPATIBILITY_LEVEL = ([0-9]+);/.exec(sourceText))
+	.find(Boolean);
 const projectRef = frontmatterish(readFileSync(join(root, ".nosedive-ref"), "utf8"));
 
 if (!currentLevelMatch) {
-	throw new Error("could not read CURRENT_COMPATIBILITY_LEVEL from src/lib/commands.ts");
+	throw new Error("could not read CURRENT_COMPATIBILITY_LEVEL from src/lib");
 }
 
 const currentLevel = Number.parseInt(currentLevelMatch[1], 10);
@@ -19,6 +24,27 @@ const failures = [];
 
 function fail(message) {
 	failures.push(message);
+}
+
+if (existsSync(legacyCommandPath)) {
+	fail("src/lib/legacyCommand.ts must not exist; legacy routes should be explicit command docs");
+}
+
+function tsSourceFiles(dir) {
+	const files = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...tsSourceFiles(path));
+			continue;
+		}
+		if (entry.isFile() && entry.name.endsWith(".ts")) files.push(path);
+	}
+	return files;
+}
+
+function lineCount(text) {
+	return text.split(/\r?\n/).length;
 }
 
 function frontmatterish(text) {
@@ -65,6 +91,30 @@ function commandDocId(command, level) {
 	return namespacedUuid(projectRef.id ?? "", `command:${command}@${level}`);
 }
 
+function kbDocIdFromTarget(target) {
+	const match = /^kb\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i.exec(
+		target,
+	);
+	return match?.[1]?.toLowerCase();
+}
+
+function linkEntries(rawLinks) {
+	const links = Array.isArray(rawLinks) ? rawLinks : [];
+	const entries = [];
+	for (const link of links) {
+		if (typeof link === "string") {
+			entries.push({ target: link, value: undefined });
+			continue;
+		}
+		if (!link || typeof link !== "object" || Array.isArray(link)) continue;
+		const linkEntries = Object.entries(link);
+		if (linkEntries.length !== 1) continue;
+		const [target, value] = linkEntries[0];
+		entries.push({ target, value });
+	}
+	return entries;
+}
+
 function frontmatter(text, label) {
 	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
 	if (!match) return undefined;
@@ -87,17 +137,37 @@ function parseLevel(value, label) {
 }
 
 function deprecatedByMigrationIds(doc) {
-	const links = Array.isArray(doc.raw.links) ? doc.raw.links : [];
 	const ids = [];
-	for (const link of links) {
-		if (!link || typeof link !== "object" || Array.isArray(link)) continue;
-		const entries = Object.entries(link);
-		if (entries.length !== 1) continue;
-		const [id, value] = entries[0];
+	for (const { target, value } of linkEntries(doc.raw.links)) {
 		if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-		if (value.rel === "deprecated-by") ids.push(id);
+		if (value.rel === "deprecated-by") {
+			const id = kbDocIdFromTarget(target);
+			if (id) ids.push(id);
+		}
 	}
 	return ids;
+}
+
+function validatePackageLinks(raw, filename) {
+	for (const { target } of linkEntries(raw.links)) {
+		const targetPath = String(target ?? "").split("#")[0];
+		if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetPath)) {
+			fail(`${filename} links must use repo-root file paths, not bare UUIDs: ${targetPath}`);
+			continue;
+		}
+		if (
+			!targetPath ||
+			targetPath.includes("\\") ||
+			targetPath.split("/").some((part) => part === "" || part === "..") ||
+			!targetPath.startsWith("kb/")
+		) {
+			fail(`${filename} link target must be a safe repo-root kb/ path: ${target}`);
+			continue;
+		}
+		if (!existsSync(join(root, targetPath))) {
+			fail(`${filename} link target does not exist: ${targetPath}`);
+		}
+	}
 }
 
 function commandFrontmatterOrder(text, filename) {
@@ -135,6 +205,7 @@ for (const filename of readdirSync(kbDir)
 	const text = readFileSync(path, "utf8");
 	const raw = frontmatter(text, filename);
 	if (!raw || raw.kind === undefined) continue;
+	validatePackageLinks(raw, filename);
 
 	if (raw.kind === "command") {
 		commandFrontmatterOrder(text, filename);
@@ -162,6 +233,9 @@ for (const filename of readdirSync(kbDir)
 				}
 				if (/\bctx\.invoke\s*\(/.test(handlerText)) {
 					fail(`${filename} handler must call ctx.impl, not ctx.invoke: ${raw.meta.handler}`);
+				}
+				if (/\bctx\.impl\.i[0-9a-f]{32}\s*\(/.test(handlerText)) {
+					fail(`${filename} handler must use a semantic ctx.impl alias, not a raw impl id`);
 				}
 			}
 		}
@@ -261,6 +335,15 @@ for (const doc of commandDocs
 
 	if (!hasValidBoundary) {
 		fail(`${doc.name} has no valid rel=deprecated-by migration boundary`);
+	}
+}
+
+for (const path of tsSourceFiles(join(root, "src"))) {
+	const lines = lineCount(readFileSync(path, "utf8"));
+	if (lines > 500) {
+		fail(
+			`${path.slice(root.length + 1)} has ${lines} lines; source files must stay at 500 or fewer`,
+		);
 	}
 }
 

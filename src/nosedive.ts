@@ -1,18 +1,14 @@
-import { createRequire } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+import { isAbsolute, join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
+import type { ImplCommandOutput } from "./impl/types.js";
 import {
-	CURRENT_COMPATIBILITY_LEVEL,
-	type CapturedCommandOutput,
-	type CommandIo,
-	type KbDoc,
-	type LinkRef,
-	type ScopeRef,
 	bridgeCompatibilityLevel,
 	createCapturingIo,
 	createConsoleIo,
+	CURRENT_COMPATIBILITY_LEVEL,
 	formatPath,
 	isInsideDir,
 	packageDocsOfKind,
@@ -20,13 +16,13 @@ import {
 	parseLinkRefs,
 	parseMarkdownDoc,
 	parseScopeRefs,
-	proveHost,
 	readNosediveRc,
 	resolveFrom,
-	runLegacyCommand,
 	setCommandHelpPrinter,
 	unsafeLinkPath,
 	writeNosediveRcCurrent,
+	type CommandIo,
+	type KbDoc,
 } from "./lib/commands.js";
 import { lib, namespacedUuid, type CommandLibRegistry } from "./lib/index.js";
 
@@ -77,6 +73,8 @@ interface ContractRunOutput {
 	exitCode: number;
 }
 
+type CommandImpl = (args: string[]) => ImplCommandOutput | Promise<ImplCommandOutput>;
+
 function packageProjectId(): string {
 	const refPath = join(packageRoot(), ".nosedive-ref");
 	const match = /^id:\s*(\S+)\s*$/m.exec(readFileSync(refPath, "utf8"));
@@ -87,6 +85,10 @@ function packageProjectId(): string {
 
 function commandDocId(command: string, compatibilityLevel: number): string {
 	return namespacedUuid(packageProjectId(), `command:${command}@${compatibilityLevel}`);
+}
+
+function commandImplId(command: string): string {
+	return `i${namespacedUuid(packageProjectId(), `command:${command}`).replaceAll("-", "")}`;
 }
 
 function parseCommandToken(command: string | undefined): ParsedCommand | undefined {
@@ -362,21 +364,41 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 	return true;
 }
 
+function writeImplOutput(result: ImplCommandOutput, io: CommandIo): void {
+	if (result.stdout) io.writeOut(result.stdout);
+	if (result.stderr) io.writeErr(result.stderr);
+	if (result.exitCode !== 0) io.setExitCode(result.exitCode);
+}
+
+async function maybeRunDirectImplCommand(
+	parsed: ParsedCommand,
+	args: string[],
+	io: CommandIo,
+): Promise<boolean> {
+	if (parsed.explicitCompatibilityLevel !== undefined) return false;
+	const registry = createImplRegistry({ cwd: process.cwd() });
+	const impl = (registry as Record<string, CommandImpl | undefined>)[commandImplId(parsed.name)];
+	if (!impl) return false;
+	writeImplOutput(await impl(args), io);
+	return true;
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 	const [rawCommand, ...args] = argv;
 	const parsedCommand = parseCommandToken(rawCommand);
-	if (parsedCommand && (await maybeRunContractCommand(parsedCommand, args))) return;
 	const command = parsedCommand?.name;
 
 	const io = createConsoleIo();
 	try {
-		await runBuiltinCli(command, args, io);
+		if (parsedCommand && (await maybeRunDirectImplCommand(parsedCommand, args, io))) return;
+		if (parsedCommand && (await maybeRunContractCommand(parsedCommand, args))) return;
+		await runCoreCli(command, args, io);
 	} finally {
 		io.close();
 	}
 }
 
-async function runBuiltinCli(
+async function runCoreCli(
 	command: string | undefined,
 	args: string[],
 	io: CommandIo,
@@ -393,9 +415,6 @@ async function runBuiltinCli(
 		case "-v":
 			io.log(version);
 			break;
-		case "__prove-host":
-			await proveHost(args);
-			break;
 		case undefined:
 		case "help":
 		case "--help":
@@ -403,7 +422,6 @@ async function runBuiltinCli(
 			io.log(renderTopLevelHelpText());
 			break;
 		default:
-			if (command !== undefined && (await runLegacyCommand(command, args, io))) return;
 			io.err(`Unknown command: ${command}\n\n${renderTopLevelHelpText()}`);
 			process.exit(1);
 	}

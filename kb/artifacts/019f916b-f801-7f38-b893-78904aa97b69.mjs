@@ -239,13 +239,13 @@ function parseLinks(rawLinks, label) {
 	if (!Array.isArray(rawLinks)) throw new Error(`invalid links in ${label}: expected a YAML list`);
 	return rawLinks.map((link, index) => {
 		const itemLabel = `${label} links[${index}]`;
-		if (typeof link === "string") return { id: link.trim() };
+		if (typeof link === "string") return { id: linkIdFromTarget(link.trim()) };
 		if (!link || typeof link !== "object" || Array.isArray(link)) {
 			throw new Error(`invalid link entry in ${itemLabel}: expected bare id or one-key object`);
 		}
 		const keys = Object.keys(link);
 		if (keys.length !== 1) throw new Error(`invalid link entry in ${itemLabel}: expected one id key`);
-		const id = keys[0].trim();
+		const id = linkIdFromTarget(keys[0].trim());
 		const value = link[keys[0]];
 		if (value === null || value === undefined) return { id };
 		if (typeof value !== "object" || Array.isArray(value)) {
@@ -257,6 +257,13 @@ function parseLinks(rawLinks, label) {
 			anchor: scalarString(value.anchor)?.trim(),
 		};
 	});
+}
+
+function linkIdFromTarget(target) {
+	const match = /^kb\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i.exec(
+		target,
+	);
+	return match?.[1]?.toLowerCase() ?? target;
 }
 
 function mergeLinks(...groups) {
@@ -273,11 +280,12 @@ function mergeLinks(...groups) {
 }
 
 function linkToYaml(link) {
-	if (!link.rel && !link.anchor) return link.id;
+	const target = uuidLike(link.id) ? `kb/${link.id}.md` : link.id;
+	if (!link.rel && !link.anchor) return target;
 	const value = {};
 	if (link.rel) value.rel = link.rel;
 	if (link.anchor) value.anchor = link.anchor;
-	return { [link.id]: value };
+	return { [target]: value };
 }
 
 function loadMigrationKbDocs(kbDir) {

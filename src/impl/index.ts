@@ -14,7 +14,9 @@ import { run as i019fbda61874795ea8c14dc2dc0a3e3b } from "./i019fbda61874795ea8c
 import { run as i019fbda618757f8381ba00575878a87f } from "./i019fbda618757f8381ba00575878a87f.js";
 import { run as i019fbda6187678a79beafaf5f94cdd72 } from "./i019fbda6187678a79beafaf5f94cdd72.js";
 import { run as i019fbda6187770f09924b02b85e819bb } from "./i019fbda6187770f09924b02b85e819bb.js";
+import { run as i019fbdccdb537919890a6e5a109f5016 } from "./i019fbdccdb537919890a6e5a109f5016.js";
 import { run as i019fbe0dc0027cd9994862a51e6ed74d } from "./i019fbe0dc0027cd9994862a51e6ed74d.js";
+import { run as i2c926c4a039d58d09c0985cb14cbc706 } from "./i2c926c4a039d58d09c0985cb14cbc706.js";
 import type { ImplRuntime } from "./types.js";
 
 export function createImplRegistry(runtime: ImplRuntime) {
@@ -53,6 +55,28 @@ export function createImplRegistry(runtime: ImplRuntime) {
 			i019fbda6187770f09924b02b85e819bb(args, runtime),
 		i019fbe0dc0027cd9994862a51e6ed74d: (args: string[]) =>
 			i019fbe0dc0027cd9994862a51e6ed74d(args, runtime),
+		i2c926c4a039d58d09c0985cb14cbc706: (args: string[]) =>
+			i2c926c4a039d58d09c0985cb14cbc706(args, runtime),
+		apply__deprecatedL0: (args: string[]) => i019fbda6186b7fea985679b24b936fb3(args, runtime),
+		backlog__dumpMemoL1: (args: string[]) => i019fbda618757f8381ba00575878a87f(args, runtime),
+		backlog__dumpTreeL0: (args: string[]) => i019fbda6186e721bb1aa70c10306da4b(args, runtime),
+		backlog__updateMemoL1: (args: string[]) => i019fbda6187678a79beafaf5f94cdd72(args, runtime),
+		bridge__nukeConfigL1: (args: string[]) => i019fbda6186a7715a90bae871ababa12(args, runtime),
+		bridge__preflightL1: (args: string[]) => i019fbda61874795ea8c14dc2dc0a3e3b(args, runtime),
+		bridge__prePushHookL1: (args: string[]) => i019fbda6186d7daf88fd6d63729944c0(args, runtime),
+		bridge__seedL1: (args: string[]) => i019fbda618697f89966cb17124c03a11(args, runtime),
+		core__mintUuid7L1: (args: string[]) => i019fbe0dc0027cd9994862a51e6ed74d(args, runtime),
+		dive__listL1: (args: string[]) => i019fbda6187075c58b67f7f408af2718(args, runtime),
+		effort__pitchL1: (args: string[]) => i019fbda6187770f09924b02b85e819bb(args, runtime),
+		identity__whoamiL0: (args: string[]) => i019fbdccdb537919890a6e5a109f5016(args, runtime),
+		identity__whoamiL1: (args: string[]) => i019fbda6186f7098ae70cad6c42ca4d5(args, runtime),
+		package__renderDocL1: (args: string[]) => i019fbda6186c72d9ade992daf8bf44e7(args, runtime),
+		proof__proveAssertionL1: (args: string[]) => i019fbda618717a58b4ce9afa78abdf86(args, runtime),
+		repo__addToEffortL1: (args: string[]) => i019fbda618737f89ac5ead2ad38ad2f3(args, runtime),
+		workspace__dehydrateRepoL1: (args: string[]) =>
+			i019fbda6186870619a157da3d6362956(args, runtime),
+		workspace__hydrateRepoL1: (args: string[]) => i019fbda61872778a961977b23f2fa89e(args, runtime),
+		__proveHost: (args: string[]) => i2c926c4a039d58d09c0985cb14cbc706(args, runtime),
 	} as const;
 }
 

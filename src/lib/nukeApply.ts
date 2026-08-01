@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { mintUuid7Lines } from "./uuid7.js";
 
@@ -11,6 +11,7 @@ import {
 	legacyConfigPath,
 	localConfigPath,
 	noBridgeConfigError,
+	readNosediveRc,
 } from "./coreParsing.js";
 import {
 	CONFIG_EXCLUDE_SPEC,
@@ -28,6 +29,17 @@ import {
 	writeAgentFiles,
 	writeFileAtomic,
 } from "./renderPlan.js";
+import {
+	ensureSafeTargetPath,
+	gitRun,
+	parseRepoMarkerStrict,
+	realpathStable,
+} from "./repoWorkspaceCore.js";
+import {
+	gitWorktreeEntries,
+	markerPathForTarget,
+	removeHydratedWorktree,
+} from "./repoWorktrees.js";
 
 export function managedExcludeEntries(text: string, spec: ManagedExcludeSpec): string[] {
 	const entries: string[] = [];
@@ -96,13 +108,109 @@ export function nukeConfig(io: CommandIo): void {
 	}
 }
 
+function sameStablePath(left: string, right: string): boolean {
+	return realpathStable(left) === realpathStable(right);
+}
+
+function ensureNoRegisteredWorktreeAtPath(
+	sourcePath: string,
+	repoId: string,
+	targetPath: string,
+): void {
+	let entries = gitWorktreeEntries(sourcePath, repoId).filter((entry) =>
+		sameStablePath(entry.path, targetPath),
+	);
+	if (entries.length === 0) return;
+
+	gitRun(
+		sourcePath,
+		["worktree", "prune"],
+		`failed to prune stale worktrees for repo ${repoId} at ${formatPath(sourcePath)}`,
+	);
+	entries = gitWorktreeEntries(sourcePath, repoId).filter((entry) =>
+		sameStablePath(entry.path, targetPath),
+	);
+	if (entries.length === 0) return;
+
+	throw new Error(
+		`failed to remove worktree registration for repo ${repoId} at ${formatPath(targetPath)}`,
+	);
+}
+
+function removeWorkspaceManagedRepo(repoId: string, targetPath: string): void {
+	const commonDirRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
+	if (!commonDirRaw) {
+		rmSync(targetPath, { recursive: true, force: true });
+		return;
+	}
+
+	const sourcePath = isAbsolute(commonDirRaw) ? commonDirRaw : resolve(targetPath, commonDirRaw);
+	removeHydratedWorktree(repoId, targetPath, true);
+	ensureNoRegisteredWorktreeAtPath(sourcePath, repoId, targetPath);
+}
+
+export function nukeWorkspace(io: CommandIo): void {
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+
+	const workspaceDir = rc.workspaceDir;
+	if (!existsSync(workspaceDir)) {
+		io.log("Nuked workspace; removed 0 repos and 0 marker files.");
+		return;
+	}
+	if (!statSync(workspaceDir).isDirectory()) {
+		throw new Error(`workspace is not a directory: ${formatPath(workspaceDir)}`);
+	}
+
+	let removedRepos = 0;
+	let removedMarkers = 0;
+	let removedOtherEntries = 0;
+	const workspaceMarkerPath = join(workspaceDir, ".nosedive-ref");
+	if (existsSync(workspaceMarkerPath)) {
+		rmSync(workspaceMarkerPath, { recursive: true, force: true });
+		removedMarkers += 1;
+	}
+
+	const dirs = readdirSync(workspaceDir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.sort((a, b) => a.name.localeCompare(b.name));
+
+	for (const entry of dirs) {
+		const targetPath = join(workspaceDir, entry.name);
+		const markerPath = markerPathForTarget(targetPath);
+		if (!existsSync(markerPath)) continue;
+		if (!statSync(markerPath).isFile()) {
+			throw new Error(`managed repo marker is not a file: ${formatPath(markerPath)}`);
+		}
+
+		const { id: repoId } = parseRepoMarkerStrict(markerPath);
+		ensureSafeTargetPath(repoId, targetPath, workspaceDir);
+		removeWorkspaceManagedRepo(repoId, targetPath);
+		removedRepos += 1;
+	}
+
+	for (const entry of readdirSync(workspaceDir)) {
+		rmSync(join(workspaceDir, entry), { recursive: true, force: true });
+		removedOtherEntries += 1;
+	}
+
+	const otherSummary =
+		removedOtherEntries > 0
+			? ` and ${removedOtherEntries} other item${removedOtherEntries === 1 ? "" : "s"}`
+			: "";
+	io.log(
+		`Nuked workspace; removed ${removedRepos} repo${removedRepos === 1 ? "" : "s"} and ${removedMarkers} marker file${removedMarkers === 1 ? "" : "s"}${otherSummary}.`,
+	);
+}
+
 export interface NukeOptions {
 	help: boolean;
 	config: boolean;
+	workspace: boolean;
 }
 
 export function parseNukeOptions(args: string[]): NukeOptions {
-	const options: NukeOptions = { help: false, config: false };
+	const options: NukeOptions = { help: false, config: false, workspace: false };
 	for (const arg of args) {
 		if (arg === "-h" || arg === "--help") {
 			options.help = true;
@@ -110,6 +218,10 @@ export function parseNukeOptions(args: string[]): NukeOptions {
 		}
 		if (arg === "--config") {
 			options.config = true;
+			continue;
+		}
+		if (arg === "--workspace") {
+			options.workspace = true;
 			continue;
 		}
 		throw new Error(`unknown nuke option: ${arg}`);

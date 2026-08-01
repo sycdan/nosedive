@@ -1035,7 +1035,7 @@ nosedive-pilot-email: contract@example.invalid
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
 		["seed", /Usage: nosedive seed \[--headless\]/],
-		["nuke", /Usage: nosedive nuke --config/],
+		["nuke", /Usage: nosedive nuke --config\|--workspace/],
 		["apply", /Usage: nosedive apply/],
 		["init", /Usage: nosedive init/],
 		["dump-backlog", /Usage: nosedive dump-backlog \[--verbose\]/],
@@ -1603,7 +1603,7 @@ meta:
 
 	const guardedNuke = run(["nuke"], bridge);
 	assert.equal(guardedNuke.status, 1);
-	assert.match(guardedNuke.stderr, /rerun with --config/);
+	assert.match(guardedNuke.stderr, /rerun with --config or --workspace/);
 
 	const activeBridge = join(tmp, "active-bridge");
 	mkdirSync(join(activeBridge, "kb"), { recursive: true });
@@ -3865,6 +3865,91 @@ gist: Solo gist
 	} finally {
 		writeFileSync(migrationScriptPath, originalMigrationScript, "utf8");
 	}
+
+	const nukeWorkspaceBridge = join(tmp, "nuke-workspace-bridge");
+	const nukeWorkspaceRepoIdA = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa101";
+	const nukeWorkspaceRepoIdB = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa102";
+	const nukeWorkspaceDiveId = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa103";
+	mkdirSync(join(nukeWorkspaceBridge, "kb"), { recursive: true });
+	mkdirSync(join(nukeWorkspaceBridge, "workspace"), { recursive: true });
+	mkdirSync(join(nukeWorkspaceBridge, "repos", "source"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], nukeWorkspaceBridge);
+	runTool("git", ["config", "user.email", "nuke-workspace@example.invalid"], nukeWorkspaceBridge);
+	runTool("git", ["config", "user.name", "Nuke Workspace"], nukeWorkspaceBridge);
+	const nukeWorkspaceSource = join(nukeWorkspaceBridge, "repos", "source");
+	runTool("git", ["init", "-b", "main"], nukeWorkspaceSource);
+	runTool("git", ["config", "user.email", "nuke-workspace@example.invalid"], nukeWorkspaceSource);
+	runTool("git", ["config", "user.name", "Nuke Workspace"], nukeWorkspaceSource);
+	write(join(nukeWorkspaceSource, "README.md"), "workspace nuke source\n");
+	runTool("git", ["add", "README.md"], nukeWorkspaceSource);
+	runTool("git", ["commit", "-m", "workspace nuke source"], nukeWorkspaceSource);
+	write(
+		join(nukeWorkspaceBridge, ".nosediverc"),
+		`workspace: ./workspace
+kb: ./kb
+`,
+	);
+	write(
+		join(nukeWorkspaceBridge, "kb", "repo-a.md"),
+		`---
+kind: repo
+id: ${nukeWorkspaceRepoIdA}
+name: workspace-nuke-a
+gist: "Workspace nuke repo A"
+meta:
+  path: workspace/repo-a
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	write(
+		join(nukeWorkspaceBridge, "kb", "repo-b.md"),
+		`---
+kind: repo
+id: ${nukeWorkspaceRepoIdB}
+name: workspace-nuke-b
+gist: "Workspace nuke repo B"
+meta:
+  path: workspace/repo-b
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	assertOk(
+		run(["hydrate-repo.workspace", nukeWorkspaceRepoIdA], nukeWorkspaceBridge),
+		"hydrate repo A before nuke --workspace failed",
+	);
+	assertOk(
+		run(["hydrate-repo.workspace", nukeWorkspaceRepoIdB], nukeWorkspaceBridge),
+		"hydrate repo B before nuke --workspace failed",
+	);
+	const nukeWorkspaceTargetA = join(nukeWorkspaceBridge, "workspace", "repo-a");
+	const nukeWorkspaceTargetB = join(nukeWorkspaceBridge, "workspace", "repo-b");
+	write(join(nukeWorkspaceTargetA, "dirty.txt"), "force removes me\n");
+	write(join(nukeWorkspaceBridge, "workspace", "scratch.txt"), "workspace nuke removes me\n");
+	write(join(nukeWorkspaceBridge, "workspace", ".nosedive-ref"), `id: ${nukeWorkspaceDiveId}\n`);
+	const nukeWorkspace = run(["nuke", "--workspace"], nukeWorkspaceBridge);
+	assertOk(nukeWorkspace, "nuke --workspace failed");
+	assert.match(nukeWorkspace.stdout, /Nuked workspace; removed 2 repos and 1 marker file/);
+	assert.deepEqual(
+		readdirSync(join(nukeWorkspaceBridge, "workspace")),
+		[],
+		"nuke --workspace should leave the workspace empty",
+	);
+	const nukeWorkspaceCacheA = join(nukeWorkspaceBridge, ".nosedive", "cache", nukeWorkspaceRepoIdA);
+	const nukeWorkspaceCacheB = join(nukeWorkspaceBridge, ".nosedive", "cache", nukeWorkspaceRepoIdB);
+	assert.doesNotMatch(
+		runTool("git", ["worktree", "list", "--porcelain"], nukeWorkspaceCacheA).stdout,
+		new RegExp(escapeRegExp(nukeWorkspaceTargetA)),
+		"nuke --workspace should unregister repo A's worktree path",
+	);
+	assert.doesNotMatch(
+		runTool("git", ["worktree", "list", "--porcelain"], nukeWorkspaceCacheB).stdout,
+		new RegExp(escapeRegExp(nukeWorkspaceTargetB)),
+		"nuke --workspace should unregister repo B's worktree path",
+	);
 
 	const nukeConfigBridge = join(tmp, "nuke-config-bridge");
 	mkdirSync(nukeConfigBridge, { recursive: true });

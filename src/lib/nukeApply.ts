@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { mintUuid7Lines } from "./uuid7.js";
 
@@ -20,7 +20,14 @@ import {
 	manageGeneratedGitState,
 	removeManagedExcludeBlocks,
 } from "./gitState.js";
-import { BridgeConfig, GeneratedFrontmatter, TargetDoc } from "./kbDocs.js";
+import {
+	BridgeConfig,
+	GeneratedFrontmatter,
+	KbDoc,
+	TargetDoc,
+	loadKbDocs,
+	repoDocs,
+} from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
 import {
 	createApplyPlan,
@@ -36,6 +43,7 @@ import {
 	realpathStable,
 } from "./repoWorkspaceCore.js";
 import {
+	expectedWorktreePath,
 	gitWorktreeEntries,
 	markerPathForTarget,
 	removeHydratedWorktree,
@@ -140,13 +148,46 @@ function ensureNoRegisteredWorktreeAtPath(
 function removeWorkspaceManagedRepo(repoId: string, targetPath: string): void {
 	const commonDirRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
 	if (!commonDirRaw) {
-		rmSync(targetPath, { recursive: true, force: true });
-		return;
+		throw new Error(
+			`failed to resolve worktree source for repo ${repoId} at ${formatPath(targetPath)}`,
+		);
 	}
 
 	const sourcePath = isAbsolute(commonDirRaw) ? commonDirRaw : resolve(targetPath, commonDirRaw);
 	removeHydratedWorktree(repoId, targetPath, true);
 	ensureNoRegisteredWorktreeAtPath(sourcePath, repoId, targetPath);
+}
+
+function workspaceManagedRepoId(
+	targetPath: string,
+	workspaceDir: string,
+	bridgeDir: string,
+	reposById: Map<string, KbDoc>,
+): string | undefined {
+	const markerPath = markerPathForTarget(targetPath);
+	if (!existsSync(markerPath) || !statSync(markerPath).isFile()) return undefined;
+
+	let repoId: string;
+	try {
+		({ id: repoId } = parseRepoMarkerStrict(markerPath));
+	} catch {
+		return undefined;
+	}
+
+	const repoDoc = reposById.get(repoId);
+	if (!repoDoc) return undefined;
+
+	let expectedPath: string;
+	try {
+		expectedPath = expectedWorktreePath(repoDoc, bridgeDir);
+		ensureSafeTargetPath(repoId, expectedPath, workspaceDir);
+	} catch {
+		return undefined;
+	}
+
+	if (!sameStablePath(targetPath, expectedPath)) return undefined;
+	if (!gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) return undefined;
+	return repoId;
 }
 
 export function nukeWorkspace(io: CommandIo): void {
@@ -164,42 +205,32 @@ export function nukeWorkspace(io: CommandIo): void {
 
 	let removedRepos = 0;
 	let removedMarkers = 0;
-	let removedOtherEntries = 0;
 	const workspaceMarkerPath = join(workspaceDir, ".nosedive-ref");
 	if (existsSync(workspaceMarkerPath)) {
 		rmSync(workspaceMarkerPath, { recursive: true, force: true });
 		removedMarkers += 1;
 	}
 
-	const dirs = readdirSync(workspaceDir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.sort((a, b) => a.name.localeCompare(b.name));
-
-	for (const entry of dirs) {
-		const targetPath = join(workspaceDir, entry.name);
-		const markerPath = markerPathForTarget(targetPath);
-		if (!existsSync(markerPath)) continue;
-		if (!statSync(markerPath).isFile()) {
-			throw new Error(`managed repo marker is not a file: ${formatPath(markerPath)}`);
+	const reposById = new Map(
+		(rc.kbDir ? repoDocs(loadKbDocs(rc.kbDir, rc.bridgeDir)) : []).map((doc) => [doc.id, doc]),
+	);
+	const knownRepos = [...reposById.values()].sort((a, b) => a.id.localeCompare(b.id));
+	for (const repoDoc of knownRepos) {
+		let targetPath: string;
+		try {
+			targetPath = expectedWorktreePath(repoDoc, rc.bridgeDir);
+		} catch {
+			continue;
 		}
-
-		const { id: repoId } = parseRepoMarkerStrict(markerPath);
-		ensureSafeTargetPath(repoId, targetPath, workspaceDir);
+		if (!existsSync(targetPath) || !statSync(targetPath).isDirectory()) continue;
+		const repoId = workspaceManagedRepoId(targetPath, workspaceDir, rc.bridgeDir, reposById);
+		if (!repoId) continue;
 		removeWorkspaceManagedRepo(repoId, targetPath);
 		removedRepos += 1;
 	}
 
-	for (const entry of readdirSync(workspaceDir)) {
-		rmSync(join(workspaceDir, entry), { recursive: true, force: true });
-		removedOtherEntries += 1;
-	}
-
-	const otherSummary =
-		removedOtherEntries > 0
-			? ` and ${removedOtherEntries} other item${removedOtherEntries === 1 ? "" : "s"}`
-			: "";
 	io.log(
-		`Nuked workspace; removed ${removedRepos} repo${removedRepos === 1 ? "" : "s"} and ${removedMarkers} marker file${removedMarkers === 1 ? "" : "s"}${otherSummary}.`,
+		`Nuked workspace; removed ${removedRepos} repo${removedRepos === 1 ? "" : "s"} and ${removedMarkers} marker file${removedMarkers === 1 ? "" : "s"}.`,
 	);
 }
 

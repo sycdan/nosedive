@@ -1,5 +1,5 @@
 /**
- * Executor for the `dump-backlog` command doc. The command itself stays in the
+ * Processor for the `dump-backlog@0` command doc. The command itself stays in the
  * typechecked nosedive source; this runs it with a capturing io and hands the
  * captured streams back to the command doc host.
  */

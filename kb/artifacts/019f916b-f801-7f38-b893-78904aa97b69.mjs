@@ -441,18 +441,17 @@ function appendBacklogLines(lines, effort, depth = 0) {
 	for (const child of effort.children) appendBacklogLines(lines, child, depth + 1);
 }
 
-function renderBacklogDoc(bridgeDir, kbDir, cwdName, bridgeRepoId, topEfforts, writes, mintUuid) {
+function renderBacklogMemo(kbDir, cwdName, topEfforts, writes, mintUuid) {
 	const id = mintUuid();
-	const links = topEfforts.map((effort) => ({ [effort.id]: { rel: "has-main-effort" } }));
+	const links = topEfforts.map((effort) => ({ [effort.id]: { rel: "main-effort" } }));
 	const lines = ["# Backlog", "", "## Current efforts", ""];
 	for (const effort of topEfforts) appendBacklogLines(lines, effort);
 	const doc = renderDoc(
 		{
-			kind: "backlog",
+			kind: "memo",
 			id,
 			name: `backlog.${cwdName}`,
 			gist: `Current backlog for ${cwdName}.`,
-			scopes: [bridgeRepoId],
 			links,
 		},
 		`${lines.join("\n")}\n`,
@@ -461,7 +460,7 @@ function renderBacklogDoc(bridgeDir, kbDir, cwdName, bridgeRepoId, topEfforts, w
 	return id;
 }
 
-function baseConfigFromLegacy(legacy) {
+function baseConfigFromLegacy(legacy, backlogMemoId) {
 	const remaining = { ...legacy };
 	delete remaining["pilot-name"];
 	delete remaining["pilot-email"];
@@ -476,6 +475,7 @@ function baseConfigFromLegacy(legacy) {
 			base[key] = DEFAULT_BASE[key];
 		}
 	}
+	if (backlogMemoId) base.backlog = backlogMemoId;
 	Object.assign(base, remaining);
 	return base;
 }
@@ -499,7 +499,7 @@ export function migrate(ctx) {
 	const copiedFiles = [];
 
 	let effortCount = 0;
-	let backlogDocId;
+	let backlogMemoId;
 	let bridgeRepo;
 	if (source) {
 		const kbDocs = loadMigrationKbDocs(kbDir);
@@ -513,11 +513,9 @@ export function migrate(ctx) {
 		);
 		const lookup = repoLookup(withPlannedRepo);
 		renderEffortDocs(all, lookup, kbDir, writes);
-		backlogDocId = renderBacklogDoc(
-			bridgeDir,
+		backlogMemoId = renderBacklogMemo(
 			kbDir,
 			basename(bridgeDir),
-			bridgeRepo.id,
 			topEfforts,
 			writes,
 			mintUuid,
@@ -525,7 +523,10 @@ export function migrate(ctx) {
 		effortCount = all.length;
 	}
 
-	const config = stringify(baseConfigFromLegacy(legacy), { collectionStyle: "block", lineWidth: 0 });
+	const config = stringify(baseConfigFromLegacy(legacy, backlogMemoId), {
+		collectionStyle: "block",
+		lineWidth: 0,
+	});
 	writes.push({ path: join(bridgeDir, ".nosedive", "config.yaml"), content: config, sourceRel: "(config)" });
 
 	for (const write of writes) {
@@ -538,7 +539,7 @@ export function migrate(ctx) {
 		sourceDir: source?.rel,
 		copiedFiles,
 		effortCount,
-		backlogDocId,
+		backlogMemoId,
 		bridgeRepo,
 		manualCleanup: source
 			? `Legacy ${source.rel}/ remains after copying; remove it manually after reviewing the KB migration.`

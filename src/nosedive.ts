@@ -116,6 +116,7 @@ export interface NosediveRc {
 	bridgeDir: string;
 	compatibilityLevel?: number;
 	workspaceDir?: string;
+	backlog?: string;
 	backlogDir?: string;
 	kbDir?: string;
 	homeBranch?: string;
@@ -321,6 +322,7 @@ export function readNosediveRc(start: string): NosediveRc {
 		compatibilityLevel:
 			resolved.shape === "split" ? configCompatibilityLevel(rc, resolved.basePath) : 0,
 		workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
+		backlog,
 		backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		homeBranch: rc.scalars["home-branch"],
@@ -450,7 +452,7 @@ interface MigrationRunSummary {
 	sourceDir?: string;
 	copiedFiles?: string[];
 	effortCount?: number;
-	backlogDocId?: string;
+	backlogMemoId?: string;
 	bridgeRepo?: {
 		id?: string;
 		status?: string;
@@ -540,7 +542,7 @@ function printMigrationSummary(
 	io.log(`Migration ${migration.docId} complete.`);
 	if (summary.sourceDir) io.log(`Source: ${summary.sourceDir}`);
 	if (summary.effortCount !== undefined) io.log(`Efforts copied: ${summary.effortCount}`);
-	if (summary.backlogDocId) io.log(`Backlog doc: ${summary.backlogDocId}`);
+	if (summary.backlogMemoId) io.log(`Backlog memo: ${summary.backlogMemoId}`);
 	if (summary.bridgeRepo?.id) {
 		const status = summary.bridgeRepo.status ? `${summary.bridgeRepo.status} ` : "";
 		io.log(`Bridge repo: ${status}${summary.bridgeRepo.id}`);
@@ -1453,6 +1455,21 @@ function dumpBacklog(args: string[], io: CommandIo): void {
 
 	const { backlogDir } = loadBacklogConfig(process.cwd());
 	io.log(formatBacklog(collectBacklog(backlogDir), verbose));
+}
+
+function dumpBacklogMemo(args: string[], io: CommandIo): void {
+	if (args.length > 0) throw new Error(`unexpected dump-backlog argument: ${args[0]}`);
+
+	const rc = readNosediveRc(process.cwd());
+	const id = rc.backlog;
+	if (!id) throw new Error("dump-backlog requires a configured backlog memo id");
+	if (!uuidLike(id)) throw new Error(`dump-backlog requires a UUID-shaped backlog memo id: ${id}`);
+	if (!rc.kbDir) throw new Error("dump-backlog requires a configured kb directory");
+
+	const docPath = join(rc.kbDir, `${id}.md`);
+	if (!existsSync(docPath)) throw new Error(`bridge backlog memo not found: ${id}`);
+	if (!statSync(docPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${id}`);
+	io.writeOut(parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body);
 }
 
 interface ListDivesOptions {
@@ -4869,6 +4886,7 @@ function builtinCommands(): Record<string, BuiltinCommand> {
 		"pre-push.hook": prePushHook,
 		whoami,
 		"dump-backlog": dumpBacklog,
+		"dump-backlog.memo": dumpBacklogMemo,
 		"list-dives": listDives,
 		pitch,
 		"add-repo": addRepo,

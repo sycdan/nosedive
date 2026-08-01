@@ -93,7 +93,7 @@ matching command doc.
 | `pre-push.hook`            | [pre-push.hook@1](kb/019fadf5-e08c-7a33-a077-c545d9f764d5.md)            | Run the bridge pre-push check registry.                               |
 | `prove`                    | [prove@1](kb/019fadf5-e088-7ee1-b8d6-4cb36ef24363.md)                    | Run an executable proof for a bridge `kind: assertion` doc.           |
 | `list-dives`               | [list-dives@1](kb/019fadf5-e090-7dd8-b931-4db0eb104326.md)               | Print pickupable and working dives for an open effort.                |
-| `dump-backlog`             | [dump-backlog@1](kb/019fadf5-e08e-7f5e-b7d0-3b654b828512.md)             | Print the open efforts in the configured backlog.                     |
+| `dump-backlog`             | [dump-backlog@1](kb/019fba9e-d800-74e8-a5bc-5752f1e0f4d8.md)             | Render the configured backlog memo from bridge KB.                    |
 | `whoami`                   | [whoami@1](kb/019fac05-29ba-7056-bb18-4bd6d44ed7df.md)                   | Print the bridge pilot identity nosedive will use.                    |
 | `add-repo`                 | [add-repo@1](kb/019fadf5-e094-7176-afd0-94532d2bb149.md)                 | Add a kb repo to an effort's repo list.                               |
 | `hydrate-repo.workspace`   | [hydrate-repo.workspace@1](kb/019fadf5-e096-7e87-a2f2-56edf58c7de9.md)   | Hydrate one repo worktree from kb `kind: repo` metadata.              |

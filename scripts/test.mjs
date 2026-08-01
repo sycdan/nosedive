@@ -1015,7 +1015,7 @@ nosedive-pilot-email: contract@example.invalid
 		["prove", /Usage: nosedive prove <assertion-uuid>/],
 		["render", /Usage: nosedive render <uuid>/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
-		["dump-backlog", /Usage: nosedive dump-backlog/],
+		["dump-backlog", /Usage: nosedive dump-backlog$/m],
 		["list-dives", /Usage: nosedive list-dives <effort>/],
 		["pitch", /Usage: nosedive pitch <slug>/],
 		["add-repo", /Usage: nosedive add-repo <repo-id-or-name>/],
@@ -1025,11 +1025,18 @@ nosedive-pilot-email: contract@example.invalid
 		["nuke", /Usage: nosedive nuke --config/],
 		["whoami", /Usage: nosedive whoami/],
 	];
-	const level0ContractedCommands = [["apply", /Usage: nosedive apply/]];
+	const level0ContractedCommands = [
+		["apply", /Usage: nosedive apply/],
+		["dump-backlog", /Usage: nosedive dump-backlog \[--verbose\]/],
+	];
 	const contractedCommands = [
 		...level1ContractedCommands.map(([command, usage]) => [command, usage, 1]),
 		...level0ContractedCommands.map(([command, usage]) => [command, usage, 0]),
 	];
+	const latestLevelByCommand = new Map();
+	for (const [command, , level] of contractedCommands) {
+		latestLevelByCommand.set(command, Math.max(latestLevelByCommand.get(command) ?? -1, level));
+	}
 	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
 		const docText = readFileSync(join(root, "kb", docName), "utf8");
 		if (!/^kind: command$/m.test(docText)) continue;
@@ -1108,14 +1115,16 @@ nosedive-pilot-email: contract@example.invalid
 			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
 
-		// Same help text whether a command doc routed it or the builtin did.
-		const builtinHelp = run([command, "--help"], noBridge);
-		assertOk(builtinHelp, `${command} --help outside a bridge failed`);
-		assert.equal(
-			builtinHelp.stdout,
-			explicitHelp.stdout,
-			`${command} help differs between builtin and command routes`,
-		);
+		// Same help text whether the latest command doc routed it or the builtin did.
+		if (level === latestLevelByCommand.get(command)) {
+			const builtinHelp = run([command, "--help"], noBridge);
+			assertOk(builtinHelp, `${command} --help outside a bridge failed`);
+			assert.equal(
+				builtinHelp.stdout,
+				explicitHelp.stdout,
+				`${command} help differs between builtin and command routes`,
+			);
+		}
 	}
 
 	// whoami has no level-0 command doc, so a legacy bridge stays on the builtin.
@@ -3470,10 +3479,14 @@ Child body.
 	assert.match(backlogSeed.stdout, /project\/Project\.md/);
 	assert.match(backlogSeed.stdout, /project\/main-effort\/MainEffort\.md/);
 	assert.match(backlogSeed.stdout, /Legacy backlog\/ remains after copying/);
-	const backlogDocMatch = /Backlog doc: ([0-9a-f-]{36})/.exec(backlogSeed.stdout);
-	assert.ok(backlogDocMatch, "seed did not print backlog doc id");
-	const backlogDocId = backlogDocMatch[1];
+	const backlogMemoMatch = /Backlog memo: ([0-9a-f-]{36})/.exec(backlogSeed.stdout);
+	assert.ok(backlogMemoMatch, "seed did not print backlog memo id");
+	const backlogMemoId = backlogMemoMatch[1];
 	assert.equal(existsSync(join(backlogBridge, "backlog", "project", "Project.md")), true);
+	assert.match(
+		readFileSync(join(backlogBridge, ".nosedive", "config.yaml"), "utf8"),
+		new RegExp(`^backlog: ${backlogMemoId}$`, "m"),
+	);
 
 	const kbTexts = readdirSync(join(backlogBridge, "kb"))
 		.filter((name) => name.endsWith(".md"))
@@ -3501,15 +3514,33 @@ Child body.
 	assert.match(childDoc, new RegExp(`${topEffortId}:\\n      rel: parent`));
 	assert.match(childDoc, /meta:\n  name: Stale Name\n  owner: dana/);
 
-	const backlogDoc = readFileSync(join(backlogBridge, "kb", `${backlogDocId}.md`), "utf8");
-	assert.match(backlogDoc, /^kind: backlog$/m);
-	assert.match(backlogDoc, /^name: backlog\.backlog-bridge$/m);
-	assert.match(backlogDoc, new RegExp(`\\nscopes:\\n  - ${bridgeRepoId}\\n`));
-	assert.match(backlogDoc, new RegExp(`${topEffortId}:\\n      rel: has-main-effort`));
-	assert.match(backlogDoc, new RegExp(`- \\[Project Title\\]\\(${topEffortId}\\.md\\): Main gist`));
+	const backlogMemo = readFileSync(join(backlogBridge, "kb", `${backlogMemoId}.md`), "utf8");
+	assert.match(backlogMemo, /^kind: memo$/m);
+	assert.match(backlogMemo, /^name: backlog\.backlog-bridge$/m);
+	assert.doesNotMatch(backlogMemo, /^scopes:/m);
+	assert.match(backlogMemo, new RegExp(`${topEffortId}:\\n      rel: main-effort`));
 	assert.match(
-		backlogDoc,
+		backlogMemo,
+		new RegExp(`- \\[Project Title\\]\\(${topEffortId}\\.md\\): Main gist`),
+	);
+	assert.match(
+		backlogMemo,
 		new RegExp(`  - \\[Main Effort Title\\]\\(${childEffortId}\\.md\\): Child gist`),
+	);
+	const dumpedBacklogMemo = run(["dump-backlog"], backlogBridge);
+	assertOk(dumpedBacklogMemo, "dump-backlog L1 memo render failed");
+	assert.equal(
+		dumpedBacklogMemo.stdout,
+		[
+			"",
+			"# Backlog",
+			"",
+			"## Current efforts",
+			"",
+			`- [Project Title](${topEffortId}.md): Main gist`,
+			`  - [Main Effort Title](${childEffortId}.md): Child gist`,
+			"",
+		].join("\n"),
 	);
 
 	// If backlog/ is absent, seed falls back to efforts/ and can mint the

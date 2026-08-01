@@ -162,15 +162,13 @@ for (const [key, docs] of docsByCommandLevel) {
 	}
 }
 
-for (const [command, docs] of [...docsByCommand.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-	const maxLevel = Math.max(...docs.map((doc) => doc.level));
-	if (maxLevel >= currentLevel) continue;
-
-	const [latestDoc] = docs.filter((doc) => doc.level === maxLevel);
-	const deprecatedByIds = deprecatedByMigrationIds(latestDoc);
+for (const doc of commandDocs
+	.filter((doc) => doc.level < currentLevel)
+	.sort((a, b) => a.name.localeCompare(b.name))) {
+	const deprecatedByIds = deprecatedByMigrationIds(doc);
 	if (deprecatedByIds.length === 0) {
 		fail(
-			`${latestDoc.name} is below current level ${currentLevel}; promote to ${command}@${currentLevel} or add a rel=deprecated-by migration link`,
+			`${doc.name} is below current level ${currentLevel}; promote it or add a rel=deprecated-by migration link`,
 		);
 		continue;
 	}
@@ -179,20 +177,18 @@ for (const [command, docs] of [...docsByCommand.entries()].sort(([a], [b]) => a.
 	for (const id of deprecatedByIds) {
 		const migration = migrationDocs.get(id);
 		if (!migration) {
-			fail(
-				`${latestDoc.name} has rel=deprecated-by ${id}, but no package migration doc has that id`,
-			);
+			fail(`${doc.name} has rel=deprecated-by ${id}, but no package migration doc has that id`);
 			continue;
 		}
-		if (migration.fromLevel !== maxLevel) {
+		if (migration.fromLevel !== doc.level) {
 			fail(
-				`${latestDoc.name} is deprecated by ${id}, but that migration starts at ${migration.fromLevel}; expected ${maxLevel}`,
+				`${doc.name} is deprecated by ${id}, but that migration starts at ${migration.fromLevel}; expected ${doc.level}`,
 			);
 			continue;
 		}
 		if (migration.toLevel > currentLevel) {
 			fail(
-				`${latestDoc.name} is deprecated by ${id}, but that migration ends at ${migration.toLevel}; current level is ${currentLevel}`,
+				`${doc.name} is deprecated by ${id}, but that migration ends at ${migration.toLevel}; current level is ${currentLevel}`,
 			);
 			continue;
 		}
@@ -200,7 +196,7 @@ for (const [command, docs] of [...docsByCommand.entries()].sort(([a], [b]) => a.
 	}
 
 	if (!hasValidBoundary) {
-		fail(`${latestDoc.name} has no valid rel=deprecated-by migration boundary`);
+		fail(`${doc.name} has no valid rel=deprecated-by migration boundary`);
 	}
 }
 

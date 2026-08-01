@@ -174,6 +174,7 @@ function walkBacklogNode(dir, slug, ancestors, nearestParent, mintUuid) {
 
 	const parentForChildren = node ?? nearestParent;
 	const topEfforts = [];
+	const childResults = [];
 	for (const entry of entries) {
 		const child = walkBacklogNode(
 			join(dir, entry.name),
@@ -182,14 +183,18 @@ function walkBacklogNode(dir, slug, ancestors, nearestParent, mintUuid) {
 			parentForChildren,
 			mintUuid,
 		);
+		childResults.push(child);
 		if (node) node.children.push(...child.topEfforts);
 		else if (nearestParent) nearestParent.children.push(...child.topEfforts);
 		else topEfforts.push(...child.topEfforts);
 	}
 
+	const children = childResults
+		.filter((child) => child.topEfforts.length > 0)
+		.map((child) => child.displayNode);
 	return node
-		? { topEfforts: [node] }
-		: { topEfforts };
+		? { topEfforts: [node], displayNode: { kind: "effort", effort: node, children } }
+		: { topEfforts, displayNode: { kind: "group", slug, children } };
 }
 
 let dirRoot = "";
@@ -204,6 +209,7 @@ function collectEfforts(source, mintUuid) {
 		.filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const topEfforts = [];
+	const displayNodes = [];
 	for (const entry of top) {
 		const result = walkBacklogNode(
 			join(source.path, entry.name),
@@ -213,6 +219,7 @@ function collectEfforts(source, mintUuid) {
 			mintUuid,
 		);
 		topEfforts.push(...result.topEfforts);
+		if (result.topEfforts.length > 0) displayNodes.push(result.displayNode);
 	}
 	const all = topEfforts.flatMap(flattenEffort);
 	const seen = new Set();
@@ -223,6 +230,7 @@ function collectEfforts(source, mintUuid) {
 			return true;
 		}),
 		topEfforts,
+		displayNodes,
 	};
 }
 
@@ -434,18 +442,36 @@ function renderEffortDocs(efforts, lookup, kbDir, writes) {
 	}
 }
 
-function appendBacklogLines(lines, effort, depth = 0) {
+function appendBacklogEffortLine(lines, effort, depth = 0) {
 	const indent = "  ".repeat(depth);
 	const gist = scalarString(effort.raw.gist) ?? "";
 	lines.push(`${indent}- [${effort.title}](${effort.id}.md): ${gist}`);
-	for (const child of effort.children) appendBacklogLines(lines, child, depth + 1);
 }
 
-function renderBacklogMemo(kbDir, cwdName, topEfforts, writes, mintUuid) {
+function appendBacklogDisplayNode(lines, node, depth = 0) {
+	if (node.kind === "group") {
+		if (depth === 0) {
+			if (lines.at(-1) !== "") lines.push("");
+			lines.push(`### ${titleFromSlug(node.slug)}`, "");
+			for (const child of node.children) appendBacklogDisplayNode(lines, child, 0);
+			if (lines.at(-1) !== "") lines.push("");
+			return;
+		}
+		lines.push(`${"  ".repeat(depth)}- **${titleFromSlug(node.slug)}**`);
+		for (const child of node.children) appendBacklogDisplayNode(lines, child, depth + 1);
+		return;
+	}
+
+	appendBacklogEffortLine(lines, node.effort, depth);
+	for (const child of node.children) appendBacklogDisplayNode(lines, child, depth + 1);
+}
+
+function renderBacklogMemo(kbDir, cwdName, topEfforts, displayNodes, writes, mintUuid) {
 	const id = mintUuid();
-	const links = topEfforts.map((effort) => ({ [effort.id]: { rel: "main-effort" } }));
+	const links = topEfforts.map((effort) => ({ [`kb/${effort.id}.md`]: { rel: "main-effort" } }));
 	const lines = ["# Backlog", "", "## Current efforts", ""];
-	for (const effort of topEfforts) appendBacklogLines(lines, effort);
+	for (const node of displayNodes) appendBacklogDisplayNode(lines, node);
+	while (lines.at(-1) === "") lines.pop();
 	const doc = renderDoc(
 		{
 			kind: "memo",
@@ -504,7 +530,7 @@ export function migrate(ctx) {
 	if (source) {
 		const kbDocs = loadMigrationKbDocs(kbDir);
 		bridgeRepo = ensureBridgeRepoDoc(bridgeDir, kbDir, kbDocs, writes, mintUuid);
-		const { all, topEfforts } = collectEfforts(source, mintUuid);
+		const { all, topEfforts, displayNodes } = collectEfforts(source, mintUuid);
 		const withPlannedRepo = kbDocs.concat(
 			writes.map((write) => {
 				const { raw } = splitMarkdownFrontmatter(write.content, write.path);
@@ -517,6 +543,7 @@ export function migrate(ctx) {
 			kbDir,
 			basename(bridgeDir),
 			topEfforts,
+			displayNodes,
 			writes,
 			mintUuid,
 		);

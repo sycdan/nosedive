@@ -1057,8 +1057,14 @@ nosedive-pilot-email: contract@example.invalid
 		);
 	}
 	const contractHelpLinks = {
-		preflight: [/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/],
-		"pre-push.hook": [/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/],
+		preflight: [
+			/\[`pre-push\.hook`\]\(019fadf5-e08c-7a33-a077-c545d9f764d5\.md\)/,
+			/\[`seed`\]\(019fadf5-e082-7558-945f-d136295b1ea5\.md\)/,
+		],
+		"pre-push.hook": [
+			/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
+			/\[`render`\]\(019fadf5-e08a-7682-91f9-bb208cc306c9\.md\)/,
+		],
 		seed: [/\]\(019fac05-29ba-7056-bb18-4bd6d44ed7df\.md\)/],
 	};
 	for (const [command, usage, level] of contractedCommands) {
@@ -3451,6 +3457,17 @@ Main body.
 `,
 	);
 	write(
+		join(backlogBridge, "backlog", "gogglebox", "episode-one", "EpisodeOne.md"),
+		`---
+gist: Gogglebox gist
+---
+
+# Gogglebox Episode
+
+Episode body.
+`,
+	);
+	write(
 		join(backlogBridge, "backlog", "project", "main-effort", "MainEffort.md"),
 		`---
 id: ${childEffortId}
@@ -3473,9 +3490,10 @@ Child body.
 	assertOk(backlogSeed, "seed with tracked backlog failed");
 	assert.match(backlogSeed.stdout, /Running migration .*019f916b-f800-723d-b096-07d4300ff28a\.md/);
 	assert.match(backlogSeed.stdout, /Source: backlog/);
-	assert.match(backlogSeed.stdout, /Efforts copied: 2/);
+	assert.match(backlogSeed.stdout, /Efforts copied: 3/);
 	assert.match(backlogSeed.stdout, new RegExp(`Bridge repo: reused ${bridgeRepoId}`));
 	assert.match(backlogSeed.stdout, /Copied files:/);
+	assert.match(backlogSeed.stdout, /gogglebox\/episode-one\/EpisodeOne\.md/);
 	assert.match(backlogSeed.stdout, /project\/Project\.md/);
 	assert.match(backlogSeed.stdout, /project\/main-effort\/MainEffort\.md/);
 	assert.match(backlogSeed.stdout, /Legacy backlog\/ remains after copying/);
@@ -3505,6 +3523,14 @@ Child body.
 	assert.match(topEffort[1], new RegExp(`${childEffortId}:\\n      rel: child`));
 	assert.match(topEffort[1], /meta:\n  priority: high/);
 
+	const goggleboxEffort = kbTexts.find(
+		([, text]) => /^kind: effort$/m.test(text) && /^name: episode-one\.gogglebox$/m.test(text),
+	);
+	assert.ok(goggleboxEffort, "namespaced gogglebox effort doc was not created");
+	const goggleboxEffortId = /^id: ([0-9a-f-]{36})$/m.exec(goggleboxEffort[1])?.[1];
+	assert.ok(goggleboxEffortId, "namespaced gogglebox effort id was not minted");
+	assert.match(goggleboxEffort[1], /^gist: Gogglebox gist$/m);
+
 	const childDoc = readFileSync(join(backlogBridge, "kb", `${childEffortId}.md`), "utf8");
 	assert.match(childDoc, /^kind: effort$/m);
 	assert.match(childDoc, new RegExp(`^id: ${childEffortId}$`, "m"));
@@ -3518,7 +3544,13 @@ Child body.
 	assert.match(backlogMemo, /^kind: memo$/m);
 	assert.match(backlogMemo, /^name: backlog\.backlog-bridge$/m);
 	assert.doesNotMatch(backlogMemo, /^scopes:/m);
-	assert.match(backlogMemo, new RegExp(`${topEffortId}:\\n      rel: main-effort`));
+	assert.match(backlogMemo, new RegExp(`kb/${goggleboxEffortId}\\.md:\\n      rel: main-effort`));
+	assert.match(backlogMemo, new RegExp(`kb/${topEffortId}\\.md:\\n      rel: main-effort`));
+	assert.match(backlogMemo, /### Gogglebox/);
+	assert.match(
+		backlogMemo,
+		new RegExp(`- \\[Gogglebox Episode\\]\\(${goggleboxEffortId}\\.md\\): Gogglebox gist`),
+	);
 	assert.match(
 		backlogMemo,
 		new RegExp(`- \\[Project Title\\]\\(${topEffortId}\\.md\\): Main gist`),
@@ -3536,6 +3568,10 @@ Child body.
 			"# Backlog",
 			"",
 			"## Current efforts",
+			"",
+			"### Gogglebox",
+			"",
+			`- [Gogglebox Episode](${goggleboxEffortId}.md): Gogglebox gist`,
 			"",
 			`- [Project Title](${topEffortId}.md): Main gist`,
 			`  - [Main Effort Title](${childEffortId}.md): Child gist`,

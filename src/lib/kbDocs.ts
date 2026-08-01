@@ -360,6 +360,12 @@ export interface AddRepoOptions {
 	apply: boolean;
 }
 
+export interface AddRepoEffortScopeOptions {
+	repoRef: string;
+	repoEntryRef?: string;
+	readOnly: boolean;
+}
+
 export function parseAddRepoArgs(args: string[]): AddRepoOptions {
 	let repoRef: string | undefined;
 	let effortRef: string | undefined;
@@ -403,6 +409,39 @@ export function parseAddRepoArgs(args: string[]): AddRepoOptions {
 	if (!repoRef) throw new Error("add-repo requires a repo id or name");
 	if (repoEntryRef?.includes(":")) throw new Error(`repo ref cannot contain ':': ${repoEntryRef}`);
 	return { repoRef, effortRef, repoEntryRef, readOnly, apply: shouldApply };
+}
+
+export function parseAddRepoEffortScopeArgs(args: string[]): AddRepoEffortScopeOptions {
+	let repoRef: string | undefined;
+	let repoEntryRef: string | undefined;
+	let readOnly = false;
+
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === "--ref") {
+			const value = args[i + 1];
+			if (!value) throw new Error("--ref requires a value");
+			repoEntryRef = value;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith("--ref=")) {
+			repoEntryRef = arg.slice("--ref=".length);
+			if (!repoEntryRef) throw new Error("--ref requires a value");
+			continue;
+		}
+		if (arg === "--read-only" || arg === "--ro") {
+			readOnly = true;
+			continue;
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown add-repo.effort option: ${arg}`);
+		if (repoRef) throw new Error(`unexpected add-repo.effort argument: ${arg}`);
+		repoRef = arg;
+	}
+
+	if (!repoRef) throw new Error("add-repo.effort requires a repo id or name");
+	if (repoEntryRef?.includes(":")) throw new Error(`repo ref cannot contain ':': ${repoEntryRef}`);
+	return { repoRef, repoEntryRef, readOnly };
 }
 
 export function repoDocs(kbDocs: KbDoc[]): KbDoc[] {

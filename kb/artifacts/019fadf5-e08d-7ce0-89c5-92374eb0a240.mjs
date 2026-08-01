@@ -1,3 +1,3 @@
 export async function L0__hook_prePush(value, ctx) {
-	return ctx.impl.i019fbda6186d7daf88fd6d63729944c0(value.args);
+	return ctx.impl.i40d8a934cf8f55b9b1a93d76e8517f26(value.args);
 }

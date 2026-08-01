@@ -1,3 +1,3 @@
 export async function L0__whoami(value, ctx) {
-	return ctx.impl.i019fbdccdb537919890a6e5a109f5016(value.args);
+	return ctx.impl.iac374f9755755c8a82c6729f39c436e3(value.args);
 }

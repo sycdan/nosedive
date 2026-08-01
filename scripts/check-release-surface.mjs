@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
+import { commandDocId, commandEntrypointName, commandImplId } from "./command-identifiers.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const kbDir = join(root, "kb");
@@ -56,64 +56,8 @@ function frontmatterish(text) {
 	return values;
 }
 
-function uuidBytes(uuid) {
-	const hex = uuid.replace(/-/g, "");
-	if (!/^[0-9a-f]{32}$/i.test(hex)) {
-		fail(`.nosedive-ref id must be a UUID: ${uuid}`);
-		return Buffer.alloc(16);
-	}
-	return Buffer.from(hex, "hex");
-}
-
-function formatUuid(bytes) {
-	const hex = bytes.toString("hex");
-	return [
-		hex.slice(0, 8),
-		hex.slice(8, 12),
-		hex.slice(12, 16),
-		hex.slice(16, 20),
-		hex.slice(20),
-	].join("-");
-}
-
-function namespacedUuid(namespace, name) {
-	const bytes = createHash("sha1")
-		.update(uuidBytes(namespace))
-		.update(name)
-		.digest()
-		.subarray(0, 16);
-	bytes[6] = (bytes[6] & 0x0f) | 0x50;
-	bytes[8] = (bytes[8] & 0x3f) | 0x80;
-	return formatUuid(bytes);
-}
-
-function commandDocId(command, level) {
-	return namespacedUuid(projectRef.id ?? "", `command:${command}@${level}`);
-}
-
 function escapeRegExp(value) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function camelIdentifierPart(value) {
-	const leadingUnderscores = /^_*/.exec(value)?.[0] ?? "";
-	const body = value.slice(leadingUnderscores.length);
-	const parts = body.split(/[^A-Za-z0-9]+/).filter(Boolean);
-	const camel = parts
-		.map((part, index) => {
-			const lower = part.toLowerCase();
-			if (index === 0) return lower;
-			return `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
-		})
-		.join("");
-	return `${leadingUnderscores}${camel}`;
-}
-
-function commandEntrypointName(command, level) {
-	const parts = command.split(".");
-	const action = parts[0] ?? "";
-	const domains = parts.slice(1).map(camelIdentifierPart);
-	return `L${level}__${[...domains, camelIdentifierPart(action)].filter(Boolean).join("_")}`;
 }
 
 function kbDocIdFromTarget(target) {
@@ -291,11 +235,28 @@ for (const filename of readdirSync(kbDir)
 				if (/\bctx\.invoke\s*\(/.test(adapterText)) {
 					fail(`${filename} adapter must call ctx.impl, not ctx.invoke: ${raw.meta.adapter}`);
 				}
-				for (const match of adapterText.matchAll(/\bctx\.impl\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+				const functionPattern = new RegExp(
+					`export\\s+async\\s+function\\s+${escapeRegExp(expectedEntrypoint)}\\s*\\(\\s*value\\s*,\\s*ctx\\s*\\)\\s*{([\\s\\S]*?)\\n}`,
+				);
+				const functionBody = functionPattern.exec(adapterText)?.[1] ?? "";
+				const implMatches = [
+					...functionBody.matchAll(/\bctx\.impl\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g),
+				];
+				const expectedImplId = commandImplId(expectedEntrypoint);
+				if (implMatches.length === 0) {
+					fail(`${filename} adapter ${expectedEntrypoint} must call ctx.impl.${expectedImplId}`);
+				}
+				for (const match of implMatches) {
 					const implAlias = match[1] ?? "";
-					if (!/^i[0-9a-f]{32}$/.test(implAlias)) {
-						fail(`${filename} adapter impl alias must be a raw impl id: ${implAlias}`);
+					if (implAlias !== expectedImplId) {
+						fail(
+							`${filename} adapter ${expectedEntrypoint} must call deterministic impl ${expectedImplId}, not ${implAlias}`,
+						);
 					}
+				}
+				const implPath = join(root, "src", "impl", `${expectedImplId}.ts`);
+				if (!existsSync(implPath)) {
+					fail(`${filename} deterministic impl file is missing: src/impl/${expectedImplId}.ts`);
 				}
 			}
 		}

@@ -27,6 +27,7 @@
 	},
 	"scripts": {
 		"commands:surface": "node scripts/update-readme-command-surface.mjs",
+		"commands:identifiers": "node scripts/command-identifiers.mjs",
 		"check:command-surface": "node scripts/update-readme-command-surface.mjs --check",
 		"prebuild": "npm run check:command-surface",
 		"build": "tsup src/cli.ts src/nosedive.ts --format esm --target node22 --clean",

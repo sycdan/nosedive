@@ -1,3 +1,3 @@
 export async function L0__mint(value, ctx) {
-	return ctx.impl.i019fbe0dc0027cd9994862a51e6ed74d(value.args);
+	return ctx.impl.ifa1412f421c8556898141df23a1aad01(value.args);
 }

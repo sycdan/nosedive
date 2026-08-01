@@ -1,3 +1,3 @@
 export async function L0__prove(value, ctx) {
-	return ctx.impl.i019fbda618717a58b4ce9afa78abdf86(value.args);
+	return ctx.impl.i25ed9f0da290519f80815e0eea9feb89(value.args);
 }

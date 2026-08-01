@@ -97,7 +97,7 @@ Command docs are the index into implementation: start at the linked doc, then fo
 
 | Command | Usage | What it does |
 | --- | --- | --- |
-| [`add-repo@0`](kb/0fdcf4cd-d7b8-5f41-a1df-ee8210ea50ca.md) | `npx nosedive add-repo <repo-id-or-name> [--effort <effort>] [--ref <ref>] [--read-only] [--apply]` | Add a kb `kind: repo` doc to an effort's repo list, resolving the repo by id or exact name. |
+| [`add-repo.effort@1`](kb/bc20378b-76e7-54ce-a36e-3c22e1a8753c.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active effort's `scopes:` by resolving the repo by id or exact name. |
 | [`dehydrate-repo.workspace@0`](kb/336d2744-0f2b-5bae-8edd-a0183744cb3e.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
 | [`dump-backlog@1`](kb/d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
 | [`hydrate-repo.workspace@0`](kb/568e4789-9b82-53f6-8304-c8f7629e72e4.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
@@ -117,6 +117,7 @@ Command docs are the index into implementation: start at the linked doc, then fo
 
 | Command | Usage | What it did |
 | --- | --- | --- |
+| [`add-repo@0`](kb/0fdcf4cd-d7b8-5f41-a1df-ee8210ea50ca.md) | `npx nosedive add-repo <repo-id-or-name> [--effort <effort>] [--ref <ref>] [--read-only] [--apply]` | Deprecated; use `add-repo.effort`, which writes repo scopes onto L1 KB effort docs. |
 | [`apply@0`](kb/87d1019d-d2cd-509f-8f52-6fd99ea13268.md) | `npx nosedive apply` | Deprecated; no longer writes agent instruction files. Only `--dry-run` remains, as a read-only inspection path. |
 | [`init@0`](kb/a0c15e9e-5f66-5faa-b70c-2f48b2d5dcd2.md) | `npx nosedive init [--headless]` | Deprecated; use `seed`, which creates or migrates bridge config at the current compatibility level. |
 <!-- END nosedive-command-surface -->

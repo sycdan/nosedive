@@ -3187,8 +3187,9 @@ Build the YAML-aware workspace work order.
 	);
 
 	const initHelp = run(["init", "--help"], noBridge);
-	assert.notEqual(initHelp.status, 0, "init --help unexpectedly succeeded");
-	assert.match(initHelp.stderr, /Unknown command: init/);
+	assertOk(initHelp, "init --help outside a bridge failed");
+	assert.match(initHelp.stdout, /Deprecated\. Use \[`seed`\]/);
+	assert.match(initHelp.stdout, /Usage: nosedive init \[--headless\]/);
 
 	const unknownSeedOption = run(["seed", "--bogus"], root, "");
 	assert.notEqual(unknownSeedOption.status, 0, "seed with unknown option unexpectedly succeeded");

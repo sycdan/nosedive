@@ -210,12 +210,18 @@ function renderContractHelpText(contract: ContractDoc): string {
 function latestContractDocs(): ContractDoc[] {
 	const latestByCommand = new Map<string, ContractDoc>();
 	for (const contract of packageContractDocs()) {
+		if (contract.compatibilityLevel < CURRENT_COMPATIBILITY_LEVEL) continue;
+		if (isDeprecatedContract(contract)) continue;
 		const existing = latestByCommand.get(contract.command);
 		if (!existing || contract.compatibilityLevel > existing.compatibilityLevel) {
 			latestByCommand.set(contract.command, contract);
 		}
 	}
 	return [...latestByCommand.values()].sort((a, b) => a.command.localeCompare(b.command));
+}
+
+function isDeprecatedContract(contract: ContractDoc): boolean {
+	return /^deprecated\b/i.test(contract.gist.trim()) || /^deprecated\b/i.test(contract.body.trim());
 }
 
 function renderTopLevelHelpText(): string {
@@ -246,7 +252,7 @@ function printCommandHelp(command: string, io: CommandIo): void {
 setCommandHelpPrinter(printCommandHelp);
 
 function isContractedCommand(command: string): boolean {
-	return packageContractDocs().some((doc) => doc.command === command);
+	return latestContractDocs().some((doc) => doc.command === command);
 }
 
 function contractStreamField(

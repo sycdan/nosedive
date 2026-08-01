@@ -26,6 +26,9 @@
 		"node": ">=22"
 	},
 	"scripts": {
+		"commands:surface": "node scripts/update-readme-command-surface.mjs",
+		"check:command-surface": "node scripts/update-readme-command-surface.mjs --check",
+		"prebuild": "npm run check:command-surface",
 		"build": "tsup src/cli.ts src/nosedive.ts --format esm --target node22 --clean",
 		"format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.mjs\" \"package.json\" \"tsconfig.json\" \".github/workflows/*.yml\" \".prettierrc.json\"",
 		"format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"package.json\" \"tsconfig.json\" \".github/workflows/*.yml\" \".prettierrc.json\"",

@@ -399,7 +399,7 @@ export function reconcilePushReadOnly(
 }
 
 export interface ProveOptions {
-	assertionId: string;
+	assertionRef: string;
 	record: boolean;
 	verbose: boolean;
 }

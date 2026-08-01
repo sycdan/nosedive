@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { parseDocument } from "yaml";
@@ -39,6 +39,7 @@ export interface ProverHostRequest {
 	proverPath: string;
 	resultPath: string;
 	verbose: boolean;
+	record: boolean;
 }
 
 export interface ProverHostRepoInput {
@@ -70,7 +71,7 @@ export function repoContextForRoot(repoDoc: KbDoc, root: string): RepoContext {
 }
 
 export function parseProveArgs(args: string[]): ProveOptions {
-	let assertionId: string | undefined;
+	let assertionRef: string | undefined;
 	let record = false;
 	let verbose = false;
 
@@ -84,17 +85,15 @@ export function parseProveArgs(args: string[]): ProveOptions {
 			continue;
 		}
 		if (arg === "-h" || arg === "--help") {
-			throw new Error("Usage: nosedive prove <assertion-uuid> [--record] [--verbose]");
+			throw new Error("Usage: nosedive prove <assertion-ref> [--record] [--verbose]");
 		}
 		if (arg.startsWith("--")) throw new Error(`unknown prove option: ${arg}`);
-		if (assertionId) throw new Error(`unexpected prove argument: ${arg}`);
-		assertionId = arg;
+		if (assertionRef) throw new Error(`unexpected prove argument: ${arg}`);
+		assertionRef = arg;
 	}
 
-	if (!assertionId) throw new Error("prove requires an assertion uuid");
-	if (!uuidLike(assertionId))
-		throw new Error(`prove requires a UUID-shaped assertion id: ${assertionId}`);
-	return { assertionId, record, verbose };
+	if (!assertionRef) throw new Error("prove requires an assertion ref");
+	return { assertionRef, record, verbose };
 }
 
 export function findAssertionDoc(kbDocs: KbDoc[], assertionId: string): KbDoc {
@@ -102,6 +101,30 @@ export function findAssertionDoc(kbDocs: KbDoc[], assertionId: string): KbDoc {
 	if (matches.length === 1) return matches[0]!;
 	if (matches.length > 1) throw new Error(`assertion id is ambiguous: ${assertionId}`);
 	throw new Error(`assertion not found: ${assertionId}`);
+}
+
+export function findAssertionDocByRef(
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+	assertionRef: string,
+): KbDoc {
+	if (uuidLike(assertionRef)) return findAssertionDoc(kbDocs, assertionRef);
+
+	const path = resolveFrom(bridgeDir, assertionRef);
+	if (!existsSync(path)) throw new Error(`assertion doc not found: ${assertionRef}`);
+
+	const bridgeRoot = realpathSync(bridgeDir);
+	const realPath = realpathSync(path);
+	if (!isInsideDir(bridgeRoot, realPath)) {
+		throw new Error(`assertion path resolves outside the bridge: ${assertionRef}`);
+	}
+
+	const doc = kbDocs.find((candidate) => realpathSync(candidate.path) === realPath);
+	if (!doc) throw new Error(`assertion doc is not in the bridge KB: ${assertionRef}`);
+	if (doc.kind !== "assertion") {
+		throw new Error(`prove requires a kind: assertion doc: ${assertionRef}`);
+	}
+	return doc;
 }
 
 export function assertionProverLink(assertion: KbDoc): LinkRef {
@@ -270,29 +293,31 @@ export function validateExistingProverRepo(
 	targetPath: string,
 	commit: string,
 ): string[] {
-	const mergeBase = runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]);
-	if (mergeBase.status === 1) {
-		throw new Error(
-			`scoped repo ${repoId} at ${formatPath(targetPath)} cannot prove assertion pinned at ${commit}: pinned commit is not reachable from HEAD`,
-		);
-	}
-	if (mergeBase.status !== 0) {
-		const detail = mergeBase.stderr.trim() || mergeBase.stdout.trim() || "unknown git error";
-		throw new Error(
-			`failed to check pinned commit reachability for scoped repo ${repoId} at ${formatPath(targetPath)}: ${detail}`,
-		);
-	}
-
 	const warnings: string[] = [];
-	const head = gitRun(
-		targetPath,
-		["rev-parse", "HEAD"],
-		`failed to inspect HEAD for scoped repo ${repoId}`,
-	);
-	if (head !== commit) {
-		warnings.push(
-			`scoped repo ${repoId} at ${formatPath(targetPath)} is ahead of pinned commit ${commit}${scope.ref ? ` (${scope.ref})` : ""}; continuing`,
+	if (scope.ref) {
+		const mergeBase = runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]);
+		if (mergeBase.status === 1) {
+			throw new Error(
+				`scoped repo ${repoId} at ${formatPath(targetPath)} cannot prove assertion pinned at ${commit}: pinned commit is not reachable from HEAD`,
+			);
+		}
+		if (mergeBase.status !== 0) {
+			const detail = mergeBase.stderr.trim() || mergeBase.stdout.trim() || "unknown git error";
+			throw new Error(
+				`failed to check pinned commit reachability for scoped repo ${repoId} at ${formatPath(targetPath)}: ${detail}`,
+			);
+		}
+
+		const head = gitRun(
+			targetPath,
+			["rev-parse", "HEAD"],
+			`failed to inspect HEAD for scoped repo ${repoId}`,
 		);
+		if (head !== commit) {
+			warnings.push(
+				`scoped repo ${repoId} at ${formatPath(targetPath)} is ahead of pinned commit ${commit} (${scope.ref}); continuing`,
+			);
+		}
 	}
 
 	const status = gitOutput(targetPath, ["status", "--porcelain"]);

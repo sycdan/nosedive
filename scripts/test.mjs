@@ -383,7 +383,9 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
 	write(
 		proofProverPath,
 		`export async function prove(ctx) {
-  const repo = await ctx.repos.require("proof-target");
+  const repo = await ctx.repos.mustGet("proof-target");
+  const aliasRepo = await ctx.repos.require("proof-target");
+  ctx.assert.equal(aliasRepo.root, repo.root);
   const input = await ctx.fs.readText(repo.resolve("file.txt"));
   ctx.assert.match(input, /proof input/);
 
@@ -542,6 +544,20 @@ links:
 		"non-recorded proof should not edit the assertion",
 	);
 
+	const proofRunByRelativePath = run(["prove", `kb/${proofAssertionId}.md`], proofBridge);
+	assertOk(proofRunByRelativePath, "prove bridge-relative assertion path failed");
+	assert.match(proofRunByRelativePath.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
+
+	const proofRunByAbsolutePath = run(["prove", proofAssertionPath], proofBridge);
+	assertOk(proofRunByAbsolutePath, "prove absolute in-bridge assertion path failed");
+	assert.match(proofRunByAbsolutePath.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
+
+	const outsideAssertionPath = join(tmp, "outside-assertion.md");
+	write(outsideAssertionPath, readFileSync(proofAssertionPath, "utf8"));
+	const outsideAssertionProof = run(["prove", outsideAssertionPath], proofBridge);
+	assert.notEqual(outsideAssertionProof.status, 0, "outside assertion path unexpectedly passed");
+	assert.match(outsideAssertionProof.stderr, /assertion path resolves outside the bridge/);
+
 	const prehydrateRun = run(["prove", prehydrateAssertionId], proofBridge);
 	assertOk(prehydrateRun, "prove should prehydrate scoped repos before artifact execution");
 	assert.match(prehydrateRun.stdout, /artifact saw prehydrated scoped repo/);
@@ -655,6 +671,7 @@ links:
 		dirtyRecordedProof.stderr,
 		/refusing to record proof because accessed repo\(s\) are dirty/,
 	);
+	assert.doesNotMatch(dirtyRecordedProof.stdout, /direct cli preflight succeeded/);
 
 	const missingCwdProof = run(["prove", missingCwdAssertionId], proofBridge);
 	assert.notEqual(missingCwdProof.status, 0, "missing cwd prover unexpectedly succeeded");
@@ -1210,7 +1227,7 @@ nosedive-pilot-email: contract@example.invalid
 	const level0ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
 		["preflight", /Usage: nosedive preflight/],
-		["prove", /Usage: nosedive prove <assertion-uuid>/],
+		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
 		["list-dives", /Usage: nosedive list-dives <effort>/],

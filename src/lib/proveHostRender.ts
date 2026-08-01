@@ -57,9 +57,12 @@ export function createProverContext(request: ProverHostRequest) {
 				if (!repoDoc) return undefined;
 				return contextForRepo(repoDoc);
 			},
-			async require(repoRef: string): Promise<RepoContext> {
+			async mustGet(repoRef: string): Promise<RepoContext> {
 				const repoDoc = resolveRepoDoc(kbDocs, repoRef);
 				return contextForRepo(repoDoc);
+			},
+			async require(repoRef: string): Promise<RepoContext> {
+				return ctx.repos.mustGet(repoRef);
 			},
 		},
 		sandbox: {
@@ -163,6 +166,12 @@ export function createProverContext(request: ProverHostRequest) {
 	};
 }
 
+function dirtyProofInputIds(inputs: Record<string, ProverHostRepoInput>): string[] {
+	return Object.entries(inputs)
+		.filter(([, input]) => input.dirty)
+		.map(([repoId]) => repoId);
+}
+
 export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 	const [requestPath, ...extra] = args;
 	if (!requestPath || extra.length > 0) throw new Error("_prove-host requires one request path");
@@ -175,6 +184,14 @@ export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 	try {
 		session.prehydrate();
 		for (const warning of session.warnings()) io.err(`WARNING: ${warning}`);
+		if (request.record) {
+			const dirty = dirtyProofInputIds(session.inputs());
+			if (dirty.length > 0) {
+				throw new Error(
+					`refusing to record proof because accessed repo(s) are dirty: ${dirty.join(", ")}`,
+				);
+			}
+		}
 		io.log(
 			request.verbose
 				? `Proving: ${request.assertionName} (${request.assertionId})`

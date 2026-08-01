@@ -12,7 +12,7 @@ import { packageRoot } from "../lib/packageBacklog.js";
 import {
 	ProverHostRequest,
 	assertProverRecordable,
-	findAssertionDoc,
+	findAssertionDocByRef,
 	parseProveArgs,
 	printProofFailure,
 	proofRunTempDir,
@@ -28,7 +28,7 @@ async function prove(args: string[], io: CommandIo): Promise<void> {
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const assertion = findAssertionDoc(kbDocs, options.assertionId);
+	const assertion = findAssertionDocByRef(kbDocs, rc.bridgeDir, options.assertionRef);
 	const proverPath = resolveProverArtifact(rc.bridgeDir, rc.kbDir, assertion);
 	const runDir = proofRunTempDir();
 	const requestPath = join(runDir, "request.json");
@@ -45,6 +45,7 @@ async function prove(args: string[], io: CommandIo): Promise<void> {
 		proverPath,
 		resultPath,
 		verbose: options.verbose,
+		record: options.record,
 	};
 	writeFileAtomic(requestPath, `${JSON.stringify(request, null, 2)}\n`);
 

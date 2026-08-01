@@ -271,7 +271,7 @@ export type LineIterator = NodeJS.AsyncIterator<string>;
 /**
  * Commands write through a `CommandIo` instead of touching `console` or
  * `process` directly, so one implementation can serve the builtin dispatch
- * path while another captures the same output for a command handler.
+ * path while another captures the same output for a command adapter.
  */
 export interface CommandIo {
 	/** Write one stdout line. */
@@ -365,7 +365,7 @@ export interface CapturingCommandIo extends CommandIo {
 	captured(): CapturedCommandOutput;
 }
 
-/** Io for command handlers: buffers stdout/stderr so the host can return it. */
+/** Io for command adapters: buffers stdout/stderr so the host can return it. */
 export function createCapturingIo(): CapturingCommandIo {
 	const prompter = createStdinPrompter();
 	let stdout = "";

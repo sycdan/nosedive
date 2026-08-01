@@ -182,7 +182,16 @@ try {
 	assert.match(help.stdout, /seed\s+Create, migrate, or edit bridge config/);
 	assert.match(help.stdout, /whoami\s+Returns dev-identifying fields from git config/);
 	assert.doesNotMatch(help.stdout, /\b[a-z][\w.-]*@\d+\b/);
+	assert.doesNotMatch(help.stdout, /_prove-host/);
 	assert.match(help.stdout, /Run `nosedive <command> --help` for details on a command\./);
+
+	const privateProveHostHelp = run(["_prove-host", "--help"], noBridge);
+	assertOk(privateProveHostHelp, "_prove-host --help failed");
+	assert.match(privateProveHostHelp.stdout, /Usage: nosedive _prove-host <request-json-path>/);
+
+	const privateProveHostMissingRequest = run(["_prove-host"], noBridge);
+	assert.notEqual(privateProveHostMissingRequest.status, 0, "_prove-host unexpectedly succeeded");
+	assert.match(privateProveHostMissingRequest.stderr, /_prove-host requires one request path/);
 
 	const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], noBridge);
 	assertOk(minted, "mint command failed");
@@ -1007,16 +1016,19 @@ nosedive-pilot-email: contract@example.invalid
 	);
 	assert.match(missingExplicitWhoamiContract.stderr, /command not found: whoami@2/);
 
-	// Current commands are pinned to the latest command-doc level. Deprecated
-	// commands stay at the level of the migration boundary that retires them.
+	// Commands stay at the level where their current route was introduced.
+	// L1 docs only exist when L1 introduced or changed the command behavior.
 	const level1ContractedCommands = [
+		["dump-backlog", /Usage: nosedive dump-backlog$/m],
+		["update-backlog", /Usage: nosedive update-backlog/],
+		["whoami", /Usage: nosedive whoami/],
+	];
+	const level0ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-uuid>/],
 		["render", /Usage: nosedive render <uuid>/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
-		["dump-backlog", /Usage: nosedive dump-backlog$/m],
-		["update-backlog", /Usage: nosedive update-backlog/],
 		["list-dives", /Usage: nosedive list-dives <effort>/],
 		["pitch", /Usage: nosedive pitch <slug>/],
 		["add-repo", /Usage: nosedive add-repo <repo-id-or-name>/],
@@ -1024,11 +1036,10 @@ nosedive-pilot-email: contract@example.invalid
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
 		["seed", /Usage: nosedive seed \[--headless\]/],
 		["nuke", /Usage: nosedive nuke --config/],
-		["whoami", /Usage: nosedive whoami/],
-	];
-	const level0ContractedCommands = [
 		["apply", /Usage: nosedive apply/],
+		["init", /Usage: nosedive init/],
 		["dump-backlog", /Usage: nosedive dump-backlog \[--verbose\]/],
+		["whoami", /Usage: nosedive whoami/],
 	];
 	const contractedCommands = [
 		...level1ContractedCommands.map(([command, usage]) => [command, usage, 1]),
@@ -1059,12 +1070,12 @@ nosedive-pilot-email: contract@example.invalid
 	}
 	const contractHelpLinks = {
 		preflight: [
-			/\[`pre-push\.hook`\]\(9c07d8f1-61d4-531c-a926-863ce61e4785\.md\)/,
-			/\[`seed`\]\(34c8e9fb-9629-5767-9a81-914f78c63b68\.md\)/,
+			/\[`pre-push\.hook`\]\(f7076ab8-c8a7-562f-9d1e-5bd6855251dd\.md\)/,
+			/\[`seed`\]\(aedefdbd-4d61-5bdb-bc9b-b48abbfd3760\.md\)/,
 		],
 		"pre-push.hook": [
 			/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
-			/\[`render`\]\(9b0241b2-f03f-5594-a537-60a3b4372ee9\.md\)/,
+			/\[`render`\]\(9b4a49b4-72f0-5b4e-8b64-fc5031a4c459\.md\)/,
 		],
 		seed: [/\]\(a40303c1-1362-523f-b095-49178354f878\.md\)/],
 	};

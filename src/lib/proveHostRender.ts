@@ -150,7 +150,7 @@ export function createProverContext(request: ProverHostRequest) {
 
 export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 	const [requestPath, ...extra] = args;
-	if (!requestPath || extra.length > 0) throw new Error("__prove-host requires one request path");
+	if (!requestPath || extra.length > 0) throw new Error("_prove-host requires one request path");
 
 	const request = JSON.parse(readFileSync(requestPath, "utf8")) as ProverHostRequest;
 	const session = createProverContext(request);

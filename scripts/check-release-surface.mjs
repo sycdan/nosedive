@@ -91,6 +91,31 @@ function commandDocId(command, level) {
 	return namespacedUuid(projectRef.id ?? "", `command:${command}@${level}`);
 }
 
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function camelIdentifierPart(value) {
+	const leadingUnderscores = /^_*/.exec(value)?.[0] ?? "";
+	const body = value.slice(leadingUnderscores.length);
+	const parts = body.split(/[^A-Za-z0-9]+/).filter(Boolean);
+	const camel = parts
+		.map((part, index) => {
+			const lower = part.toLowerCase();
+			if (index === 0) return lower;
+			return `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
+		})
+		.join("");
+	return `${leadingUnderscores}${camel}`;
+}
+
+function commandEntrypointName(command, level) {
+	const parts = command.split(".");
+	const action = parts[0] ?? "";
+	const domains = parts.slice(1).map(camelIdentifierPart);
+	return `L${level}__${[...domains, camelIdentifierPart(action)].filter(Boolean).join("_")}`;
+}
+
 function kbDocIdFromTarget(target) {
 	const match = /^kb\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i.exec(
 		target,
@@ -148,6 +173,25 @@ function deprecatedByMigrationIds(doc) {
 	return ids;
 }
 
+function linkIdsByRel(doc, rel) {
+	const ids = [];
+	for (const { target, value } of linkEntries(doc.raw.links)) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+		if (value.rel === rel) {
+			const id = kbDocIdFromTarget(target);
+			if (id) ids.push(id);
+		}
+	}
+	return ids;
+}
+
+function isExplicitlyDeprecated(doc) {
+	return (
+		/^deprecated\b/i.test(String(doc.raw.gist ?? "").trim()) ||
+		/^deprecated\b/i.test(String(doc.body ?? "").trim())
+	);
+}
+
 function validatePackageLinks(raw, filename) {
 	for (const { target } of linkEntries(raw.links)) {
 		const targetPath = String(target ?? "").split("#")[0];
@@ -188,10 +232,10 @@ function commandFrontmatterOrder(text, filename) {
 		fail(`${filename} command frontmatter must put scopes before meta`);
 	}
 	if (/^links:\r?\n(?:[ \t].*\r?\n)*[ \t]+rel: executor$/m.test(frontmatter)) {
-		fail(`${filename} command handler must live in meta.handler, not links`);
+		fail(`${filename} command adapter must live in meta.adapter, not links`);
 	}
 	if (/^  processors:/m.test(frontmatter)) {
-		fail(`${filename} command must use meta.handler, not meta.processors`);
+		fail(`${filename} command must use meta.adapter, not meta.processors`);
 	}
 }
 
@@ -220,22 +264,38 @@ for (const filename of readdirSync(kbDir)
 		if (/\s{2,}|\r|\n/.test(String(raw.meta?.usage ?? ""))) {
 			fail(`${filename} command meta.usage must be a single line`);
 		}
-		if (typeof raw.meta?.handler !== "string" || !raw.meta.handler.startsWith("kb/artifacts/")) {
-			fail(`${filename} command must have meta.handler as a repo-root kb/artifacts path`);
+		if (raw.meta?.handler !== undefined) {
+			fail(`${filename} command must use meta.adapter and meta.entrypoint, not meta.handler`);
+		}
+		const level = Number.parseInt(match[2], 10);
+		const expectedEntrypoint = commandEntrypointName(match[1], level);
+		if (typeof raw.meta?.entrypoint !== "string" || raw.meta.entrypoint.trim() === "") {
+			fail(`${filename} command must have meta.entrypoint`);
+		} else if (raw.meta.entrypoint !== expectedEntrypoint) {
+			fail(`${filename} command meta.entrypoint must be ${expectedEntrypoint}`);
+		}
+		if (typeof raw.meta?.adapter !== "string" || !raw.meta.adapter.startsWith("kb/artifacts/")) {
+			fail(`${filename} command must have meta.adapter as a repo-root kb/artifacts path`);
 		} else {
-			const handlerPath = join(root, raw.meta.handler);
-			if (!existsSync(handlerPath)) {
-				fail(`${filename} handler does not exist: ${raw.meta.handler}`);
+			const adapterPath = join(root, raw.meta.adapter);
+			if (!existsSync(adapterPath)) {
+				fail(`${filename} adapter does not exist: ${raw.meta.adapter}`);
 			} else {
-				const handlerText = readFileSync(handlerPath, "utf8");
-				if (!/export\s+async\s+function\s+handle\s*\(/.test(handlerText)) {
-					fail(`${filename} handler must export async function handle(value, ctx)`);
+				const adapterText = readFileSync(adapterPath, "utf8");
+				const exportPattern = new RegExp(
+					`export\\s+async\\s+function\\s+${escapeRegExp(expectedEntrypoint)}\\s*\\(\\s*value\\s*,\\s*ctx\\s*\\)`,
+				);
+				if (!exportPattern.test(adapterText)) {
+					fail(`${filename} adapter must export async function ${expectedEntrypoint}(value, ctx)`);
 				}
-				if (/\bctx\.invoke\s*\(/.test(handlerText)) {
-					fail(`${filename} handler must call ctx.impl, not ctx.invoke: ${raw.meta.handler}`);
+				if (/\bctx\.invoke\s*\(/.test(adapterText)) {
+					fail(`${filename} adapter must call ctx.impl, not ctx.invoke: ${raw.meta.adapter}`);
 				}
-				if (/\bctx\.impl\.i[0-9a-f]{32}\s*\(/.test(handlerText)) {
-					fail(`${filename} handler must use a semantic ctx.impl alias, not a raw impl id`);
+				for (const match of adapterText.matchAll(/\bctx\.impl\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+					const implAlias = match[1] ?? "";
+					if (!/^i[0-9a-f]{32}$/.test(implAlias)) {
+						fail(`${filename} adapter impl alias must be a raw impl id: ${implAlias}`);
+					}
 				}
 			}
 		}
@@ -244,8 +304,9 @@ for (const filename of readdirSync(kbDir)
 			id: raw.id,
 			name: raw.name,
 			command: match[1],
-			level: Number.parseInt(match[2], 10),
+			level,
 			raw,
+			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
 	}
 
@@ -301,7 +362,7 @@ for (const [key, docs] of docsByCommandLevel) {
 }
 
 for (const doc of commandDocs
-	.filter((doc) => doc.level < currentLevel)
+	.filter((doc) => isExplicitlyDeprecated(doc))
 	.sort((a, b) => a.name.localeCompare(b.name))) {
 	const deprecatedByIds = deprecatedByMigrationIds(doc);
 	if (deprecatedByIds.length === 0) {
@@ -335,6 +396,28 @@ for (const doc of commandDocs
 
 	if (!hasValidBoundary) {
 		fail(`${doc.name} has no valid rel=deprecated-by migration boundary`);
+	}
+}
+
+for (const [command, docs] of docsByCommand) {
+	const sortedDocs = [...docs].sort((a, b) => a.level - b.level);
+	for (let i = 1; i < sortedDocs.length; i += 1) {
+		const previous = sortedDocs[i - 1];
+		const current = sortedDocs[i];
+		if (!previous || !current) continue;
+
+		if (
+			current.raw.meta?.adapter === previous.raw.meta?.adapter &&
+			current.raw.meta?.entrypoint === previous.raw.meta?.entrypoint
+		) {
+			fail(
+				`${current.name} and ${previous.name} use the same adapter entrypoint; keep one command doc unless behavior changed`,
+			);
+		}
+
+		if (!linkIdsByRel(current, "supersedes").includes(previous.id)) {
+			fail(`${current.name} must link rel=supersedes to previous level ${previous.name}`);
+		}
 	}
 }
 

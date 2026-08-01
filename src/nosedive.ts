@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import { isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
-import type { ImplCommandOutput } from "./impl/types.js";
 import {
 	bridgeCompatibilityLevel,
 	createCapturingIo,
@@ -36,7 +35,8 @@ interface ContractDoc extends KbDoc {
 	body: string;
 	command: string;
 	compatibilityLevel: number;
-	handler: string;
+	adapter: string;
+	entrypoint: string;
 	usage: string;
 }
 
@@ -73,8 +73,6 @@ interface ContractRunOutput {
 	exitCode: number;
 }
 
-type CommandImpl = (args: string[]) => ImplCommandOutput | Promise<ImplCommandOutput>;
-
 function packageProjectId(): string {
 	const refPath = join(packageRoot(), ".nosedive-ref");
 	const match = /^id:\s*(\S+)\s*$/m.exec(readFileSync(refPath, "utf8"));
@@ -85,10 +83,6 @@ function packageProjectId(): string {
 
 function commandDocId(command: string, compatibilityLevel: number): string {
 	return namespacedUuid(packageProjectId(), `command:${command}@${compatibilityLevel}`);
-}
-
-function commandImplId(command: string): string {
-	return `i${namespacedUuid(packageProjectId(), `command:${command}`).replaceAll("-", "")}`;
 }
 
 function parseCommandToken(command: string | undefined): ParsedCommand | undefined {
@@ -143,7 +137,8 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 		body: parsed.body,
 		command: contractName.command,
 		compatibilityLevel: contractName.compatibilityLevel,
-		handler: parsed.fm.nested.meta?.handler ?? "",
+		adapter: parsed.fm.nested.meta?.adapter ?? "",
+		entrypoint: parsed.fm.nested.meta?.entrypoint ?? "",
 		usage: parsed.fm.nested.meta?.usage ?? "",
 	};
 }
@@ -210,7 +205,7 @@ function renderContractHelpText(contract: ContractDoc): string {
 function latestContractDocs(): ContractDoc[] {
 	const latestByCommand = new Map<string, ContractDoc>();
 	for (const contract of packageContractDocs()) {
-		if (contract.compatibilityLevel < CURRENT_COMPATIBILITY_LEVEL) continue;
+		if (contract.command.startsWith("_")) continue;
 		if (isDeprecatedContract(contract)) continue;
 		const existing = latestByCommand.get(contract.command);
 		if (!existing || contract.compatibilityLevel > existing.compatibilityLevel) {
@@ -298,13 +293,16 @@ function resolvePackageRootFile(path: string, label: string): string {
 	return resolved;
 }
 
-async function runContractHandler(
+async function runContractAdapter(
 	contract: ContractDoc,
 	args: string[],
 	requestedCompatibilityLevel: number,
 ): Promise<void> {
-	if (!contract.handler) {
-		throw new Error(`command ${contract.name} has no meta.handler`);
+	if (!contract.adapter) {
+		throw new Error(`command ${contract.name} has no meta.adapter`);
+	}
+	if (!contract.entrypoint) {
+		throw new Error(`command ${contract.name} has no meta.entrypoint`);
 	}
 
 	const value: unknown = { args, cwd: process.cwd() };
@@ -328,21 +326,22 @@ async function runContractHandler(
 		lib,
 	};
 
-	const artifactPath = resolvePackageRootFile(contract.handler, `command ${contract.name} handler`);
+	const artifactPath = resolvePackageRootFile(contract.adapter, `command ${contract.name} adapter`);
 	if (!existsSync(artifactPath)) {
-		throw new Error(`command handler not found: ${formatPath(artifactPath)}`);
+		throw new Error(`command adapter not found: ${formatPath(artifactPath)}`);
 	}
 	if (!statSync(artifactPath).isFile()) {
-		throw new Error(`command handler is not a file: ${formatPath(artifactPath)}`);
+		throw new Error(`command adapter is not a file: ${formatPath(artifactPath)}`);
 	}
-	const mod = (await import(pathToFileURL(artifactPath).href)) as {
-		handle?: (value: unknown, ctx: ContractRunContext) => unknown | Promise<unknown>;
-	};
-	if (typeof mod.handle !== "function") {
-		throw new Error(`command handler ${formatPath(artifactPath)} must export handle(value, ctx)`);
+	const mod = (await import(pathToFileURL(artifactPath).href)) as Record<string, unknown>;
+	const entrypoint = mod[contract.entrypoint];
+	if (typeof entrypoint !== "function") {
+		throw new Error(
+			`command adapter ${formatPath(artifactPath)} must export ${contract.entrypoint}(value, ctx)`,
+		);
 	}
 
-	const result = assertContractRunOutput(await mod.handle(value, ctx), contract);
+	const result = assertContractRunOutput(await entrypoint(value, ctx), contract);
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);
 	if (result.exitCode !== 0) process.exitCode = result.exitCode;
@@ -353,7 +352,9 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 	const exact = explicitLevel !== undefined;
 	const targetLevel = exact
 		? explicitLevel
-		: (maybeBridgeCompatibilityLevel(process.cwd()) ?? CURRENT_COMPATIBILITY_LEVEL);
+		: parsed.name.startsWith("_")
+			? CURRENT_COMPATIBILITY_LEVEL
+			: (maybeBridgeCompatibilityLevel(process.cwd()) ?? CURRENT_COMPATIBILITY_LEVEL);
 
 	const contract = resolveContract(parsed.name, targetLevel, exact);
 	if (!contract) {
@@ -366,26 +367,7 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 		return true;
 	}
 
-	await runContractHandler(contract, args, targetLevel);
-	return true;
-}
-
-function writeImplOutput(result: ImplCommandOutput, io: CommandIo): void {
-	if (result.stdout) io.writeOut(result.stdout);
-	if (result.stderr) io.writeErr(result.stderr);
-	if (result.exitCode !== 0) io.setExitCode(result.exitCode);
-}
-
-async function maybeRunDirectImplCommand(
-	parsed: ParsedCommand,
-	args: string[],
-	io: CommandIo,
-): Promise<boolean> {
-	if (parsed.explicitCompatibilityLevel !== undefined) return false;
-	const registry = createImplRegistry({ cwd: process.cwd() });
-	const impl = (registry as Record<string, CommandImpl | undefined>)[commandImplId(parsed.name)];
-	if (!impl) return false;
-	writeImplOutput(await impl(args), io);
+	await runContractAdapter(contract, args, targetLevel);
 	return true;
 }
 
@@ -396,7 +378,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
 	const io = createConsoleIo();
 	try {
-		if (parsedCommand && (await maybeRunDirectImplCommand(parsedCommand, args, io))) return;
 		if (parsedCommand && (await maybeRunContractCommand(parsedCommand, args))) return;
 		await runCoreCli(command, args, io);
 	} finally {

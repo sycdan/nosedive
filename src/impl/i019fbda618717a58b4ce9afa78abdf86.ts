@@ -48,7 +48,7 @@ async function prove(args: string[], io: CommandIo): Promise<void> {
 	};
 	writeFileAtomic(requestPath, `${JSON.stringify(request, null, 2)}\n`);
 
-	const child = spawnSync(process.execPath, [cliPath, "__prove-host", requestPath], {
+	const child = spawnSync(process.execPath, [cliPath, "_prove-host", requestPath], {
 		cwd: rc.bridgeDir,
 		encoding: "utf8",
 		env: cleanGitEnv(),

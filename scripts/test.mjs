@@ -36,8 +36,8 @@ const packageFoundationDocs = [
 	"0000004c-4b40-7ee6-a8de-1f3b50de9a0b.md",
 ];
 const packageNonFoundationDoc = "00cb3908-d040-795e-ae14-89cd1aeeaaf8.md";
-const packageMigrationDoc = "00000000-0061-77ed-a060-f803c8f5aa76.md";
-const packageMigrationScript = "00000000-0076-7dad-af72-3e32d35642f4.mjs";
+const packageMigrationDoc = "019f916b-f800-723d-b096-07d4300ff28a.md";
+const packageMigrationScript = "019f916b-f801-7f38-b893-78904aa97b69.mjs";
 const handoffRunbookId = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 const gitLocalEnvKeys = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -1007,9 +1007,9 @@ nosedive-pilot-email: contract@example.invalid
 	);
 	assert.match(missingExplicitWhoamiContract.stderr, /command not found: whoami@2/);
 
-	// Legacy-compatible commands are documented by level-0 command docs, and help
-	// comes from that command doc's body on both the command and builtin routes.
-	const level0ContractedCommands = [
+	// Current commands are pinned to the latest command-doc level. Deprecated
+	// commands stay at the level of the migration boundary that retires them.
+	const level1ContractedCommands = [
 		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-uuid>/],
@@ -1021,29 +1021,32 @@ nosedive-pilot-email: contract@example.invalid
 		["add-repo", /Usage: nosedive add-repo <repo-id-or-name>/],
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
-		["apply", /Usage: nosedive apply/],
-	];
-	const level1ContractedCommands = [
 		["seed", /Usage: nosedive seed \[--headless\]/],
 		["nuke", /Usage: nosedive nuke --config/],
 		["whoami", /Usage: nosedive whoami/],
 	];
+	const level0ContractedCommands = [["apply", /Usage: nosedive apply/]];
 	const contractedCommands = [
-		...level0ContractedCommands.map(([command, usage]) => [command, usage, 0]),
 		...level1ContractedCommands.map(([command, usage]) => [command, usage, 1]),
+		...level0ContractedCommands.map(([command, usage]) => [command, usage, 0]),
 	];
 	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
 		const docText = readFileSync(join(root, "kb", docName), "utf8");
 		if (!/^kind: command$/m.test(docText)) continue;
 		assert.doesNotMatch(
 			docText,
-			/^  usage: \|-\n    Usage:/m,
+			/^  usage: Usage:/m,
 			`${docName} meta.usage should not include the rendered Usage: prefix`,
 		);
 		assert.match(
 			docText,
-			/^  usage: \|-\n    nosedive /m,
+			/^  usage: nosedive /m,
 			`${docName} meta.usage should start with the bare command shape`,
+		);
+		assert.doesNotMatch(
+			docText,
+			/^  usage: \|-/m,
+			`${docName} meta.usage should be a one-line scalar`,
 		);
 	}
 	const contractHelpLinks = {
@@ -3330,11 +3333,11 @@ current:
 	assert.doesNotMatch(initHeadlessExisting.stdout, /Seeded .*foundation docs/);
 	assert.match(
 		initHeadlessExisting.stdout,
-		/Running migration .*00000000-0061-77ed-a060-f803c8f5aa76\.md/,
+		/Running migration .*019f916b-f800-723d-b096-07d4300ff28a\.md/,
 	);
 	assert.match(
 		initHeadlessExisting.stdout,
-		/Migration 00000000-0061-77ed-a060-f803c8f5aa76 complete\./,
+		/Migration 019f916b-f800-723d-b096-07d4300ff28a complete\./,
 	);
 	assert.equal(existsSync(join(headlessExistingBridge, ".nosediverc")), false);
 	assert.equal(
@@ -3459,7 +3462,7 @@ Child body.
 
 	const backlogSeed = run(["seed", "--headless"], backlogBridge, "");
 	assertOk(backlogSeed, "seed with tracked backlog failed");
-	assert.match(backlogSeed.stdout, /Running migration .*00000000-0061-77ed-a060-f803c8f5aa76\.md/);
+	assert.match(backlogSeed.stdout, /Running migration .*019f916b-f800-723d-b096-07d4300ff28a\.md/);
 	assert.match(backlogSeed.stdout, /Source: backlog/);
 	assert.match(backlogSeed.stdout, /Efforts copied: 2/);
 	assert.match(backlogSeed.stdout, new RegExp(`Bridge repo: reused ${bridgeRepoId}`));
@@ -3607,13 +3610,10 @@ gist: Solo gist
 		);
 		assert.match(
 			initScriptFailure.stderr,
-			/migration '.*' \(v0->v1\) failed: simulated migration failure/,
+			/migration '.*' \(L0->L1\) failed: simulated migration failure/,
 		);
-		assert.match(
-			initScriptFailure.stderr,
-			/Seed v1 bridge config and migrate legacy backlog efforts/,
-		);
-		assert.match(initScriptFailure.stderr, /# Seed v1 Bridge/);
+		assert.match(initScriptFailure.stderr, /Migrates a compatibility level 0 bridge into L1/);
+		assert.match(initScriptFailure.stderr, /# Seed L1 Bridge/);
 		assert.match(initScriptFailure.stderr, /## Clean Gate/);
 		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
 		assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);

@@ -436,8 +436,8 @@ interface MigrationContext {
 }
 
 interface Migration {
-	fromVersion: number;
-	toVersion: number;
+	fromLevel: number;
+	toLevel: number;
 	/** kind: migration kb doc id, read from the package (never seeded into a bridge's kb) for error output. */
 	docId: string;
 	/** Script artifact path, relative to the installed package root. */
@@ -458,16 +458,6 @@ interface MigrationRunSummary {
 	};
 	manualCleanup?: string;
 }
-
-const MIGRATIONS: Migration[] = [
-	{
-		fromVersion: 0,
-		toVersion: 1,
-		docId: "00000000-0061-77ed-a060-f803c8f5aa76",
-		scriptRelPath: join("kb", "artifacts", "00000000-0076-7dad-af72-3e32d35642f4.mjs"),
-		summary: "Seed v1 bridge config and migrate legacy backlog efforts into KB docs",
-	},
-];
 
 type ConfigShapeInfo =
 	| { kind: "none" }
@@ -593,12 +583,13 @@ async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Promise<vo
 	if (version === CURRENT_COMPATIBILITY_LEVEL) return; // already current: no-op, no further I/O
 
 	const ctx: MigrationContext = { bridgeDir, mintUuid: createUuid7Minter() };
+	const migrations = packageMigrations();
 	while (version < CURRENT_COMPATIBILITY_LEVEL) {
-		const migration = MIGRATIONS.find((m) => m.fromVersion === version);
+		const migration = migrations.find((m) => m.fromLevel === version);
 		if (!migration) {
-			const known = MIGRATIONS.map(
-				(m) => `  v${m.fromVersion}->v${m.toVersion}: ${m.summary}`,
-			).join("\n");
+			const known = migrations
+				.map((m) => `  L${m.fromLevel}->L${m.toLevel}: ${m.summary}`)
+				.join("\n");
 			throw new Error(
 				`no migration path from compatibility level ${version} to ${CURRENT_COMPATIBILITY_LEVEL}; ` +
 					`bridge config is in an unrecognized state.\nKnown migrations:\n${known}`,
@@ -612,12 +603,12 @@ async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Promise<vo
 		} catch (err) {
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(
-				`migration '${migration.summary}' (v${migration.fromVersion}->v${migration.toVersion}) failed: ${detail}\n\n` +
+				`migration '${migration.summary}' (L${migration.fromLevel}->L${migration.toLevel}) failed: ${detail}\n\n` +
 					describeMigrationForError(migration.docId),
 			);
 		}
 
-		version = migration.toVersion;
+		version = migration.toLevel;
 	}
 }
 
@@ -635,7 +626,7 @@ type LineIterator = NodeJS.AsyncIterator<string>;
 /**
  * Commands write through a `CommandIo` instead of touching `console` or
  * `process` directly, so one implementation can serve the builtin dispatch
- * path while another captures the same output for a command executor.
+ * path while another captures the same output for a command processor.
  */
 export interface CommandIo {
 	/** Write one stdout line. */
@@ -729,7 +720,7 @@ export interface CapturingCommandIo extends CommandIo {
 	captured(): CapturedCommandOutput;
 }
 
-/** Io for command executors: buffers stdout/stderr so the host can return it. */
+/** Io for command processors: buffers stdout/stderr so the host can return it. */
 export function createCapturingIo(): CapturingCommandIo {
 	const prompter = createStdinPrompter();
 	let stdout = "";
@@ -817,10 +808,50 @@ function packageMigrationDocs(): Array<{ filename: string; content: string }> {
 	return packageDocsOfKind("migration");
 }
 
+function parsePackageMigration(doc: { filename: string; content: string }): Migration {
+	const path = join(packageRoot(), "kb", doc.filename);
+	const parsed = parseMarkdownDoc(doc.content, path);
+	const id = parsed.fm.scalars.id;
+	const fromLevel = Number.parseInt(parsed.fm.nested.meta?.["from-level"] ?? "", 10);
+	const toLevel = Number.parseInt(parsed.fm.nested.meta?.["to-level"] ?? "", 10);
+	const scriptRelPath = parsed.fm.nested.meta?.script;
+	if (!id) throw new Error(`migration ${formatPath(path)} is missing id`);
+	if (!Number.isInteger(fromLevel) || fromLevel < 0) {
+		throw new Error(`migration ${formatPath(path)} is missing readable meta.from-level`);
+	}
+	if (!Number.isInteger(toLevel) || toLevel <= fromLevel) {
+		throw new Error(`migration ${formatPath(path)} is missing readable meta.to-level`);
+	}
+	if (
+		!scriptRelPath ||
+		!scriptRelPath.startsWith("kb/artifacts/") ||
+		isAbsolute(scriptRelPath) ||
+		unsafeLinkPath(scriptRelPath)
+	) {
+		throw new Error(
+			`migration ${formatPath(path)} must set meta.script to a safe repo-root kb/artifacts path`,
+		);
+	}
+	return {
+		fromLevel,
+		toLevel,
+		docId: id,
+		scriptRelPath,
+		summary: parsed.fm.scalars.gist ?? "",
+	};
+}
+
+function packageMigrations(): Migration[] {
+	return packageMigrationDocs()
+		.map((doc) => parsePackageMigration(doc))
+		.sort((a, b) => a.fromLevel - b.fromLevel);
+}
+
 interface ContractDoc extends KbDoc {
 	body: string;
 	command: string;
 	compatibilityLevel: number;
+	processors: string[];
 	usage: string;
 }
 
@@ -849,7 +880,7 @@ interface ContractRunContext {
 	};
 	/**
 	 * Run a builtin command with a capturing io and return what it wrote. This
-	 * is how an executor reuses the typechecked implementation instead of
+	 * is how a processor reuses the typechecked implementation instead of
 	 * reimplementing it, and it avoids artifacts having to resolve a path back
 	 * into the package's own build output.
 	 */
@@ -917,6 +948,7 @@ function packageContractDocs(): ContractDoc[] {
 			body: parsed.body,
 			command: contractName.command,
 			compatibilityLevel: contractName.compatibilityLevel,
+			processors: parsed.fm.nestedLists.meta?.processors ?? [],
 			usage: parsed.fm.nested.meta?.usage ?? "",
 		};
 	});
@@ -1064,11 +1096,26 @@ function assertContractRunOutput(value: unknown, contract: ContractDoc): Contrac
 	return { stdout, stderr: contractStreamField(fields, "stderr", contract), exitCode };
 }
 
+function resolvePackageRootFile(path: string, label: string): string {
+	if (!path || isAbsolute(path) || unsafeLinkPath(path)) {
+		throw new Error(`${label} must be a safe package-root-relative file path: ${path}`);
+	}
+	const resolved = resolveFrom(packageRoot(), path);
+	if (!isInsideDir(packageRoot(), resolved)) {
+		throw new Error(`${label} resolves outside the package: ${path}`);
+	}
+	return resolved;
+}
+
 async function runContractPipeline(
 	contract: ContractDoc,
 	args: string[],
 	requestedCompatibilityLevel: number,
 ): Promise<void> {
+	if (contract.processors.length === 0) {
+		throw new Error(`command ${contract.name} has no meta.processors`);
+	}
+
 	let value: unknown = { args, cwd: process.cwd() };
 	const ctx: ContractRunContext = {
 		command: contract.command,
@@ -1088,15 +1135,9 @@ async function runContractPipeline(
 		},
 		invoke: invokeBuiltin,
 	};
-	const packageKbDir = join(packageRoot(), "kb");
 
-	for (const link of contract.links) {
-		const artifactPath = resolveKbFileLink(
-			packageRoot(),
-			packageKbDir,
-			link,
-			`command ${contract.name} link`,
-		);
+	for (const processor of contract.processors) {
+		const artifactPath = resolvePackageRootFile(processor, `command ${contract.name} processor`);
 		if (!existsSync(artifactPath)) {
 			throw new Error(`command artifact not found: ${formatPath(artifactPath)}`);
 		}
@@ -4869,7 +4910,7 @@ async function runBuiltinCli(
 	args: string[],
 	io: CommandIo,
 ): Promise<void> {
-	// Same rule the command doc host applies before running an executor, so `-h`
+	// Same rule the command doc host applies before running a processor, so `-h`
 	// prints the command doc body whichever route handled the run.
 	const helpOnly = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
 	if (command !== undefined && helpOnly && isContractedCommand(command)) {

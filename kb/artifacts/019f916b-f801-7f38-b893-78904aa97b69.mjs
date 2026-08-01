@@ -1,4 +1,4 @@
-// Migration script for kb doc 00000000-0061-77ed-a060-f803c8f5aa76.
+// Migration script for kb doc 019f916b-f800-723d-b096-07d4300ff28a.
 //
 // Converts a compatibility-level 0 bridge into the level-1 checked-in
 // `.nosedive/config.yaml` shape and copies legacy backlog effort files into KB.
@@ -70,7 +70,7 @@ function assertManagedPathsClean(bridgeDir) {
 	if (dirty.length > 0) {
 		throw new Error(
 			[
-				"refusing to run v0->v1 migration because managed migration paths are dirty",
+				"refusing to run L0->L1 migration because managed migration paths are dirty",
 				...dirty.map((line) => `  ${line}`),
 			].join("\n"),
 		);

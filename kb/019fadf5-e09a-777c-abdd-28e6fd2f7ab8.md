@@ -2,15 +2,15 @@
 kind: command
 id: 019fadf5-e09a-777c-abdd-28e6fd2f7ab8
 name: apply@0
-gist: "Deprecated; no longer writes agent instruction files. Only `--dry-run` remains, as a read-only inspection path."
-
-meta:
-  usage: |-
-    nosedive apply
+gist: Deprecated; no longer writes agent instruction files. Only `--dry-run` remains, as a read-only inspection path.
 scopes: []
+meta:
+  usage: nosedive apply
+  processors:
+    - kb/artifacts/019fadf5-e09b-74e4-a26e-81698df2ea8a.mjs
 links:
-  - artifacts/019fadf5-e09b-74e4-a26e-81698df2ea8a.mjs:
-      rel: executor
+  - 019f916b-f800-723d-b096-07d4300ff28a:
+      rel: deprecated-by
 ---
 
 # Apply

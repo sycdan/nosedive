@@ -9,7 +9,6 @@ import {
 	findBridgeConfig,
 	formatPath,
 	legacyConfigPath,
-	localConfigPath,
 	noBridgeConfigError,
 	readNosediveRc,
 } from "./coreParsing.js";
@@ -29,13 +28,7 @@ import {
 	repoDocs,
 } from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
-import {
-	createApplyPlan,
-	gitOutput,
-	renderRepoDoc,
-	writeAgentFiles,
-	writeFileAtomic,
-} from "./renderPlan.js";
+import { gitOutput, writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureSafeTargetPath,
 	gitRun,
@@ -99,7 +92,6 @@ export function nukeConfig(io: CommandIo): void {
 
 	for (const path of [
 		legacyConfigPath(bridgeDir),
-		localConfigPath(bridgeDir),
 		baseConfigPath(bridgeDir),
 		join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"),
 	]) {
@@ -271,30 +263,6 @@ export function repoFrontmatter(
 		repoId: first.repoId,
 		scopePath: first.scopePath || ".",
 	};
-}
-
-export function applyWrite(io: CommandIo): void {
-	const plan = createApplyPlan();
-	const generatedFiles: string[] = [];
-
-	generatedFiles.push(
-		...writeAgentFiles(
-			plan.bridge.bridgeDir,
-			plan.agentFiles,
-			renderRepoDoc(plan.bridge.bridgeDir, plan.targets.get(plan.bridge.bridgeDir) ?? []),
-		),
-	);
-
-	plan.warnings.push(...manageGeneratedGitState(generatedFiles));
-
-	io.log(
-		`Wrote bridge docs: ${plan.agentFiles.map((filename) => join(formatPath(plan.bridge.bridgeDir), filename)).join(", ")}`,
-	);
-	if (plan.warnings.length > 0) {
-		io.log("");
-		io.log("Warnings:");
-		for (const warning of plan.warnings) io.log(`  - ${warning}`);
-	}
 }
 
 export function mintId(args: string[], io: CommandIo): void {

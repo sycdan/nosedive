@@ -1,13 +1,13 @@
 ---
 kind: command
-id: 8c00b7cb-4210-56ff-9741-f9b58f5bc751
-name: preflight@0
+id: d6e4bbe3-b158-5e6d-a734-e0ce77acfdce
+name: preflight@1
 gist: Install the bridge pre-push hook as a managed LF-only shim, never changing `core.hooksPath` or clobbering a foreign hook.
 scopes: []
 meta:
   usage: nosedive preflight
   adapter: kb/artifacts/019fadf5-e087-7e53-b112-bb9402598e6b.mjs
-  entrypoint: L0__preflight
+  entrypoint: L1__preflight
 ---
 
 # Preflight
@@ -25,11 +25,11 @@ Re-running is idempotent: a managed hook is refreshed in place.
 - Existing foreign hooks are left unchanged. Preflight warns on stderr and
   tells the user to add `npx nosedive pre-push.hook "$@" || exit 1` to their
   existing hook setup; see
-  [`pre-push.hook`](f7076ab8-c8a7-562f-9d1e-5bd6855251dd.md).
+  [`pre-push.hook`](9c07d8f1-61d4-531c-a926-863ce61e4785.md).
 - If `core.hooksPath` is set, preflight does not change Git config and does not
   write an ignored `.git/hooks/pre-push`; it prints the same manual wiring
   guidance.
 
 Preflight only installs the hook. Config migrations are handled by
-[`seed`](aedefdbd-4d61-5bdb-bc9b-b48abbfd3760.md); agent instruction files are
+[`seed`](34c8e9fb-9629-5767-9a81-914f78c63b68.md); agent instruction files are
 expected to be source-controlled files.

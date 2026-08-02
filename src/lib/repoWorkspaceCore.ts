@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "nod
 import { dirname, join, resolve } from "node:path";
 import { isSeq, parseDocument, parse as parseYaml } from "yaml";
 
-import { isInsideDir, resolveEffortPath } from "./backlogDives.js";
+import { isInsideDir } from "./backlogDives.js";
 import {
 	NosediveRc,
 	formatPath,
@@ -12,14 +12,7 @@ import {
 	splitMarkdownFrontmatter,
 	stringifyYaml,
 } from "./coreParsing.js";
-import {
-	AddRepoOptions,
-	EffortRepo,
-	KbDoc,
-	activeEffortRefFromHeldDive,
-	parseEffortRepos,
-	repoDocs,
-} from "./kbDocs.js";
+import { EffortRepo, KbDoc, parseEffortRepos, repoDocs } from "./kbDocs.js";
 import { cleanGitEnv, gitOutput, writeFileAtomic } from "./renderPlan.js";
 
 export function resolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc {
@@ -76,35 +69,6 @@ export function appendRepoToEffort(path: string, repo: EffortRepo): string {
 	const yaml = stringifyYaml(doc);
 	writeFileAtomic(path, ["---", yaml.trimEnd(), "---", frontmatter.body].join("\n"));
 	return entry;
-}
-
-export function activeEffortPath(rc: NosediveRc): string | undefined {
-	if (!rc.backlogDir) return undefined;
-	const effortRef = rc.current.effort ?? activeEffortRefFromHeldDive(rc);
-	return effortRef
-		? resolveEffortPath(effortRef, rc.bridgeDir, rc.backlogDir, "active effort")
-		: undefined;
-}
-
-export function resolveAddRepoEffort(
-	rc: NosediveRc,
-	options: AddRepoOptions,
-): { path: string; active: boolean } {
-	if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
-
-	const activePath = activeEffortPath(rc);
-	if (options.effortRef) {
-		const explicitPath = resolveEffortPath(
-			options.effortRef,
-			rc.bridgeDir,
-			rc.backlogDir,
-			"effort",
-		);
-		return { path: explicitPath, active: activePath === explicitPath };
-	}
-	if (!activePath)
-		throw new Error("add-repo requires --effort when no held dive or current effort is active");
-	return { path: activePath, active: true };
 }
 
 export interface HydrateRepoWorkspaceOptions {

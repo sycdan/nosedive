@@ -19,13 +19,12 @@ import {
 	resolveFrom,
 	setCommandHelpPrinter,
 	unsafeLinkPath,
-	writeNosediveRcCurrent,
 	type CommandIo,
 	type KbDoc,
 } from "./lib/commands.js";
 import { lib, namespacedUuid, type CommandLibRegistry } from "./lib/index.js";
 
-export { createCapturingIo, createConsoleIo, readNosediveRc, writeNosediveRcCurrent };
+export { createCapturingIo, createConsoleIo, readNosediveRc };
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -347,14 +346,38 @@ async function runContractAdapter(
 	if (result.exitCode !== 0) process.exitCode = result.exitCode;
 }
 
+/** The one command an out-of-date bridge may still run, because it migrates. */
+const MIGRATION_COMMAND = "seed";
+
 async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): Promise<boolean> {
 	const explicitLevel = parsed.explicitCompatibilityLevel;
 	const exact = explicitLevel !== undefined;
+	const bridgeLevel = exact ? undefined : maybeBridgeCompatibilityLevel(process.cwd());
+	const isHelp = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
+
+	// A bridge below the current level holds data this build no longer reads.
+	// Rather than let each command fail its own confusing way, refuse early and
+	// name the fix. Exceptions: `seed`, which is the fix; `--help`, which
+	// touches no bridge data; and anything that is not a contracted command at
+	// all, such as the `version` builtin, which never reads the bridge.
+	if (
+		bridgeLevel !== undefined &&
+		bridgeLevel < CURRENT_COMPATIBILITY_LEVEL &&
+		!isHelp &&
+		parsed.name !== MIGRATION_COMMAND &&
+		packageContractDoc(parsed.name, CURRENT_COMPATIBILITY_LEVEL) !== undefined
+	) {
+		throw new Error(
+			`bridge is at compatibility level ${bridgeLevel}; run \`nosedive ${MIGRATION_COMMAND}\` ` +
+				`to migrate it to level ${CURRENT_COMPATIBILITY_LEVEL}`,
+		);
+	}
+
 	const targetLevel = exact
 		? explicitLevel
-		: parsed.name.startsWith("_")
+		: parsed.name.startsWith("_") || parsed.name === MIGRATION_COMMAND
 			? CURRENT_COMPATIBILITY_LEVEL
-			: (maybeBridgeCompatibilityLevel(process.cwd()) ?? CURRENT_COMPATIBILITY_LEVEL);
+			: (bridgeLevel ?? CURRENT_COMPATIBILITY_LEVEL);
 
 	const contract = resolveContract(parsed.name, targetLevel, exact);
 	if (!contract) {
@@ -362,7 +385,7 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 		return false;
 	}
 
-	if (args.length === 1 && (args[0] === "-h" || args[0] === "--help")) {
+	if (isHelp) {
 		renderContractHelp(contract);
 		return true;
 	}

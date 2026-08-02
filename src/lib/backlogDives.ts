@@ -7,9 +7,7 @@ import { KbDoc, ScopeRef, parseRawFrontmatterObject } from "./kbDocs.js";
 import {
 	BacklogKbDisplayNode,
 	appendBacklogKbEffortLine,
-	collectEfforts,
 	effortHasParentLink,
-	effortMarkdownInDir,
 	insertBacklogKbEffort,
 	loadBacklogKbEfforts,
 	posixRelPath,
@@ -136,7 +134,7 @@ export function parseListDivesArgs(args: string[], io: CommandIo): ListDivesOpti
 		effortRef = arg;
 	}
 
-	if (!effortRef) throw new Error("list-dives requires an effort path or slug chain");
+	if (!effortRef) throw new Error("list-dives requires an effort id, kb path, or name");
 	return { effortRef, includeHistorical, json };
 }
 
@@ -166,35 +164,29 @@ export function listedDive(doc: KbDoc, rel?: string): ListedDive {
 	};
 }
 
-export function sameEffortRef(
-	effortRef: string | undefined,
-	effortPath: string,
-	bridgeDir: string,
-	backlogDir: string,
-): boolean {
+/**
+ * A dive names its effort in `meta.effort`, which may be the effort's UUID, a
+ * bridge-root kb path such as `kb/<id>.md`, or its exact `name`. All three
+ * have to agree with the effort doc being listed.
+ */
+export function sameEffortRef(effortRef: string | undefined, effort: KbDoc): boolean {
 	if (!effortRef) return false;
-	try {
-		return resolveEffortPath(effortRef, bridgeDir, backlogDir, "dive effort") === effortPath;
-	} catch {
-		return false;
-	}
+	if (effortRef === effort.id || effortRef === effort.name) return true;
+	return effortRef.replaceAll("\\", "/") === effort.relPath.replaceAll("\\", "/");
 }
 
 export const DIVE_WORKING_RELS = new Set(["working", "reviewing"]);
 
 export function collectListDives(
-	effortPath: string,
-	rc: NosediveRc,
+	effort: KbDoc,
 	kbDocs: KbDoc[],
 	includeHistorical: boolean,
 ): ListDivesResult {
-	if (!rc.backlogDir) throw new Error(".nosediverc is missing backlog");
-	const effortText = readFileSync(effortPath, "utf8");
-	const links = parseLinkRefs(parseRawFrontmatterObject(effortText, effortPath).links, effortPath);
+	const links = effort.links;
 	const dives = diveDocs(kbDocs);
 	const divesById = new Map(dives.map((doc) => [doc.id, doc]));
 	const kbIds = new Set(kbDocs.map((doc) => doc.id));
-	const effortLabel = effortRefFromPath(effortPath, rc.backlogDir);
+	const effortLabel = effort.name;
 
 	const pending: ListedDive[] = [];
 	const working: ListedDive[] = [];
@@ -213,7 +205,7 @@ export function collectListDives(
 			}
 			continue;
 		}
-		if (!sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir)) {
+		if (!sameEffortRef(dive.effortRef, effort)) {
 			warnings.push(`dive link ${link.id} does not point back at ${effortLabel}`);
 			continue;
 		}
@@ -232,7 +224,7 @@ export function collectListDives(
 	// full progression view (--include-historical) also lists them.
 	for (const dive of dives) {
 		if (linkedDiveIds.has(dive.id)) continue;
-		if (!sameEffortRef(dive.effortRef, effortPath, rc.bridgeDir, rc.backlogDir)) continue;
+		if (!sameEffortRef(dive.effortRef, effort)) continue;
 		if (dive.metaScalars.diver) {
 			warnings.push(
 				`held dive ${dive.id} points at ${effortLabel} but is not linked from the effort`,
@@ -303,90 +295,4 @@ export function assertSlug(slug: string, label: string): string {
 export function isInsideDir(parent: string, child: string): boolean {
 	const rel = relative(resolve(parent), resolve(child));
 	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-export function assertEffortDirInsideBacklog(
-	path: string,
-	backlogDir: string,
-	label: string,
-): string {
-	const dir = resolve(path);
-	if (!isInsideDir(backlogDir, dir)) throw new Error(`${label} is outside backlog: ${path}`);
-	const effortFile = effortMarkdownInDir(dir, dir.split(/[\\/]/).at(-1) ?? "");
-	if (!effortFile) throw new Error(`${label} is not an effort directory: ${path}`);
-	return dir;
-}
-
-export function assertBacklogDir(path: string, backlogDir: string, label: string): string {
-	const dir = resolve(path);
-	if (!isInsideDir(backlogDir, dir)) throw new Error(`${label} is outside backlog: ${path}`);
-	return dir;
-}
-
-export function resolveParentDir(parentRef: string, bridgeDir: string, backlogDir: string): string {
-	const pathCandidates = [
-		isAbsolute(parentRef) ? resolve(parentRef) : undefined,
-		resolve(bridgeDir, parentRef),
-		resolve(backlogDir, parentRef),
-	].filter((candidate): candidate is string => candidate !== undefined);
-
-	for (const candidate of pathCandidates) {
-		if (!existsSync(candidate)) continue;
-		const stats = statSync(candidate);
-		if (stats.isFile()) {
-			if (!candidate.endsWith(".md"))
-				throw new Error(`parent path is not an effort markdown file: ${parentRef}`);
-			const dir = dirname(candidate);
-			if (!isInsideDir(backlogDir, dir))
-				throw new Error(`parent path is outside backlog: ${parentRef}`);
-			return assertEffortDirInsideBacklog(dir, backlogDir, `parent path ${parentRef}`);
-		}
-		if (stats.isDirectory())
-			return assertBacklogDir(candidate, backlogDir, `parent path ${parentRef}`);
-	}
-
-	const matches = collectEfforts(backlogDir).filter((effort) => effort.chain === parentRef);
-	if (matches.length === 1) return dirname(matches[0]!.path);
-	if (matches.length > 1) throw new Error(`parent effort is ambiguous: ${parentRef}`);
-	throw new Error(`parent effort not found: ${parentRef}`);
-}
-
-export function resolveEffortPath(
-	effortRef: string,
-	bridgeDir: string,
-	backlogDir: string,
-	label = "effort",
-): string {
-	const pathCandidates = [
-		isAbsolute(effortRef) ? resolve(effortRef) : undefined,
-		resolve(process.cwd(), effortRef),
-		resolve(bridgeDir, effortRef),
-		resolve(backlogDir, effortRef),
-	].filter((candidate): candidate is string => candidate !== undefined);
-
-	for (const candidate of pathCandidates) {
-		if (!existsSync(candidate)) continue;
-		const stats = statSync(candidate);
-		if (stats.isFile()) {
-			if (!candidate.endsWith(".md"))
-				throw new Error(`${label} path is not an effort markdown file: ${effortRef}`);
-			if (!isInsideDir(backlogDir, candidate))
-				throw new Error(`${label} path is outside backlog: ${effortRef}`);
-			return candidate;
-		}
-		if (stats.isDirectory()) {
-			const dir = assertEffortDirInsideBacklog(candidate, backlogDir, `${label} path ${effortRef}`);
-			const slug = dir.split(/[\\/]/).at(-1) ?? "";
-			return join(dir, `${pascalFromSlug(slug)}.md`);
-		}
-	}
-
-	const matches = collectEfforts(backlogDir).filter((effort) => effort.chain === effortRef);
-	if (matches.length === 1) return matches[0]!.path;
-	if (matches.length > 1) throw new Error(`${label} is ambiguous: ${effortRef}`);
-	throw new Error(`${label} not found: ${effortRef}`);
-}
-
-export function effortRefFromPath(effortPath: string, backlogDir: string): string {
-	return relative(backlogDir, effortPath).replaceAll("\\", "/");
 }

@@ -6,7 +6,6 @@ import {
 	BASE_CONFIG_FILENAME,
 	DEFAULT_RC,
 	LEGACY_CONFIG_FILENAME,
-	LOCAL_CONFIG_FILENAME,
 	SPLIT_CONFIG_DIRNAME,
 } from "./constants.js";
 export {
@@ -23,7 +22,6 @@ export {
 	HANDOFF_RUNBOOK_ID,
 	KNOWN_AGENTS,
 	LEGACY_CONFIG_FILENAME,
-	LOCAL_CONFIG_FILENAME,
 	MANAGED_EXCLUDE_BEGIN,
 	MANAGED_EXCLUDE_END,
 	MANUAL_PRE_PUSH_LINE,
@@ -74,20 +72,12 @@ export interface NosediveRc {
 	compatibilityLevel?: number;
 	workspaceDir?: string;
 	backlog?: string;
-	backlogDir?: string;
 	kbDir?: string;
 	homeBranch?: string;
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
 	agents: string[];
-	current: {
-		effort?: string;
-	};
-}
-
-export interface NosediveRcCurrent {
-	effort?: string;
 }
 
 export function emptyYaml(): SimpleYaml {
@@ -216,16 +206,12 @@ export function baseConfigPath(bridgeDir: string): string {
 	return join(bridgeDir, SPLIT_CONFIG_DIRNAME, BASE_CONFIG_FILENAME);
 }
 
-export function localConfigPath(bridgeDir: string): string {
-	return join(bridgeDir, LOCAL_CONFIG_FILENAME);
-}
-
 export function legacyConfigPath(bridgeDir: string): string {
 	return join(bridgeDir, LEGACY_CONFIG_FILENAME);
 }
 
 export type ResolvedBridgeConfig =
-	| { shape: "split"; bridgeDir: string; basePath: string; localPath: string }
+	| { shape: "split"; bridgeDir: string; basePath: string }
 	| { shape: "legacy"; bridgeDir: string; legacyPath: string };
 
 /**
@@ -238,8 +224,7 @@ export function findBridgeConfig(start: string): ResolvedBridgeConfig | undefine
 	let dir = resolve(start);
 	for (;;) {
 		const basePath = baseConfigPath(dir);
-		if (existsSync(basePath))
-			return { shape: "split", bridgeDir: dir, basePath, localPath: localConfigPath(dir) };
+		if (existsSync(basePath)) return { shape: "split", bridgeDir: dir, basePath };
 		const legacyPath = legacyConfigPath(dir);
 		if (existsSync(legacyPath)) return { shape: "legacy", bridgeDir: dir, legacyPath };
 		const parent = dirname(dir);
@@ -283,7 +268,6 @@ export function readNosediveRc(start: string): NosediveRc {
 			resolved.shape === "split" ? configCompatibilityLevel(rc, resolved.basePath) : 0,
 		workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
 		backlog,
-		backlogDir: backlog ? resolveFrom(bridgeDir, backlog) : undefined,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		homeBranch: rc.scalars["home-branch"],
 		workBranchPrefix: rc.scalars["work-branch-prefix"],
@@ -291,32 +275,7 @@ export function readNosediveRc(start: string): NosediveRc {
 		pilotEmail: rc.scalars["pilot-email"],
 		agents:
 			rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
-		current: {
-			effort: rc.nested.current?.effort,
-		},
 	};
-}
-
-export function writeNosediveRcCurrent(start: string, current?: NosediveRcCurrent): void {
-	const resolved = findBridgeConfig(start);
-	if (!resolved) throw noBridgeConfigError();
-
-	// `current.*` is transient per-developer state, so it belongs in the
-	// personal local file on a split bridge, and in the single file on a
-	// legacy one.
-	const targetPath = resolved.shape === "split" ? resolved.localPath : resolved.legacyPath;
-	const doc = parseDocument(existsSync(targetPath) ? readFileSync(targetPath, "utf8") : "");
-	if (doc.errors.length > 0)
-		throw new Error(`invalid YAML in ${targetPath}: ${doc.errors[0]?.message ?? "unknown error"}`);
-
-	if (!current?.effort) {
-		doc.deleteIn(["current"]);
-	} else {
-		doc.setIn(["current", "effort"], current.effort ?? null);
-		if (!current.effort) doc.deleteIn(["current", "effort"]);
-	}
-
-	writeFileAtomic(targetPath, stringifyYaml(doc));
 }
 
 // --- seed --------------------------------------------------------------

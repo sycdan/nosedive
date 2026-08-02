@@ -1,3 +1,3 @@
-export async function L0__listDives(value, ctx) {
-	return ctx.impl.ibc747ee2c8755094a919744dcd7c76da(value.args);
+export async function L1__listDives(value, ctx) {
+	return ctx.impl.if96566c2381e5327a1296d254870157c(value.args);
 }

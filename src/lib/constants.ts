@@ -40,7 +40,6 @@ export const DEFAULT_RC = {
 
 export const SPLIT_CONFIG_DIRNAME = ".nosedive";
 export const BASE_CONFIG_FILENAME = "config.yaml";
-export const LOCAL_CONFIG_FILENAME = ".nosedive.local.yaml";
 export const LEGACY_CONFIG_FILENAME = ".nosediverc";
 export const MIGRATION_BACKUP_DIRNAME = "migration-backups";
 

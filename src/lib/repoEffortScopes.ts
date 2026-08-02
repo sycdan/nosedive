@@ -50,16 +50,54 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 	throw new Error(`effort not found: ${effortRef}`);
 }
 
+/**
+ * The active effort comes from the workspace dive marker and nowhere else.
+ * There is no per-developer "current effort" setting: selecting a dive is how
+ * a pilot says what they are working on, so anything else would be a second
+ * source of truth that can disagree with it.
+ */
 export function resolveActiveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc): KbDoc {
-	if (rc.current.effort) return resolveEffortDoc(kbDocs, rc, rc.current.effort);
-
 	const activeDiveId = readActiveDiveId(rc.workspaceDir);
-	const activeDive = activeDiveId
-		? kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeDiveId)
-		: undefined;
-	if (activeDive?.effortRef) return resolveEffortDoc(kbDocs, rc, activeDive.effortRef);
+	if (!activeDiveId) {
+		throw new Error(
+			"no active dive: this command needs an effort, which comes from the dive named in workspace/.nosedive-ref",
+		);
+	}
 
-	throw new Error("add-repo.effort requires an active effort");
+	const activeDive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeDiveId);
+	if (!activeDive) throw new Error(`active dive ${activeDiveId} is missing from kb`);
+	if (!activeDive.effortRef) {
+		throw new Error(`active dive ${activeDiveId} names no effort in meta.effort`);
+	}
+
+	return resolveEffortDoc(kbDocs, rc, activeDive.effortRef);
+}
+
+/**
+ * Parent and child efforts link both ways, the same shape the L1 migration
+ * generates, so a doc pitched under a parent is indistinguishable from a
+ * migrated one.
+ */
+export function appendLinkToDoc(path: string, targetId: string, rel: string): void {
+	const text = readFileSync(path, "utf8");
+	const frontmatter = splitMarkdownFrontmatter(text, path);
+	const doc = parseDocument(frontmatter.yaml);
+	if (doc.errors.length > 0)
+		throw new Error(
+			`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`,
+		);
+
+	const entry = { [`kb/${targetId}.md`]: { rel } };
+	const links = doc.get("links", true);
+	if (links === undefined || links === null) {
+		doc.set("links", [entry]);
+	} else if (isSeq(links)) {
+		links.add(entry);
+	} else {
+		throw new Error(`invalid links in ${path}: expected a YAML list`);
+	}
+
+	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));
 }
 
 export function formatEffortScopeEntry(

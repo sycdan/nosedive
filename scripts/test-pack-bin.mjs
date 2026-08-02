@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -72,7 +72,14 @@ try {
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
-	assert.equal(existsSync(join(seedBridge, "kb")), false);
+	// A fresh seed writes exactly one kb doc: the backlog memo `backlog:` names.
+	const seededKb = readdirSync(join(seedBridge, "kb"));
+	assert.equal(seededKb.length, 1, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	assert.match(
+		readFileSync(join(seedBridge, "kb", seededKb[0]), "utf8"),
+		/^kind: memo$/m,
+		"the one seeded kb doc should be the backlog memo",
+	);
 	assert.equal(
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),
 		["cache/", "migration-backups/", ""].join("\n"),

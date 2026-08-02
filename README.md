@@ -98,18 +98,18 @@ Command docs are the index into implementation: start at the linked doc, then fo
 | Command | Usage | What it does |
 | --- | --- | --- |
 | [`add-repo.effort@1`](kb/bc20378b-76e7-54ce-a36e-3c22e1a8753c.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active effort's `scopes:` by resolving the repo by id or exact name. |
-| [`dehydrate-repo.workspace@0`](kb/336d2744-0f2b-5bae-8edd-a0183744cb3e.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
+| [`dehydrate-repo.workspace@1`](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
 | [`dump-backlog@1`](kb/d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
-| [`hydrate-repo.workspace@0`](kb/568e4789-9b82-53f6-8304-c8f7629e72e4.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
-| [`list-dives@0`](kb/cca66119-d755-5975-b97d-a71c0967e3ba.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | Print pickupable and working dives for an open effort, read from the effort's durable `links:` frontmatter. |
-| [`mint@0`](kb/5f7e9010-8f2b-5501-80a1-67db653e9eab.md) | `npx nosedive mint [timestamp] [count]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
-| [`nuke@0`](kb/0b3f24d2-9275-5d47-844b-f6382cdcfaad.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
-| [`pitch@0`](kb/6bcf7fc7-fdba-5c34-baa4-383b357af666.md) | `npx nosedive pitch <slug> [--gist "<gist>"] [--pitch "<pitch>"] [--parent <parent>]` | Create a new effort file in `backlog/`, optionally nested under a parent effort, domain directory, or slug chain. |
-| [`pre-push.hook@0`](kb/f7076ab8-c8a7-562f-9d1e-5bd6855251dd.md) | `npx nosedive pre-push.hook [remote-name] [remote-url]` | Run the bridge pre-push check registry; v1's only check blocks a push when an active dive's scoped repos still hold uncaptured work. |
-| [`preflight@0`](kb/8c00b7cb-4210-56ff-9741-f9b58f5bc751.md) | `npx nosedive preflight` | Install the bridge pre-push hook as a managed LF-only shim, never changing `core.hooksPath` or clobbering a foreign hook. |
-| [`prove@0`](kb/2cc76d81-d0de-58a1-87a2-3e4a4acaa624.md) | `npx nosedive prove <assertion-ref> [--record] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
-| [`render@0`](kb/9b4a49b4-72f0-5b4e-8b64-fc5031a4c459.md) | `npx nosedive render <uuid>` | Print the markdown body of a packaged nosedive KB document by uuid, with YAML frontmatter stripped. |
-| [`seed@0`](kb/aedefdbd-4d61-5bdb-bc9b-b48abbfd3760.md) | `npx nosedive seed [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
+| [`hydrate-repo.workspace@1`](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
+| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | Print pickupable and working dives for an open effort, read from the effort's durable `links:` frontmatter. |
+| [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [timestamp] [count]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
+| [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
+| [`pitch@1`](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <effort>]` | Create a new `kind: effort` KB doc, optionally nested under a parent effort. |
+| [`pre-push.hook@1`](kb/9c07d8f1-61d4-531c-a926-863ce61e4785.md) | `npx nosedive pre-push.hook [remote-name] [remote-url]` | Run the bridge pre-push check registry; v1's only check blocks a push when an active dive's scoped repos still hold uncaptured work. |
+| [`preflight@1`](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | `npx nosedive preflight` | Install the bridge pre-push hook as a managed LF-only shim, never changing `core.hooksPath` or clobbering a foreign hook. |
+| [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
+| [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid>` | Print the markdown body of a packaged nosedive KB document by uuid, with YAML frontmatter stripped. |
+| [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
 | [`update-backlog@1`](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB effort docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 
@@ -117,9 +117,6 @@ Command docs are the index into implementation: start at the linked doc, then fo
 
 | Command | Usage | What it did |
 | --- | --- | --- |
-| [`add-repo@0`](kb/0fdcf4cd-d7b8-5f41-a1df-ee8210ea50ca.md) | `npx nosedive add-repo <repo-id-or-name> [--effort <effort>] [--ref <ref>] [--read-only] [--apply]` | Deprecated; use `add-repo.effort`, which writes repo scopes onto L1 KB effort docs. |
-| [`apply@0`](kb/87d1019d-d2cd-509f-8f52-6fd99ea13268.md) | `npx nosedive apply` | Deprecated; no longer writes agent instruction files. Only `--dry-run` remains, as a read-only inspection path. |
-| [`init@0`](kb/a0c15e9e-5f66-5faa-b70c-2f48b2d5dcd2.md) | `npx nosedive init [--headless]` | Deprecated; use `seed`, which creates or migrates bridge config at the current compatibility level. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the
@@ -130,7 +127,7 @@ command list.
 A command doc names one repo-root adapter artifact under `meta.adapter` and the
 exported function to run under `meta.entrypoint`. Entrypoints follow the command
 doc name deterministically: `hydrate-repo.workspace@0` maps to
-`L0__workspace_hydrateRepo`, and private commands preserve their leading
+`L1__workspace_hydrateRepo`, and private commands preserve their leading
 underscore. The adapter receives `{ args, cwd }` and must return
 `{ stdout, stderr, exitCode }` (`output` is accepted as a stdout alias).
 Adapters call uuid-named implementations through `ctx.impl` and shared named

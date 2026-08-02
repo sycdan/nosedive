@@ -1,3 +1,3 @@
-export async function L0__render(value, ctx) {
-	return ctx.impl.ie5d11acfe30e54f6aa9d40eecfef9211(value.args);
+export async function L1__render(value, ctx) {
+	return ctx.impl.i97354f3aeee053d2a309e79725b49551(value.args);
 }

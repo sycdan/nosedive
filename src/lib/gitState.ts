@@ -289,17 +289,14 @@ export const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	end: FOUNDATION_EXCLUDE_END,
 	header: [
 		"# owner: nosedive seed",
-		"# reason: .nosedive.local.yaml and package foundation docs are local bootstrap artifacts",
+		"# reason: package foundation docs are local bootstrap artifacts",
 	],
 };
 
 export const CONFIG_EXCLUDE_SPEC: ManagedExcludeSpec = {
 	begin: CONFIG_EXCLUDE_BEGIN,
 	end: CONFIG_EXCLUDE_END,
-	header: [
-		"# owner: nosedive seed",
-		"# reason: legacy .nosedive.local.yaml personal bridge config",
-	],
+	header: ["# owner: nosedive seed", "# reason: legacy personal bridge config"],
 };
 
 export const REPO_MARKER_EXCLUDE_SPEC: ManagedExcludeSpec = {

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import { assertSlug, effortRefFromPath, resolveEffortPath, titleFromSlug } from "./backlogDives.js";
+import { assertSlug, titleFromSlug } from "./backlogDives.js";
 import {
 	NosediveRc,
 	parseMarkdownDoc,
@@ -15,74 +15,97 @@ import {
 import { gitRelPath } from "./gitState.js";
 import { parseLinkRefs, parseScopeRefs } from "./proveHostRender.js";
 import { gitOutput, quoteYamlString } from "./renderPlan.js";
+import { uuid7AtMs } from "./uuid7.js";
 
-export function parsePitchArgs(args: string[]): {
-	slug: string;
+// --- pitch -----------------------------------------------------------------
+
+export interface PitchOptions {
 	gist: string;
-	pitch: string;
+	name?: string;
 	parent?: string;
-} {
-	let slug: string | undefined;
-	let pitchText: string | undefined;
-	let gistText: string | undefined;
+}
+
+function pitchOptionValue(args: string[], index: number, flag: string): string {
+	const value = args[index];
+	if (!value) throw new Error(`${flag} requires a value`);
+	return value;
+}
+
+export function parsePitchArgs(args: string[]): PitchOptions {
+	let gist: string | undefined;
+	let name: string | undefined;
 	let parent: string | undefined;
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
-		if (arg === "--parent" || arg === "--pitch" || arg === "--gist") {
-			const value = args[i + 1];
-			if (!value) throw new Error(`${arg} requires a value`);
-			if (arg === "--parent") parent = value;
-			if (arg === "--pitch") pitchText = value;
-			if (arg === "--gist") gistText = value;
+		if (arg === "--name" || arg === "--parent") {
+			const value = pitchOptionValue(args, i + 1, arg);
+			if (arg === "--name") name = value;
+			else parent = value;
 			i += 1;
+			continue;
+		}
+		if (arg.startsWith("--name=")) {
+			name = arg.slice("--name=".length);
+			if (!name) throw new Error("--name requires a value");
 			continue;
 		}
 		if (arg.startsWith("--parent=")) {
 			parent = arg.slice("--parent=".length);
-			if (!parent)
-				throw new Error("--parent requires an effort or namespace path, or an effort slug chain");
-			continue;
-		}
-		if (arg.startsWith("--pitch=")) {
-			pitchText = arg.slice("--pitch=".length);
-			if (!pitchText) throw new Error("--pitch requires a value");
-			continue;
-		}
-		if (arg.startsWith("--gist=")) {
-			gistText = arg.slice("--gist=".length);
-			if (!gistText) throw new Error("--gist requires a value");
+			if (!parent) throw new Error("--parent requires a value");
 			continue;
 		}
 		if (arg.startsWith("--")) throw new Error(`unknown pitch option: ${arg}`);
-		if (slug) throw new Error(`unexpected pitch argument: ${arg}`);
-		slug = assertSlug(arg, "pitch slug");
+		if (gist !== undefined) throw new Error(`unexpected pitch argument: ${arg}`);
+		gist = arg;
 	}
 
-	if (!slug) throw new Error("pitch requires a slug");
-	const defaultText = titleFromSlug(slug);
-	const pitch = (pitchText ?? gistText ?? defaultText).trim();
-	const gist = (gistText ?? pitchText ?? defaultText).trim();
-	if (!pitch) throw new Error("pitch text cannot be empty");
-	if (!gist) throw new Error("gist cannot be empty");
-	return { slug, gist, pitch, parent };
+	if (gist === undefined) throw new Error("pitch requires a gist");
+	const trimmed = gist.trim();
+	if (!trimmed) throw new Error("gist cannot be empty");
+	if (name !== undefined) assertSlug(name, "pitch name");
+	return { gist: trimmed, name, parent };
 }
 
-export function renderPitchedEffort(slug: string, gist: string, pitchText: string): string {
-	const title = titleFromSlug(slug);
+/**
+ * An unnamed effort still needs a stable slug, and the pitch time is the only
+ * thing that distinguishes it. Seconds resolution is enough: two pitches in
+ * the same second would collide on name, and the duplicate check catches that.
+ */
+export function defaultEffortName(now = new Date()): string {
+	const pad = (value: number, width = 2) => String(value).padStart(width, "0");
 	return [
+		"new-effort",
+		now.getFullYear(),
+		pad(now.getMonth() + 1),
+		pad(now.getDate()),
+		`${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`,
+	].join("-");
+}
+
+export function renderPitchedEffort(options: {
+	id: string;
+	name: string;
+	gist: string;
+	parentId?: string;
+}): string {
+	const leaf = options.name.split(".")[0]!;
+	const lines = [
 		"---",
-		"phase: framing",
-		`gist: ${quoteYamlString(gist)}`,
-		"---",
-		"",
-		`# ${title}`,
-		"",
-		"## Framing",
-		"",
-		pitchText,
-		"",
-	].join("\n");
+		"kind: effort",
+		`id: ${options.id}`,
+		`name: ${options.name}`,
+		`gist: ${quoteYamlString(options.gist)}`,
+	];
+	if (options.parentId) {
+		lines.push("links:", `  - kb/${options.parentId}.md:`, "      rel: parent");
+	}
+	lines.push("---", "", `# ${titleFromSlug(leaf)}`, "");
+	return lines.join("\n");
+}
+
+export function mintEffortId(): string {
+	return uuid7AtMs(Date.now());
 }
 
 // --- apply -----------------------------------------------------------------
@@ -162,65 +185,6 @@ export interface ApplyPlan {
 	tags: Set<string>;
 	targets: Map<string, TargetDoc[]>;
 	warnings: string[];
-}
-
-export function currentDeveloperId(bridgeDir: string): string | undefined {
-	return (
-		gitOutput(bridgeDir, ["config", "user.email"]) || gitOutput(bridgeDir, ["config", "user.name"])
-	);
-}
-
-export function heldDiveEffortRefs(rc: NosediveRc): string[] {
-	if (!rc.kbDir || !rc.backlogDir) return [];
-	const developer = currentDeveloperId(rc.bridgeDir);
-	if (!developer) return [];
-
-	return readdirSync(rc.kbDir, { withFileTypes: true })
-		.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-		.map((entry) => {
-			const path = join(rc.kbDir!, entry.name);
-			const fm = parseMarkdownFrontmatter(readFileSync(path, "utf8"), path);
-			if (fm.scalars.kind !== "dive") return undefined;
-			if (fm.nested.meta?.diver !== developer) return undefined;
-			return fm.scalars.effort;
-		})
-		.filter((effort): effort is string => Boolean(effort));
-}
-
-export function activeEffortRefFromHeldDive(rc: NosediveRc): string | undefined {
-	if (!rc.backlogDir) return undefined;
-	const held = heldDiveEffortRefs(rc);
-	if (held.length === 0) return undefined;
-	if (held.length > 1) throw new Error(`developer has more than one held dive: ${held.join(", ")}`);
-	return effortRefFromPath(
-		resolveEffortPath(held[0]!, rc.bridgeDir, rc.backlogDir, "held dive effort"),
-		rc.backlogDir,
-	);
-}
-
-export function loadBridgeConfig(start: string): BridgeConfig {
-	const rc = readNosediveRc(start);
-	const effort = rc.current.effort ?? activeEffortRefFromHeldDive(rc);
-
-	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
-	if (!gitOutput(rc.bridgeDir, ["rev-parse", "--show-toplevel"])) {
-		throw new Error("nosedive apply must be run inside a git-backed bridge");
-	}
-
-	const bridge: BridgeConfig = {
-		bridgeDir: rc.bridgeDir,
-		workspaceDir: rc.workspaceDir,
-		backlogDir: rc.backlogDir,
-		kbDir: rc.kbDir,
-		homeBranch: rc.homeBranch,
-		workBranchPrefix: rc.workBranchPrefix,
-		pilotName: rc.pilotName,
-		pilotEmail: rc.pilotEmail,
-		agents: rc.agents,
-		effortRef: effort,
-	};
-	if (rc.backlogDir && effort) bridge.effortPath = resolveFrom(rc.backlogDir, effort);
-	return bridge;
 }
 
 export function parseEffortRepos(path: string): EffortRepo[] {

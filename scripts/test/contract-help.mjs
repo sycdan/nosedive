@@ -55,7 +55,7 @@ test("contract help", () => {
 		["dump-backlog", /Usage: nosedive dump-backlog$/m],
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
 		["list-dives", /Usage: nosedive list-dives <effort>/],
-		["mint", /Usage: nosedive mint \[timestamp\] \[count\]/],
+		["mint", /Usage: nosedive mint \[count\] \[--ms <utcmillis>\] \[--ts <iso8601>\]/],
 		["nuke", /Usage: nosedive nuke --config\|--workspace/],
 		["pitch", /Usage: nosedive pitch "<gist>"/],
 		["pre-push.hook", /Usage: nosedive pre-push\.hook/],

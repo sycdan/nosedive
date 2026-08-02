@@ -1,13 +1,13 @@
 import { namespacedUuid } from "./namespacedUuid.js";
-import { UUID7_MAX_TIMESTAMP_MS, mintUuid7Lines, parseMintTimestamp, uuid7AtMs } from "./uuid7.js";
+import { UUID7_MAX_TIMESTAMP_MS, mintUuid7Lines, parseMintArgs, uuid7AtMs } from "./uuid7.js";
 
-export { UUID7_MAX_TIMESTAMP_MS, mintUuid7Lines, namespacedUuid, parseMintTimestamp, uuid7AtMs };
+export { UUID7_MAX_TIMESTAMP_MS, mintUuid7Lines, namespacedUuid, parseMintArgs, uuid7AtMs };
 
 export const lib = {
 	UUID7_MAX_TIMESTAMP_MS,
 	mintUuid7Lines,
 	namespacedUuid,
-	parseMintTimestamp,
+	parseMintArgs,
 	uuid7AtMs,
 } as const;
 

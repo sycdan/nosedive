@@ -94,30 +94,52 @@ test("cli-basics", () => {
 	assert.notEqual(privateProveHostMissingRequest.status, 0, "_prove-host unexpectedly succeeded");
 	assert.match(privateProveHostMissingRequest.stderr, /_prove-host requires one request path/);
 
-	const minted = run(["mint", "1997-08-29T02:14:00-04:00", "2"], noBridge);
+	const uuid7Shape = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+	const encodedMs = (id) => Number.parseInt(`${id.slice(0, 8)}${id.slice(9, 13)}`, 16);
+
+	const isoStart = "1997-08-29T02:14:00-04:00";
+	const minted = run(["mint", "2", "--ts", isoStart], noBridge);
 	assertOk(minted, "mint command failed");
 	const mintedLines = minted.stdout.trim().split(/\r?\n/);
 	assert.equal(mintedLines.length, 2, "mint should print one UUID per line");
-	assert.match(
-		mintedLines[0],
-		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-	);
-	assert.match(
-		mintedLines[1],
-		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+	assert.match(mintedLines[0], uuid7Shape);
+	assert.match(mintedLines[1], uuid7Shape);
+	assert.equal(encodedMs(mintedLines[0]), Date.parse(isoStart), "--ts should set the start point");
+	assert.equal(
+		encodedMs(mintedLines[1]) - encodedMs(mintedLines[0]),
+		1,
+		"mint count mode should advance the encoded timestamp by 1ms per id",
 	);
 	assert.equal(
 		mintedLines[0] < mintedLines[1],
 		true,
-		"mint count mode should advance timestamps by 1ms and sort lexicographically",
+		"mint count mode should sort lexicographically",
+	);
+
+	const mintedMs = run(["mint", "3", "--ms=872835240000"], noBridge);
+	assertOk(mintedMs, "mint --ms failed");
+	const mintedMsLines = mintedMs.stdout.trim().split(/\r?\n/);
+	assert.deepEqual(
+		mintedMsLines.map(encodedMs),
+		[872835240000, 872835240001, 872835240002],
+		"--ms should set the start point and advance by 1ms per id",
 	);
 
 	const mintedNow = run(["mint"], noBridge);
 	assertOk(mintedNow, "mint default timestamp command failed");
-	assert.match(
-		mintedNow.stdout.trim(),
-		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-	);
+	assert.match(mintedNow.stdout.trim(), uuid7Shape);
+
+	const mintedBothStarts = run(["mint", "--ms", "0", "--ts", isoStart], noBridge);
+	assert.notEqual(mintedBothStarts.status, 0, "mint unexpectedly accepted --ms with --ts");
+	assert.match(mintedBothStarts.stderr, /--ms and --ts are exclusive/);
+
+	const mintedBadOption = run(["mint", "--when", isoStart], noBridge);
+	assert.notEqual(mintedBadOption.status, 0, "mint unexpectedly accepted an unknown option");
+	assert.match(mintedBadOption.stderr, /unknown mint option: --when/);
+
+	const mintedBadCount = run(["mint", isoStart], noBridge);
+	assert.notEqual(mintedBadCount.status, 0, "mint unexpectedly accepted a non-numeric count");
+	assert.match(mintedBadCount.stderr, /invalid count/);
 
 	const renderedHandoff = run(["render", handoffRunbookId], noBridge);
 	assertOk(renderedHandoff, "render handoff runbook failed");

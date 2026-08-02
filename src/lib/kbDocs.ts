@@ -119,7 +119,6 @@ export interface BridgeConfig {
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
-	agents: string[];
 	effortPath?: string;
 	effortRef?: string;
 	activeDiveId?: string;

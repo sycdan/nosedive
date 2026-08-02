@@ -16,14 +16,7 @@ import {
 import { basename, dirname, join, relative } from "node:path";
 import { parse, stringify } from "yaml";
 
-const KNOWN_BASE_KEYS = [
-	"workspace",
-	"backlog",
-	"kb",
-	"home-branch",
-	"work-branch-prefix",
-	"agents",
-];
+const KNOWN_BASE_KEYS = ["workspace", "backlog", "kb", "home-branch", "work-branch-prefix"];
 
 const DEFAULT_BASE = {
 	workspace: "./workspace",
@@ -31,7 +24,6 @@ const DEFAULT_BASE = {
 	kb: "./kb",
 	"home-branch": "main",
 	"work-branch-prefix": "work/",
-	agents: ["copilot"],
 };
 
 function writeFileAtomic(path, content) {

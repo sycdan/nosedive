@@ -23,11 +23,6 @@ export const GIT_LOCAL_ENV_KEYS = [
 ];
 
 export const USAGE_HEADER = "Usage: nosedive <command>";
-export const KNOWN_AGENTS = ["copilot", "claude"];
-export const AGENT_FILENAMES: Record<string, string> = {
-	copilot: "AGENTS.md",
-	claude: "CLAUDE.md",
-};
 
 export const DEFAULT_RC = {
 	workspace: "./workspace",
@@ -35,7 +30,6 @@ export const DEFAULT_RC = {
 	kb: "./kb",
 	"home-branch": "main",
 	"work-branch-prefix": "work/",
-	agents: ["copilot"],
 };
 
 export const SPLIT_CONFIG_DIRNAME = ".nosedive";
@@ -52,5 +46,4 @@ export const BASE_CONFIG_KNOWN_KEYS = [
 	"kb",
 	"home-branch",
 	"work-branch-prefix",
-	"agents",
 ] as const;

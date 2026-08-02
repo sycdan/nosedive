@@ -18,6 +18,7 @@ import {
 	readNosediveRc,
 	resolveFrom,
 	setCommandHelpPrinter,
+	setTopLevelHelpRenderer,
 	unsafeLinkPath,
 	type CommandIo,
 	type KbDoc,
@@ -244,6 +245,7 @@ function printCommandHelp(command: string, io: CommandIo): void {
 }
 
 setCommandHelpPrinter(printCommandHelp);
+setTopLevelHelpRenderer(renderTopLevelHelpText);
 
 function isContractedCommand(command: string): boolean {
 	return latestContractDocs().some((doc) => doc.command === command);

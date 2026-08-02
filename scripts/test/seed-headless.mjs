@@ -47,10 +47,10 @@ const noBridge = createNoBridge(tmp);
 test("seed-headless", () => {
 	const seedHelp = run(["seed", "--help"], noBridge);
 	assertOk(seedHelp, "seed --help failed");
-	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--headless\]/);
+	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/);
 	assert.match(
 		seedHelp.stdout,
-		/Usage: nosedive seed \[--headless\]\n\nCreate, migrate, or edit bridge config/,
+		/Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]\n\nCreate, migrate, or edit bridge config/,
 	);
 
 	const initHelp = run(["init", "--help"], noBridge);
@@ -69,10 +69,13 @@ test("seed-headless", () => {
 	runTool("git", ["config", "user.name", "Headless Person"], headlessFreshBridge);
 	runTool("git", ["config", "user.email", "headless@example.invalid"], headlessFreshBridge);
 
-	const initHeadlessFresh = run(["seed", "--headless"], headlessFreshBridge, "");
+	const initHeadlessFresh = run(
+		["seed", "--headless", "--file", "AGENTS.md"],
+		headlessFreshBridge,
+		"",
+	);
 	assertOk(initHeadlessFresh, "headless init on empty directory failed");
 	assert.doesNotMatch(initHeadlessFresh.stdout, /workspace \[/);
-	assert.doesNotMatch(initHeadlessFresh.stdout, /agents, comma-separated/);
 	assert.match(initHeadlessFresh.stdout, wroteConfigFile);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(initHeadlessFresh.stdout, /Seeded .*foundation docs/);
@@ -94,8 +97,6 @@ test("seed-headless", () => {
 			"kb: ./kb",
 			"home-branch: main",
 			"work-branch-prefix: work/",
-			"agents:",
-			"  - copilot",
 			"",
 		].join("\n"),
 	);
@@ -137,10 +138,13 @@ current:
 `,
 	);
 
-	const initHeadlessExisting = run(["seed", "--headless"], headlessExistingBridge, "");
+	const initHeadlessExisting = run(
+		["seed", "--headless", "--file", "AGENTS.md"],
+		headlessExistingBridge,
+		"",
+	);
 	assertOk(initHeadlessExisting, "headless init with existing legacy config failed");
 	assert.doesNotMatch(initHeadlessExisting.stdout, /workspace \[/);
-	assert.doesNotMatch(initHeadlessExisting.stdout, /agents, comma-separated/);
 	assert.doesNotMatch(initHeadlessExisting.stdout, /Seeded .*foundation docs/);
 	assert.match(
 		initHeadlessExisting.stdout,
@@ -172,8 +176,6 @@ current:
 			"kb: ./custom-kb",
 			"home-branch: main",
 			"work-branch-prefix: work/",
-			"agents:",
-			"  - claude",
 			"",
 		].join("\n"),
 	);
@@ -197,7 +199,11 @@ current:
 	}
 	// Re-running seed on an already-migrated, already-current bridge is a
 	// no-op with respect to migration.
-	const initHeadlessAgain = run(["seed", "--headless"], headlessExistingBridge, "");
+	const initHeadlessAgain = run(
+		["seed", "--headless", "--file", "AGENTS.md"],
+		headlessExistingBridge,
+		"",
+	);
 	assertOk(initHeadlessAgain, "second headless init on migrated bridge failed");
 	assert.doesNotMatch(initHeadlessAgain.stdout, /Running migration/);
 });

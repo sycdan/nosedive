@@ -9,7 +9,6 @@ import {
 	SPLIT_CONFIG_DIRNAME,
 } from "./constants.js";
 export {
-	AGENT_FILENAMES,
 	BASE_CONFIG_FILENAME,
 	BASE_CONFIG_KNOWN_KEYS,
 	CONFIG_EXCLUDE_BEGIN,
@@ -20,7 +19,6 @@ export {
 	FOUNDATION_EXCLUDE_END,
 	GIT_LOCAL_ENV_KEYS,
 	HANDOFF_RUNBOOK_ID,
-	KNOWN_AGENTS,
 	LEGACY_CONFIG_FILENAME,
 	MANAGED_EXCLUDE_BEGIN,
 	MANAGED_EXCLUDE_END,
@@ -77,7 +75,6 @@ export interface NosediveRc {
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
-	agents: string[];
 }
 
 export function emptyYaml(): SimpleYaml {
@@ -273,8 +270,6 @@ export function readNosediveRc(start: string): NosediveRc {
 		workBranchPrefix: rc.scalars["work-branch-prefix"],
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
-		agents:
-			rc.lists.agents && rc.lists.agents.length > 0 ? rc.lists.agents : [...DEFAULT_RC.agents],
 	};
 }
 
@@ -288,10 +283,11 @@ export interface RcSettings {
 	workBranchPrefix: string;
 	pilotName: string;
 	pilotEmail: string;
-	agents: string[];
 }
 
 export interface SeedOptions {
 	help: boolean;
 	headless: boolean;
+	/** Agent instruction files named with `--file`; empty means autodetect. */
+	files: string[];
 }

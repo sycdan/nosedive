@@ -168,7 +168,7 @@ export function writeBridgeConfig(
 ) {
 	const lines = ["compatibility-level: 1", `workspace: ${workspace}`, `kb: ${kb}`];
 	if (backlog) lines.push(`backlog: ${backlog}`);
-	lines.push("agents:", "  - copilot", "");
+	lines.push("");
 	write(join(bridgeDir, ".nosedive", "config.yaml"), lines.join("\n"));
 }
 

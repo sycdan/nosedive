@@ -19,14 +19,21 @@ import { packageMigrationDocs, packageMigrations, packageRoot } from "./packageB
 import { gitOutput } from "./renderPlan.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
-	const options: SeedOptions = { help: false, headless: false };
-	for (const arg of args) {
+	const options: SeedOptions = { help: false, headless: false, files: [] };
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
 		if (arg === "-h" || arg === "--help") {
 			options.help = true;
 			continue;
 		}
 		if (arg === "--headless") {
 			options.headless = true;
+			continue;
+		}
+		if (arg === "--file" || arg.startsWith("--file=")) {
+			const value = arg === "--file" ? args[++i] : arg.slice("--file=".length);
+			if (!value) throw new Error("seed --file requires a path");
+			options.files.push(value);
 			continue;
 		}
 		if (arg.startsWith("--")) throw new Error(`unknown seed option: ${arg}`);
@@ -50,10 +57,6 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
 		pilotName: "",
 		pilotEmail: "",
-		agents:
-			base.lists.agents && base.lists.agents.length > 0
-				? base.lists.agents
-				: [...DEFAULT_RC.agents],
 	};
 }
 
@@ -65,8 +68,6 @@ export function renderBaseConfig(settings: RcSettings, compatibilityLevel: numbe
 		`kb: ${settings.kb}`,
 		`home-branch: ${settings.homeBranch}`,
 		`work-branch-prefix: ${settings.workBranchPrefix}`,
-		`agents:`,
-		...settings.agents.map((agent) => `  - ${agent}`),
 		"",
 	].join("\n");
 }

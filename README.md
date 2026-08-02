@@ -109,7 +109,7 @@ Command docs are the index into implementation: start at the linked doc, then fo
 | [`preflight@1`](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | `npx nosedive preflight` | Install the bridge pre-push hook as a managed LF-only shim, never changing `core.hooksPath` or clobbering a foreign hook. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid>` | Print the markdown body of a packaged nosedive KB document by uuid, with YAML frontmatter stripped. |
-| [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
+| [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
 | [`update-backlog@1`](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB effort docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 

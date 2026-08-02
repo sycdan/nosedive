@@ -155,7 +155,7 @@ meta:
 	const nukeConfigBridge = join(tmp, "nuke-config-bridge");
 	mkdirSync(nukeConfigBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], nukeConfigBridge);
-	const nukeConfigSeed = run(["seed", "--headless"], nukeConfigBridge, "");
+	const nukeConfigSeed = run(["seed", "--headless", "--file", "AGENTS.md"], nukeConfigBridge, "");
 	assertOk(nukeConfigSeed, "seed before nuke --config failed");
 	const nukeConfigExclude = join(nukeConfigBridge, ".git", "info", "exclude");
 	write(

@@ -199,7 +199,7 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
 
   const sandbox = await ctx.sandbox.create(ctx.assertion.name);
   await ctx.exec("git", ["init", "-b", "main"], { cwd: sandbox.root });
-  await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "seed", "--headless"], { cwd: sandbox.root });
+  await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "seed", "--headless", "--file", "AGENTS.md"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
   const hookPath = ctx.path.join(sandbox.root, ".git", "hooks", "pre-push");
   const expectedHook = '#!/bin/sh\\n# nosedive-managed\\nexec npx nosedive pre-push.hook "$@"\\n';

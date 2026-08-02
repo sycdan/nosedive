@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { pascalFromSlug, titleFromSlug } from "./backlogDives.js";
 import { CommandIo, Migration } from "./bridgeSetupIo.js";
-import { KNOWN_AGENTS, MIGRATION_BACKUP_DIRNAME, SPLIT_CONFIG_DIRNAME } from "./constants.js";
+import { MIGRATION_BACKUP_DIRNAME, SPLIT_CONFIG_DIRNAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
 	findBridgeConfig,
@@ -21,32 +21,6 @@ import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { uuidLike } from "./repoWorkspaceCore.js";
-
-export async function promptAgents(io: CommandIo, current: string[]): Promise<string[]> {
-	for (;;) {
-		const line = await io.prompt(
-			`agents, comma-separated (options: ${KNOWN_AGENTS.join(", ")}) [${current.join(",")}]: `,
-		);
-		if (line === undefined) return current;
-		const list =
-			line === ""
-				? current
-				: line
-						.split(",")
-						.map((entry) => entry.trim())
-						.filter(Boolean);
-		const unknown = list.filter((agent) => !KNOWN_AGENTS.includes(agent));
-		if (unknown.length > 0) {
-			io.err(`unknown agent(s): ${unknown.join(", ")} (options: ${KNOWN_AGENTS.join(", ")})`);
-			continue;
-		}
-		if (list.length === 0) {
-			io.err("select at least one agent");
-			continue;
-		}
-		return list;
-	}
-}
 
 export function packageRoot(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -127,6 +101,18 @@ export function printCommandHelp(command: string, io: CommandIo): void {
 	if (!commandHelpPrinter)
 		throw new Error(`no command help printer configured for command: ${command}`);
 	commandHelpPrinter(command, io);
+}
+
+export let topLevelHelpRenderer: (() => string) | undefined;
+
+export function setTopLevelHelpRenderer(render: () => string): void {
+	topLevelHelpRenderer = render;
+}
+
+/** The `nosedive help` text, for commands that embed the command surface in what they write. */
+export function renderTopLevelHelp(): string {
+	if (!topLevelHelpRenderer) throw new Error("no top-level help renderer configured");
+	return topLevelHelpRenderer();
 }
 export const NOSEDIVE_DIR_GITIGNORE = ["cache/", `${MIGRATION_BACKUP_DIRNAME}/`, ""].join("\n");
 

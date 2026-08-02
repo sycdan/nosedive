@@ -137,7 +137,7 @@ Child body.
 	runTool("git", ["add", "kb", "backlog"], backlogBridge);
 	runTool("git", ["commit", "-m", "legacy backlog"], backlogBridge);
 
-	const backlogSeed = run(["seed", "--headless"], backlogBridge, "");
+	const backlogSeed = run(["seed", "--headless", "--file", "AGENTS.md"], backlogBridge, "");
 	assertOk(backlogSeed, "seed with tracked backlog failed");
 	assert.match(backlogSeed.stdout, /Running migration .*019f916b-f800-723d-b096-07d4300ff28a\.md/);
 	assert.match(backlogSeed.stdout, /Source: backlog/);
@@ -287,7 +287,7 @@ gist: Solo gist
 # Solo
 `,
 	);
-	const effortsSeed = run(["seed", "--headless"], effortsBridge, "");
+	const effortsSeed = run(["seed", "--headless", "--file", "AGENTS.md"], effortsBridge, "");
 	assertOk(effortsSeed, "seed with efforts fallback failed");
 	assert.match(effortsSeed.stdout, /Source: efforts/);
 	assert.match(effortsSeed.stdout, /Bridge repo: created [0-9a-f-]{36}/);

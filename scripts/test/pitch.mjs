@@ -110,7 +110,7 @@ test("pitch rejects bad input", () => {
 
 test("a pitched effort reaches the backlog memo", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-bridge");
-	assertOk(run(["seed", "--headless"], bridge, ""), "seed failed");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	assertOk(run(["pitch", "Indexed effort.", "--name", "indexed"], bridge), "pitch failed");
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");

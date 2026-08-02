@@ -62,7 +62,7 @@ test("contract help", () => {
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
-		["seed", /Usage: nosedive seed \[--headless\]/],
+		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],
 	].map(([command, usage]) => [command, usage, 1]);

@@ -56,7 +56,9 @@ function nosediveInvocation(): string {
 	const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
 		version: string;
 	};
-	if (version !== LOCAL_DEV_VERSION) return `npx nosedive@${version}`;
+	// `-y` because a pinned version is a cache slot npx has never seen: with a
+	// TTY it would stop to ask, and an agent shell has no one to answer.
+	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
 	return `node ${formatPath(join(root, "dist", "cli.js")).replaceAll("\\", "/")}`;
 }
 

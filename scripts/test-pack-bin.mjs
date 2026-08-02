@@ -65,10 +65,17 @@ try {
 	run("git", ["config", "user.name", "Packed Pilot"], seedBridge);
 	run("git", ["config", "user.email", "packed@example.invalid"], seedBridge);
 	const seed = runPackedNpm(
-		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless"],
+		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless --file AGENTS.md"],
 		seedBridge,
 	);
 	assert.match(seed.stdout, /Wrote \.nosedive[\\/]config\.yaml/);
+	assert.match(seed.stdout, /Wrote AGENTS\.md/);
+	// The packed bin resolves its own version and command surface from the
+	// installed package, which only a real install exercises.
+	const seededInstructions = readFileSync(join(seedBridge, "AGENTS.md"), "utf8");
+	assert.match(seededInstructions, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
+	assert.match(seededInstructions, /^Usage: nosedive <command>$/m);
+	assert.match(seededInstructions, /^<!-- END nosedive managed instructions -->$/m);
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);

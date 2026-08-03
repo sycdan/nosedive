@@ -71,7 +71,6 @@ test("cli-basics", () => {
 	assert.match(help.stdout, /preflight/);
 	assert.match(help.stdout, /prove/);
 	assert.match(help.stdout, /render/);
-	assert.match(help.stdout, /pre-push\.hook/);
 	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);
 	assert.match(help.stdout, /list-dives/);
@@ -84,6 +83,7 @@ test("cli-basics", () => {
 	assert.match(help.stdout, /whoami\s+Returns dev-identifying fields from git config/);
 	assert.doesNotMatch(help.stdout, /\b[a-z][\w.-]*@\d+\b/);
 	assert.doesNotMatch(help.stdout, /_prove-host/);
+	assert.doesNotMatch(help.stdout, /pre-push\.hook/);
 	assert.match(help.stdout, /Run `nosedive <command> --help` for details on a command\./);
 
 	const privateProveHostHelp = run(["_prove-host", "--help"], noBridge);

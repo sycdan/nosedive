@@ -98,7 +98,9 @@ a full KB scan.
 
 Command docs are the index into implementation: start at the linked doc, then follow its adapter entrypoint and compatibility breadcrumbs. A lower-level command remains current unless an explicit newer command doc supersedes it or the doc itself says it is deprecated.
 
-### Current Commands
+### External Commands
+
+Invoked directly by humans, or indirectly via agents.
 
 | Command | Usage | What it does |
 | --- | --- | --- |
@@ -110,13 +112,21 @@ Command docs are the index into implementation: start at the linked doc, then fo
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
 | [`pitch@1`](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <effort>]` | Create a new `kind: effort` KB doc, optionally nested under a parent effort. |
-| [`pre-push.hook@1`](kb/9c07d8f1-61d4-531c-a926-863ce61e4785.md) | `npx nosedive pre-push.hook [remote-name] [remote-url]` | Run the bridge pre-push check registry; v1's only check blocks a push when an active dive's scoped repos still hold uncaptured work. |
 | [`preflight@1`](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | `npx nosedive preflight` | Install the bridge pre-push hook as a managed LF-only shim, never changing `core.hooksPath` or clobbering a foreign hook. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid>` | Print the markdown body of a packaged nosedive KB document by uuid, with YAML frontmatter stripped. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
 | [`update-backlog@1`](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB effort docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
+
+### Internal Commands
+
+Named with a leading underscore, invoked by `nosedive` itself or by a hook it installs.
+
+| Command | Usage | What it does |
+| --- | --- | --- |
+| [`_pre-push.hook@1`](kb/9e3a676a-6d2f-5b93-93af-f4608ed28843.md) | `npx nosedive _pre-push.hook [remote-name] [remote-url]` | Internal command run by the installed Git pre-push hook; blocks a push when an active dive's scoped repos still hold uncaptured work. |
+| [`_prove-host@1`](kb/4b6ec569-611c-5be0-8934-4b1a803f86cb.md) | `npx nosedive _prove-host <request-json-path>` | Private proof host command used by `prove` to execute a prover in an isolated child process. |
 
 ### Deprecated Commands
 

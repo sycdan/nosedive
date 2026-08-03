@@ -54,7 +54,7 @@ test("preflight", () => {
 	const installedHook = join(preflightBridge, ".git", "hooks", "pre-push");
 	assert.equal(
 		readFileSync(installedHook, "utf8"),
-		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n',
+		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n',
 	);
 	assert.equal(readFileSync(installedHook).includes(Buffer.from("\r\n")), false);
 	if (process.platform !== "win32") {
@@ -65,7 +65,7 @@ test("preflight", () => {
 	assertOk(preflightAgain, "preflight idempotent refresh failed");
 	assert.equal(
 		readFileSync(installedHook, "utf8"),
-		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n',
+		'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n',
 	);
 
 	const foreignHookBridge = join(tmp, "foreign-hook-bridge");
@@ -80,7 +80,7 @@ test("preflight", () => {
 	assert.equal(readFileSync(foreignHook, "utf8"), foreignHookText);
 	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
 	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.match(foreignPreflight.stderr, /npx nosedive pre-push\.hook "\$@" \|\| exit 1/);
+	assert.match(foreignPreflight.stderr, /npx nosedive _pre-push\.hook "\$@" \|\| exit 1/);
 
 	const hooksPathBridge = join(tmp, "hooks-path-bridge");
 	mkdirSync(hooksPathBridge, { recursive: true });

@@ -58,7 +58,7 @@ test("contract help", () => {
 		["mint", /Usage: nosedive mint \[count\] \[--ms <utcmillis>\] \[--ts <iso8601>\]/],
 		["nuke", /Usage: nosedive nuke --config\|--workspace/],
 		["pitch", /Usage: nosedive pitch "<gist>"/],
-		["pre-push.hook", /Usage: nosedive pre-push\.hook/],
+		["_pre-push.hook", /Usage: nosedive _pre-push\.hook/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
@@ -89,10 +89,10 @@ test("contract help", () => {
 	}
 	const contractHelpLinks = {
 		preflight: [
-			/\[`pre-push\.hook`\]\(9c07d8f1-61d4-531c-a926-863ce61e4785\.md\)/,
+			/\[`_pre-push\.hook`\]\(9e3a676a-6d2f-5b93-93af-f4608ed28843\.md\)/,
 			/\[`seed`\]\(34c8e9fb-9629-5767-9a81-914f78c63b68\.md\)/,
 		],
-		"pre-push.hook": [
+		"_pre-push.hook": [
 			/\[`handoff`\]\(019f9f95-750a-7b26-a53e-6c277e8f148f\.md\)/,
 			/\[`render`\]\(9b0241b2-f03f-5594-a537-60a3b4372ee9\.md\)/,
 		],

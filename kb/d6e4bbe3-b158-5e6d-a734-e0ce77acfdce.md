@@ -17,16 +17,16 @@ Searches upward for the nearest bridge config and installs
 `.git/hooks/pre-push` in that bridge's Git common directory.
 
 The installed file is an LF-only executable shim: `#!/bin/sh`,
-`# nosedive-managed`, and `exec npx nosedive pre-push.hook "$@"`.
+`# nosedive-managed`, and `exec npx nosedive _pre-push.hook "$@"`.
 
 Re-running is idempotent: a managed hook is refreshed in place.
 
 ## What preflight will not touch
 
 - Existing foreign hooks are left unchanged. Preflight warns on stderr and
-  tells the user to add `npx nosedive pre-push.hook "$@" || exit 1` to their
+  tells the user to add `npx nosedive _pre-push.hook "$@" || exit 1` to their
   existing hook setup; see
-  [`pre-push.hook`](9c07d8f1-61d4-531c-a926-863ce61e4785.md).
+  [`_pre-push.hook`](9e3a676a-6d2f-5b93-93af-f4608ed28843.md).
 - If `core.hooksPath` is set, preflight does not change Git config and does not
   write an ignored `.git/hooks/pre-push`; it prints the same manual wiring
   guidance.

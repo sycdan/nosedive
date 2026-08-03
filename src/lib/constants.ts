@@ -8,8 +8,8 @@ export const REPO_MARKER_EXCLUDE_BEGIN = "# BEGIN nosedive-managed repo-marker e
 export const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclude";
 
 export const PRE_PUSH_HOOK =
-	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n';
-export const MANUAL_PRE_PUSH_LINE = 'npx nosedive pre-push.hook "$@" || exit 1';
+	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
+export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1';
 export const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 
 export const GIT_LOCAL_ENV_KEYS = [

@@ -168,18 +168,18 @@ scopes:
 	rmSync(join(wipBridge, "workspace", ".nosedive-ref"), { force: true });
 	write(join(unscopedRepo, "untracked.txt"), "unscoped change\n");
 	const noMarkerWip = run(
-		["pre-push.hook", "origin", "https://example.invalid/repo.git"],
+		["_pre-push.hook", "origin", "https://example.invalid/repo.git"],
 		wipBridge,
 		"stdin should be ignored\n",
 	);
 	assertOk(noMarkerWip, "pre-push.hook should pass without active dive marker");
 
 	write(join(wipBridge, "workspace", ".nosedive-ref"), `id: ${activeDiveId}\n`);
-	const unscopedOnlyWip = run(["pre-push.hook"], wipBridge);
+	const unscopedOnlyWip = run(["_pre-push.hook"], wipBridge);
 	assertOk(unscopedOnlyWip, "pre-push.hook should pass when only unscoped repo is dirty");
 
 	write(join(scopedRepo, "dirty.txt"), "scoped dirty\n");
-	const scopedDirty = run(["pre-push.hook"], wipBridge);
+	const scopedDirty = run(["_pre-push.hook"], wipBridge);
 	assert.equal(scopedDirty.status, 1);
 	assert.match(scopedDirty.stderr, /active dive has not been handed off/);
 	assert.match(scopedDirty.stderr, new RegExp(`scoped repo ${scopedRepoId}`));
@@ -203,26 +203,26 @@ scopes:
 		],
 		scopedRepo,
 	);
-	const scopedAhead = run(["pre-push.hook"], wipBridge);
+	const scopedAhead = run(["_pre-push.hook"], wipBridge);
 	assert.equal(scopedAhead.status, 1);
 	assert.match(scopedAhead.stderr, /commits ahead of pinned ref/);
 	runTool("git", ["reset", "--hard", scopedBase], scopedRepo);
 
 	write(join(readonlyScopedRepo, "readonly-dirty.txt"), "readonly dirty\n");
-	const readonlyDirty = run(["pre-push.hook"], wipBridge);
+	const readonlyDirty = run(["_pre-push.hook"], wipBridge);
 	assert.equal(readonlyDirty.status, 1);
 	assert.match(readonlyDirty.stderr, new RegExp(`read-only scoped repo ${readonlyScopedRepoId}`));
 	assert.match(readonlyDirty.stderr, /consider re-scoping it writable/);
 	rmSync(join(readonlyScopedRepo, "readonly-dirty.txt"));
 
-	const pristineDive = run(["pre-push.hook"], wipBridge);
+	const pristineDive = run(["_pre-push.hook"], wipBridge);
 	assertOk(pristineDive, "pre-push.hook should pass when active dive scoped repos are pristine");
 
 	write(
 		join(wipBridge, "workspace", ".nosedive-ref"),
 		"id: 019f9f96-0000-7000-8000-000000009999\n",
 	);
-	const brokenMarker = run(["pre-push.hook"], wipBridge);
+	const brokenMarker = run(["_pre-push.hook"], wipBridge);
 	assert.equal(brokenMarker.status, 1);
 	assert.match(brokenMarker.stderr, /broken active dive marker/);
 	assert.match(brokenMarker.stderr, /no kind: dive doc found/);

@@ -97,7 +97,7 @@ function isExplicitlyDeprecated(doc) {
 	return /^deprecated\b/i.test(doc.gist.trim()) || /^deprecated\b/i.test(doc.body.trim());
 }
 
-function isPrivateCommand(doc) {
+function isInternalCommand(doc) {
 	return doc.command.startsWith("_");
 }
 
@@ -111,9 +111,12 @@ function commandRows(docs) {
 
 function renderCommandSurface() {
 	const latestDocs = latestDocsByCommand(commandDocs());
-	const publicDocs = latestDocs.filter((doc) => !isPrivateCommand(doc));
+	const publicDocs = latestDocs.filter((doc) => !isInternalCommand(doc));
 	const activeDocs = publicDocs.filter((doc) => !isExplicitlyDeprecated(doc));
 	const deprecatedDocs = publicDocs.filter((doc) => isExplicitlyDeprecated(doc));
+	const internalDocs = latestDocs.filter(
+		(doc) => isInternalCommand(doc) && !isExplicitlyDeprecated(doc),
+	);
 
 	const lines = [
 		beginMarker,
@@ -121,11 +124,21 @@ function renderCommandSurface() {
 		"",
 		"Command docs are the index into implementation: start at the linked doc, then follow its adapter entrypoint and compatibility breadcrumbs. A lower-level command remains current unless an explicit newer command doc supersedes it or the doc itself says it is deprecated.",
 		"",
-		"### Current Commands",
+		"### External Commands",
+		"",
+		"Invoked directly by humans, or indirectly via agents.",
 		"",
 		"| Command | Usage | What it does |",
 		"| --- | --- | --- |",
 		...commandRows(activeDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
+		"",
+		"### Internal Commands",
+		"",
+		"Named with a leading underscore, invoked by `nosedive` itself or by a hook it installs.",
+		"",
+		"| Command | Usage | What it does |",
+		"| --- | --- | --- |",
+		...commandRows(internalDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
 		"",
 		"### Deprecated Commands",
 		"",

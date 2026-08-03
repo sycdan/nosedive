@@ -6,6 +6,7 @@ gist: Install the bridge pre-push hook as a managed LF-only shim, never changing
 scopes: []
 meta:
   usage: nosedive preflight
+  agents-use-when: starting work in a bridge, to confirm the pre-push hook is installed.
   adapter: kb/artifacts/019fadf5-e087-7e53-b112-bb9402598e6b.mjs
   entrypoint: L1__preflight
 ---

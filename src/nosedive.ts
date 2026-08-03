@@ -38,6 +38,7 @@ interface ContractDoc extends KbDoc {
 	adapter: string;
 	entrypoint: string;
 	usage: string;
+	agentsUseWhen: string;
 }
 
 interface ParsedCommand {
@@ -140,6 +141,7 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 		adapter: parsed.fm.nested.meta?.adapter ?? "",
 		entrypoint: parsed.fm.nested.meta?.entrypoint ?? "",
 		usage: parsed.fm.nested.meta?.usage ?? "",
+		agentsUseWhen: parsed.fm.nested.meta?.["agents-use-when"] ?? "",
 	};
 }
 
@@ -219,13 +221,28 @@ function isDeprecatedContract(contract: ContractDoc): boolean {
 	return /^deprecated\b/i.test(contract.gist.trim()) || /^deprecated\b/i.test(contract.body.trim());
 }
 
-function renderTopLevelHelpText(): string {
-	const contracts = latestContractDocs();
-	const commandWidth = Math.max(0, ...contracts.map((contract) => contract.command.length));
+/**
+ * The pilot surface is a scanned table; the agent surface trades that density
+ * for a block per command, so a command's `Use when:` trigger cannot be read
+ * against the wrong command. A command with no `meta.agents-use-when` has no
+ * agent-facing trigger to state, so it is left off the agent surface.
+ */
+function renderTopLevelHelpText(options?: { agents?: boolean }): string {
+	const contracts = latestContractDocs().filter(
+		(contract) => !options?.agents || contract.agentsUseWhen.trim() !== "",
+	);
 	const lines = [USAGE_HEADER, "", "Commands:"];
-	for (const contract of contracts) {
-		const command = contract.command.padEnd(commandWidth);
-		lines.push(`  ${command}  ${contract.gist}`);
+	if (options?.agents) {
+		for (const contract of contracts) {
+			lines.push("", `  ${contract.command}`, `    ${contract.gist}`);
+			lines.push(`    Use when: ${contract.agentsUseWhen.trim()}`);
+		}
+	} else {
+		const commandWidth = Math.max(0, ...contracts.map((contract) => contract.command.length));
+		for (const contract of contracts) {
+			const command = contract.command.padEnd(commandWidth);
+			lines.push(`  ${command}  ${contract.gist}`);
+		}
 	}
 	lines.push("", "Run `nosedive <command> --help` for details on a command.");
 	return `${lines.join("\n")}\n`;

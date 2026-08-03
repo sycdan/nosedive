@@ -211,6 +211,16 @@ for (const filename of readdirSync(kbDir)
 		if (raw.meta?.handler !== undefined) {
 			fail(`${filename} command must use meta.adapter and meta.entrypoint, not meta.handler`);
 		}
+		// Every command an agent can reach must say when to reach for it, or it
+		// is silently dropped from the agent-facing surface seed writes.
+		if (!match[1].startsWith("_")) {
+			const useWhen = raw.meta?.["agents-use-when"];
+			if (typeof useWhen !== "string" || useWhen.trim() === "") {
+				fail(`${filename} command must have meta.agents-use-when`);
+			} else if (/\s{2,}|\r|\n/.test(useWhen)) {
+				fail(`${filename} command meta.agents-use-when must be a single line`);
+			}
+		}
 		const level = Number.parseInt(match[2], 10);
 		const expectedEntrypoint = commandEntrypointName(match[1], level);
 		if (typeof raw.meta?.entrypoint !== "string" || raw.meta.entrypoint.trim() === "") {

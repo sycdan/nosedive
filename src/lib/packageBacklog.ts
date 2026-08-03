@@ -103,16 +103,20 @@ export function printCommandHelp(command: string, io: CommandIo): void {
 	commandHelpPrinter(command, io);
 }
 
-export let topLevelHelpRenderer: (() => string) | undefined;
+export let topLevelHelpRenderer: ((options?: { agents?: boolean }) => string) | undefined;
 
-export function setTopLevelHelpRenderer(render: () => string): void {
+export function setTopLevelHelpRenderer(render: (options?: { agents?: boolean }) => string): void {
 	topLevelHelpRenderer = render;
 }
 
-/** The `nosedive help` text, for commands that embed the command surface in what they write. */
-export function renderTopLevelHelp(): string {
+/**
+ * The `nosedive help` text, for commands that embed the command surface in what
+ * they write. `agents` renders the agent-facing variant, which states each
+ * command's `meta.agents-use-when` trigger.
+ */
+export function renderTopLevelHelp(options?: { agents?: boolean }): string {
 	if (!topLevelHelpRenderer) throw new Error("no top-level help renderer configured");
-	return topLevelHelpRenderer();
+	return topLevelHelpRenderer(options);
 }
 export const NOSEDIVE_DIR_GITIGNORE = ["cache/", `${MIGRATION_BACKUP_DIRNAME}/`, ""].join("\n");
 

@@ -27,7 +27,19 @@ function assertManagedBlock(text, label) {
 	assert.match(text, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
 	assert.match(text, /^These commands are available to you:$/m);
 	assert.match(text, /^Usage: nosedive <command>$/m);
-	assert.match(text, /^ {2}seed {2,}Create, migrate, or edit bridge config/m);
+	// The agent surface is a block per command, not the pilot-facing table, so a
+	// `Use when:` trigger cannot be read against the wrong command.
+	assert.match(text, /^ {2}seed$/m);
+	assert.match(text, /^ {4}Create, migrate, or edit bridge config/m);
+	assert.match(
+		text,
+		/^ {4}Use when: only on explicit pilot request, or in response to a nosedive/m,
+	);
+	const commands = [...text.matchAll(/^ {2}(\S+)\n {4}.+\n {4}(.+)$/gm)];
+	assert.notEqual(commands.length, 0, `${label} lists no commands`);
+	for (const [, command, useWhen] of commands) {
+		assert.match(useWhen, /^Use when: \S/, `${label} command ${command} has no Use when line`);
+	}
 }
 
 test("seed-agent-instructions", () => {

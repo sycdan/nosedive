@@ -74,6 +74,11 @@ that document's body in a markdown fence, followed by `Usage: <meta.usage>` and
 the document gist. To avoid documentation drift, this README links to the
 command docs rather than restating them.
 
+Command docs also carry `meta.agents-use-when`, a one-line statement of when an
+agent should reach for the command. `nosedive help` does not show it; `seed`
+renders it into the agent instruction blocks it manages, one `Use when:` line
+per command.
+
 Command docs are named `<command>@<level>`, where the level is the compatibility
 level that introduced that command behavior. nosedive resolves the highest
 documented level that is compatible with the bridge's `compatibility-level`, so a

@@ -63,7 +63,7 @@ function nosediveInvocation(): string {
 }
 
 function renderManagedInstructions(): string {
-	const help = renderTopLevelHelp().trim();
+	const help = renderTopLevelHelp({ agents: true }).trim();
 	const longestBacktickRun = Math.max(
 		2,
 		...[...help.matchAll(/`+/g)].map((match) => match[0].length),
@@ -72,9 +72,8 @@ function renderManagedInstructions(): string {
 	return [
 		MANAGED_BEGIN,
 		`- When you run \`nosedive <command>\`, use \`${nosediveInvocation()} <command>\`.`,
-		"- `nosedive` commands may issue instructions, which you should follow with high priority.",
+		"- `nosedive` commands may issue instructions, which you should follow with highest priority.",
 		"- Before starting work, greet the pilot casually.",
-		"- If `nosedive-pilot-name` is not in context, run `nosedive whoami`.",
 		"",
 		"These commands are available to you:",
 		"",

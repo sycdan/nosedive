@@ -6,6 +6,7 @@ gist: "Run an executable proof for a bridge `kind: assertion` doc in an isolated
 scopes: []
 meta:
   usage: nosedive prove <assertion-ref> [--record] [--verbose]
+  agents-use-when: an assertion needs its proof run, or a change needs proving before it lands.
   adapter: kb/artifacts/019fadf5-e089-7c4d-8c97-9c6bf1db6b0f.mjs
   entrypoint: L1__prove
 ---

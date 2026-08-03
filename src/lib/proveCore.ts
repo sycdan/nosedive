@@ -8,6 +8,12 @@ import { CommandIo } from "./bridgeSetupIo.js";
 import { formatPath, resolveFrom, splitMarkdownFrontmatter, stringifyYaml } from "./coreParsing.js";
 import { gitRelPath } from "./gitState.js";
 import { KbDoc, LinkRef, ScopeRef } from "./kbDocs.js";
+import {
+	DriftedScope,
+	driftedScope,
+	rehydrateScopedRepoAtPin,
+	validateExistingProverRepo,
+} from "./provePins.js";
 import { gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureManagedRepoCache,
@@ -40,6 +46,8 @@ export interface ProverHostRequest {
 	resultPath: string;
 	verbose: boolean;
 	record: boolean;
+	rehydrate: boolean;
+	force: boolean;
 }
 
 export interface ProverHostRepoInput {
@@ -73,6 +81,8 @@ export function repoContextForRoot(repoDoc: KbDoc, root: string): RepoContext {
 export function parseProveArgs(args: string[]): ProveOptions {
 	let assertionRef: string | undefined;
 	let record = false;
+	let rehydrate = false;
+	let force = false;
 	let verbose = false;
 
 	for (const arg of args) {
@@ -80,12 +90,22 @@ export function parseProveArgs(args: string[]): ProveOptions {
 			record = true;
 			continue;
 		}
+		if (arg === "--rehydrate") {
+			rehydrate = true;
+			continue;
+		}
+		if (arg === "--force") {
+			force = true;
+			continue;
+		}
 		if (arg === "--verbose") {
 			verbose = true;
 			continue;
 		}
 		if (arg === "-h" || arg === "--help") {
-			throw new Error("Usage: nosedive prove <assertion-ref> [--record] [--verbose]");
+			throw new Error(
+				"Usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]",
+			);
 		}
 		if (arg.startsWith("--")) throw new Error(`unknown prove option: ${arg}`);
 		if (assertionRef) throw new Error(`unexpected prove argument: ${arg}`);
@@ -93,7 +113,12 @@ export function parseProveArgs(args: string[]): ProveOptions {
 	}
 
 	if (!assertionRef) throw new Error("prove requires an assertion ref");
-	return { assertionRef, record, verbose };
+	if (force && !rehydrate) {
+		throw new Error(
+			"prove --force only widens the --rehydrate dirty guard; it cannot bypass a refusal on its own",
+		);
+	}
+	return { assertionRef, record, rehydrate, force, verbose };
 }
 
 export function findAssertionDoc(kbDocs: KbDoc[], assertionId: string): KbDoc {
@@ -287,56 +312,12 @@ export function requiredScopeForRepo(assertion: KbDoc, repoDoc: KbDoc): ScopeRef
 	return scope;
 }
 
-export function validateExistingProverRepo(
-	repoId: string,
-	scope: ScopeRef,
-	targetPath: string,
-	commit: string,
-): string[] {
-	const warnings: string[] = [];
-	if (scope.ref) {
-		const mergeBase = runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]);
-		if (mergeBase.status === 1) {
-			throw new Error(
-				`scoped repo ${repoId} at ${formatPath(targetPath)} cannot prove assertion pinned at ${commit}: pinned commit is not reachable from HEAD`,
-			);
-		}
-		if (mergeBase.status !== 0) {
-			const detail = mergeBase.stderr.trim() || mergeBase.stdout.trim() || "unknown git error";
-			throw new Error(
-				`failed to check pinned commit reachability for scoped repo ${repoId} at ${formatPath(targetPath)}: ${detail}`,
-			);
-		}
-
-		const head = gitRun(
-			targetPath,
-			["rev-parse", "HEAD"],
-			`failed to inspect HEAD for scoped repo ${repoId}`,
-		);
-		if (head !== commit) {
-			warnings.push(
-				`scoped repo ${repoId} at ${formatPath(targetPath)} is ahead of pinned commit ${commit} (${scope.ref}); continuing`,
-			);
-		}
-	}
-
-	const status = gitOutput(targetPath, ["status", "--porcelain"]);
-	if (status === undefined) {
-		warnings.push(
-			`could not read dirty status for scoped repo ${repoId} at ${formatPath(targetPath)}; continuing`,
-		);
-	} else if (status.trim() !== "") {
-		warnings.push(`scoped repo ${repoId} at ${formatPath(targetPath)} is dirty; continuing`);
-	}
-
-	return warnings;
-}
-
 export function ensureProverRepoHydrated(
 	repoDoc: KbDoc,
 	assertion: KbDoc,
 	request: ProverHostRequest,
 	warnings: string[] = [],
+	drifted: DriftedScope[] = [],
 ): string {
 	if (!request.workspaceDir) throw new Error(".nosediverc is missing workspace");
 	const repoId = repoDoc.id;
@@ -355,6 +336,11 @@ export function ensureProverRepoHydrated(
 		}
 		if (gitOutput(targetPath, ["rev-parse", "--is-inside-work-tree"])) {
 			ensureReusableExistingTarget(repoId, targetPath, sourcePath);
+			if (request.rehydrate && scope.ref) {
+				rehydrateScopedRepoAtPin(repoId, scope, targetPath, commit, request.force, warnings);
+			}
+			const drift = driftedScope(repoId, scope, targetPath, commit);
+			if (drift) drifted.push(drift);
 			warnings.push(...validateExistingProverRepo(repoId, scope, targetPath, commit));
 			reconcilePushReadOnly(sourcePath, targetPath, scope.readOnly, repoId);
 			return targetPath;
@@ -385,8 +371,9 @@ export function materializeProverRepoContext(
 	request: ProverHostRequest,
 	accessedRepos: Map<string, string>,
 	warnings: string[] = [],
+	drifted: DriftedScope[] = [],
 ): RepoContext {
-	const root = ensureProverRepoHydrated(repoDoc, assertion, request, warnings);
+	const root = ensureProverRepoHydrated(repoDoc, assertion, request, warnings, drifted);
 	accessedRepos.set(repoDoc.id, root);
 	return repoContextForRoot(repoDoc, root);
 }
@@ -397,13 +384,14 @@ export function prehydrateAssertionScopedRepos(
 	request: ProverHostRequest,
 	accessedRepos: Map<string, string>,
 	warnings: string[],
+	drifted: DriftedScope[] = [],
 ): void {
 	const seen = new Set<string>();
 	for (const scope of assertion.scopes) {
 		if (scope.repoId === "." || seen.has(scope.repoId)) continue;
 		seen.add(scope.repoId);
 		const repoDoc = resolveRepoDoc(kbDocs, scope.repoId);
-		materializeProverRepoContext(repoDoc, assertion, request, accessedRepos, warnings);
+		materializeProverRepoContext(repoDoc, assertion, request, accessedRepos, warnings, drifted);
 	}
 }
 

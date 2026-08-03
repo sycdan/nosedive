@@ -21,6 +21,7 @@ import {
 	proofRepoInputs,
 	repoContextForRoot,
 } from "./proveCore.js";
+import { DriftedScope } from "./provePins.js";
 import { cleanGitEnv, writeFileAtomic } from "./renderPlan.js";
 import { maybeResolveRepoDoc, resolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
 
@@ -29,12 +30,20 @@ export function createProverContext(request: ProverHostRequest, io: CommandIo) {
 	const assertion = findAssertionDoc(kbDocs, request.assertionId);
 	const accessedRepos = new Map<string, string>();
 	const warnings: string[] = [];
+	const drifted: DriftedScope[] = [];
 	const sandboxes: string[] = [];
 
 	function contextForRepo(repoDoc: KbDoc): RepoContext {
 		const existingRoot = accessedRepos.get(repoDoc.id);
 		if (existingRoot) return repoContextForRoot(repoDoc, existingRoot);
-		return materializeProverRepoContext(repoDoc, assertion, request, accessedRepos, warnings);
+		return materializeProverRepoContext(
+			repoDoc,
+			assertion,
+			request,
+			accessedRepos,
+			warnings,
+			drifted,
+		);
 	}
 
 	const ctx = {
@@ -151,10 +160,13 @@ export function createProverContext(request: ProverHostRequest, io: CommandIo) {
 	return {
 		ctx,
 		prehydrate(): void {
-			prehydrateAssertionScopedRepos(kbDocs, assertion, request, accessedRepos, warnings);
+			prehydrateAssertionScopedRepos(kbDocs, assertion, request, accessedRepos, warnings, drifted);
 		},
 		warnings(): string[] {
 			return warnings;
+		},
+		drifted(): DriftedScope[] {
+			return drifted;
 		},
 		inputs(): Record<string, ProverHostRepoInput> {
 			return proofRepoInputs(accessedRepos);
@@ -170,6 +182,22 @@ function dirtyProofInputIds(inputs: Record<string, ProverHostRepoInput>): string
 	return Object.entries(inputs)
 		.filter(([, input]) => input.dirty)
 		.map(([repoId]) => repoId);
+}
+
+function driftRefusalMessage(drifted: DriftedScope[]): string {
+	const lines = drifted.map(
+		(scope) =>
+			`  ${scope.repoId} at ${formatPath(scope.path)} is at ${scope.head}, pinned at ${scope.pin} (${scope.ref})`,
+	);
+	const manual = drifted.map(
+		(scope) => `  nosedive hydrate-repo.workspace ${scope.repoId} --at ${scope.pin}`,
+	);
+	return [
+		"refusing to record proof because scoped repo(s) have drifted off their pins:",
+		...lines,
+		"rerun with --rehydrate to move them to their pins, or hydrate them yourself:",
+		...manual,
+	].join("\n");
 }
 
 export async function proveHost(args: string[], io: CommandIo): Promise<void> {
@@ -191,6 +219,8 @@ export async function proveHost(args: string[], io: CommandIo): Promise<void> {
 					`refusing to record proof because accessed repo(s) are dirty: ${dirty.join(", ")}`,
 				);
 			}
+			const drifted = session.drifted();
+			if (drifted.length > 0) throw new Error(driftRefusalMessage(drifted));
 		}
 		io.log(
 			request.verbose

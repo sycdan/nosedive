@@ -46,6 +46,8 @@ async function prove(args: string[], io: CommandIo): Promise<void> {
 		resultPath,
 		verbose: options.verbose,
 		record: options.record,
+		rehydrate: options.rehydrate,
+		force: options.force,
 	};
 	writeFileAtomic(requestPath, `${JSON.stringify(request, null, 2)}\n`);
 

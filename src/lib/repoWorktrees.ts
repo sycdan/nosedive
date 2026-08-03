@@ -262,6 +262,7 @@ export function ensureDetachedAtCommit(
 	targetPath: string,
 	commit: string,
 	repoId: string,
+	discardLocalChanges = false,
 ): boolean {
 	const currentCommit = gitRun(
 		targetPath,
@@ -271,9 +272,12 @@ export function ensureDetachedAtCommit(
 	const symbolicHead = gitOutput(targetPath, ["symbolic-ref", "-q", "HEAD"]);
 	if (currentCommit === commit && !symbolicHead) return false;
 
+	const args = ["checkout", "--detach"];
+	if (discardLocalChanges) args.push("--force");
+	args.push(commit);
 	gitRun(
 		targetPath,
-		["checkout", "--detach", commit],
+		args,
 		`failed to detach worktree for repo ${repoId} at ${formatPath(targetPath)}`,
 	);
 	return true;
@@ -401,5 +405,7 @@ export function reconcilePushReadOnly(
 export interface ProveOptions {
 	assertionRef: string;
 	record: boolean;
+	rehydrate: boolean;
+	force: boolean;
 	verbose: boolean;
 }

@@ -10,3 +10,4 @@ export * from "./proveHostRender.js";
 export * from "./renderPlan.js";
 export * from "./repoWorkspaceCore.js";
 export * from "./repoWorktrees.js";
+export * from "./recordDive.js";

@@ -62,6 +62,7 @@ test("contract help", () => {
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
+		["record.dive", /Usage: nosedive record\.dive \[--ref <dive-ref>\]/],
 		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],

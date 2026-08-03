@@ -486,6 +486,70 @@ links:
 	);
 	assert.doesNotMatch(dirtyRecordedProof.stdout, /direct cli preflight succeeded/);
 
+	const proofTarget = join(proofBridge, "workspace", "proof-target");
+	const aheadCommit = runTool("git", ["rev-parse", "HEAD"], proofTarget).stdout.trim();
+
+	rmSync(join(proofTarget, "dirty.txt"));
+	const driftedRecord = run(["prove", proofAssertionId, "--record"], proofBridge);
+	assert.notEqual(driftedRecord.status, 0, "drifted recorded proof unexpectedly succeeded");
+	assert.match(
+		driftedRecord.stderr,
+		/refusing to record proof because scoped repo\(s\) have drifted off their pins/,
+	);
+	assert.match(driftedRecord.stderr, new RegExp(`is at ${aheadCommit}, pinned at ${proofCommit}`));
+	assert.match(driftedRecord.stderr, /rerun with --rehydrate/);
+	assert.doesNotMatch(driftedRecord.stdout, /direct cli preflight succeeded/);
+
+	const bareForce = run(["prove", proofAssertionId, "--record", "--force"], proofBridge);
+	assert.notEqual(bareForce.status, 0, "bare --force unexpectedly succeeded");
+	assert.match(bareForce.stderr, /--force only widens the --rehydrate dirty guard/);
+
+	const rehydrateWithoutRecord = run(["prove", proofAssertionId, "--rehydrate"], proofBridge);
+	assertOk(rehydrateWithoutRecord, "--rehydrate without --record failed");
+	assert.match(
+		rehydrateWithoutRecord.stderr,
+		/WARNING: rehydrated scoped repo .* to pinned commit/,
+	);
+	assert.match(rehydrateWithoutRecord.stdout, new RegExp(`Proof passed: ${proofAssertionId}`));
+	assert.doesNotMatch(rehydrateWithoutRecord.stdout, /Proof recorded:/);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], proofTarget).stdout.trim(),
+		proofCommit,
+		"--rehydrate should land the worktree on the pin without --record",
+	);
+
+	runTool("git", ["checkout", "--detach", aheadCommit], proofTarget);
+	write(join(proofTarget, "ahead.txt"), "locally modified\n");
+	const rehydrateDirty = run(["prove", proofAssertionId, "--rehydrate"], proofBridge);
+	assert.notEqual(rehydrateDirty.status, 0, "dirty --rehydrate unexpectedly succeeded");
+	assert.match(rehydrateDirty.stderr, /refusing to rehydrate scoped repo .* uncommitted work/);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], proofTarget).stdout.trim(),
+		aheadCommit,
+		"refused --rehydrate should leave the worktree where it was",
+	);
+
+	const rehydrateForced = run(
+		["prove", proofAssertionId, "--record", "--rehydrate", "--force"],
+		proofBridge,
+	);
+	assertOk(rehydrateForced, "--rehydrate --force record failed");
+	assert.match(rehydrateForced.stderr, /WARNING: rehydrated scoped repo .* to pinned commit/);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], proofTarget).stdout.trim(),
+		proofCommit,
+		"--rehydrate should land the worktree on the pin",
+	);
+	assert.equal(
+		existsSync(join(proofTarget, "ahead.txt")),
+		false,
+		"--force should discard the tracked change and the commit that added it",
+	);
+	assert.match(
+		readFileSync(proofAssertionPath, "utf8"),
+		new RegExp(`commits:\\n\\s+${proofRepoId}: ${proofCommit}`),
+	);
+
 	const missingCwdProof = run(["prove", missingCwdAssertionId], proofBridge);
 	assert.notEqual(missingCwdProof.status, 0, "missing cwd prover unexpectedly succeeded");
 	assert.match(

@@ -5,7 +5,7 @@ name: prove@1
 gist: "Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits."
 scopes: []
 meta:
-  usage: nosedive prove <assertion-ref> [--record] [--verbose]
+  usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]
   agents-use-when: an assertion needs its proof run, or a change needs proving before it lands.
   adapter: kb/artifacts/019fadf5-e089-7c4d-8c97-9c6bf1db6b0f.mjs
   entrypoint: L1__prove
@@ -56,3 +56,21 @@ artifact itself to be checked in with no uncommitted changes. Other untracked
 bridge files, including anything under the configured `workspace:`, do not
 block a record, because hydration itself creates files there. Dirty scoped
 repos are rejected before the prover artifact is imported or run.
+
+Recording also refuses when a scope that pins a `ref:` has a worktree whose
+HEAD is not the resolved pin, because the recorded `commits` would then name
+code the proof did not run against. Drifted scopes are rejected before the
+prover artifact is imported or run. Without `--record`, drift stays a warning.
+
+## Pins
+
+`--rehydrate` moves each drifted pinned scope's worktree to its resolved pin
+instead of refusing, and reports which repos it moved and to what. It also
+repairs a checkout sitting on an unrelated branch, which is otherwise fatal.
+It does not require `--record`.
+
+`--rehydrate` refuses when a scoped repo has tracked local modifications, which
+would otherwise be carried onto the pin. Untracked files do not block it; they
+still block a recording through the dirty-input refusal. `--force` widens only
+that guard, discarding the modifications, and is an argument error without
+`--rehydrate`; it never widens the drift or dirty-input record refusals.

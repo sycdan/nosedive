@@ -126,3 +126,36 @@ test("record.dive activates only for the pilot diver", () => {
 	assertOk(pilot, "record.dive with pilot diver failed");
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
+
+test("record.dive persists patched meta fields", () => {
+	const { bridge } = setup("patch-meta");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--effort", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	writeFileSync(marker, `id: ${id}\n`);
+	const effort = "019fc623-0000-7000-8000-000000000003";
+	write(
+		join(bridge, "kb", `${effort}.md`),
+		`---
+kind: effort
+id: ${effort}
+name: updated-effort
+gist: "Updated effort"
+---
+
+# Updated Effort
+`,
+	);
+	const updated = run(
+		["record.dive", "--ref", id, "--effort", effort, "--diver", "pilot@example.test"],
+		bridge,
+	);
+	assertOk(updated, "record.dive meta update failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^  effort: ${effort}$`, "m"));
+	assert.match(doc, /^  diver: pilot@example\.test$/m);
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
+});

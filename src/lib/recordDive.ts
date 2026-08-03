@@ -302,15 +302,11 @@ export function recordDive(args: string[], io: CommandIo): void {
 	if (options.effort) {
 		const effort = resolveEffortDoc(kbDocs, rc, options.effort);
 		doc.set("name", managedName(effort, dive.id));
-		const meta = (doc.get("meta", true) as Record<string, unknown> | undefined) ?? {};
-		meta.effort = effort.id;
-		doc.set("meta", meta);
+		doc.setIn(["meta", "effort"], effort.id);
 	}
 	if (options.gist !== undefined) doc.set("gist", options.gist.trim());
 	if (options.diver !== undefined) {
-		const meta = (doc.get("meta", true) as Record<string, unknown> | undefined) ?? {};
-		meta.diver = options.diver || null;
-		doc.set("meta", meta);
+		doc.setIn(["meta", "diver"], options.diver || null);
 	}
 	if (options.clearScopes || options.scopes.length > 0) {
 		const scopes = options.clearScopes

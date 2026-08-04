@@ -47,9 +47,11 @@ test("pre-push rejects pushed commits touching the configured workspace", () => 
 		updateLine(blocked, allowed),
 	);
 	assert.equal(rejection.status, 1);
-	assert.match(rejection.stderr, /push rejected/);
-	assert.match(rejection.stderr, /work-area/);
-	assert.match(rejection.stderr, /dist\/cli\.js render 9e3a676a-6d2f-5b93-93af-f4608ed28843/);
+	assert.match(rejection.stderr, /^nosedive-error: push rejected/m);
+	assert.match(
+		rejection.stderr,
+		/more info: node .*dist\/cli\.js render 019fce99-1d6e-7fa4-aa0c-a548d7049643/,
+	);
 
 	const later = commit(bridge, "kb/later.md", "later\n", "later");
 	const cumulativeRejection = run(["_pre-push.hook"], bridge, updateLine(later, allowed));

@@ -6,9 +6,8 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { PRE_PUSH_HOOK_DOC_ID } from "../lib/constants.js";
-import { formatPath, readNosediveRc, toPosixPath } from "../lib/coreParsing.js";
-import { nosediveInvocation } from "../lib/packageBacklog.js";
+import { PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID } from "../lib/constants.js";
+import { readNosediveRc, toPosixPath } from "../lib/coreParsing.js";
 import { runGit } from "../lib/repoWorkspaceCore.js";
 
 function gitOutput(cwd: string, args: string[], label: string): string {
@@ -46,13 +45,7 @@ function prePushHook(_args: string[], io: CommandIo, cwd: string): void {
 		);
 		if (!touchingCommits) continue;
 
-		io.err(
-			`nosedive: push rejected; a pushed commit touches workspace path ${formatPath(pathspec)}`,
-		);
-		io.err("HINT: To learn more, run:");
-		io.err(`  ${nosediveInvocation()} render ${PRE_PUSH_HOOK_DOC_ID}`);
-		io.setExitCode(1);
-		return;
+		throw new Error(PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID);
 	}
 }
 

@@ -185,6 +185,7 @@ function commandFrontmatterOrder(text, filename) {
 
 const commandDocs = [];
 const migrationDocs = new Map();
+const packageDocsById = new Map();
 
 for (const filename of readdirSync(kbDir)
 	.filter((name) => name.endsWith(".md"))
@@ -194,6 +195,7 @@ for (const filename of readdirSync(kbDir)
 	const raw = frontmatter(text, filename);
 	if (!raw || raw.kind === undefined) continue;
 	validatePackageLinks(raw, filename);
+	if (typeof raw.id === "string") packageDocsById.set(raw.id.toLowerCase(), { filename, raw });
 
 	if (raw.kind === "command") {
 		commandFrontmatterOrder(text, filename);
@@ -316,6 +318,17 @@ for (const doc of commandDocs) {
 		fail(`${doc.name} filename must be ${expectedId}.md`);
 	}
 
+	for (const errorId of linkIdsByRel(doc, "throws")) {
+		const errorDoc = packageDocsById.get(errorId);
+		if (!errorDoc) {
+			fail(`${doc.name} has rel=throws ${errorId}, but no packaged doc has that id`);
+		} else if (errorDoc.raw.kind !== "memo") {
+			fail(`${doc.name} rel=throws target ${errorId} must be kind: memo`);
+		} else if (!linkIdsByRel({ raw: errorDoc.raw }, "thrown-by").includes(doc.id)) {
+			fail(`${doc.name} rel=throws target ${errorId} must link rel=thrown-by back to ${doc.id}`);
+		}
+	}
+
 	const commandDocsForName = docsByCommand.get(doc.command) ?? [];
 	commandDocsForName.push(doc);
 	docsByCommand.set(doc.command, commandDocsForName);
@@ -324,6 +337,22 @@ for (const doc of commandDocs) {
 	const sameLevelDocs = docsByCommandLevel.get(key) ?? [];
 	sameLevelDocs.push(doc);
 	docsByCommandLevel.set(key, sameLevelDocs);
+}
+
+for (const [memoId, memoDoc] of packageDocsById) {
+	if (memoDoc.raw.kind !== "memo") continue;
+	for (const commandId of linkIdsByRel({ raw: memoDoc.raw }, "thrown-by")) {
+		const commandDoc = commandDocs.find((doc) => doc.id === commandId);
+		if (!commandDoc) {
+			fail(
+				`${memoDoc.filename} has rel=thrown-by ${commandId}, but no packaged command has that id`,
+			);
+		} else if (!linkIdsByRel(commandDoc, "throws").includes(memoId)) {
+			fail(
+				`${memoDoc.filename} rel=thrown-by target ${commandId} must link rel=throws back to ${memoId}`,
+			);
+		}
+	}
 }
 
 for (const [key, docs] of docsByCommandLevel) {

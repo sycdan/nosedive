@@ -64,7 +64,7 @@ nosedive-pilot-email: <git-config-email>
 
 `nosedive-workspace` is always posix-formatted (forward slashes, even on
 Windows). The dive and effort lines are omitted together when
-`workspace/.nosedive-ref` names no active dive; if it does but the dive or its
+`<nosedive-workspace>/.nosedive-ref` names no active dive; if it does but the dive or its
 effort can't be resolved, whatever did resolve is still printed and the reason
 goes to stderr. The backlog section behaves the same way: if the bridge has no
 resolvable backlog memo, the header still prints, the reason goes to stderr,

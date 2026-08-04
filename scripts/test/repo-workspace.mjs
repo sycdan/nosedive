@@ -900,8 +900,11 @@ meta:
 		0,
 		"hydrate over an unpublished commit unexpectedly succeeded",
 	);
-	assert.match(hydrateOverUnpublished.stderr, /refused/);
-	assert.match(hydrateOverUnpublished.stderr, /More info: nosedive render [0-9a-f-]{36}/);
+	assert.match(hydrateOverUnpublished.stderr, /^nosedive-error: .*refused/m);
+	assert.match(
+		hydrateOverUnpublished.stderr,
+		/more info: node .*dist\/cli\.js render 019fcb35-d660-7318-ac4c-3d5aeed3a81e/,
+	);
 	assert.equal(
 		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),
 		unpublishedCommit,
@@ -916,6 +919,28 @@ meta:
 		hydrateBridge,
 	);
 	assertOk(hydrateAtUnpublished, "hydrate --at the unpublished commit itself should succeed");
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),
+		unpublishedCommit,
+		"hydrate --at the exact SHA should preserve the current checkout",
+	);
+
+	// Once the commit is published to the branch's configured upstream, hydrate
+	// may safely move the worktree back to the requested ref.
+	runTool("git", ["checkout", "-b", "proof/published"], unpublishedTarget);
+	runTool("git", ["push", "--set-upstream", "origin", "proof/published"], unpublishedTarget);
+	const hydrateAfterPublish = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assertOk(hydrateAfterPublish, "hydrate after publishing to the upstream should succeed");
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),
+		cloudMainCommit,
+		"hydrate after publishing should move to the requested default ref",
+	);
+	assert.equal(
+		runGitUnchecked(["symbolic-ref", "-q", "HEAD"], unpublishedTarget).status,
+		1,
+		"hydrate after publishing should leave the worktree detached",
+	);
 
 	const outsideDehydrateDir = join(tmp, "outside-dehydrate-target");
 	mkdirSync(outsideDehydrateDir, { recursive: true });

@@ -6,9 +6,8 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { HYDRATE_UNPUBLISHED_COMMIT_RUNBOOK_ID } from "../lib/constants.js";
+import { HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID } from "../lib/constants.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
-import { renderPackageKbGist } from "../lib/gitState.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 import {
 	HydrateRepoWorkspaceResult,
@@ -76,10 +75,7 @@ function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 			`failed to inspect current commit for repo ${repoId}`,
 		);
 		if (currentCommit !== commit && dehydrateHasUnpublishedCommits(targetPath)) {
-			throw new Error(
-				`${renderPackageKbGist(HYDRATE_UNPUBLISHED_COMMIT_RUNBOOK_ID)}\n` +
-					`More info: nosedive render ${HYDRATE_UNPUBLISHED_COMMIT_RUNBOOK_ID}`,
-			);
+			throw new Error(HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID);
 		}
 		if (ensureDetachedAtCommit(targetPath, commit, repoId)) changed = true;
 		if (writeRepoMarker(targetPath, repoId)) changed = true;

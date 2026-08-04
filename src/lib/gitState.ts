@@ -56,12 +56,23 @@ export function gitCommonDir(cwd: string): string | undefined {
 	return resolveFrom(cwd, raw);
 }
 
-export function renderPackageKbBody(id: string): string {
+function loadPackageKbDoc(id: string): { body: string; gist: string } {
 	if (!uuidLike(id)) throw new Error(`render requires a UUID-shaped id: ${id}`);
 	const docPath = join(packageRoot(), "kb", `${id}.md`);
 	if (!existsSync(docPath)) throw new Error(`package kb doc not found: ${id}`);
 	if (!statSync(docPath).isFile()) throw new Error(`package kb doc is not a file: ${id}`);
-	return parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body;
+	const doc = parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath);
+	return { body: doc.body, gist: doc.fm.scalars.gist ?? "" };
+}
+
+export function renderPackageKbBody(id: string): string {
+	return loadPackageKbDoc(id).body;
+}
+
+export function renderPackageKbGist(id: string): string {
+	const gist = loadPackageKbDoc(id).gist;
+	if (!gist) throw new Error(`package kb doc has no gist: ${id}`);
+	return gist;
 }
 
 export function printManualHookAdvice(reason: string, io: CommandIo): void {

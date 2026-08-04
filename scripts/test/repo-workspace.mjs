@@ -873,6 +873,50 @@ meta:
 		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
 	);
 
+	assertOk(
+		run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge),
+		"rehydrate before unpublished-commit hydrate refusal check failed",
+	);
+	const unpublishedTarget = join(hydrateBridge, "workspace", "hydrated-target");
+	write(join(unpublishedTarget, ".assertion-unpublished"), "unpublished\n");
+	runTool("git", ["add", ".assertion-unpublished"], unpublishedTarget);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Assertion",
+			"-c",
+			"user.email=assertion@example.invalid",
+			"commit",
+			"-m",
+			"unpublished local commit",
+		],
+		unpublishedTarget,
+	);
+	const unpublishedCommit = runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim();
+	const hydrateOverUnpublished = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assert.notEqual(
+		hydrateOverUnpublished.status,
+		0,
+		"hydrate over an unpublished commit unexpectedly succeeded",
+	);
+	assert.match(hydrateOverUnpublished.stderr, /refused/);
+	assert.match(hydrateOverUnpublished.stderr, /More info: nosedive render [0-9a-f-]{36}/);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),
+		unpublishedCommit,
+		"refused hydrate should not move the worktree off the unpublished commit",
+	);
+	assert.equal(existsSync(join(unpublishedTarget, ".assertion-unpublished")), true);
+
+	// --at names the same unpublished commit directly: an explicit target is not an
+	// implicit loss, so this must succeed even though the default-trunk hydrate above refused.
+	const hydrateAtUnpublished = run(
+		["hydrate-repo.workspace", hydrateRepoId, "--at", unpublishedCommit],
+		hydrateBridge,
+	);
+	assertOk(hydrateAtUnpublished, "hydrate --at the unpublished commit itself should succeed");
+
 	const outsideDehydrateDir = join(tmp, "outside-dehydrate-target");
 	mkdirSync(outsideDehydrateDir, { recursive: true });
 	write(join(outsideDehydrateDir, "keep.txt"), "outside\n");

@@ -10,6 +10,7 @@ export const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclu
 export const PRE_PUSH_HOOK =
 	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
 export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1';
+export const PRE_PUSH_HOOK_DOC_ID = "9e3a676a-6d2f-5b93-93af-f4608ed28843";
 export const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 export const HYDRATE_UNPUBLISHED_COMMIT_RUNBOOK_ID = "019fcb35-d660-7318-ac4c-3d5aeed3a81e";
 

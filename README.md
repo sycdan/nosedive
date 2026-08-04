@@ -126,7 +126,7 @@ Named with a leading underscore, invoked by `nosedive` itself or by a hook it in
 
 | Command | Usage | What it does |
 | --- | --- | --- |
-| [`_pre-push.hook@1`](kb/9e3a676a-6d2f-5b93-93af-f4608ed28843.md) | `npx nosedive _pre-push.hook [remote-name] [remote-url]` | Internal command run by the installed Git pre-push hook; blocks a push when an active dive's scoped repos still hold uncaptured work. |
+| [`_pre-push.hook@1`](kb/9e3a676a-6d2f-5b93-93af-f4608ed28843.md) | `npx nosedive _pre-push.hook [remote-name] [remote-url]` | Internal command run by the installed Git pre-push hook; blocks pushed commits that touch the configured workspace path. |
 | [`_prove-host@1`](kb/4b6ec569-611c-5be0-8934-4b1a803f86cb.md) | `npx nosedive _prove-host <request-json-path>` | Private proof host command used by `prove` to execute a prover in an isolated child process. |
 
 ### Deprecated Commands

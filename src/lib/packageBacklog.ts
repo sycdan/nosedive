@@ -22,8 +22,20 @@ import { unsafeLinkPath } from "./proveCore.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { uuidLike } from "./repoWorkspaceCore.js";
 
+const LOCAL_DEV_VERSION = "0.0.0-dev";
+
 export function packageRoot(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+/** A reproducible invocation of the package version currently running. */
+export function nosediveInvocation(): string {
+	const root = packageRoot();
+	const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+		version: string;
+	};
+	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
+	return `node ${formatPath(join(root, "dist", "cli.js")).replaceAll("\\", "/")}`;
 }
 
 export function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {

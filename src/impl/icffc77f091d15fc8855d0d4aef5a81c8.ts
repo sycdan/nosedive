@@ -16,7 +16,7 @@ import {
 import { CURRENT_COMPATIBILITY_LEVEL } from "../lib/constants.js";
 import { baseConfigPath, formatPath, resolveFrom } from "../lib/coreParsing.js";
 import {
-	packageRoot,
+	nosediveInvocation,
 	printCommandHelp,
 	renderTopLevelHelp,
 	writeNosediveDirGitignore,
@@ -38,28 +38,9 @@ const KNOWN_INSTRUCTION_FILES = [
 	".github/copilot-instructions.md",
 ];
 
-/** package.json carries this until CI stamps a CalVer version, so it means "unpublished checkout". */
-const LOCAL_DEV_VERSION = "0.0.0-dev";
-
 interface InstructionWrite {
 	path: string;
 	content: string;
-}
-
-/**
- * How an agent should invoke the nosedive that wrote the block. A published
- * install pins its own exact version; a local checkout has no published
- * version to name, so it points at its own built cli instead.
- */
-function nosediveInvocation(): string {
-	const root = packageRoot();
-	const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
-		version: string;
-	};
-	// `-y` because a pinned version is a cache slot npx has never seen: with a
-	// TTY it would stop to ask, and an agent shell has no one to answer.
-	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
-	return `node ${formatPath(join(root, "dist", "cli.js")).replaceAll("\\", "/")}`;
 }
 
 function renderManagedInstructions(): string {

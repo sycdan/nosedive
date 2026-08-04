@@ -22,6 +22,7 @@ import {
 	resolveFrom,
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
+import { rewriteMarkdownLinks } from "./markdownLinks.js";
 import { packageRoot } from "./packageBacklog.js";
 import { executableForSpawn, gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
 import { ensureSafeTargetPath, maybeResolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
@@ -56,17 +57,18 @@ export function gitCommonDir(cwd: string): string | undefined {
 	return resolveFrom(cwd, raw);
 }
 
-function loadPackageKbDoc(id: string): { body: string; gist: string } {
+function loadPackageKbDoc(id: string): { body: string; docPath: string; gist: string } {
 	if (!uuidLike(id)) throw new Error(`render requires a UUID-shaped id: ${id}`);
 	const docPath = join(packageRoot(), "kb", `${id}.md`);
 	if (!existsSync(docPath)) throw new Error(`package kb doc not found: ${id}`);
 	if (!statSync(docPath).isFile()) throw new Error(`package kb doc is not a file: ${id}`);
 	const doc = parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath);
-	return { body: doc.body, gist: doc.fm.scalars.gist ?? "" };
+	return { body: doc.body, docPath, gist: doc.fm.scalars.gist ?? "" };
 }
 
-export function renderPackageKbBody(id: string): string {
-	return loadPackageKbDoc(id).body;
+export function renderPackageKbBody(id: string, cwd: string): string {
+	const doc = loadPackageKbDoc(id);
+	return rewriteMarkdownLinks(doc.body, dirname(doc.docPath), cwd);
 }
 
 export function renderPackageKbGist(id: string): string {

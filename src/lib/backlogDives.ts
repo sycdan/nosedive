@@ -2,8 +2,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { MarkdownDoc, NosediveRc } from "./coreParsing.js";
+import { MarkdownDoc, NosediveRc, parseMarkdownDoc } from "./coreParsing.js";
 import { KbDoc, ScopeRef, parseRawFrontmatterObject } from "./kbDocs.js";
+import { uuidLike } from "./repoWorkspaceCore.js";
 import {
 	BacklogKbDisplayNode,
 	appendBacklogKbEffortLine,
@@ -85,6 +86,19 @@ export function renderUpdatedBacklogMemo(
 		"",
 		`${lines.join("\n")}\n`,
 	].join("\n");
+}
+
+/** The rendered body of the bridge's configured backlog memo. Shared by `dump-backlog` and `preflight`. */
+export function bridgeBacklogMemoBody(rc: NosediveRc): string {
+	const id = rc.backlog;
+	if (!id) throw new Error("dump-backlog requires a configured backlog memo id");
+	if (!uuidLike(id)) throw new Error(`dump-backlog requires a UUID-shaped backlog memo id: ${id}`);
+	if (!rc.kbDir) throw new Error("dump-backlog requires a configured kb directory");
+
+	const docPath = join(rc.kbDir, `${id}.md`);
+	if (!existsSync(docPath)) throw new Error(`bridge backlog memo not found: ${id}`);
+	if (!statSync(docPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${id}`);
+	return parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body;
 }
 
 export interface ListDivesOptions {

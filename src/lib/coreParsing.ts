@@ -199,6 +199,11 @@ export function formatPath(path: string): string {
 	return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel || "." : path;
 }
 
+/** Render a path with forward slashes, even on Windows. */
+export function toPosixPath(path: string): string {
+	return path.replaceAll("\\", "/");
+}
+
 export function baseConfigPath(bridgeDir: string): string {
 	return join(bridgeDir, SPLIT_CONFIG_DIRNAME, BASE_CONFIG_FILENAME);
 }

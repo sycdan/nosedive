@@ -70,6 +70,38 @@ export function printManualHookAdvice(reason: string, io: CommandIo): void {
 	io.err(`  ${MANUAL_PRE_PUSH_LINE}`);
 }
 
+/**
+ * A hook counts as wired if any non-comment line invokes `_pre-push.hook`,
+ * whatever the launcher: `npx nosedive`, a pinned `npx -y nosedive@<version>`,
+ * an aliased or globally installed `nosedive`, or `node <root>/dist/cli.js`.
+ * The command token is the reliable part to match on; the launcher is not.
+ */
+export function hookInvokesPrePush(text: string): boolean {
+	return text
+		.split(/\r?\n/)
+		.filter((line) => !/^\s*#/.test(line))
+		.some((line) => /(^|[\s'"`/\\])_pre-push\.hook(\s|$|['"`])/.test(line));
+}
+
+export interface PilotIdentity {
+	name: string;
+	email: string;
+	missing: string[];
+}
+
+export function readPilotIdentity(cwd: string): PilotIdentity {
+	const name = gitOutput(cwd, ["config", "user.name"]) ?? "";
+	const email = gitOutput(cwd, ["config", "user.email"]) ?? "";
+	const missing: string[] = [];
+	if (!name) missing.push("user.name");
+	if (!email) missing.push("user.email");
+	return { name, email, missing };
+}
+
+export function pilotIdentityLines(identity: Pick<PilotIdentity, "name" | "email">): string {
+	return `nosedive-pilot-name: ${identity.name}\nnosedive-pilot-email: ${identity.email}\n`;
+}
+
 export interface WorkspaceDiveMarker {
 	present: boolean;
 	id?: string;

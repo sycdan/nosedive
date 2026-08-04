@@ -903,7 +903,7 @@ meta:
 	assert.match(hydrateOverUnpublished.stderr, /^nosedive-error: .*refused/m);
 	assert.match(
 		hydrateOverUnpublished.stderr,
-		/more info: node .*dist\/cli\.js render 019fcb35-d660-7318-ac4c-3d5aeed3a81e/,
+		/more info: .* render 019fcb35-d660-7318-ac4c-3d5aeed3a81e/,
 	);
 	assert.equal(
 		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),

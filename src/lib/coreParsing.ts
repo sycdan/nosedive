@@ -196,7 +196,8 @@ export function resolveFrom(base: string, path: string): string {
 
 export function formatPath(path: string): string {
 	const rel = relative(process.cwd(), path);
-	return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel || "." : path;
+	const rendered = rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : path;
+	return toPosixPath(rendered || ".");
 }
 
 /** Render a path with forward slashes, even on Windows. */
@@ -257,8 +258,8 @@ export function readNosediveRc(start: string): NosediveRc {
 	const bridgeDir = resolved.bridgeDir;
 	const rc =
 		resolved.shape === "split"
-			? parseYamlBlock(readFileSync(resolved.basePath, "utf8"), resolved.basePath)
-			: parseYamlBlock(readFileSync(resolved.legacyPath, "utf8"), resolved.legacyPath);
+			? parseYamlBlock(readFileSync(resolved.basePath, "utf8"), formatPath(resolved.basePath))
+			: parseYamlBlock(readFileSync(resolved.legacyPath, "utf8"), formatPath(resolved.legacyPath));
 	const workspace = rc.scalars.workspace;
 	const backlog = rc.scalars.backlog;
 	const kb = rc.scalars.kb;

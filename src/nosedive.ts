@@ -19,6 +19,7 @@ import {
 	resolveFrom,
 	setCommandHelpPrinter,
 	setTopLevelHelpRenderer,
+	toPosixPath,
 	unsafeLinkPath,
 	type CommandIo,
 	type KbDoc,
@@ -110,14 +111,15 @@ function parseContractName(
 }
 
 function parsePackageContractDoc(path: string, content: string): ContractDoc {
-	const parsed = parseMarkdownDoc(content, path);
-	const contractName = parseContractName(parsed.fm.scalars.name, path);
+	const label = formatPath(path);
+	const parsed = parseMarkdownDoc(content, label);
+	const contractName = parseContractName(parsed.fm.scalars.name, label);
 	if (!contractName) {
 		throw new Error(`command ${formatPath(path)} name must look like <command>@<level>`);
 	}
 	return {
 		path,
-		relPath: relative(packageRoot(), path),
+		relPath: toPosixPath(relative(packageRoot(), path)),
 		id: parsed.fm.scalars.id,
 		name: parsed.fm.scalars.name,
 		kind: parsed.fm.scalars.kind,

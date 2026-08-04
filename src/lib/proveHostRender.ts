@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { formatPath, resolveFrom, scalarToString } from "./coreParsing.js";
+import { formatPath, resolveFrom, scalarToString, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn, spawnOutputText } from "./gitState.js";
 import { BridgeConfig, KbDoc, LinkRef, ScopeRef, TargetDoc, loadKbDocs } from "./kbDocs.js";
 import {
@@ -277,7 +277,7 @@ export function optionalScopeFlags(value: Record<string, unknown>, label: string
 }
 
 export function parseScopeRef(scope: unknown, path: string, index: number): ScopeRef {
-	const label = `${path} scopes[${index}]`;
+	const label = `${formatPath(path)} scopes[${index}]`;
 	if (typeof scope === "string") {
 		const repoId = scope.trim();
 		if (uuidLike(repoId)) {
@@ -344,7 +344,8 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 
 export function parseScopeRefs(value: unknown, path: string): ScopeRef[] {
 	if (value === undefined || value === null) return [];
-	if (!Array.isArray(value)) throw new Error(`invalid scopes in ${path}: expected a YAML list`);
+	if (!Array.isArray(value))
+		throw new Error(`invalid scopes in ${formatPath(path)}: expected a YAML list`);
 	return value.map((scope, index) => parseScopeRef(scope, path, index));
 }
 
@@ -369,7 +370,7 @@ function linkDocId(target: string): string {
 }
 
 export function parseLinkRef(link: unknown, path: string, index: number): LinkRef {
-	const label = `${path} links[${index}]`;
+	const label = `${formatPath(path)} links[${index}]`;
 	if (typeof link === "string") {
 		const target = link.trim();
 		if (!target) throw new Error(`invalid link entry in ${label}: target must be non-empty`);
@@ -411,7 +412,8 @@ export function parseLinkRef(link: unknown, path: string, index: number): LinkRe
 
 export function parseLinkRefs(value: unknown, path: string): LinkRef[] {
 	if (value === undefined || value === null) return [];
-	if (!Array.isArray(value)) throw new Error(`invalid links in ${path}: expected a YAML list`);
+	if (!Array.isArray(value))
+		throw new Error(`invalid links in ${formatPath(path)}: expected a YAML list`);
 	return value.map((link, index) => parseLinkRef(link, path, index));
 }
 
@@ -429,8 +431,9 @@ export function defaultRender(kind: string): "body" | "gist" | undefined {
 }
 
 export function assertDir(path: string, label: string): void {
-	if (!existsSync(path)) throw new Error(`${label} does not exist: ${path}`);
-	if (!statSync(path).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
+	if (!existsSync(path)) throw new Error(`${label} does not exist: ${formatPath(path)}`);
+	if (!statSync(path).isDirectory())
+		throw new Error(`${label} is not a directory: ${formatPath(path)}`);
 }
 
 export function addScopedRepoTargets(options: {
@@ -455,7 +458,7 @@ export function addScopedRepoTargets(options: {
 			const targetDir = scope.path ? resolve(repoRoot, scope.path) : repoRoot;
 			if (!existsSync(targetDir)) {
 				warnings.push(
-					`scope path does not exist; skipping ${doc.relPath} -> ${repoLabel}/${scope.path}`,
+					`scope path does not exist; skipping ${doc.relPath} -> ${repoLabel}/${toPosixPath(scope.path)}`,
 				);
 				continue;
 			}

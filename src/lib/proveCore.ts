@@ -269,11 +269,11 @@ export function assertProverRecordable(bridgeDir: string, proverPath: string): v
 
 export function recordProofResult(assertionPath: string, result: ProverHostResult): void {
 	const text = readFileSync(assertionPath, "utf8");
-	const block = splitMarkdownFrontmatter(text, assertionPath);
+	const block = splitMarkdownFrontmatter(text, formatPath(assertionPath));
 	const doc = parseDocument(block.yaml);
 	if (doc.errors.length > 0) {
 		throw new Error(
-			`invalid YAML in frontmatter in ${assertionPath}: ${doc.errors[0]?.message ?? "unknown error"}`,
+			`invalid YAML in frontmatter in ${formatPath(assertionPath)}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 	}
 

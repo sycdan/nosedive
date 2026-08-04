@@ -7,7 +7,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { renderUpdatedBacklogMemo } from "../lib/backlogDives.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { parseMarkdownDoc, readNosediveRc } from "../lib/coreParsing.js";
+import { formatPath, parseMarkdownDoc, readNosediveRc } from "../lib/coreParsing.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 import { posixRelPath } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
@@ -26,7 +26,7 @@ function updateBacklog(args: string[], io: CommandIo): void {
 	const memoPath = join(rc.kbDir, `${memoId}.md`);
 	if (!existsSync(memoPath)) throw new Error(`bridge backlog memo not found: ${memoId}`);
 	if (!statSync(memoPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${memoId}`);
-	const memo = parseMarkdownDoc(readFileSync(memoPath, "utf8"), memoPath);
+	const memo = parseMarkdownDoc(readFileSync(memoPath, "utf8"), formatPath(memoPath));
 	if (memo.fm.scalars.kind && memo.fm.scalars.kind !== "memo") {
 		throw new Error(`configured backlog doc must be kind: memo: ${memoId}`);
 	}

@@ -26,6 +26,10 @@ const DEFAULT_BASE = {
 	"work-branch-prefix": "work/",
 };
 
+function displayPath(path) {
+	return path.replaceAll("\\", "/");
+}
+
 function writeFileAtomic(path, content) {
 	mkdirSync(dirname(path), { recursive: true });
 	const tmp = join(dirname(path), `.${process.pid}.${Date.now()}.tmp`);
@@ -147,9 +151,9 @@ function walkBacklogNode(dir, slug, ancestors, nearestParent, mintUuid) {
 	let node;
 	if (path) {
 		const text = readFileSync(path, "utf8");
-		const { raw, body } = splitMarkdownFrontmatter(text, path);
+		const { raw, body } = splitMarkdownFrontmatter(text, displayPath(path));
 		const id = scalarString(raw.id)?.trim() || mintUuid();
-		if (!uuidLike(id)) throw new Error(`invalid effort id in ${path}: ${id}`);
+		if (!uuidLike(id)) throw new Error(`invalid effort id in ${displayPath(path)}: ${id}`);
 		node = {
 			id,
 			path,
@@ -330,7 +334,8 @@ function renderDoc(frontmatter, body) {
 function plannedWrite(path, content, sourceRel, writes) {
 	if (existsSync(path)) {
 		const existing = readFileSync(path, "utf8");
-		if (existing !== content) throw new Error(`refusing to overwrite existing different kb doc: ${path}`);
+		if (existing !== content)
+			throw new Error(`refusing to overwrite existing different kb doc: ${displayPath(path)}`);
 		return;
 	}
 	writes.push({ path, content, sourceRel });
@@ -396,7 +401,8 @@ function parseLegacyRepoRef(entry) {
 function effortScopes(effort, lookup) {
 	const repos = effort.raw.repos;
 	if (repos === undefined || repos === null) return [];
-	if (!Array.isArray(repos)) throw new Error(`invalid repos in ${effort.path}: expected a YAML list`);
+	if (!Array.isArray(repos))
+		throw new Error(`invalid repos in ${displayPath(effort.path)}: expected a YAML list`);
 	const scopes = [];
 	for (const entry of repos) {
 		const ref = parseLegacyRepoRef(entry);
@@ -513,7 +519,7 @@ export function migrate(ctx) {
 	const legacyPath = join(bridgeDir, ".nosediverc");
 	const legacy = existsSync(legacyPath) ? (parse(readFileSync(legacyPath, "utf8")) ?? {}) : {};
 	if (!legacy || typeof legacy !== "object" || Array.isArray(legacy)) {
-		throw new Error(`${legacyPath} must contain a YAML object`);
+		throw new Error(`${displayPath(legacyPath)} must contain a YAML object`);
 	}
 
 	assertManagedPathsClean(bridgeDir);

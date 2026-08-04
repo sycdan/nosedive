@@ -87,7 +87,7 @@ function bridgeRelativePath(bridgeDir: string, pathRef: string): string {
 function docFromMarker(path: string, kbDocs: KbDoc[]): KbDoc {
 	const markerPath = statSync(path).isDirectory() ? join(path, ".nosedive-ref") : path;
 	if (basename(markerPath) !== ".nosedive-ref")
-		throw new Error(`not a document or .nosedive-ref: ${path}`);
+		throw new Error(`not a document or .nosedive-ref: ${formatPath(path)}`);
 	const marker = parseRepoMarkerStrict(markerPath);
 	const doc = kbDocs.find((candidate) => candidate.id === marker.id);
 	if (!doc) throw new Error(`marker references no kb document: ${formatPath(markerPath)}`);
@@ -295,7 +295,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 	if (dive.kind !== "dive")
 		throw new Error(`--ref does not resolve to a kind: dive doc: ${options.ref}`);
 	const text = readFileSync(dive.path, "utf8");
-	const parsed = parseMarkdownDoc(text, dive.path);
+	const parsed = parseMarkdownDoc(text, formatPath(dive.path));
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);

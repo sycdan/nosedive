@@ -49,12 +49,13 @@ export function appendRepoToEffort(path: string, repo: EffortRepo): string {
 		throw new Error(`effort already includes repo ${repo.id}: ${formatPath(path)}`);
 
 	const text = readFileSync(path, "utf8");
-	const frontmatter = splitMarkdownFrontmatter(text, path);
+	const label = formatPath(path);
+	const frontmatter = splitMarkdownFrontmatter(text, label);
 	const entry = formatEffortRepoEntry(repo.id, repo.ref, repo.readOnly);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
-			`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`,
+			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 
 	const repos = doc.get("repos", true);
@@ -63,7 +64,7 @@ export function appendRepoToEffort(path: string, repo: EffortRepo): string {
 	} else if (isSeq(repos)) {
 		repos.add(entry);
 	} else {
-		throw new Error(`invalid effort repos in ${path}: expected a YAML list`);
+		throw new Error(`invalid effort repos in ${label}: expected a YAML list`);
 	}
 
 	const yaml = stringifyYaml(doc);

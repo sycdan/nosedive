@@ -280,10 +280,7 @@ meta:
 	assertOk(hydrateByName, "hydrate-repo.workspace exact name failed");
 	assert.match(
 		hydrateByName.stdout,
-		new RegExp(
-			`^created repo=${nameRepoId} path=workspace[\\\\/]name-target commit=[0-9a-f]{40}$`,
-			"m",
-		),
+		new RegExp(`^created repo=${nameRepoId} path=workspace/name-target commit=[0-9a-f]{40}$`, "m"),
 	);
 	assert.equal(
 		readFileSync(join(hydrateBridge, "workspace", "name-target", ".nosedive-ref"), "utf8"),
@@ -338,7 +335,7 @@ meta:
 	assert.match(
 		hydrateCreated.stdout,
 		new RegExp(
-			`^created repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target commit=[0-9a-f]{40}$`,
+			`^created repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -424,7 +421,7 @@ meta:
 	assert.match(
 		staleCacheHydrate.stdout,
 		new RegExp(
-			`^created repo=${staleCacheRepoId} path=workspace[\\\\/]stale-cache-target commit=${cloudMainCommit}$`,
+			`^created repo=${staleCacheRepoId} path=workspace/stale-cache-target commit=${cloudMainCommit}$`,
 			"m",
 		),
 	);
@@ -476,7 +473,7 @@ meta:
 	assert.match(
 		hydrateNoop.stdout,
 		new RegExp(
-			`^noop repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target commit=[0-9a-f]{40}$`,
+			`^noop repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -489,7 +486,7 @@ meta:
 	assert.match(
 		hydrateReadOnly.stdout,
 		new RegExp(
-			`^updated repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target commit=[0-9a-f]{40}$`,
+			`^updated repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -552,7 +549,7 @@ meta:
 	assert.match(
 		hydrateWritableRestore.stdout,
 		new RegExp(
-			`^updated repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target commit=[0-9a-f]{40}$`,
+			`^updated repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -588,7 +585,7 @@ meta:
 	assert.match(
 		hydrateAtRef.stdout,
 		new RegExp(
-			`^updated repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target commit=[0-9a-f]{40}$`,
+			`^updated repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -653,7 +650,7 @@ meta:
 	assert.match(
 		staleHydrate.stdout,
 		new RegExp(
-			`^created repo=${staleWorktreeRepoId} path=workspace[\\\\/]stale-target commit=[0-9a-f]{40}$`,
+			`^created repo=${staleWorktreeRepoId} path=workspace/stale-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
 	);
@@ -750,7 +747,7 @@ meta:
 	assertOk(dehydrateById, "dehydrate-repo.workspace by id failed");
 	assert.match(
 		dehydrateById.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 	assert.equal(
 		existsSync(join(hydrateBridge, "workspace", "hydrated-target")),
@@ -771,7 +768,7 @@ meta:
 	assertOk(dehydrateByName, "dehydrate-repo.workspace by name failed");
 	assert.match(
 		dehydrateByName.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	assertOk(
@@ -785,7 +782,7 @@ meta:
 	assertOk(dehydrateByPath, "dehydrate-repo.workspace by directory path failed");
 	assert.match(
 		dehydrateByPath.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	assertOk(
@@ -799,14 +796,14 @@ meta:
 	assertOk(dehydrateByMarker, "dehydrate-repo.workspace by marker path failed");
 	assert.match(
 		dehydrateByMarker.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	const dehydrateNoop = run(["dehydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(dehydrateNoop, "dehydrate-repo.workspace noop failed");
 	assert.match(
 		dehydrateNoop.stdout,
-		new RegExp(`^noop repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^noop repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	assertOk(
@@ -831,7 +828,7 @@ meta:
 	assertOk(dirtyWithForce, "dirty dehydrate with --force failed");
 	assert.match(
 		dirtyWithForce.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	assertOk(
@@ -870,7 +867,7 @@ meta:
 	assertOk(aheadWithForce, "ahead dehydrate with --force failed");
 	assert.match(
 		aheadWithForce.stdout,
-		new RegExp(`^removed repo=${hydrateRepoId} path=workspace[\\\\/]hydrated-target$`, "m"),
+		new RegExp(`^removed repo=${hydrateRepoId} path=workspace/hydrated-target$`, "m"),
 	);
 
 	assertOk(

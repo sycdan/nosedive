@@ -62,7 +62,7 @@ function loadPackageKbDoc(id: string): { body: string; docPath: string; gist: st
 	const docPath = join(packageRoot(), "kb", `${id}.md`);
 	if (!existsSync(docPath)) throw new Error(`package kb doc not found: ${id}`);
 	if (!statSync(docPath).isFile()) throw new Error(`package kb doc is not a file: ${id}`);
-	const doc = parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath);
+	const doc = parseMarkdownDoc(readFileSync(docPath, "utf8"), formatPath(docPath));
 	return { body: doc.body, docPath, gist: doc.fm.scalars.gist ?? "" };
 }
 
@@ -126,7 +126,7 @@ export function readWorkspaceDiveMarker(workspaceDir: string | undefined): Works
 	const markerPath = join(workspaceDir, ".nosedive-ref");
 	if (!existsSync(markerPath)) return { present: false };
 	try {
-		const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), markerPath);
+		const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), formatPath(markerPath));
 		const id = marker.scalars.id?.trim();
 		if (!id) return { present: true, error: `${formatPath(markerPath)} is missing id` };
 		if (!uuidLike(id))
@@ -394,7 +394,7 @@ export function updateManagedExclude(
 ): void {
 	const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
 	if (!rawExcludePath) {
-		warnings.push(`could not resolve git exclude path for ${repoRoot}`);
+		warnings.push(`could not resolve git exclude path for ${formatPath(repoRoot)}`);
 		return;
 	}
 
@@ -419,7 +419,9 @@ export function manageGitState(paths: string[], spec: ManagedExcludeSpec): strin
 	for (const path of paths) {
 		const repoRoot = gitOutput(dirname(path), ["rev-parse", "--show-toplevel"]);
 		if (!repoRoot) {
-			warnings.push(`generated file is not inside a git worktree; cannot manage excludes: ${path}`);
+			warnings.push(
+				`generated file is not inside a git worktree; cannot manage excludes: ${formatPath(path)}`,
+			);
 			continue;
 		}
 		const list = byRepo.get(repoRoot) ?? [];
@@ -436,9 +438,9 @@ export function manageGitState(paths: string[], spec: ManagedExcludeSpec): strin
 			if (!gitOk(repoRoot, ["ls-files", "--error-unmatch", "--", rel])) continue;
 
 			if (gitOk(repoRoot, ["update-index", "--skip-worktree", "--", rel])) {
-				warnings.push(`tracked generated file marked skip-worktree: ${file}`);
+				warnings.push(`tracked generated file marked skip-worktree: ${formatPath(file)}`);
 			} else {
-				warnings.push(`could not mark tracked generated file skip-worktree: ${file}`);
+				warnings.push(`could not mark tracked generated file skip-worktree: ${formatPath(file)}`);
 			}
 		}
 	}

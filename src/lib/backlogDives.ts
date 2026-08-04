@@ -2,7 +2,13 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { MarkdownDoc, NosediveRc, parseMarkdownDoc } from "./coreParsing.js";
+import {
+	formatPath,
+	MarkdownDoc,
+	NosediveRc,
+	parseMarkdownDoc,
+	toPosixPath,
+} from "./coreParsing.js";
 import { KbDoc, ScopeRef, parseRawFrontmatterObject } from "./kbDocs.js";
 import { uuidLike } from "./repoWorkspaceCore.js";
 import {
@@ -98,7 +104,7 @@ export function bridgeBacklogMemoBody(rc: NosediveRc): string {
 	const docPath = join(rc.kbDir, `${id}.md`);
 	if (!existsSync(docPath)) throw new Error(`bridge backlog memo not found: ${id}`);
 	if (!statSync(docPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${id}`);
-	return parseMarkdownDoc(readFileSync(docPath, "utf8"), docPath).body;
+	return parseMarkdownDoc(readFileSync(docPath, "utf8"), formatPath(docPath)).body;
 }
 
 export interface ListDivesOptions {
@@ -160,7 +166,7 @@ export function formatScopeRef(scope: ScopeRef): string {
 	const bits = [scope.repoId];
 	if (scope.ref) bits.push(`@${scope.ref}`);
 	if (scope.readOnly) bits.push(":ro");
-	if (scope.path && scope.path !== ".") bits.push(` path=${scope.path}`);
+	if (scope.path && scope.path !== ".") bits.push(` path=${toPosixPath(scope.path)}`);
 	return bits.join("");
 }
 
@@ -186,7 +192,7 @@ export function listedDive(doc: KbDoc, rel?: string): ListedDive {
 export function sameEffortRef(effortRef: string | undefined, effort: KbDoc): boolean {
 	if (!effortRef) return false;
 	if (effortRef === effort.id || effortRef === effort.name) return true;
-	return effortRef.replaceAll("\\", "/") === effort.relPath.replaceAll("\\", "/");
+	return toPosixPath(effortRef) === effort.relPath;
 }
 
 export const DIVE_WORKING_RELS = new Set(["working", "reviewing"]);

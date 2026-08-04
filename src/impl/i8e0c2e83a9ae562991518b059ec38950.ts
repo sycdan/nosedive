@@ -46,7 +46,7 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): boolean {
 		const wired = existsSync(hookPath) && hookInvokesPrePush(readFileSync(hookPath, "utf8"));
 		if (!wired) {
 			printManualHookAdvice(
-				`core.hooksPath is set to ${hooksPath}; nosedive will not change it or write an ignored .git/hooks/pre-push.`,
+				`core.hooksPath is set to ${toPosixPath(hooksPath)}; nosedive will not change it or write an ignored .git/hooks/pre-push.`,
 				io,
 			);
 			io.setExitCode(1);

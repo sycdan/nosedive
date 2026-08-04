@@ -14,6 +14,7 @@ import {
 	legacyConfigPath,
 	parseMarkdownDoc,
 	parseYamlBlock,
+	toPosixPath,
 } from "./coreParsing.js";
 import { packageMigrationDocs, packageMigrations, packageRoot } from "./packageBacklog.js";
 import { gitOutput } from "./renderPlan.js";
@@ -46,7 +47,7 @@ export function parseSeedOptions(args: string[]): SeedOptions {
 export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 	const basePath = baseConfigPath(bridgeDir);
 	const base = existsSync(basePath)
-		? parseYamlBlock(readFileSync(basePath, "utf8"), basePath)
+		? parseYamlBlock(readFileSync(basePath, "utf8"), formatPath(basePath))
 		: emptyYaml();
 
 	return {
@@ -63,9 +64,9 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 export function renderBaseConfig(settings: RcSettings, compatibilityLevel: number): string {
 	return [
 		`compatibility-level: ${compatibilityLevel}`,
-		`workspace: ${settings.workspace}`,
-		`backlog: ${settings.backlog}`,
-		`kb: ${settings.kb}`,
+		`workspace: ${toPosixPath(settings.workspace)}`,
+		`backlog: ${toPosixPath(settings.backlog)}`,
+		`kb: ${toPosixPath(settings.kb)}`,
 		`home-branch: ${settings.homeBranch}`,
 		`work-branch-prefix: ${settings.workBranchPrefix}`,
 		"",
@@ -118,7 +119,7 @@ export function detectConfigShapeAt(bridgeDir: string): ConfigShapeInfo {
 	if (hasBase && hasLegacy) return { kind: "ambiguous" };
 	if (hasBase) {
 		const basePath = baseConfigPath(bridgeDir);
-		const base = parseYamlBlock(readFileSync(basePath, "utf8"), basePath);
+		const base = parseYamlBlock(readFileSync(basePath, "utf8"), formatPath(basePath));
 		const raw = base.scalars["compatibility-level"];
 		const version = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
 		return Number.isInteger(version) ? { kind: "split", version } : { kind: "split-unversioned" };
@@ -182,7 +183,7 @@ export function printMigrationSummary(
 	summary: MigrationRunSummary,
 ): void {
 	io.log(`Migration ${migration.docId} complete.`);
-	if (summary.sourceDir) io.log(`Source: ${summary.sourceDir}`);
+	if (summary.sourceDir) io.log(`Source: ${toPosixPath(summary.sourceDir)}`);
 	if (summary.effortCount !== undefined) io.log(`Efforts copied: ${summary.effortCount}`);
 	if (summary.backlogMemoId) io.log(`Backlog memo: ${summary.backlogMemoId}`);
 	if (summary.bridgeRepo?.id) {
@@ -191,7 +192,7 @@ export function printMigrationSummary(
 	}
 	if (summary.copiedFiles && summary.copiedFiles.length > 0) {
 		io.log("Copied files:");
-		for (const file of summary.copiedFiles) io.log(`  - ${file}`);
+		for (const file of summary.copiedFiles) io.log(`  - ${toPosixPath(file)}`);
 	}
 	if (summary.manualCleanup) io.log(summary.manualCleanup);
 }

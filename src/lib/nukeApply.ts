@@ -76,7 +76,7 @@ export function nukeConfig(io: CommandIo): void {
 
 	const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
 	if (!rawExcludePath) {
-		warnings.push(`could not resolve git exclude path for ${repoRoot}`);
+		warnings.push(`could not resolve git exclude path for ${formatPath(repoRoot)}`);
 	} else {
 		const excludePath = isAbsolute(rawExcludePath)
 			? rawExcludePath

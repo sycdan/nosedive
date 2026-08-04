@@ -61,7 +61,7 @@ test("seed-headless", () => {
 	assert.notEqual(unknownSeedOption.status, 0, "seed with unknown option unexpectedly succeeded");
 	assert.match(unknownSeedOption.stderr, /unknown seed option: --bogus/);
 
-	const wroteConfigFile = /Wrote \.nosedive[\\/]config\.yaml/;
+	const wroteConfigFile = /Wrote \.nosedive\/config\.yaml/;
 
 	const headlessFreshBridge = join(tmp, "headless-fresh-bridge");
 	mkdirSync(headlessFreshBridge, { recursive: true });

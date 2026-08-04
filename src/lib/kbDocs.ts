@@ -4,6 +4,7 @@ import { parse as parseYaml } from "yaml";
 
 import { assertSlug, titleFromSlug } from "./backlogDives.js";
 import {
+	formatPath,
 	NosediveRc,
 	parseMarkdownDoc,
 	parseMarkdownFrontmatter,
@@ -11,6 +12,7 @@ import {
 	readNosediveRc,
 	resolveFrom,
 	splitMarkdownFrontmatter,
+	toPosixPath,
 } from "./coreParsing.js";
 import { gitRelPath } from "./gitState.js";
 import { parseLinkRefs, parseScopeRefs } from "./proveHostRender.js";
@@ -187,35 +189,36 @@ export interface ApplyPlan {
 }
 
 export function parseEffortRepos(path: string): EffortRepo[] {
-	const doc = parseMarkdownDoc(readFileSync(path, "utf8"), path);
+	const label = formatPath(path);
+	const doc = parseMarkdownDoc(readFileSync(path, "utf8"), label);
 	return (doc.fm.lists.repos ?? []).map((rawEntry) => {
 		const entry = rawEntry.trim();
-		if (!entry) throw new Error(`invalid effort repo entry in ${path}: empty value`);
+		if (!entry) throw new Error(`invalid effort repo entry in ${label}: empty value`);
 
 		const firstColon = entry.indexOf(":");
 		const secondColon = firstColon === -1 ? -1 : entry.indexOf(":", firstColon + 1);
 		if (secondColon !== -1) {
 			throw new Error(
-				`invalid effort repo entry in ${path}: ${entry} (expected <repo-id>[@ref][:flags])`,
+				`invalid effort repo entry in ${label}: ${entry} (expected <repo-id>[@ref][:flags])`,
 			);
 		}
 
 		const base = firstColon === -1 ? entry : entry.slice(0, firstColon);
 		const flagText = firstColon === -1 ? "" : entry.slice(firstColon + 1);
-		if (!base) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing repo id)`);
+		if (!base) throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing repo id)`);
 
 		let readOnly = false;
 		if (firstColon !== -1) {
 			if (!flagText)
-				throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing flags after :)`);
+				throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing flags after :)`);
 			for (const flag of flagText.split(",").map((item) => item.trim())) {
-				if (!flag) throw new Error(`invalid effort repo entry in ${path}: ${entry} (empty flag)`);
+				if (!flag) throw new Error(`invalid effort repo entry in ${label}: ${entry} (empty flag)`);
 				if (flag === "ro") {
 					readOnly = true;
 					continue;
 				}
 				throw new Error(
-					`invalid effort repo flag in ${path}: ${entry} (unsupported flag: ${flag})`,
+					`invalid effort repo flag in ${label}: ${entry} (unsupported flag: ${flag})`,
 				);
 			}
 		}
@@ -223,14 +226,16 @@ export function parseEffortRepos(path: string): EffortRepo[] {
 		const at = base.indexOf("@");
 		const secondAt = at === -1 ? -1 : base.indexOf("@", at + 1);
 		if (secondAt !== -1) {
-			throw new Error(`invalid effort repo entry in ${path}: ${entry} (expected at most one @ref)`);
+			throw new Error(
+				`invalid effort repo entry in ${label}: ${entry} (expected at most one @ref)`,
+			);
 		}
 
 		const id = at === -1 ? base : base.slice(0, at);
 		const ref = at === -1 ? undefined : base.slice(at + 1);
-		if (!id) throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing repo id)`);
+		if (!id) throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing repo id)`);
 		if (at !== -1 && !ref)
-			throw new Error(`invalid effort repo entry in ${path}: ${entry} (missing ref after @)`);
+			throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing ref after @)`);
 
 		return { id, ref, readOnly };
 	});
@@ -242,12 +247,13 @@ export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 		.filter((e) => e.isFile() && e.name.endsWith(".md"))
 		.map((e) => {
 			const path = join(kbDir, e.name);
+			const label = formatPath(path);
 			const text = readFileSync(path, "utf8");
-			const fm = parseMarkdownFrontmatter(text, path);
+			const fm = parseMarkdownFrontmatter(text, label);
 			const raw = fm.raw;
 			return {
 				path,
-				relPath: relative(bridgeDir, path),
+				relPath: toPosixPath(relative(bridgeDir, path)),
 				id: fm.scalars.id,
 				name: fm.scalars.name,
 				kind: fm.scalars.kind,
@@ -288,7 +294,7 @@ export function readActiveDiveId(workspaceDir: string | undefined): string | und
 	if (!workspaceDir) return undefined;
 	const markerPath = join(workspaceDir, ".nosedive-ref");
 	if (!existsSync(markerPath)) return undefined;
-	const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), markerPath);
+	const marker = parseYamlBlock(readFileSync(markerPath, "utf8"), formatPath(markerPath));
 	return marker.scalars.id;
 }
 

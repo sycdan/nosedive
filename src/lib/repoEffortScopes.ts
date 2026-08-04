@@ -8,6 +8,7 @@ import {
 	parseMarkdownFrontmatter,
 	splitMarkdownFrontmatter,
 	stringifyYaml,
+	toPosixPath,
 } from "./coreParsing.js";
 import { EffortRepo, KbDoc, readActiveDiveId } from "./kbDocs.js";
 import { parseScopeRefs } from "./proveHostRender.js";
@@ -22,7 +23,7 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 	const byId = efforts.filter((doc) => doc.id === effortRef);
 	if (byId.length === 1) return byId[0];
 
-	const normalizedRef = effortRef.replaceAll("\\", "/");
+	const normalizedRef = toPosixPath(effortRef);
 	const pathCandidates = [
 		resolve(process.cwd(), effortRef),
 		resolve(rc.bridgeDir, effortRef),
@@ -30,7 +31,7 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 	].filter((candidate): candidate is string => candidate !== undefined);
 	const byPath = efforts.filter(
 		(doc) =>
-			doc.relPath.replaceAll("\\", "/") === normalizedRef ||
+			doc.relPath === normalizedRef ||
 			pathCandidates.some((candidate) => resolve(doc.path) === candidate),
 	);
 	if (byPath.length === 1) return byPath[0];
@@ -80,11 +81,12 @@ export function resolveActiveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc): KbDoc {
  */
 export function appendLinkToDoc(path: string, targetId: string, rel: string): void {
 	const text = readFileSync(path, "utf8");
-	const frontmatter = splitMarkdownFrontmatter(text, path);
+	const label = formatPath(path);
+	const frontmatter = splitMarkdownFrontmatter(text, label);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
-			`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`,
+			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 
 	const entry = { [`kb/${targetId}.md`]: { rel } };
@@ -94,7 +96,7 @@ export function appendLinkToDoc(path: string, targetId: string, rel: string): vo
 	} else if (isSeq(links)) {
 		links.add(entry);
 	} else {
-		throw new Error(`invalid links in ${path}: expected a YAML list`);
+		throw new Error(`invalid links in ${label}: expected a YAML list`);
 	}
 
 	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));
@@ -110,18 +112,19 @@ export function formatEffortScopeEntry(
 
 export function appendRepoScopeToEffort(path: string, repo: EffortRepo): string {
 	const text = readFileSync(path, "utf8");
-	const rawScopes = parseMarkdownFrontmatter(text, path).raw.scopes;
+	const label = formatPath(path);
+	const rawScopes = parseMarkdownFrontmatter(text, label).raw.scopes;
 	const existing = parseScopeRefs(rawScopes, path);
 	if (existing.some((entry) => entry.repoId === repo.id)) {
 		throw new Error(`effort already includes scope ${repo.id}: ${formatPath(path)}`);
 	}
 
-	const frontmatter = splitMarkdownFrontmatter(text, path);
+	const frontmatter = splitMarkdownFrontmatter(text, label);
 	const entry = formatEffortScopeEntry(repo.id, repo.ref, repo.readOnly);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
-			`invalid YAML in frontmatter in ${path}: ${doc.errors[0]?.message ?? "unknown error"}`,
+			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 
 	const scopeValue: Record<string, string> = {};
@@ -134,7 +137,7 @@ export function appendRepoScopeToEffort(path: string, repo: EffortRepo): string 
 	} else if (isSeq(scopes)) {
 		scopes.add(scopeEntry);
 	} else {
-		throw new Error(`invalid effort scopes in ${path}: expected a YAML list`);
+		throw new Error(`invalid effort scopes in ${label}: expected a YAML list`);
 	}
 
 	const yaml = stringifyYaml(doc);

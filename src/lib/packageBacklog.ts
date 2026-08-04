@@ -35,7 +35,7 @@ export function nosediveInvocation(): string {
 		version: string;
 	};
 	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
-	return `node ${formatPath(join(root, "dist", "cli.js")).replaceAll("\\", "/")}`;
+	return `node ${formatPath(join(root, "dist", "cli.js"))}`;
 }
 
 export function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {
@@ -47,7 +47,7 @@ export function packageDocsOfKind(kind: string): Array<{ filename: string; conte
 		.map((entry) => {
 			const sourcePath = join(kbDir, entry.name);
 			const content = readFileSync(sourcePath, "utf8");
-			const fm = parseMarkdownFrontmatter(content, sourcePath);
+			const fm = parseMarkdownFrontmatter(content, formatPath(sourcePath));
 			return fm.scalars.kind === kind ? { filename: entry.name, content } : undefined;
 		})
 		.filter((doc): doc is { filename: string; content: string } => doc !== undefined);
@@ -58,7 +58,7 @@ export function packageMigrationDocs(): Array<{ filename: string; content: strin
 
 export function parsePackageMigration(doc: { filename: string; content: string }): Migration {
 	const path = join(packageRoot(), "kb", doc.filename);
-	const parsed = parseMarkdownDoc(doc.content, path);
+	const parsed = parseMarkdownDoc(doc.content, formatPath(path));
 	const id = parsed.fm.scalars.id;
 	const fromLevel = Number.parseInt(parsed.fm.nested.meta?.["from-level"] ?? "", 10);
 	const toLevel = Number.parseInt(parsed.fm.nested.meta?.["to-level"] ?? "", 10);
@@ -99,7 +99,10 @@ export function bridgeCompatibilityLevel(start: string): number | undefined {
 	const resolved = findBridgeConfig(start);
 	if (!resolved) return undefined;
 	if (resolved.shape === "legacy") return 0;
-	const base = parseYamlBlock(readFileSync(resolved.basePath, "utf8"), resolved.basePath);
+	const base = parseYamlBlock(
+		readFileSync(resolved.basePath, "utf8"),
+		formatPath(resolved.basePath),
+	);
 	return configCompatibilityLevel(base, resolved.basePath);
 }
 
@@ -159,7 +162,7 @@ export function posixRelPath(from: string, to: string): string {
 }
 
 export function effortDocTitle(doc: KbDoc, leafSlug: string): string {
-	const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), doc.path).body;
+	const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), formatPath(doc.path)).body;
 	return firstMarkdownHeading(body, titleFromSlug(leafSlug));
 }
 

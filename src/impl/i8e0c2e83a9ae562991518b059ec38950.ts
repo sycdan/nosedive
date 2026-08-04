@@ -8,7 +8,13 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { bridgeBacklogMemoBody } from "../lib/backlogDives.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { PRE_PUSH_HOOK } from "../lib/constants.js";
-import { formatPath, NosediveRc, readNosediveRc, resolveFrom, toPosixPath } from "../lib/coreParsing.js";
+import {
+	formatPath,
+	NosediveRc,
+	readNosediveRc,
+	resolveFrom,
+	toPosixPath,
+} from "../lib/coreParsing.js";
 import {
 	gitCommonDir,
 	hookInvokesPrePush,

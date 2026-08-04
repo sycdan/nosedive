@@ -80,7 +80,11 @@ test("preflight hard-fails on an unwired foreign hook", () => {
 	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
 	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
 	assert.match(foreignPreflight.stderr, /npx nosedive _pre-push\.hook "\$@" \|\| exit 1/);
-	assert.equal(foreignPreflight.stdout, "", "no session report should print when the hook is unwired");
+	assert.equal(
+		foreignPreflight.stdout,
+		"",
+		"no session report should print when the hook is unwired",
+	);
 });
 
 test("preflight leaves a wired foreign hook untouched and reports", () => {
@@ -89,7 +93,8 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 
 	const foreignHook = join(bridge, ".git", "hooks", "pre-push");
-	const wiredHookText = '#!/bin/sh\n# hand-rolled hook\nexec my-nosedive-alias _pre-push.hook "$@"\n';
+	const wiredHookText =
+		'#!/bin/sh\n# hand-rolled hook\nexec my-nosedive-alias _pre-push.hook "$@"\n';
 	write(foreignHook, wiredHookText);
 
 	const preflight = run(["preflight"], bridge);
@@ -107,7 +112,11 @@ test("preflight hard-fails when core.hooksPath names no wired hook", () => {
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
 
 	const hooksPathPreflight = run(["preflight"], bridge);
-	assert.notEqual(hooksPathPreflight.status, 0, "preflight with an unwired core.hooksPath should fail");
+	assert.notEqual(
+		hooksPathPreflight.status,
+		0,
+		"preflight with an unwired core.hooksPath should fail",
+	);
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
 	assert.equal(
 		runTool("git", ["config", "--get", "core.hooksPath"], bridge).stdout.trim(),
@@ -154,10 +163,7 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 	const diveText = readFileSync(join(bridge, divePath), "utf8");
 	const diveId = /^id: (\S+)$/m.exec(diveText)[1];
 	const diveGist = /^gist: "(.+)"$/m.exec(diveText)[1];
-	assert.equal(
-		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
-		`id: ${diveId}\n`,
-	);
+	assert.equal(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), `id: ${diveId}\n`);
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
 
@@ -202,7 +208,11 @@ test("preflight fails like whoami when git identity is incomplete", () => {
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
 
 	const preflight = run(["preflight"], bridge);
-	assert.notEqual(preflight.status, 0, "preflight with incomplete git identity unexpectedly succeeded");
+	assert.notEqual(
+		preflight.status,
+		0,
+		"preflight with incomplete git identity unexpectedly succeeded",
+	);
 	assert.match(preflight.stderr, /missing git config: user\.email/);
 	// The hook still installs -- identity is a session-report concern, not a hook-wiring one.
 	assert.equal(readFileSync(join(bridge, ".git", "hooks", "pre-push"), "utf8"), MANAGED_HOOK);

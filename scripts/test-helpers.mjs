@@ -62,13 +62,28 @@ export function write(path, content) {
 }
 
 /**
+ * `git am` creates real commits, so it needs a committer identity -- unlike
+ * `gitCommit`'s `-c` flags, this has to reach the CLI's own internal git
+ * calls (e.g. jump's `git am`), which run with no identity override of their
+ * own since production expects the pilot's real config. Set via env rather
+ * than repo-local config so it survives the dehydrate/re-clone cycle jump
+ * exercises, and so fixtures do not depend on the runner's global git config.
+ */
+const testIdentityEnv = {
+	GIT_AUTHOR_NAME: "Nosedive Test",
+	GIT_AUTHOR_EMAIL: "nosedive@example.invalid",
+	GIT_COMMITTER_NAME: "Nosedive Test",
+	GIT_COMMITTER_EMAIL: "nosedive@example.invalid",
+};
+
+/**
  * Runs the CLI with the ambient git environment stripped, the same way runGit
  * and runTool do. Without this, a suite invoked from inside a git hook
  * inherits GIT_DIR and friends, and every command the CLI shells out to reads
  * the hook's repository instead of the fixture the test just built.
  */
 export function run(args, cwd, input) {
-	const env = { ...process.env };
+	const env = { ...process.env, ...testIdentityEnv };
 	for (const key of gitLocalEnvKeys) delete env[key];
 	return spawnSync(process.execPath, [cli, ...args], {
 		cwd,

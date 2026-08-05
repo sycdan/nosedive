@@ -17,17 +17,19 @@ import {
 	readWorkspaceDiveMarker,
 	uniqueDiveWipScopes,
 } from "./gitState.js";
-import { loadKbDocs } from "./kbDocs.js";
-import { gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
 import { ensureDehydrateTargetOwnership, removeHydratedWorktree } from "./repoWorktrees.js";
 
-export interface PackedArtifact {
+/** A captured patch file, not yet wrapped in its `kind: memo` doc. */
+export interface CapturedPatch {
 	repoId: string;
-	relPath: string;
-	absPath: string;
+	patchRelPath: string;
+	patchAbsPath: string;
 	sha?: string;
-	message?: string;
+	/** Full commit message (subject + body), only set for a real commit. */
+	commitMessage?: string;
 	dirty?: boolean;
 }
 
@@ -98,31 +100,42 @@ function packRepoScope(
 	repoPath: string,
 	kbDir: string,
 	mintUuid: () => string,
-): PackedArtifact[] {
+): CapturedPatch[] {
 	if (!scope.ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
 
-	const entries: PackedArtifact[] = [];
+	const entries: CapturedPatch[] = [];
 	for (const sha of listAheadCommits(repoPath, scope.ref, scope.repoId)) {
 		const patch = gitRun(
 			repoPath,
 			["format-patch", "-1", sha, "--stdout", "--binary", "--no-signature"],
 			`failed to format patch for repo ${scope.repoId} commit ${sha}`,
 		);
-		const message = gitRun(
+		const commitMessage = gitRun(
 			repoPath,
-			["log", "-1", "--format=%s", sha],
-			`failed to read commit subject for repo ${scope.repoId} commit ${sha}`,
+			["log", "-1", "--format=%B", sha],
+			`failed to read commit message for repo ${scope.repoId} commit ${sha}`,
 		);
 		const id = mintUuid();
 		const written = writeArtifact(kbDir, id, patch);
-		entries.push({ repoId: scope.repoId, ...written, sha, message });
+		entries.push({
+			repoId: scope.repoId,
+			patchRelPath: written.relPath,
+			patchAbsPath: written.absPath,
+			sha,
+			commitMessage,
+		});
 	}
 
 	const dirtyPatch = captureDirtyPatch(repoPath, scope.repoId);
 	if (dirtyPatch !== undefined) {
 		const id = mintUuid();
 		const written = writeArtifact(kbDir, id, dirtyPatch);
-		entries.push({ repoId: scope.repoId, ...written, dirty: true });
+		entries.push({
+			repoId: scope.repoId,
+			patchRelPath: written.relPath,
+			patchAbsPath: written.absPath,
+			dirty: true,
+		});
 	}
 
 	return entries;
@@ -136,7 +149,7 @@ function packBridgeWip(
 	divePath: string,
 	excludeAbsPaths: string[],
 	mintUuid: () => string,
-): PackedArtifact | undefined {
+): CapturedPatch | undefined {
 	const kbRel = toPosixPath(relative(bridgeDir, kbDir));
 	// `gitOutput` trims the whole response, which would eat the leading status
 	// space of the first porcelain line; `--untracked-files=all` is what stops
@@ -191,23 +204,103 @@ function packBridgeWip(
 
 	const id = mintUuid();
 	const written = writeArtifact(kbDir, id, diff);
-	return { repoId: "", ...written, dirty: true };
+	return { repoId: "", patchRelPath: written.relPath, patchAbsPath: written.absPath, dirty: true };
 }
 
-// --- dive doc mutation ---------------------------------------------------------
+// --- patch memos ---------------------------------------------------------------
 
-function linkEntryFor(artifact: PackedArtifact): Record<string, unknown> {
-	const value: Record<string, unknown> = artifact.repoId
-		? { rel: "wip-patch", repo: artifact.repoId }
-		: { rel: "bridge-wip" };
-	if (artifact.sha) value.sha = artifact.sha;
-	if (artifact.message !== undefined) value.message = artifact.message;
-	if (artifact.dirty) value.dirty = true;
-	return { [artifact.relPath]: value };
+/**
+ * Links are for docs: a dive should never link a raw `.patch` file directly.
+ * Each captured patch gets its own `kind: memo` wrapping it -- gist is the
+ * commit's first line (or a synthetic one for dirty/bridge-wip state), body
+ * is the rest of the message, `meta.patch` points at the patch file, and
+ * `links: rel: next` chains to the next memo in reapply order. The dive links
+ * only the head of each chain (`rel: patch`); walking `next` from there is
+ * unambiguous in a way a reorderable YAML array is not.
+ */
+function repoSlug(kbDocs: KbDoc[], repoId: string): string {
+	return kbDocs.find((doc) => doc.id === repoId)?.name ?? repoId;
 }
 
-function appendDiveLinks(divePath: string, artifacts: PackedArtifact[]): void {
-	if (artifacts.length === 0) return;
+function renderPatchMemo(options: {
+	id: string;
+	name: string;
+	gist: string;
+	patchRelPath: string;
+	body: string;
+	nextMemoRelPath?: string;
+}): string {
+	const lines = [
+		"---",
+		"kind: memo",
+		`id: ${options.id}`,
+		`name: ${options.name}`,
+		`gist: ${quoteYamlString(options.gist)}`,
+		"meta:",
+		`  patch: ${options.patchRelPath}`,
+	];
+	if (options.nextMemoRelPath) {
+		lines.push("links:", `  - ${options.nextMemoRelPath}:`, "      rel: next");
+	}
+	lines.push("---", "", options.body.trim(), "");
+	return lines.join("\n");
+}
+
+function patchMemoContent(
+	patch: CapturedPatch,
+	slug: string,
+	memoId: string,
+): { name: string; gist: string; body: string } {
+	if (patch.sha) {
+		const [subject, ...rest] = (patch.commitMessage ?? "").split(/\r?\n/);
+		return {
+			name: `${patch.sha.slice(0, 12)}.${slug}`,
+			gist: subject?.trim() || "(no commit message)",
+			body: rest.join("\n"),
+		};
+	}
+	if (patch.repoId) {
+		return {
+			name: `dirty.${slug}`,
+			gist: "Uncommitted working-tree changes.",
+			body: "",
+		};
+	}
+	return {
+		name: `bridge-wip.${memoId.replaceAll("-", "").slice(-6)}`,
+		gist: "Uncommitted bridge kb/ changes.",
+		body: "",
+	};
+}
+
+/** Mints one memo per patch, chained oldest-to-newest via `rel: next`. Returns the head memo's bridge-relative path and every new file's absolute path. */
+function mintPatchMemoChain(
+	kbDir: string,
+	patches: CapturedPatch[],
+	slug: string,
+	mintUuid: () => string,
+): { headRelPath: string; newFileAbsPaths: string[] } {
+	const ids = patches.map(() => mintUuid());
+	const newFileAbsPaths = patches.map((patch) => patch.patchAbsPath);
+
+	for (let i = 0; i < patches.length; i += 1) {
+		const patch = patches[i]!;
+		const id = ids[i]!;
+		const nextMemoRelPath = i + 1 < ids.length ? `kb/${ids[i + 1]}.md` : undefined;
+		const { name, gist, body } = patchMemoContent(patch, slug, id);
+		const absPath = join(kbDir, `${id}.md`);
+		writeFileAtomic(
+			absPath,
+			renderPatchMemo({ id, name, gist, patchRelPath: patch.patchRelPath, body, nextMemoRelPath }),
+		);
+		newFileAbsPaths.push(absPath);
+	}
+
+	return { headRelPath: `kb/${ids[0]}.md`, newFileAbsPaths };
+}
+
+function appendDivePatchLinks(divePath: string, headRelPaths: string[]): void {
+	if (headRelPaths.length === 0) return;
 	const text = readFileSync(divePath, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(divePath));
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
@@ -215,7 +308,7 @@ function appendDiveLinks(divePath: string, artifacts: PackedArtifact[]): void {
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(divePath)}`);
 	}
 
-	const newLinks = artifacts.map(linkEntryFor);
+	const newLinks = headRelPaths.map((relPath) => ({ [relPath]: { rel: "patch" } }));
 	const existing = doc.get("links", true);
 	if (existing === undefined || existing === null) {
 		doc.set("links", newLinks);
@@ -322,7 +415,8 @@ export function packDive(args: string[], io: CommandIo): void {
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
 
 	const mintUuid = createUuid7Minter();
-	const artifacts: PackedArtifact[] = [];
+	const groups: CapturedPatch[][] = [];
+	let capturedCount = 0;
 
 	for (const scope of scopes) {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
@@ -339,27 +433,33 @@ export function packDive(args: string[], io: CommandIo): void {
 			continue;
 		}
 
-		artifacts.push(...packRepoScope(scope, resolved.path, rc.kbDir, mintUuid));
+		const patches = packRepoScope(scope, resolved.path, rc.kbDir, mintUuid);
+		if (patches.length > 0) groups.push(patches);
 	}
 
 	const bridgeWip = packBridgeWip(
 		rc.bridgeDir,
 		rc.kbDir,
 		dive.path,
-		artifacts.map((artifact) => artifact.absPath),
+		groups.flat().map((patch) => patch.patchAbsPath),
 		mintUuid,
 	);
-	if (bridgeWip) artifacts.push(bridgeWip);
+	if (bridgeWip) groups.push([bridgeWip]);
 
-	if (artifacts.length > 0) {
-		appendDiveLinks(dive.path, artifacts);
-		commitAndPushPack(
-			rc.bridgeDir,
-			dive.path,
-			artifacts.map((artifact) => artifact.absPath),
-			dive.name,
-		);
-		io.log(`packed dive ${dive.id}: ${artifacts.length} artifact(s)`);
+	if (groups.length > 0) {
+		const headRelPaths: string[] = [];
+		const newFileAbsPaths: string[] = [];
+		for (const patches of groups) {
+			const slug = repoSlug(kbDocs, patches[0]!.repoId);
+			const minted = mintPatchMemoChain(rc.kbDir, patches, slug, mintUuid);
+			headRelPaths.push(minted.headRelPath);
+			newFileAbsPaths.push(...minted.newFileAbsPaths);
+			capturedCount += patches.length;
+		}
+
+		appendDivePatchLinks(dive.path, headRelPaths);
+		commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name);
+		io.log(`packed dive ${dive.id}: ${capturedCount} artifact(s)`);
 	} else {
 		io.log(`packed dive ${dive.id}: nothing to pack`);
 	}

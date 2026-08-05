@@ -92,6 +92,32 @@ function repoWorktree(bridge, name) {
 	return join(bridge, "workspace", `${name}-repo`);
 }
 
+function splitDoc(text) {
+	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+	assert.ok(match, `expected frontmatter in:\n${text}`);
+	return { yaml: match[1], body: text.slice(match[0].length) };
+}
+
+function readMemo(bridge, relPath) {
+	const text = readFileSync(join(bridge, relPath), "utf8");
+	const { yaml, body } = splitDoc(text);
+	return {
+		kind: /^kind: (.+)$/m.exec(yaml)?.[1],
+		id: /^id: (.+)$/m.exec(yaml)?.[1],
+		name: /^name: (.+)$/m.exec(yaml)?.[1],
+		gist: (/^gist: "(.*)"$/m.exec(yaml) ?? /^gist: (.+)$/m.exec(yaml))?.[1],
+		patch: /^ {2}patch: (.+)$/m.exec(yaml)?.[1],
+		next: /- (kb\/[0-9a-f-]{36}\.md):\n\s+rel: next/.exec(yaml)?.[1],
+		body: body.trim(),
+	};
+}
+
+function patchHeadsByRel(diveText, rel) {
+	return [
+		...diveText.matchAll(new RegExp(`- (kb\\/[0-9a-f-]{36}\\.md):\\n\\s+rel: ${rel}`, "g")),
+	].map((match) => match[1]);
+}
+
 test("pack requires an active dive marker", () => {
 	const bridge = join(tmp, "no-marker");
 	mkdirSync(bridge, { recursive: true });
@@ -131,37 +157,46 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and dehydrat
 	assert.equal(existsSync(worktree), false, "scoped repo should be dehydrated after pack");
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
-	const linkBlocks = [
-		...diveText.matchAll(/- (kb\/artifacts\/[0-9a-f-]{36}\.patch):\n((?:\s{6}.+\n)+)/g),
-	];
-	assert.equal(linkBlocks.length, 4, `expected 4 linked artifacts:\n${diveText}`);
+	const patchHeads = patchHeadsByRel(diveText, "patch");
+	assert.equal(patchHeads.length, 2, `expected 2 patch chain heads:\n${diveText}`);
 
-	const [commitA, commitB, dirty, bridgeWip] = linkBlocks;
-	assert.match(commitA[2], /rel: wip-patch/);
-	assert.match(commitA[2], new RegExp(`repo: ${repoId}`));
-	assert.match(commitA[2], /message: "?add feature a"?/);
-	assert.match(commitA[2], /sha: [0-9a-f]{40}/);
+	// Walk the repo chain from its head via `rel: next` -- order is the chain, not array position.
+	const repoChainHead = patchHeads.find((head) =>
+		readMemo(bridge, head).name.endsWith("full-repo"),
+	);
+	assert.ok(repoChainHead, `expected a repo patch chain head:\n${diveText}`);
+	const commitA = readMemo(bridge, repoChainHead);
+	assert.equal(commitA.kind, "memo");
+	assert.match(commitA.name, /^[0-9a-f]{12}\.full-repo$/);
+	assert.equal(commitA.gist, "add feature a");
+	assert.equal(commitA.body, "");
+	assert.ok(commitA.next, "commit A memo should link the next memo");
 
-	assert.match(commitB[2], new RegExp(`repo: ${repoId}`));
-	assert.match(commitB[2], /message: "?add feature b"?/);
+	const commitB = readMemo(bridge, commitA.next);
+	assert.match(commitB.name, /^[0-9a-f]{12}\.full-repo$/);
+	assert.equal(commitB.gist, "add feature b");
+	assert.ok(commitB.next, "commit B memo should link the next memo");
 
-	assert.match(dirty[2], new RegExp(`repo: ${repoId}`));
-	assert.match(dirty[2], /dirty: true/);
-	assert.doesNotMatch(dirty[2], /sha:/);
+	const dirty = readMemo(bridge, commitB.next);
+	assert.equal(dirty.name, "dirty.full-repo");
+	assert.equal(dirty.gist, "Uncommitted working-tree changes.");
+	assert.equal(dirty.next, undefined, "dirty memo should be the end of the chain");
 
-	assert.match(bridgeWip[2], /rel: bridge-wip/);
-	assert.doesNotMatch(bridgeWip[2], /repo:/);
+	const bridgeWipHead = patchHeads.find((head) => head !== repoChainHead);
+	const bridgeWip = readMemo(bridge, bridgeWipHead);
+	assert.match(bridgeWip.name, /^bridge-wip\.[0-9a-f]{6}$/);
+	assert.equal(bridgeWip.gist, "Uncommitted bridge kb/ changes.");
+	assert.equal(bridgeWip.next, undefined);
 
-	const patchDir = join(bridge, "kb", "artifacts");
-	const commitAPatch = readFileSync(join(patchDir, `${commitA[1].split("/")[2]}`), "utf8");
+	const commitAPatch = readFileSync(join(bridge, commitA.patch), "utf8");
 	assert.match(commitAPatch, /Subject: \[PATCH\] add feature a/);
 	assert.match(commitAPatch, /\+a/);
 
-	const dirtyPatch = readFileSync(join(patchDir, `${dirty[1].split("/")[2]}`), "utf8");
+	const dirtyPatch = readFileSync(join(bridge, dirty.patch), "utf8");
 	assert.match(dirtyPatch, /\+edited/);
 	assert.match(dirtyPatch, /untracked\.txt/);
 
-	const bridgeWipPatch = readFileSync(join(patchDir, `${bridgeWip[1].split("/")[2]}`), "utf8");
+	const bridgeWipPatch = readFileSync(join(bridge, bridgeWip.patch), "utf8");
 	assert.match(bridgeWipPatch, /Extra bridge WIP line\./);
 
 	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();

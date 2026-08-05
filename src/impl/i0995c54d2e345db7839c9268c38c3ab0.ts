@@ -42,7 +42,16 @@ function into(args: string[], io: CommandIo): void {
 		`Help pilot dive into "${context || "something"}" using the information above. ` +
 			`Pick or pitch an effort, then call \`node ${localCli} record.dive --effort <effort-ref> --diver ${identity.email}\` ` +
 			`to claim or create the dive (use --ref <dive-ref> instead of --effort to pick up an existing pending/packed ` +
-			`dive from the backlog above). Then run \`node ${localCli} jump\`.`,
+			`dive from the backlog above).`,
+	);
+	io.log("");
+	io.log(
+		`A dive is worked by a later agent that will not have your context, so it needs a brief: ` +
+			`one small slice, stating where the code is now and what has to be true for the dive to be done. ` +
+			`Sized so it lands as one reviewable PR per writable scoped repo. ` +
+			`Pass it as \`--brief "<brief>"\` on the same \`record.dive\` call, or on a second call with --ref. ` +
+			`A dive you picked up may already have one -- read it, leave it alone, and do not write another. ` +
+			`Stop once the dive is claimed and briefed.`,
 	);
 }
 

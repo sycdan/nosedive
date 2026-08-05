@@ -7,8 +7,10 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
 import {
 	formatPath,
+	parseMarkdownDoc,
 	readNosediveRc,
 	resolveFrom,
 	splitMarkdownFrontmatter,
@@ -294,6 +296,31 @@ function applyPatchStep(step: PatchStep, targetPath: string, label: string): voi
 	}
 }
 
+/**
+ * `jump`'s last word is a handoff: the agent reading this has the workspace but
+ * none of the reasoning behind it. Paths are relative to the cwd `jump` ran in
+ * so a plain read tool takes them verbatim.
+ */
+function printWorkDirective(dive: KbDoc, effort: KbDoc | undefined, io: CommandIo): void {
+	const divePath = toPosixPath(relative(process.cwd(), dive.path));
+	io.log("");
+	io.log(
+		`Read the dive at ${divePath} in full -- its "${DIVE_BRIEF_HEADING}" section is your brief, ` +
+			`and any notes below it are what earlier divers did and left undone.`,
+	);
+	if (effort) {
+		io.log(
+			`Read the effort it serves at ${toPosixPath(relative(process.cwd(), effort.path))}, ` +
+				`and whatever those two link to in their frontmatter.`,
+		);
+	}
+	io.log(
+		`Then do the work, to the endpoint the brief names -- not more. ` +
+			`Append a timestamped section to the dive saying what you did and what you think is next. ` +
+			`Do not edit the brief.`,
+	);
+}
+
 export function jump(args: string[], io: CommandIo): void {
 	if (args.length > 0) throw new Error(`jump takes no arguments: ${args.join(" ")}`);
 
@@ -314,6 +341,16 @@ export function jump(args: string[], io: CommandIo): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const dive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
 	if (!dive) throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+
+	// Checked before anything is hydrated: an unbriefed dive has nothing to hand
+	// the next agent, and jump's whole output is that handoff.
+	const diveBody = parseMarkdownDoc(readFileSync(dive.path, "utf8"), formatPath(dive.path)).body;
+	if (!DIVE_BRIEF_HEADING_PATTERN.test(diveBody)) {
+		throw new Error(
+			`dive ${dive.id} has no "${DIVE_BRIEF_HEADING}" section: ${formatPath(dive.path)}; ` +
+				`brief it with \`record.dive --ref ${dive.id} --brief "<brief>"\` first`,
+		);
+	}
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -386,7 +423,10 @@ export function jump(args: string[], io: CommandIo): void {
 	if (failedChains > 0) {
 		io.err(`${failedChains} patch chain(s) failed to apply; see above`);
 		io.setExitCode(1);
+		return;
 	}
+
+	printWorkDirective(dive, effort, io);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

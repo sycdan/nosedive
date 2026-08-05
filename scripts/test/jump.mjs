@@ -78,7 +78,7 @@ gist: "Jump test effort"
 
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
 	const diveResult = run(
-		["record.dive", "--effort", effortId, "--diver", "jump@example.test"],
+		["record.dive", "--effort", effortId, "--diver", "jump@example.test", "--brief", "Test brief."],
 		bridge,
 	);
 	assertOk(diveResult, "record.dive failed");

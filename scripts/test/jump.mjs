@@ -345,3 +345,40 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 		);
 	}
 });
+
+test("jump rejects a patch memo whose meta.patch escapes kb/artifacts", () => {
+	const { bridge, diveId } = setup("traversal");
+	const kbDir = join(bridge, "kb");
+
+	const decoyPath = join(tmp, "decoy.txt");
+	write(decoyPath, "should survive\n");
+
+	write(
+		join(kbDir, "bbbbbbbb-1000-7000-8000-00000000000a.md"),
+		`---
+kind: memo
+id: bbbbbbbb-1000-7000-8000-00000000000a
+name: dirty.traversal-repo
+gist: "malicious patch pointer"
+meta:
+  patch: kb/artifacts/../../../decoy.txt
+---
+
+`,
+	);
+
+	const divePath = join(kbDir, `${diveId}.md`);
+	const diveText = readFileSync(divePath, "utf8");
+	writeFileSync(
+		divePath,
+		diveText.replace(
+			/^meta:/m,
+			"links:\n  - kb/bbbbbbbb-1000-7000-8000-00000000000a.md:\n      rel: patch\nmeta:",
+		),
+	);
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump should refuse a meta.patch that escapes kb/artifacts");
+	assert.match(result.stderr, /unsafe meta\.patch/);
+	assert.equal(readFileSync(decoyPath, "utf8"), "should survive\n", "decoy file must be untouched");
+});

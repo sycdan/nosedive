@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
 import { captureCommand } from "./commandAdapter.js";
@@ -22,6 +22,8 @@ import {
 	uniqueDiveWipScopes,
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { isInsideDir } from "../lib/backlogDives.js";
+import { unsafeLinkPath } from "../lib/proveCore.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import {
 	ensureManagedRepoCache,
@@ -140,10 +142,22 @@ function walkPatchChain(kbDocs: KbDoc[], bridgeDir: string, headId: string): Pat
 		if (!memo) throw new Error(`patch chain memo not found: ${currentId}`);
 		const patchRel = memo.metaScalars.patch;
 		if (!patchRel) throw new Error(`patch memo ${memo.relPath} is missing meta.patch`);
+		// pack always writes kb/artifacts/<id>.patch; reject anything else so a
+		// crafted meta.patch (absolute path, ../ traversal) can't point jump's
+		// git am / unlink at files outside the bridge.
+		if (unsafeLinkPath(patchRel) || isAbsolute(patchRel) || !patchRel.startsWith("kb/artifacts/")) {
+			throw new Error(`patch memo ${memo.relPath} has an unsafe meta.patch: ${patchRel}`);
+		}
+		const patchAbsPath = resolveFrom(bridgeDir, patchRel);
+		if (!isInsideDir(join(bridgeDir, "kb/artifacts"), patchAbsPath)) {
+			throw new Error(
+				`patch memo ${memo.relPath} meta.patch resolves outside kb/artifacts: ${patchRel}`,
+			);
+		}
 
 		steps.push({
 			memoPath: memo.path,
-			patchAbsPath: resolveFrom(bridgeDir, patchRel),
+			patchAbsPath,
 			name: memo.name,
 			isCommit: /^[0-9a-f]{12}\./.test(memo.name),
 		});

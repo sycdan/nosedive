@@ -191,13 +191,20 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and dehydrat
 	const commitAPatch = readFileSync(join(bridge, commitA.patch), "utf8");
 	assert.match(commitAPatch, /Subject: \[PATCH\] add feature a/);
 	assert.match(commitAPatch, /\+a/);
+	// `gitRun` trims stdout; a captured patch went through that for a while,
+	// silently stripping the trailing newline `format-patch` always ends
+	// with (and, worse, a trailing whitespace-only context line when one
+	// exists) -- both make `git am`/`git apply` reject the patch as corrupt.
+	assert.match(commitAPatch, /\n$/, "captured commit patch must keep its trailing newline");
 
 	const dirtyPatch = readFileSync(join(bridge, dirty.patch), "utf8");
 	assert.match(dirtyPatch, /\+edited/);
 	assert.match(dirtyPatch, /untracked\.txt/);
+	assert.match(dirtyPatch, /\n$/, "captured dirty diff must keep its trailing newline");
 
 	const bridgeWipPatch = readFileSync(join(bridge, bridgeWip.patch), "utf8");
 	assert.match(bridgeWipPatch, /Extra bridge WIP line\./);
+	assert.match(bridgeWipPatch, /\n$/, "captured bridge-wip diff must keep its trailing newline");
 
 	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.equal(log, `dive(${diveText.match(/^name: (.+)$/m)[1]}): packed wip`);
@@ -268,4 +275,29 @@ test("pack with nothing to capture still tears down and reports no-op", () => {
 		beforeHead,
 		"a pack with nothing to capture should not create a commit",
 	);
+});
+
+test("pack captures bridge kb/ WIP whose filename needs quoting under plain --porcelain", () => {
+	const { bridge, effortId, diveId } = setup("spacey");
+
+	// Plain `git status --porcelain` (no `-z`) C-quotes a path like this by
+	// default (`core.quotePath`), which `split(/\r?\n/)` + `slice(3)` cannot
+	// undo -- the file would be silently dropped from bridge-wip capture.
+	const spaceyPath = join(bridge, "kb", "space name.md");
+	write(spaceyPath, "kind: memo\ngist: has a space in its filename\n");
+
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack failed to capture a spacey-filename bridge-wip change");
+	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: 1 artifact\\(s\\)`));
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const patchHeads = patchHeadsByRel(diveText, "patch");
+	assert.equal(patchHeads.length, 1, `expected 1 patch chain head:\n${diveText}`);
+
+	const bridgeWip = readMemo(bridge, patchHeads[0]);
+	assert.match(bridgeWip.name, /^bridge-wip\.[0-9a-f]{6}$/);
+	const patchText = readFileSync(join(bridge, bridgeWip.patch), "utf8");
+	assert.match(patchText, /space name\.md/);
+	assert.match(patchText, /has a space in its filename/);
+	void effortId;
 });

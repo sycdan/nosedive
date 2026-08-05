@@ -43,6 +43,21 @@ function writeArtifact(
 	return { relPath: `kb/artifacts/${id}.patch`, absPath };
 }
 
+/**
+ * Patch/diff bytes must round-trip exactly -- `gitRun`'s blanket `.trim()`
+ * silently strips the trailing newline (and, worse, a trailing
+ * whitespace-only context line) that `format-patch`/`diff` output ends
+ * with, and `git am`/`git apply` then reject the result as corrupt. Every
+ * call capturing a `.patch` artifact's actual content must use this, not
+ * `gitRun`.
+ */
+function gitRunPatch(cwd: string, args: string[], label: string): string {
+	const result = runGit(cwd, args);
+	if (result.status === 0) return result.stdout;
+	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
+	throw new Error(`${label}: ${detail}`);
+}
+
 // --- per-repo capture --------------------------------------------------------
 
 function listAheadCommits(repoPath: string, pin: string, repoId: string): string[] {
@@ -79,7 +94,7 @@ function captureDirtyPatch(repoPath: string, repoId: string): string | undefined
 		);
 	}
 	try {
-		return gitRun(
+		return gitRunPatch(
 			repoPath,
 			["diff", "--binary", "HEAD"],
 			`failed to capture dirty diff for repo ${repoId}`,
@@ -105,7 +120,7 @@ function packRepoScope(
 
 	const entries: CapturedPatch[] = [];
 	for (const sha of listAheadCommits(repoPath, scope.ref, scope.repoId)) {
-		const patch = gitRun(
+		const patch = gitRunPatch(
 			repoPath,
 			["format-patch", "-1", sha, "--stdout", "--binary", "--no-signature"],
 			`failed to format patch for repo ${scope.repoId} commit ${sha}`,
@@ -151,32 +166,42 @@ function packBridgeWip(
 	mintUuid: () => string,
 ): CapturedPatch | undefined {
 	const kbRel = toPosixPath(relative(bridgeDir, kbDir));
-	// `gitOutput` trims the whole response, which would eat the leading status
-	// space of the first porcelain line; `--untracked-files=all` is what stops
-	// an entirely-untracked directory (like a first-ever kb/artifacts/) from
-	// collapsing into one un-parseable directory line.
+	/**
+	 * Plain `--porcelain` C-quotes paths with spaces/non-ASCII (`core.quotePath`)
+	 * and joins a rename/copy as one `XY orig -> new` line -- naive
+	 * `split(/\r?\n/)` + `slice(3)` mis-parses both. `-z` NUL-delimits instead
+	 * (no quoting; a rename/copy becomes two separate records), same pattern
+	 * as `statusEntries` in `proveCore.ts`. `--untracked-files=all` stops an
+	 * entirely-untracked directory from collapsing into one directory line.
+	 */
 	const statusResult = runGit(bridgeDir, [
 		"status",
 		"--porcelain",
+		"-z",
 		"--untracked-files=all",
 		"--",
 		kbRel,
 	]);
-	if (!statusResult.stdout.trim()) return undefined;
+	const statusEntries = statusResult.stdout.split("\0").filter(Boolean);
+	if (statusEntries.length === 0) return undefined;
 
 	const excluded = new Set(
 		[divePath, ...excludeAbsPaths].map((path) => toPosixPath(relative(bridgeDir, path))),
 	);
-	const statusLines = statusResult.stdout.split(/\r?\n/).filter((line) => line.length > 0);
-	const dirtyKbFiles = statusLines
-		.map((line) => line.slice(3))
-		.filter((path) => !excluded.has(path));
+	const dirtyKbFiles: string[] = [];
+	const untracked: string[] = [];
+	for (let i = 0; i < statusEntries.length; i += 1) {
+		const entry = statusEntries[i]!;
+		const statusCode = entry.slice(0, 2);
+		const path = entry.slice(3);
+		// Skip a rename/copy's orig-path record, its own NUL-terminated entry.
+		if (statusCode.includes("R") || statusCode.includes("C")) i += 1;
+		if (excluded.has(path)) continue;
+		dirtyKbFiles.push(path);
+		if (statusCode === "??") untracked.push(path);
+	}
 	if (dirtyKbFiles.length === 0) return undefined;
 
-	const untracked = statusLines
-		.filter((line) => line.startsWith("??"))
-		.map((line) => line.slice(3))
-		.filter((path) => dirtyKbFiles.includes(path));
 	if (untracked.length > 0) {
 		gitRun(
 			bridgeDir,
@@ -186,7 +211,7 @@ function packBridgeWip(
 	}
 	let diff: string;
 	try {
-		diff = gitRun(
+		diff = gitRunPatch(
 			bridgeDir,
 			["diff", "--binary", "HEAD", "--", ...dirtyKbFiles],
 			"failed to capture bridge kb/ dirty diff for pack",

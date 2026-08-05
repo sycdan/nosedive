@@ -6,7 +6,7 @@ import { titleFromSlug } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { formatPath, parseMarkdownDoc, readNosediveRc, stringifyYaml } from "./coreParsing.js";
-import { KbDoc, ScopeRef, loadKbDocs, repoDocs } from "./kbDocs.js";
+import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { resolveEffortDoc } from "./repoEffortScopes.js";
 import {
@@ -117,33 +117,6 @@ function resolveScopeRepo(bridgeDir: string, kbDocs: KbDoc[], ref: string): KbDo
 	if (!doc) throw new Error(`kb document not found: ${ref}`);
 	if (doc.kind !== "repo") throw new Error(`scope does not resolve to a kind: repo doc: ${ref}`);
 	return doc;
-}
-
-function worktreeScope(
-	repo: KbDoc,
-	bridgeDir: string,
-	workspaceDir: string,
-	io: CommandIo,
-): ScopeRef {
-	const path = expectedWorktreePath(repo, bridgeDir);
-	ensureSafeTargetPath(repo.id, path, workspaceDir);
-	if (!existsSync(path) || !statSync(path).isDirectory())
-		throw new Error(`workspace repo is not hydrated: ${repo.id}`);
-	const marker = parseRepoMarkerStrict(join(path, ".nosedive-ref"));
-	if (marker.id !== repo.id)
-		throw new Error(`workspace marker does not match repo ${repo.id}: ${formatPath(path)}`);
-	const ref = gitOutput(path, ["rev-parse", "HEAD"]);
-	if (!ref) throw new Error(`workspace repo is not a git worktree: ${formatPath(path)}`);
-	if (gitOutput(path, ["status", "--porcelain"]))
-		io.err(`WARNING: scoped repo is dirty: ${repo.id}`);
-	return {
-		repoId: repo.id,
-		path: "",
-		ref,
-		readOnly:
-			gitOutput(path, ["config", "--get", "remote.origin.pushurl"]) === "no_push://disabled",
-		flags: [],
-	};
 }
 
 function defaultReadOnly(repo: KbDoc): boolean {
@@ -272,15 +245,13 @@ export function recordDive(args: string[], io: CommandIo): void {
 				? options.scopes.map((ref) =>
 						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
 					)
-				: repoDocs(kbDocs)
-						.filter((repo) => {
-							try {
-								return existsSync(join(expectedWorktreePath(repo, rc.bridgeDir), ".nosedive-ref"));
-							} catch {
-								return false;
-							}
-						})
-						.map((repo) => worktreeScope(repo, rc.bridgeDir, workspaceDir, io));
+				: effort.scopes.map((scope) =>
+						cachedScope(
+							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+							rc.bridgeDir,
+							workspaceDir,
+						),
+					);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		const id = uuid7AtMs(Date.now());

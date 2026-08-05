@@ -66,6 +66,8 @@ kind: effort
 id: ${effortId}
 name: jump-test.nosedive
 gist: "Jump test effort"
+scopes:
+  - ${repoId}
 ---
 
 # Jump Test

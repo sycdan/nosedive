@@ -66,6 +66,8 @@ kind: effort
 id: ${effortId}
 name: pack-test.nosedive
 gist: "Pack test effort"
+scopes:
+  - ${repoId}
 ---
 
 # Pack Test

@@ -16,29 +16,42 @@ import {
 const tmp = createTmp("record-dive");
 const repoId = "019fc623-0000-7000-8000-000000000001";
 const effortId = "019fc623-0000-7000-8000-000000000002";
+const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
+const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
+
+function createRepo(path, id) {
+	mkdirSync(path, { recursive: true });
+	runTool("git", ["init", "-b", "main"], path);
+	write(join(path, "README.md"), "base\n");
+	runTool("git", ["add", "."], path);
+	gitCommit(path, "base");
+	write(join(path, ".nosedive-ref"), `id: ${id}\n`);
+	return runTool("git", ["rev-parse", "main"], path).stdout.trim();
+}
+
+function writeRepoDoc(bridge, id, name, path, local = path) {
+	write(
+		join(bridge, "kb", `${id}.md`),
+		`---
+kind: repo
+id: ${id}
+name: ${name}
+gist: "Test repo"
+meta:
+  path: ${path}
+  trunk: main
+  remotes:
+    local: ${local}
+---
+`,
+	);
+}
 
 function setup(name) {
 	const bridge = createBridge(tmp, name);
 	const repo = join(bridge, "workspace", "repo");
-	mkdirSync(repo, { recursive: true });
-	runTool("git", ["init", "-b", "main"], repo);
-	write(join(repo, "README.md"), "base\n");
-	runTool("git", ["add", "."], repo);
-	gitCommit(repo, "base");
-	write(join(repo, ".nosedive-ref"), `id: ${repoId}\n`);
-	write(
-		join(bridge, "kb", `${repoId}.md`),
-		`---
-kind: repo
-id: ${repoId}
-name: repo
-gist: "Test repo"
-meta:
-  path: workspace/repo
-  trunk: main
----
-`,
-	);
+	const repoCommit = createRepo(repo, repoId);
+	writeRepoDoc(bridge, repoId, "repo", "workspace/repo");
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
@@ -46,12 +59,14 @@ kind: effort
 id: ${effortId}
 name: record-dive.nosedive
 gist: "Record dives"
+scopes:
+  - ${repoId}
 ---
 
 # Record Dive
 `,
 	);
-	return { bridge, repo };
+	return { bridge, repo, repoCommit };
 }
 
 function recordedPath(bridge, stdout) {
@@ -60,8 +75,35 @@ function recordedPath(bridge, stdout) {
 	return join(bridge, match[1]);
 }
 
-test("record.dive creates a default record from managed workspace repos", () => {
-	const { bridge } = setup("create");
+test("record.dive defaults to the effort's cached default-branch repositories", () => {
+	const { bridge, repoCommit } = setup("create");
+	const unhydratedSource = join(bridge, "sources", "unhydrated");
+	const unhydratedCommit = createRepo(unhydratedSource, unhydratedRepoId);
+	writeRepoDoc(
+		bridge,
+		unhydratedRepoId,
+		"unhydrated",
+		"workspace/unhydrated",
+		"sources/unhydrated",
+	);
+	const unrelated = join(bridge, "workspace", "unrelated");
+	createRepo(unrelated, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "unrelated", "workspace/unrelated");
+	write(
+		join(bridge, "kb", `${effortId}.md`),
+		`---
+kind: effort
+id: ${effortId}
+name: record-dive.nosedive
+gist: "Record dives"
+scopes:
+  - ${repoId}
+  - ${unhydratedRepoId}
+---
+
+# Record Dive
+`,
+	);
 	const result = run(["record.dive", "--effort", effortId], bridge);
 	assertOk(result, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
@@ -69,7 +111,12 @@ test("record.dive creates a default record from managed workspace repos", () => 
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
 	assert.match(doc, new RegExp(`^  effort: ${effortId}$`, "m"));
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: [0-9a-f]{40}\n      mode: rw$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(
+		doc,
+		new RegExp(`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      mode: rw$`, "m"),
+	);
+	assert.doesNotMatch(doc, new RegExp(`^  - ${unrelatedRepoId}:`, "m"));
 	assert.match(doc, /^# Dive Record$/m);
 	assert.match(doc, /^id: [0-9a-f-]+$/m);
 });

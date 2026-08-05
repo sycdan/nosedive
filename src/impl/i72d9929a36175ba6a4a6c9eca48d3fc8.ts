@@ -26,6 +26,7 @@ import {
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { isInsideDir } from "../lib/backlogDives.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
+import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import {
 	ensureManagedRepoCache,
@@ -401,9 +402,10 @@ export function jump(args: string[], io: CommandIo): void {
 
 	const pilot = readPilotIdentity(rc.bridgeDir);
 	if (!pilot.name) throw new Error("jump requires git config user.name in the bridge");
-	const effortId = dive.metaScalars.effort;
-	const effort = effortId ? kbDocs.find((doc) => doc.id === effortId) : undefined;
-	const effortSlug = effort?.name ?? effortId ?? dive.name;
+	const effortRef = dive.metaScalars.effort;
+	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
+	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
+	const effortSlug = effort.name;
 	const diverValue = `${pilot.name} picked up ${effortSlug}`;
 
 	updateDiveDocAfterJump(dive.path, diverValue, appliedHeadIds);

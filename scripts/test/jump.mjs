@@ -309,6 +309,13 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 	assert.match(result.stdout, new RegExp(`Read the effort it serves at kb/${effortId}\\.md`));
 	assert.match(result.stdout, /whatever those two link to in their frontmatter/);
 	assert.match(result.stdout, /do the work, to the endpoint the brief names -- not more/);
+	assert.match(result.stdout, /Commit completed work in every writable scoped repo/);
+	assert.match(result.stdout, /each resulting commit SHA/);
+	assert.match(result.stdout, /Do not edit the brief or change any scope pin/);
+	assert.match(
+		result.stdout,
+		/Never push an implementation repo: only land may push to implementation remotes/,
+	);
 	assert.equal(
 		existsSync(worktree),
 		true,

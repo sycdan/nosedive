@@ -317,8 +317,10 @@ function printWorkDirective(dive: KbDoc, effort: KbDoc | undefined, io: CommandI
 	}
 	io.log(
 		`Then do the work, to the endpoint the brief names -- not more. ` +
-			`Append a timestamped section to the dive saying what you did and what you think is next. ` +
-			`Do not edit the brief.`,
+			`Commit completed work in every writable scoped repo. ` +
+			`Append a timestamped section to the dive summary saying what you did, each resulting commit SHA, and what you think is next. ` +
+			`Do not edit the brief or change any scope pin. ` +
+			`Never push an implementation repo: only land may push to implementation remotes.`,
 	);
 }
 

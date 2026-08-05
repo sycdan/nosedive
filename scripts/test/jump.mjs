@@ -204,6 +204,19 @@ test("jump requires an active dive marker", () => {
 	assert.match(result.stderr, /jump requires an active dive marker/);
 });
 
+test("jump refuses an unbriefed dive before hydrating its scopes", () => {
+	const { bridge, repoId, diveId } = setup("unbriefed");
+	const worktree = repoWorktree(bridge, "unbriefed");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(divePath, readFileSync(divePath, "utf8").replace(/\n## Brief\n[\s\S]*$/, "\n"));
+	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly accepted an unbriefed dive");
+	assert.match(result.stderr, new RegExp(`dive ${diveId} has no "## Brief" section`));
+	assert.equal(existsSync(worktree), false, "jump should refuse before hydrating the scope");
+});
+
 test("jump hydrates a packed dive's scoped repos and reapplies every patch chain", () => {
 	const { bridge, origin, repoId, diveId, pinnedRef } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
@@ -276,8 +289,13 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 });
 
 test("jump with no patch links still hydrates the scoped repo", () => {
-	const { bridge, repoId, diveId, pinnedRef } = setup("noop");
+	const { bridge, repoId, effortId, diveId, pinnedRef } = setup("noop");
 	const worktree = repoWorktree(bridge, "noop");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8").replace(`effort: ${effortId}`, "effort: jump-test.nosedive"),
+	);
 	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 	runTool("git", ["add", "-A"], bridge);
 	gitCommit(bridge, "dehydrate scope for noop jump test");
@@ -287,6 +305,10 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 	assertOk(result, "jump failed on a dive with nothing to unpack");
 	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
 	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.match(result.stdout, new RegExp(`Read the dive at kb/${diveId}\\.md in full`));
+	assert.match(result.stdout, new RegExp(`Read the effort it serves at kb/${effortId}\\.md`));
+	assert.match(result.stdout, /whatever those two link to in their frontmatter/);
+	assert.match(result.stdout, /do the work, to the endpoint the brief names -- not more/);
 	assert.equal(
 		existsSync(worktree),
 		true,

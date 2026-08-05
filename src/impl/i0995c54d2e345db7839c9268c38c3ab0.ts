@@ -4,6 +4,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { bridgeBacklogMemoBody } from "../lib/backlogDives.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { DIVE_BRIEF_HEADING } from "../lib/constants.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
 import { pilotIdentityLines, readPilotIdentity, readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
@@ -45,7 +46,7 @@ function into(args: string[], io: CommandIo): void {
 			`one small slice, stating where the code is now and what has to be true for the dive to be done. ` +
 			`Sized so it lands as one reviewable PR per writable scoped repo. ` +
 			`Pass it as \`--brief "<brief>"\` on the same \`record.dive\` call, or on a second call with --ref. ` +
-			`A dive you picked up may already have one; leave it as it is. ` +
+			`A dive you picked up may already have one; preserve its existing \`${DIVE_BRIEF_HEADING}\` section byte-for-byte. ` +
 			`Stop once the dive is claimed and briefed.`,
 	);
 }

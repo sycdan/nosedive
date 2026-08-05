@@ -28,15 +28,18 @@ import {
 	ensureSafeTargetPath,
 	gitRun,
 	maybeResolveRepoDoc,
+	runGit,
 } from "../lib/repoWorkspaceCore.js";
 import {
 	ensureDetachedAtCommit,
+	ensureLinkedWorktreesNonBare,
 	ensureRepoMarkerExcluded,
 	ensureReusableExistingTarget,
 	expectedWorktreePath,
 	isDirEmpty,
 	pruneStaleWorktrees,
 	resolveRefCommit,
+	worktreeConfigEnabled,
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
 
@@ -83,10 +86,37 @@ function hydrateScopeAtPin(
 		);
 	} else {
 		ensureReusableExistingTarget(scope.repoId, targetPath, sourcePath);
-		ensureDetachedAtCommit(targetPath, commit, scope.repoId);
+		/**
+		 * Only force back to the pin when the target isn't already sitting on
+		 * top of it. A prior jump run may have already reapplied (and then
+		 * deleted) this scope's chain, leaving HEAD legitimately ahead of the
+		 * pin with nothing left to apply -- forcing it back to the pin on every
+		 * re-run would silently discard that progress.
+		 */
+		const pinIsAncestorOfHead =
+			runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]).status === 0;
+		if (!pinIsAncestorOfHead) {
+			ensureDetachedAtCommit(targetPath, commit, scope.repoId);
+		}
 	}
 	writeRepoMarker(targetPath, scope.repoId);
 	ensureRepoMarkerExcluded(targetPath, scope.repoId);
+
+	/**
+	 * A linked worktree off a bare-cloned managed cache inherits the cache's
+	 * repo-global `core.bare=true` unless a worktree-local override exists,
+	 * which requires `extensions.worktreeConfig` first -- without both, git
+	 * treats the worktree as bare and every non-log command in it fails with
+	 * "this operation must be run in a work tree".
+	 */
+	if (!worktreeConfigEnabled(sourcePath)) {
+		gitRun(
+			sourcePath,
+			["config", "extensions.worktreeConfig", "true"],
+			`failed to enable worktree-local config for repo ${scope.repoId}`,
+		);
+	}
+	ensureLinkedWorktreesNonBare(sourcePath, scope.repoId);
 
 	return targetPath;
 }
@@ -194,6 +224,11 @@ function commitAndPushJump(
 	);
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage jump dive update");
 
+	// A re-run with nothing left to apply can still land here (the dive doc's
+	// `diver` line gets rewritten to the same value it already had) -- if
+	// staging produced no actual diff, there is nothing to commit or push.
+	if (runGit(bridgeDir, ["diff", "--cached", "--quiet"]).status === 0) return;
+
 	const stashed = stashExceptStaged(bridgeDir);
 	try {
 		const upstream = gitOutput(bridgeDir, [
@@ -220,7 +255,20 @@ function commitAndPushJump(
 	}
 }
 
+/**
+ * `pack` captures each patch via `gitRun`, which trims stdout -- stripping
+ * the trailing newline `format-patch`/`diff` output always ends with, which
+ * `git am`/`git apply` both require. Repairs it in place before applying.
+ */
+function ensureTrailingNewline(path: string): void {
+	const text = readFileSync(path, "utf8");
+	if (text.length > 0 && !text.endsWith("\n")) {
+		writeFileAtomic(path, `${text}\n`);
+	}
+}
+
 function applyPatchStep(step: PatchStep, targetPath: string, label: string): void {
+	ensureTrailingNewline(step.patchAbsPath);
 	if (step.isCommit) {
 		gitRun(targetPath, ["am", step.patchAbsPath], `failed to apply commit patch for ${label}`);
 	} else {
@@ -269,16 +317,35 @@ export function jump(args: string[], io: CommandIo): void {
 	const appliedHeadIds = new Set<string>();
 	const appliedFileAbsPaths: string[] = [];
 	let appliedCount = 0;
+	let failedChains = 0;
 
 	for (const headId of patchHeadIds) {
 		const steps = walkPatchChain(kbDocs, rc.bridgeDir, headId);
 		const target = resolveChainTarget(steps[0]!.name, scopes, kbDocs, rc.bridgeDir, scopePaths);
-		for (const step of steps) {
-			applyPatchStep(step, target.path, target.label);
-			appliedFileAbsPaths.push(step.memoPath, step.patchAbsPath);
-			appliedCount += 1;
+		// Collected locally and only merged in on full success -- a chain that
+		// fails partway must leave every one of its memos/patches in place, or
+		// the dive's still-present `rel: patch` link would point at a deleted
+		// memo on retry.
+		const chainFileAbsPaths: string[] = [];
+		try {
+			for (const step of steps) {
+				applyPatchStep(step, target.path, target.label);
+				chainFileAbsPaths.push(step.memoPath, step.patchAbsPath);
+			}
+			appliedHeadIds.add(headId);
+			appliedFileAbsPaths.push(...chainFileAbsPaths);
+			appliedCount += steps.length;
+		} catch (err) {
+			failedChains += 1;
+			const detail = err instanceof Error ? err.message : String(err);
+			io.err(
+				`failed to apply patch chain ${headId} onto ${target.label}: ${detail}; left un-applied on the dive for retry`,
+			);
+			// Best-effort: a failed `git am` step leaves the target mid-rebase; an
+			// already-committed prefix of the chain is left in place (git am is
+			// resumable), only the interrupted state is cleared.
+			runGit(target.path, ["am", "--abort"]);
 		}
-		appliedHeadIds.add(headId);
 	}
 
 	const pilot = readPilotIdentity(rc.bridgeDir);
@@ -302,6 +369,10 @@ export function jump(args: string[], io: CommandIo): void {
 			? `jumped dive ${dive.id}: applied ${appliedCount} artifact(s)`
 			: `jumped dive ${dive.id}: nothing to unpack`,
 	);
+	if (failedChains > 0) {
+		io.err(`${failedChains} patch chain(s) failed to apply; see above`);
+		io.setExitCode(1);
+	}
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

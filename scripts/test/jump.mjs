@@ -261,6 +261,18 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.equal(commitSubject, "Jump Test picked up jump-test.nosedive");
+
+	// A second jump run has nothing left to apply (the chain was consumed and
+	// its link removed above) -- hydration must not force the scope back to
+	// its now-stale pin, silently discarding the reapplied commits.
+	const rerun = run(["jump"], bridge);
+	assertOk(rerun, "second jump run failed");
+	assert.match(rerun.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.equal(
+		runTool("git", ["log", "--format=%s", pinnedRef + "..HEAD"], worktree).stdout.trim(),
+		"add feature b\nadd feature a",
+		"a re-run must not reset an already-caught-up scope back to its pin",
+	);
 });
 
 test("jump with no patch links still hydrates the scoped repo", () => {
@@ -285,4 +297,51 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 		pinnedRef,
 		"scope should hydrate at the dive's pinned ref",
 	);
+});
+
+test("jump leaves a corrupt chain for retry instead of aborting the whole run", () => {
+	const { bridge, repoId, diveId, pinnedRef } = setup("corrupt");
+	const worktree = repoWorktree(bridge, "corrupt");
+
+	write(join(worktree, "feature-a.txt"), "a\n");
+	runTool("git", ["add", "feature-a.txt"], worktree);
+	gitCommit(worktree, "add feature a");
+	write(join(worktree, "feature-b.txt"), "b\n");
+	runTool("git", ["add", "feature-b.txt"], worktree);
+	gitCommit(worktree, "add feature b");
+	write(join(worktree, "README.md"), "base\nedited\n");
+	write(join(worktree, "untracked.txt"), "untracked\n");
+
+	packByHand(bridge, "corrupt", repoId, diveId, pinnedRef);
+
+	// Simulate the real `pack` bug (gitRun trims format-patch stdout, which can
+	// strip a trailing whitespace-only context line, not just a newline): drop
+	// the diff's final line entirely so `git am` rejects it as corrupt.
+	const patchPath = join(bridge, "kb", "artifacts", "aaaaaaaa-0000-7000-8000-00000000000b.patch");
+	const patchText = readFileSync(patchPath, "utf8");
+	writeFileSync(patchPath, patchText.split("\n").slice(0, -2).join("\n"));
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump should report failure when a chain fails to apply");
+	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
+	assert.match(
+		result.stderr,
+		/failed to apply patch chain[\s\S]*left un-applied on the dive for retry/,
+	);
+	assert.match(result.stderr, /1 patch chain\(s\) failed to apply/);
+
+	const log = runTool("git", ["log", "--format=%s", pinnedRef + "..HEAD"], worktree).stdout.trim();
+	assert.equal(log, "add feature a", "the chain's already-applied prefix should survive");
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /rel: patch/, "the failed chain's link should remain for retry");
+	assert.match(diveText, /diver: "Jump Test picked up jump-test\.nosedive"/);
+
+	for (const suffix of ["a", "b", "c"]) {
+		assert.equal(
+			existsSync(join(bridge, "kb", `aaaaaaaa-1000-7000-8000-00000000000${suffix}.md`)),
+			true,
+			`un-applied memo ${suffix} should be left in place`,
+		);
+	}
 });

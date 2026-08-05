@@ -7,6 +7,14 @@ export const CONFIG_EXCLUDE_END = "# END nosedive-managed config exclude";
 export const REPO_MARKER_EXCLUDE_BEGIN = "# BEGIN nosedive-managed repo-marker exclude";
 export const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclude";
 
+/**
+ * The dive-body heading `record.dive --brief` writes and `jump` requires. Not
+ * "brief as understood": this is not a readback of the pilot's ask, it is an
+ * instruction written for the different agent that will work the dive.
+ */
+export const DIVE_BRIEF_HEADING = "## Brief";
+export const DIVE_BRIEF_HEADING_PATTERN = /^##\s+Brief\s*$/m;
+
 export const PRE_PUSH_HOOK =
 	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
 export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1';

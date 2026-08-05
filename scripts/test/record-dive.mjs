@@ -93,7 +93,7 @@ test("record.dive patches only provided fields and can resolve its marker", () =
 	const doc = readFileSync(path, "utf8");
 	assert.match(doc, /^gist: "Initial\."$/m);
 	assert.match(doc, /^# Updated$/m);
-	assert.match(doc, /## Brief as understood\n\nKeep this\./);
+	assert.match(doc, /## Brief\n\nKeep this\./);
 });
 
 test("record.dive validates mutation modes", () => {
@@ -110,10 +110,20 @@ test("record.dive validates mutation modes", () => {
 	assert.match(conflictingScopes.stderr, /cannot be combined/);
 	const created = run(["record.dive", "--effort", effortId], bridge);
 	assertOk(created, "record.dive create failed");
-	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
-	const briefUpdate = run(["record.dive", "--ref", id, "--brief", "Nope"], bridge, "");
-	assert.notEqual(briefUpdate.status, 0);
-	assert.match(briefUpdate.stderr, /only valid when creating/);
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// An unbriefed dive can still be briefed; a briefed one is write-once.
+	assertOk(
+		run(["record.dive", "--ref", id, "--brief", "First brief."], bridge),
+		"record.dive brief-on-update failed",
+	);
+	assert.match(readFileSync(path, "utf8"), /## Brief\n\nFirst brief\./);
+	const rebrief = run(["record.dive", "--ref", id, "--brief", "Second brief."], bridge, "");
+	assert.notEqual(rebrief.status, 0);
+	assert.match(rebrief.stderr, /already has a brief/);
+	const emptyBrief = run(["record.dive", "--effort", effortId, "--brief", "  "], bridge, "");
+	assert.notEqual(emptyBrief.status, 0);
+	assert.match(emptyBrief.stderr, /brief cannot be empty/);
 });
 
 test("record.dive activates only for the pilot diver", () => {

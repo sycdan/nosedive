@@ -4,6 +4,7 @@ import { parseDocument } from "yaml";
 
 import { titleFromSlug } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
+import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { formatPath, parseMarkdownDoc, readNosediveRc, stringifyYaml } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs, repoDocs } from "./kbDocs.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
@@ -68,8 +69,8 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
 		throw new Error("gist cannot be empty");
 	}
-	if (options.ref && options.brief !== undefined)
-		throw new Error("--brief is only valid when creating a dive");
+	if (options.brief !== undefined && !options.brief.trim())
+		throw new Error("brief cannot be empty");
 	return options;
 }
 
@@ -218,7 +219,7 @@ function renderNewDive(
 		"",
 		`# ${options.title?.trim() || "Dive Record"}`,
 	];
-	if (options.brief?.trim()) lines.push("", "## Brief as understood", "", options.brief.trim());
+	if (options.brief?.trim()) lines.push("", DIVE_BRIEF_HEADING, "", options.brief.trim());
 	lines.push("");
 	return lines.join("\n");
 }
@@ -323,9 +324,17 @@ export function recordDive(args: string[], io: CommandIo): void {
 			})),
 		);
 	}
-	const body = options.title?.trim()
-		? replaceTitle(parsed.body, options.title.trim())
-		: parsed.body;
+	let body = options.title?.trim() ? replaceTitle(parsed.body, options.title.trim()) : parsed.body;
+	if (options.brief?.trim()) {
+		// Write-once: the brief is what informed everything already built on this
+		// dive, so a second one is a new dive, not an edit.
+		if (DIVE_BRIEF_HEADING_PATTERN.test(body)) {
+			throw new Error(
+				`dive already has a brief: ${formatPath(dive.path)}; bail and pitch a new dive instead of rewriting it`,
+			);
+		}
+		body = `${body.trimEnd()}\n\n${DIVE_BRIEF_HEADING}\n\n${options.brief.trim()}\n`;
+	}
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	if (ensureActivation(dive, options.diver, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);

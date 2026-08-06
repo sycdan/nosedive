@@ -254,7 +254,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.doesNotMatch(diveText, /rel: patch/, "applied patch links should be removed");
-	assert.match(diveText, /diver: "Jump Test picked up jump-test\.nosedive"/);
+	assert.match(diveText, /diver: "jump@example\.test"/);
 
 	for (const suffix of ["a", "b", "c"]) {
 		assert.equal(
@@ -279,7 +279,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.equal(bridgeHead, originHead, "jump should push the bridge to its remote");
 
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
-	assert.equal(commitSubject, "Jump Test picked up jump-test.nosedive");
+	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked work$/);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
 	assert.match(
@@ -487,7 +487,7 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(diveText, /rel: patch/, "the failed chain's link should remain for retry");
-	assert.match(diveText, /diver: "Jump Test picked up jump-test\.nosedive"/);
+	assert.match(diveText, /diver: "jump@example\.test"/);
 
 	for (const suffix of ["a", "b", "c"]) {
 		assert.equal(

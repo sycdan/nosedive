@@ -50,8 +50,13 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 			if (arg.startsWith("--")) throw new Error(`unknown record.dive option: ${arg}`);
 			throw new Error(`unexpected record.dive argument: ${arg}`);
 		}
-		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
-		if (!value) throw new Error(`${flag} requires a value`);
+		const value =
+			arg === flag
+				? flag === "--diver"
+					? (args[i + 1] ?? "")
+					: optionValue(args, i + 1, flag)
+				: arg.slice(flag.length + 1);
+		if (!value && flag !== "--diver") throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
 		if (flag === "--scope") options.scopes.push(value);
 		else if (flag === "--ref") options.ref = value;
@@ -281,6 +286,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 	}
 	if (options.gist !== undefined) doc.set("gist", options.gist.trim());
 	if (options.diver !== undefined) {
+		const previousDiver = dive.metaScalars.diver;
+		if (previousDiver && options.diver && previousDiver !== options.diver) {
+			throw new Error(
+				`dive ${dive.id} is held by ${previousDiver}; clear it with \`record.dive --ref ${dive.id} --diver ""\` before assigning ${options.diver}`,
+			);
+		}
 		doc.setIn(["meta", "diver"], options.diver || null);
 	}
 	if (options.clearScopes || options.scopes.length > 0) {

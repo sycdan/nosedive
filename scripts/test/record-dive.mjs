@@ -184,6 +184,24 @@ test("record.dive activates only for the pilot diver", () => {
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
 
+test("record.dive requires an explicit clear before replacing a held diver", () => {
+	const { bridge } = setup("ownership");
+	const created = run(["record.dive", "--effort", effortId, "--diver", "owner@example.test"], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const replacement = run(["record.dive", "--ref", id, "--diver", "other@example.test"], bridge);
+	assert.notEqual(replacement.status, 0);
+	assert.match(replacement.stderr, /held by owner@example\.test/);
+	assert.match(replacement.stderr, /--diver ""/);
+	assertOk(run(["record.dive", "--ref", id, "--diver", ""], bridge), "clearing diver failed");
+	assertOk(
+		run(["record.dive", "--ref", id, "--diver", "other@example.test"], bridge),
+		"claiming cleared dive failed",
+	);
+	assert.match(readFileSync(path, "utf8"), /^  diver: other@example\.test$/m);
+});
+
 test("record.dive links a claimed dive as working without list-dives warnings", () => {
 	const { bridge } = setup("working-link");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);

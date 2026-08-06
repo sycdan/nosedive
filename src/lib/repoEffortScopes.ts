@@ -5,6 +5,7 @@ import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 import {
 	NosediveRc,
 	formatPath,
+	parseMarkdownDoc,
 	parseMarkdownFrontmatter,
 	splitMarkdownFrontmatter,
 	stringifyYaml,
@@ -144,6 +145,19 @@ export function reconcileDiveEffortLinks(
 	if (previousEffort && previousEffort.id !== effort.id)
 		reconcileDiveLink(previousEffort.path, diveId, undefined);
 	reconcileDiveLink(effort.path, diveId, diver ? "working" : "pending");
+}
+
+/** Release a dive while retaining its marker and any captured patch chains. */
+export function clearDiveDiver(divePath: string): boolean {
+	const text = readFileSync(divePath, "utf8");
+	const parsed = parseMarkdownDoc(text, formatPath(divePath));
+	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
+	if (doc.errors.length > 0)
+		throw new Error(`invalid YAML in frontmatter in ${formatPath(divePath)}`);
+	if (!doc.getIn(["meta", "diver"])) return false;
+	doc.setIn(["meta", "diver"], null);
+	writeFileAtomic(divePath, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
+	return true;
 }
 
 export function formatEffortScopeEntry(

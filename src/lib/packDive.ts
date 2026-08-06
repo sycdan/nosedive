@@ -19,7 +19,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
-import { resolveEffortDoc } from "./repoEffortScopes.js";
+import { clearDiveDiver, reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
 import { resetHydratedWorktree } from "./repoWorktrees.js";
@@ -44,7 +44,6 @@ function writeArtifact(
 	writeFileAtomic(absPath, content);
 	return { relPath: `kb/artifacts/${id}.patch`, absPath };
 }
-
 /**
  * Patch/diff bytes must round-trip exactly -- `gitRun`'s blanket `.trim()`
  * silently strips the trailing newline (and, worse, a trailing
@@ -59,7 +58,6 @@ function gitRunPatch(cwd: string, args: string[], label: string): string {
 	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
 	throw new Error(`${label}: ${detail}`);
 }
-
 function listAheadCommits(repoPath: string, pin: string, repoId: string): string[] {
 	const raw = gitRun(
 		repoPath,
@@ -68,12 +66,10 @@ function listAheadCommits(repoPath: string, pin: string, repoId: string): string
 	);
 	return raw ? raw.split(/\r?\n/).filter(Boolean) : [];
 }
-
 function untrackedFiles(repoPath: string): string[] {
 	const raw = gitOutput(repoPath, ["ls-files", "--others", "--exclude-standard"]);
 	return raw ? raw.split(/\r?\n/).filter(Boolean) : [];
 }
-
 /**
  * `git diff <commit>` (no `--cached`) already folds staged and unstaged
  * changes into one patch against that commit; intent-to-add is what pulls
@@ -84,7 +80,6 @@ function untrackedFiles(repoPath: string): string[] {
 function captureDirtyPatch(repoPath: string, repoId: string): string | undefined {
 	const status = gitOutput(repoPath, ["status", "--porcelain"]);
 	if (!status || !status.trim()) return undefined;
-
 	const untracked = untrackedFiles(repoPath);
 	if (untracked.length > 0) {
 		gitRun(
@@ -140,7 +135,6 @@ function packRepoScope(
 			commitMessage,
 		});
 	}
-
 	const dirtyPatch = captureDirtyPatch(repoPath, scope.repoId);
 	if (dirtyPatch !== undefined) {
 		const id = mintUuid();
@@ -155,7 +149,6 @@ function packRepoScope(
 
 	return entries;
 }
-
 function packBridgeWip(
 	bridgeDir: string,
 	kbDir: string,
@@ -367,9 +360,10 @@ function commitAndPushPack(
 	divePath: string,
 	newArtifactAbsPaths: string[],
 	diveName: string,
+	effortPath: string | undefined,
 	effortId?: string,
 ): void {
-	const pathsToStage = [divePath, ...newArtifactAbsPaths].map((path) =>
+	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(effortPath ? [effortPath] : [])].map((path) =>
 		toPosixPath(relative(bridgeDir, path)),
 	);
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage packed dive artifacts");
@@ -464,6 +458,9 @@ export function packDive(args: string[], io: CommandIo): void {
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
+	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const released = clearDiveDiver(dive.path);
+	if (released && effort) reconcileDiveEffortLinks(effort, effort, dive.id, undefined);
 	if (groups.length > 0) {
 		const headRelPaths: string[] = [];
 		const newFileAbsPaths: string[] = [];
@@ -481,10 +478,14 @@ export function packDive(args: string[], io: CommandIo): void {
 			dive.path,
 			newFileAbsPaths,
 			dive.name,
-			dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
+			effort?.path,
+			effort?.id,
 		);
 		io.log(`packed dive ${dive.id}: ${capturedCount} artifact(s)`);
 	} else {
+		if (released) {
+			commitAndPushPack(rc.bridgeDir, dive.path, [], dive.name, effort?.path, effort?.id);
+		}
 		io.log(`packed dive ${dive.id}: nothing to pack`);
 	}
 	for (const scope of scopes) {

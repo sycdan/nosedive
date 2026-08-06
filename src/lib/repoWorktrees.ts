@@ -320,6 +320,40 @@ export interface PrepareCommitMsgHookResult {
 	changed: boolean;
 }
 
+const GIT_HOOK_NAMES = [
+	"applypatch-msg",
+	"commit-msg",
+	"fsmonitor-watchman",
+	"post-applypatch",
+	"post-checkout",
+	"post-commit",
+	"post-merge",
+	"post-receive",
+	"post-rewrite",
+	"post-update",
+	"pre-applypatch",
+	"pre-auto-gc",
+	"pre-commit",
+	"pre-merge-commit",
+	"pre-push",
+	"pre-rebase",
+	"pre-receive",
+	"prepare-commit-msg",
+	"proc-receive",
+	"push-to-checkout",
+	"reference-transaction",
+	"sendemail-validate",
+	"update",
+] as const;
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function proxyHook(originalHookPath: string): string {
+	return `#!/bin/sh\nexec ${shellQuote(originalHookPath)} "$@"\n`;
+}
+
 function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: boolean } {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -372,6 +406,21 @@ export function reconcilePrepareCommitMsgHook(
 		writeFileAtomic(managedHookPath, hook);
 		chmodSync(managedHookPath, 0o755);
 		changed = true;
+	}
+	if (originalHookPath) {
+		const originalHooksPath = dirname(originalHookPath);
+		for (const hookName of GIT_HOOK_NAMES) {
+			if (hookName === "prepare-commit-msg") continue;
+			const originalPath = join(originalHooksPath, hookName);
+			const proxyPath = join(managedHooksPath, hookName);
+			if (!existsSync(originalPath)) continue;
+			const proxy = proxyHook(originalPath);
+			if (existsSync(proxyPath) && readFileSync(proxyPath, "utf8") === proxy) continue;
+			mkdirSync(managedHooksPath, { recursive: true });
+			writeFileAtomic(proxyPath, proxy);
+			chmodSync(proxyPath, 0o755);
+			changed = true;
+		}
 	}
 	const originalHookRecord = originalHookPath ? `${originalHookPath}\n` : "";
 	if (

@@ -368,9 +368,12 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	const worktree = repoWorktree(bridge, "foreign-hook");
 	const foreignHooks = join(worktree, ".githooks");
 	const foreignHook = join(foreignHooks, "prepare-commit-msg");
+	const prePushHook = join(foreignHooks, "pre-push");
 	write(foreignHook, "#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n");
+	write(prePushHook, "#!/bin/sh\nprintf 'pre-push-ran\\n' > pre-push-ran\n");
 	chmodSync(foreignHook, 0o755);
-	runTool("git", ["add", ".githooks/prepare-commit-msg"], worktree);
+	chmodSync(prePushHook, 0o755);
+	runTool("git", ["add", ".githooks"], worktree);
 	gitCommit(worktree, "track repo hook");
 	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
 	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
@@ -386,6 +389,15 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	assert.match(message, /Repo-Hook: ran/);
 	assert.match(message, new RegExp(`Effort: ${effortId}`));
 	assert.match(message, /Co-Authored-By: nosedive 0\.0\.0-dev/);
+	const managedHooks = runTool(
+		"git",
+		["config", "--worktree", "--get", "core.hooksPath"],
+		worktree,
+	).stdout.trim();
+	runTool("sh", [join(managedHooks, "pre-push")], worktree);
+	assert.equal(readFileSync(join(worktree, "pre-push-ran"), "utf8"), "pre-push-ran\n");
+	writeFileSync(join(worktree, "pre-push-ran"), "");
+	runTool("git", ["clean", "-f", "pre-push-ran"], worktree);
 	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
 });
 

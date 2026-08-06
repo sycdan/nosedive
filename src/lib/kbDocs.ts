@@ -241,6 +241,17 @@ export function parseEffortRepos(path: string): EffortRepo[] {
 	});
 }
 
+/**
+ * A kb doc travels between machines, so a path a Windows pilot wrote has to
+ * resolve for a Linux one. Separators in kb paths are therefore a kb
+ * convention rather than a platform fact: left as backslashes, the whole path
+ * is one literal filename on POSIX, and a repo pinned inside the workspace
+ * resolves outside it.
+ */
+function kbMetaPath(path: string | undefined): string | undefined {
+	return path === undefined ? undefined : toPosixPath(path);
+}
+
 export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 	const entries = readdirSync(kbDir, { withFileTypes: true });
 	return entries
@@ -258,7 +269,7 @@ export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 				name: fm.scalars.name,
 				kind: fm.scalars.kind,
 				gist: fm.scalars.gist,
-				repoPath: fm.nested.meta?.path,
+				repoPath: kbMetaPath(fm.nested.meta?.path),
 				repoBaseBranch:
 					fm.nested.meta?.trunk ??
 					fm.nested.meta?.["base-branch"] ??

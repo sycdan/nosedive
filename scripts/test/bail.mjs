@@ -7,6 +7,7 @@ import {
 	assertOk,
 	createTmp,
 	gitCommit,
+	packageVersionPattern,
 	run,
 	runTool,
 	write,
@@ -49,6 +50,9 @@ gist: "Bail test effort"
 	assertOk(result, "bail failed");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
-	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.match(
+		commitBody,
+		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
+	);
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 });

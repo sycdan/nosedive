@@ -8,6 +8,8 @@ import {
 	createTmp,
 	gitCommit,
 	gitCommitEmpty,
+	packageVersion,
+	packageVersionPattern,
 	run,
 	runGitUnchecked,
 	runTool,
@@ -280,7 +282,10 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.equal(commitSubject, "Jump Test picked up jump-test.nosedive");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
-	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.match(
+		commitBody,
+		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
+	);
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 
 	// A second jump run has nothing left to apply (the chain was consumed and
@@ -345,12 +350,16 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	runTool("git", ["add", "implementation.txt"], worktree);
 	gitCommit(
 		worktree,
-		`implementation\n\nEffort: ${effortId}\nCo-Authored-By: nosedive 0.0.0-dev <noreply@nosedive.dev>`,
+		`implementation\n\nEffort: ${effortId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
 	);
 
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.equal((message.match(new RegExp(`Effort: ${effortId}`, "g")) ?? []).length, 1);
-	assert.equal((message.match(/Co-Authored-By: nosedive 0\.0\.0-dev/g) ?? []).length, 1);
+	assert.equal(
+		(message.match(new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`, "g")) ?? [])
+			.length,
+		1,
+	);
 	assert.equal(
 		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim()
 			.length > 0,
@@ -389,7 +398,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.match(message, /Repo-Hook: ran/);
 	assert.match(message, new RegExp(`Effort: ${effortId}`));
-	assert.match(message, /Co-Authored-By: nosedive 0\.0\.0-dev/);
+	assert.match(message, new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`));
 	const managedHooks = runTool(
 		"git",
 		["config", "--worktree", "--get", "core.hooksPath"],

@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
@@ -22,28 +21,11 @@ import {
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
-import { gitRun, maybeResolveRepoDoc } from "../lib/repoWorkspaceCore.js";
+import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { removeHydratedWorktree } from "../lib/repoWorktrees.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
-}
-
-function branchForRepo(repo: KbDoc, slug: string, fallbackPrefix: string): string {
-	return `${repo.metaScalars["branch-prefix"] ?? fallbackPrefix}${slug}`;
-}
-
-function runRepoCheck(repo: KbDoc, worktreePath: string): void {
-	const check = repo.metaScalars.check;
-	if (!check) return;
-	const result = spawnSync(check, {
-		cwd: worktreePath,
-		encoding: "utf8",
-		shell: true,
-	});
-	if (result.status === 0) return;
-	const detail = result.stderr?.trim() || result.stdout?.trim() || "unknown error";
-	throw new Error(`repo ${repo.id} check failed (${check}): ${detail}`);
 }
 
 function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
@@ -137,7 +119,7 @@ function land(_args: string[], io: CommandIo): void {
 
 	const pushed: string[] = [];
 	const hydratedWorktrees: { repoId: string; path: string }[] = [];
-	const writableScopes: { scope: (typeof scopes)[number]; path: string; repo: KbDoc }[] = [];
+	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
 		if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
@@ -153,14 +135,11 @@ function land(_args: string[], io: CommandIo): void {
 				);
 			continue;
 		}
-		const repo = maybeResolveRepoDoc(kbDocs, scope.repoId);
-		if (!repo) throw new Error(`land refuses: scoped repo ${scope.repoId} has no kb repo doc`);
-		writableScopes.push({ scope, path, repo });
+		writableScopes.push({ scope, path });
 	}
 
-	for (const { scope, path, repo } of writableScopes) {
-		runRepoCheck(repo, path);
-		const branch = branchForRepo(repo, slug, rc.workBranchPrefix ?? "work/");
+	for (const { scope, path } of writableScopes) {
+		const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 		hydratedWorktrees.push({ repoId: scope.repoId, path });

@@ -74,21 +74,6 @@ scopes:
 	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
 }
 
-test("land runs a declared check before any implementation push", () => {
-	const { bridge } = setup("check", '  check: node -e "process.exit(1)"\n');
-	const result = run(["land"], bridge);
-	assert.notEqual(result.status, 0, "land unexpectedly passed a failed repo check");
-	assert.match(result.stderr, new RegExp(`repo ${repoId} check failed`));
-});
-
-test("land resolves the work branch from the repo doc", () => {
-	const { bridge, worktree } = setup("branch", "  branch-prefix: feature/\n");
-	runTool("git", ["remote", "set-url", "origin", join(tmp, "missing-origin.git")], worktree);
-	const result = run(["land"], bridge);
-	assert.notEqual(result.status, 0, "land unexpectedly pushed to a missing fixture remote");
-	assert.match(result.stderr, /to feature\/land-test\.nosedive/);
-});
-
 test("land refuses a read-only scope that has commits past its pin", () => {
 	const { bridge, worktree, diveId } = setup("readonly");
 	gitCommitEmpty(worktree, "read-only work");

@@ -136,7 +136,7 @@ test("pack requires an active dive marker", () => {
 	assert.match(result.stderr, /pack requires an active dive marker/);
 });
 
-test("pack captures ahead commits, dirty state, bridge-wip, pushes, and dehydrates", () => {
+test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets", () => {
 	const { bridge, origin, repoId, effortId, diveId } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
 
@@ -159,9 +159,18 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and dehydrat
 	const result = run(["pack"], bridge);
 	assertOk(result, "pack failed");
 	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: 4 artifact\\(s\\)`));
-	assert.match(result.stdout, new RegExp(`dehydrated repo=${repoId} path=workspace/full-repo`));
-
-	assert.equal(existsSync(worktree), false, "scoped repo should be dehydrated after pack");
+	assert.match(
+		result.stdout,
+		new RegExp(`reset repo=${repoId} path=workspace/full-repo ref=[0-9a-f]{40}`),
+	);
+	assert.equal(existsSync(worktree), true, "scoped repo should remain hydrated after pack");
+	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+	)?.[1];
+	assert.ok(pin, "dive should retain a scope pin");
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), pin);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
+	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	const patchHeads = patchHeadsByRel(diveText, "patch");
@@ -274,7 +283,7 @@ meta:
 	void effortId;
 });
 
-test("pack with nothing to capture still tears down and reports no-op", () => {
+test("pack with nothing to capture still resets and reports no-op", () => {
 	const { bridge, repoId, diveId } = setup("clean");
 	const worktree = repoWorktree(bridge, "clean");
 	const beforeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
@@ -282,8 +291,9 @@ test("pack with nothing to capture still tears down and reports no-op", () => {
 	const result = run(["pack"], bridge);
 	assertOk(result, "pack failed on a clean scope");
 	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: nothing to pack`));
-	assert.match(result.stdout, new RegExp(`dehydrated repo=${repoId}`));
-	assert.equal(existsSync(worktree), false);
+	assert.match(result.stdout, new RegExp(`reset repo=${repoId}`));
+	assert.equal(existsSync(worktree), true);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
 	assert.equal(
 		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
 		beforeHead,

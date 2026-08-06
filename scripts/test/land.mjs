@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -81,9 +81,15 @@ scopes:
 }
 
 test("land commits effort and nosedive provenance", () => {
-	const { bridge } = setup("provenance");
+	const { bridge, worktree, diveId } = setup("provenance");
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(diveText)?.[1];
+	assert.ok(pin, "dive should have a scope pin");
 	const result = run(["land"], bridge);
 	assertOk(result, "land failed");
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), pin);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
+	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
 	assert.match(

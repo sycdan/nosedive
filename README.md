@@ -123,6 +123,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid> [--gist]` | Print the markdown body, or with --gist the gist line, of a packaged nosedive KB document by uuid. |
 | [`scan@1`](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md) | `npx nosedive scan --repo <repo-id-or-name>` | Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
+| [`spin@1`](kb/6899065c-182d-5c9b-b0f0-08eaa921e3ed.md) | `npx nosedive spin <loads>` | Brief a runner with documented loads reachable from the active dive's effort ancestry. |
 | [`update-backlog@1`](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB effort docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 

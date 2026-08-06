@@ -215,7 +215,7 @@ test("record.dive refuses --takeover on a dive nobody holds", () => {
 	assert.match(taken.stderr, /not held/);
 });
 
-test("record.dive links a claimed dive as working without list-dives warnings", () => {
+test("record.dive links a claimed dive as working", () => {
 	const { bridge } = setup("working-link");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
 	const created = run(
@@ -224,10 +224,8 @@ test("record.dive links a claimed dive as working without list-dives warnings", 
 	);
 	assertOk(created, "record.dive create failed");
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
-	const listed = run(["list-dives", effortId], bridge);
-	assertOk(listed, "list-dives failed");
-	assert.match(listed.stdout, new RegExp(`Working:\n  - ${id} .* rel=working`));
-	assert.doesNotMatch(listed.stdout, /Warnings:/);
+	const effort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
+	assert.match(effort, new RegExp(`- kb/${id}\\.md:\n      rel: working`));
 });
 
 test("record.dive reassigns its reciprocal effort link", () => {

@@ -15,6 +15,9 @@ import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 function listDives(args: string[], io: CommandIo): void {
 	const options = parseListDivesArgs(args, io);
 	if (!options.effortRef) return;
+	io.err(
+		"warning: list-dives is deprecated; use preflight to see the backlog and available free dives.",
+	);
 
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("list-dives requires a configured kb directory");

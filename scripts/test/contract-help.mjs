@@ -54,7 +54,6 @@ test("contract help", () => {
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
 		["dump-backlog", /Usage: nosedive dump-backlog$/m],
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],
-		["list-dives", /Usage: nosedive list-dives <effort>/],
 		["mint", /Usage: nosedive mint \[count\] \[--ms <utcmillis>\] \[--ts <iso8601>\]/],
 		["nuke", /Usage: nosedive nuke --config\|--workspace/],
 		["pitch", /Usage: nosedive pitch "<gist>"/],
@@ -88,6 +87,26 @@ test("contract help", () => {
 			`${docName} meta.usage should be a one-line scalar`,
 		);
 	}
+	const deprecatedListDivesHelp = run(["list-dives", "--help"], noBridge);
+	assertOk(deprecatedListDivesHelp, "list-dives --help failed");
+	assert.match(deprecatedListDivesHelp.stdout, /Usage: nosedive list-dives <effort>/);
+	assert.match(deprecatedListDivesHelp.stdout, /Use `preflight` instead/);
+	write(
+		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
+		`---
+kind: effort
+id: 019f8584-453f-79ea-9d53-5f1b20b4cda9
+name: deprecated-list-dives
+gist: "Legacy command fixture."
+---
+`,
+	);
+	const deprecatedListDives = run(
+		["list-dives", "019f8584-453f-79ea-9d53-5f1b20b4cda9"],
+		whoamiContractBridge,
+	);
+	assertOk(deprecatedListDives, "list-dives failed");
+	assert.match(deprecatedListDives.stderr, /list-dives is deprecated; use preflight/);
 	const contractHelpLinks = {
 		preflight: [
 			/\[`_pre-push\.hook`\]\(9e3a676a-6d2f-5b93-93af-f4608ed28843\.md\)/,

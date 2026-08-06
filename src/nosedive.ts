@@ -40,7 +40,7 @@ interface ContractDoc extends KbDoc {
 	entrypoint: string;
 	usage: string;
 	agentsUseWhen: string;
-	deprecated: boolean;
+	useInstead: string;
 }
 
 interface ParsedCommand {
@@ -145,7 +145,7 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 		entrypoint: parsed.fm.nested.meta?.entrypoint ?? "",
 		usage: parsed.fm.nested.meta?.usage ?? "",
 		agentsUseWhen: parsed.fm.nested.meta?.["agents-use-when"] ?? "",
-		deprecated: String(parsed.fm.nested.meta?.deprecated ?? "").trim() === "true",
+		useInstead: parsed.fm.nested.meta?.["use-instead"] ?? "",
 	};
 }
 
@@ -222,7 +222,7 @@ function latestContractDocs(): ContractDoc[] {
 }
 
 function isDeprecatedContract(contract: ContractDoc): boolean {
-	return contract.deprecated;
+	return contract.useInstead.trim() !== "";
 }
 
 /**

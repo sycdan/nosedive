@@ -62,7 +62,6 @@ function commandDocs() {
 			level: parsedName.level,
 			gist: String(raw.gist ?? ""),
 			usage: String(raw.meta?.usage ?? ""),
-			deprecated: String(raw.meta?.deprecated ?? "").trim() === "true",
 			useInstead: String(raw.meta?.["use-instead"] ?? ""),
 			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
@@ -96,7 +95,9 @@ function latestDocsByCommand(docs) {
 }
 
 function isExplicitlyDeprecated(doc) {
-	return doc.deprecated;
+	// A replacement is the deprecation: naming one is the only way to mark a
+	// command dead, so the mark and the advice cannot drift apart.
+	return doc.useInstead.trim() !== "";
 }
 
 function isInternalCommand(doc) {

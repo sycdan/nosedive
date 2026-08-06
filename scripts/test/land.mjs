@@ -7,6 +7,7 @@ import {
 	assertOk,
 	createTmp,
 	gitCommit,
+	gitCommitEmpty,
 	run,
 	runTool,
 	write,
@@ -90,7 +91,7 @@ test("land resolves the work branch from the repo doc", () => {
 
 test("land refuses a read-only scope that has commits past its pin", () => {
 	const { bridge, worktree, diveId } = setup("readonly");
-	runTool("git", ["commit", "--allow-empty", "-m", "read-only work"], worktree);
+	gitCommitEmpty(worktree, "read-only work");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	const diveText = readFileSync(divePath, "utf8");
 	write(divePath, diveText.replace("mode: rw", "mode: ro"));

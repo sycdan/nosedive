@@ -4,31 +4,14 @@
 
 # Nosedive: intentional velocity
 
-Imagine:
-```bash
-$ npx nosedive jump "my backend" --target testing
-Hi <Pilot>, N[o]O[rdinaryS[oftware]E[engineer] here!
-<is first run: yes> I see you're new here -- welcome! Let's pack your 'chute first.
-                    <opencode run "follow the onboarding runbook">
-Lemme look some stuff up, then I'll help you get your ass into the sandbox.
-Reading kb...
-Ok, let's dive in!
-Framing questions...
-Building expectations...
-Writing assertions...
-Passing gates...
-Outcome:
-- all gates passed
-- all CRITs hit
-- my-backend PR, awaiting approval
-```
-
 ⚠️ This repo is currently undergoing active development and may undergo breaking changes without warning. ⚠️
 
-**_nosedive_ turns a plain notes repo into a hub for cross-repo work** — a place where a
-developer (and their agents) can safely pick up a piece of work that spans
-several repositories, do it, and get it reviewed, without the usual friction of
-juggling clones, branches, context, and half-remembered state.
+**_nosedive_ assembles cross-repo, context-aware prompts for agents.** It does
+not do the work itself: it gathers the effort, its ancestry, dives, scoped
+repositories, recorded conventions, gates, and loads, then hands that context
+to an agent. The result is a safer way for a developer and their agents to pick
+up work spanning several repositories without juggling clones, branches,
+context, and half-remembered state.
 
 ## The problem
 
@@ -43,27 +26,45 @@ infra repo at once. Today that means:
 - **Friction in the author → review loop.** Starting a unit of work, tracking it,
   and shepherding it through review is manual and inconsistent across people.
 
-_nosedive_ addresses these by making the unit of work a first-class, on-disk object,
-creating effort-scoped multi-repo workspaces, and by routing developer actions through
-explicit, command-doc-checked commands that are equally safe for a human or an agent to run.
+_nosedive_ addresses these by making the unit of work a first-class, on-disk
+object, creating effort-scoped multi-repo workspaces, and routing developer
+actions through explicit commands that compose safely for a human or an agent.
 
 ## Efforts and dives
 
 _nosedive_ organizes work around two core concepts:
 
-- **Effort** — a unit of (potentially cross-repo) work to be designed and built.
-  Efforts are canonical, discrete objects under `./backlog`. The `EffortName`
-  is the effort slug in PascalCase, e.g. slug `foo-bar` lives at
-  `./backlog/foo-bar/FooBar.md`. Subefforts are nested directories:
-  `./backlog/foo-bar/baz-qux/BazQux.md`.
-- **Domain directory** — a namespace under `./backlog` with no matching
-  PascalCase effort file of its own. Domain dirs group project work without
-  being closable efforts, but they do participate in slug chains, e.g.
-  `./backlog/gogglebox/auth-refactor/AuthRefactor.md` is
-  `auth-refactor.gogglebox`.
+- **Effort** — a `kind: effort` KB document for a unit of potentially
+  cross-repository work. `scopes:` declares its repositories and `rel: parent`
+  links nest related efforts. The generated backlog memo lists open efforts.
 - **Dive** — one concrete iteration on an effort. Dives are `kind: dive` docs
-  that record who is actively working, handoff notes, branch state, and linked
-  artifacts.
+  that record who is actively working, the pinned scopes, a brief, and handoff
+  notes.
+
+The working arc is `into` to **think**: assemble context, choose or pitch an
+effort, and claim a dive. `jump` to **execute**: restore that dive's workspace
+and work its brief. `bail` to **undo**: abandon an attempt. `pack` to
+**switch**: capture WIP and release a dive for later. `land` to **deliver**:
+push writable scopes to their work branches and close the dive for review.
+
+## Where this is going
+
+The goal is that anyone can run this, start to finish, from a single reference:
+
+```text
+nosedive into <uuid>     ->  [careful review]
+nosedive jump            ->  [cursory review]
+nosedive land            ->  pull request
+```
+
+The two reviews are deliberately uneven. The careful one comes first, when what
+exists is only a plan -- cheap to redirect, expensive to get wrong. The second is
+cursory because the work was done against a brief already agreed.
+
+That is the target, not a description of today. `into` currently takes prose
+context rather than a reference, and `land` pushes a branch that you open a pull
+request from yourself. The generated command surface below is what actually
+exists right now; where it disagrees with this section, believe the surface.
 
 ## Commands
 
@@ -72,7 +73,9 @@ package's [`kb/`](kb). The command document is the single source of truth for
 what the command does and for its help text: `nosedive <command> --help` prints
 that document's body in a markdown fence, followed by `Usage: <meta.usage>` and
 the document gist. To avoid documentation drift, this README links to the
-command docs rather than restating them.
+command docs rather than restating them. Command docs are the composable,
+community-contributable extension model: adding a command means authoring its
+document and adapter, not patching a central dispatcher.
 
 Command docs also carry `meta.agents-use-when`, a one-line statement of when an
 agent should reach for the command. `nosedive help` does not show it; `seed`
@@ -145,25 +148,31 @@ Named with a leading underscore, invoked by `nosedive` itself or by a hook it in
 `version` and `help` have no command doc; they print the package version and the
 command list.
 
-### How a command doc runs
+## Add your own command
 
-A command doc names one repo-root adapter artifact under `meta.adapter` and the
-exported function to run under `meta.entrypoint`. Entrypoints follow the command
-doc name deterministically: `hydrate-repo.workspace@0` maps to
-`L1__workspace_hydrateRepo`, and private commands preserve their leading
-underscore. The adapter receives `{ args, cwd }` and must return
-`{ stdout, stderr, exitCode }` (`output` is accepted as a stdout alias).
-Adapters call uuid-named implementations through `ctx.impl` and shared named
-helpers through `ctx.lib`; command behavior belongs in `src/impl` and `src/lib`,
-not in the command adapter artifact.
+The surface above is the whole interface, and it is generated from the command
+docs. Adding to it is authoring a document, not patching a dispatcher — so a
+command you need is a command you can contribute.
+
+Build it the way nosedive expects work to be built, using nosedive:
+
+1. Run `nosedive seed` in your own notes repo. That makes it a bridge.
+2. Add this repository to that bridge as a `kind: repo` document.
+3. `nosedive into "<what your command should do>"` and work the normal loop.
+
+Your first dive is on nosedive, using nosedive. If that path is rough, that is
+the product being rough — tell us, because it is the same path everyone takes.
+
+Each command doc links its own adapter and implementation; start at the doc for
+a command that resembles yours and follow it. There is no separate contributor
+guide to keep in sync.
 
 ## Development
 
 Run `npm install` once after cloning. Its `prepare` script points git at
 [`.githooks`](.githooks), installing a `pre-push` hook that checks formatting,
 typechecks, builds, and tests before every push — the same gate CI enforces.
-Use `npm run format` to apply the repo-local Prettier config. Bypass a one-off
-push with `git push --no-verify`.
+Use `npm run format` to apply the repo-local Prettier config.
 
 ### Versioning + publishing
 

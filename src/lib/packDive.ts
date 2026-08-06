@@ -19,96 +19,17 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
-import { resolveEffortDoc } from "./repoEffortScopes.js";
+import {
+	CapturedPatch,
+	captureDirtyPatch,
+	gitRunPatch,
+	listAheadCommits,
+	writeArtifact,
+} from "./packArtifacts.js";
+import { clearDiveDiver, reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
 import { resetHydratedWorktree } from "./repoWorktrees.js";
-
-/** A captured patch file, not yet wrapped in its `kind: memo` doc. */
-export interface CapturedPatch {
-	repoId: string;
-	patchRelPath: string;
-	patchAbsPath: string;
-	sha?: string;
-	/** Full commit message (subject + body), only set for a real commit. */
-	commitMessage?: string;
-	dirty?: boolean;
-}
-
-function writeArtifact(
-	kbDir: string,
-	id: string,
-	content: string,
-): { relPath: string; absPath: string } {
-	const absPath = join(kbDir, "artifacts", `${id}.patch`);
-	writeFileAtomic(absPath, content);
-	return { relPath: `kb/artifacts/${id}.patch`, absPath };
-}
-
-/**
- * Patch/diff bytes must round-trip exactly -- `gitRun`'s blanket `.trim()`
- * silently strips the trailing newline (and, worse, a trailing
- * whitespace-only context line) that `format-patch`/`diff` output ends
- * with, and `git am`/`git apply` then reject the result as corrupt. Every
- * call capturing a `.patch` artifact's actual content must use this, not
- * `gitRun`.
- */
-function gitRunPatch(cwd: string, args: string[], label: string): string {
-	const result = runGit(cwd, args);
-	if (result.status === 0) return result.stdout;
-	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
-	throw new Error(`${label}: ${detail}`);
-}
-
-function listAheadCommits(repoPath: string, pin: string, repoId: string): string[] {
-	const raw = gitRun(
-		repoPath,
-		["rev-list", "--reverse", `${pin}..HEAD`],
-		`failed to list commits ahead of pin for repo ${repoId}`,
-	);
-	return raw ? raw.split(/\r?\n/).filter(Boolean) : [];
-}
-
-function untrackedFiles(repoPath: string): string[] {
-	const raw = gitOutput(repoPath, ["ls-files", "--others", "--exclude-standard"]);
-	return raw ? raw.split(/\r?\n/).filter(Boolean) : [];
-}
-
-/**
- * `git diff <commit>` (no `--cached`) already folds staged and unstaged
- * changes into one patch against that commit; intent-to-add is what pulls
- * untracked files into that same diff without ever writing their blobs to a
- * real commit. The intent-to-add markers are reset afterward so a failed pack
- * leaves the worktree exactly as it found it.
- */
-function captureDirtyPatch(repoPath: string, repoId: string): string | undefined {
-	const status = gitOutput(repoPath, ["status", "--porcelain"]);
-	if (!status || !status.trim()) return undefined;
-
-	const untracked = untrackedFiles(repoPath);
-	if (untracked.length > 0) {
-		gitRun(
-			repoPath,
-			["add", "--intent-to-add", "--", ...untracked],
-			`failed to stage untracked files for repo ${repoId} pack`,
-		);
-	}
-	try {
-		return gitRunPatch(
-			repoPath,
-			["diff", "--binary", "HEAD"],
-			`failed to capture dirty diff for repo ${repoId}`,
-		);
-	} finally {
-		if (untracked.length > 0) {
-			gitRun(
-				repoPath,
-				["reset", "--", ...untracked],
-				`failed to unstage intent-to-add markers for repo ${repoId}`,
-			);
-		}
-	}
-}
 
 function packRepoScope(
 	scope: DiveWipScope,
@@ -367,10 +288,12 @@ function commitAndPushPack(
 	divePath: string,
 	newArtifactAbsPaths: string[],
 	diveName: string,
-	effortId?: string,
+	effort: KbDoc | undefined,
 ): void {
-	const pathsToStage = [divePath, ...newArtifactAbsPaths].map((path) =>
-		toPosixPath(relative(bridgeDir, path)),
+	// The effort doc carries the reciprocal link pack just reconciled, so it is
+	// staged with the dive rather than left behind as bridge WIP.
+	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(effort ? [effort.path] : [])].map(
+		(path) => toPosixPath(relative(bridgeDir, path)),
 	);
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage packed dive artifacts");
 
@@ -396,7 +319,7 @@ function commitAndPushPack(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, effortId)],
+			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, effort?.id)],
 			"failed to commit packed dive",
 		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after pack; dive is committed locally");
@@ -464,29 +387,29 @@ export function packDive(args: string[], io: CommandIo): void {
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
-	if (groups.length > 0) {
-		const headRelPaths: string[] = [];
-		const newFileAbsPaths: string[] = [];
-		for (const patches of groups) {
-			const slug = repoSlug(kbDocs, patches[0]!.repoId);
-			const minted = mintPatchMemoChain(rc.kbDir, patches, slug, mintUuid);
-			headRelPaths.push(minted.headRelPath);
-			newFileAbsPaths.push(...minted.newFileAbsPaths);
-			capturedCount += patches.length;
-		}
-
-		appendDivePatchLinks(dive.path, headRelPaths);
-		commitAndPushPack(
-			rc.bridgeDir,
-			dive.path,
-			newFileAbsPaths,
-			dive.name,
-			dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
-		);
-		io.log(`packed dive ${dive.id}: ${capturedCount} artifact(s)`);
-	} else {
-		io.log(`packed dive ${dive.id}: nothing to pack`);
+	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const released = clearDiveDiver(dive.path);
+	if (released && effort) reconcileDiveEffortLinks(effort, effort, dive.id, undefined);
+	const headRelPaths: string[] = [];
+	const newFileAbsPaths: string[] = [];
+	for (const patches of groups) {
+		const slug = repoSlug(kbDocs, patches[0]!.repoId);
+		const minted = mintPatchMemoChain(rc.kbDir, patches, slug, mintUuid);
+		headRelPaths.push(minted.headRelPath);
+		newFileAbsPaths.push(...minted.newFileAbsPaths);
+		capturedCount += patches.length;
 	}
+	if (headRelPaths.length > 0) appendDivePatchLinks(dive.path, headRelPaths);
+	// Releasing the dive is bookkeeping worth pushing on its own: a dive freed
+	// with nothing to pack has to reach the shared kb before anyone can pick it up.
+	if (groups.length > 0 || released)
+		commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, effort);
+	io.log(
+		capturedCount > 0
+			? `packed dive ${dive.id}: ${capturedCount} artifact(s)`
+			: `packed dive ${dive.id}: nothing to pack`,
+	);
+
 	for (const scope of scopes) {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (!resolved.path) continue;

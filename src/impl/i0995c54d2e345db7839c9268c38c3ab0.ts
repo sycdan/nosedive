@@ -18,8 +18,24 @@ function into(args: string[], io: CommandIo): void {
 	if (marker.present && marker.id) {
 		const kbDocs = rc.kbDir ? loadKbDocs(rc.kbDir, rc.bridgeDir) : [];
 		const activeDive = kbDocs.find((doc) => doc.id === marker.id);
-		const gist = activeDive?.gist ?? marker.id;
-		throw new Error(`already diving into "${gist}", run nosedive pack first`);
+		// A marker naming nothing is broken bookkeeping, not a free dive: warning
+		// past it would start a second dive on top of a workspace nobody can account
+		// for.
+		if (!activeDive || activeDive.kind !== "dive")
+			throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+		const diver = activeDive.metaScalars.diver;
+		if (diver) {
+			const next =
+				diver === readPilotIdentity(rc.bridgeDir).email
+					? "run nosedive pack, bail, or land first"
+					: `held by ${diver}; take it over with \`nosedive record.dive --ref ${marker.id} --takeover\``;
+			throw new Error(`dive ${marker.id} (${activeDive.gist}) is ${next}`);
+		}
+		const patches = activeDive.links.filter((link) => link.rel === "patch").length;
+		io.log(
+			`warning: unheld marked dive ${marker.id} (${activeDive.gist}) has ${patches} patch chain(s); ` +
+				`resume it with \`nosedive record.dive --ref ${marker.id}\``,
+		);
 	}
 
 	const identity = readPilotIdentity(rc.bridgeDir);

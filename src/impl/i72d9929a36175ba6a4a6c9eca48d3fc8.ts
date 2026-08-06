@@ -18,12 +18,7 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "../lib/coreParsing.js";
-import {
-	DiveWipScope,
-	readPilotIdentity,
-	readWorkspaceDiveMarker,
-	uniqueDiveWipScopes,
-} from "../lib/gitState.js";
+import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { isInsideDir } from "../lib/backlogDives.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
@@ -196,19 +191,13 @@ function resolveChainTarget(
 	throw new Error(`patch chain head '${headName}' matches no scoped repo or bridge-wip`);
 }
 
-function updateDiveDocAfterJump(
-	divePath: string,
-	diverValue: string,
-	appliedHeadIds: Set<string>,
-): void {
+function updateDiveDocAfterJump(divePath: string, appliedHeadIds: Set<string>): void {
 	const text = readFileSync(divePath, "utf8");
 	const block = splitMarkdownFrontmatter(text, formatPath(divePath));
 	const doc = parseDocument(block.yaml);
 	if (doc.errors.length > 0) {
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(divePath)}`);
 	}
-
-	doc.setIn(["meta", "diver"], diverValue);
 
 	const links = doc.get("links");
 	if (isSeq(links)) {
@@ -414,12 +403,7 @@ export function jump(args: string[], io: CommandIo): void {
 		}
 	}
 
-	const pilot = readPilotIdentity(rc.bridgeDir);
-	if (!pilot.name) throw new Error("jump requires git config user.name in the bridge");
-	const effortSlug = effort.name;
-	const diverValue = `${pilot.name} picked up ${effortSlug}`;
-
-	updateDiveDocAfterJump(dive.path, diverValue, appliedHeadIds);
+	updateDiveDocAfterJump(dive.path, appliedHeadIds);
 	for (const path of appliedFileAbsPaths) {
 		if (existsSync(path)) unlinkSync(path);
 	}
@@ -431,7 +415,7 @@ export function jump(args: string[], io: CommandIo): void {
 		rc.bridgeDir,
 		dive.path,
 		[...appliedFileAbsPaths, effort.path],
-		diverValue,
+		`jump(${dive.name}): unpacked work`,
 		effort.id,
 	);
 

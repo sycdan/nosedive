@@ -184,6 +184,37 @@ test("record.dive activates only for the pilot diver", () => {
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
 
+test("record.dive requires --takeover to replace a held diver", () => {
+	const { bridge } = setup("ownership");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(
+		["record.dive", "--effort", effortId, "--diver", "owner@example.test"],
+		bridge,
+	);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const replacement = run(["record.dive", "--ref", id, "--diver", "other@example.test"], bridge);
+	assert.notEqual(replacement.status, 0);
+	assert.match(replacement.stderr, /held by owner@example\.test/);
+	assert.match(replacement.stderr, /--takeover/);
+	assertOk(run(["record.dive", "--ref", id, "--takeover"], bridge), "takeover failed");
+	// The takeover writes the running pilot's own email, never the one on the
+	// command line: there is no --diver to disagree with.
+	assert.match(readFileSync(path, "utf8"), /^  diver: "?pilot@example\.test"?$/m);
+});
+
+test("record.dive refuses --takeover on a dive nobody holds", () => {
+	const { bridge } = setup("takeover-unheld");
+	const created = run(["record.dive", "--effort", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const taken = run(["record.dive", "--ref", id, "--takeover"], bridge);
+	assert.notEqual(taken.status, 0);
+	assert.match(taken.stderr, /not held/);
+});
+
 test("record.dive links a claimed dive as working without list-dives warnings", () => {
 	const { bridge } = setup("working-link");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);

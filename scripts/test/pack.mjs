@@ -173,6 +173,11 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /^  diver: null$/m, "pack should release the dive");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8"),
+		new RegExp(`- kb/${diveId}\\.md:\\n      rel: pending`),
+	);
 	const patchHeads = patchHeadsByRel(diveText, "patch");
 	assert.equal(patchHeads.length, 2, `expected 2 patch chain heads:\n${diveText}`);
 
@@ -245,6 +250,20 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(readFileSync(stray, "utf8"), "unrelated bridge dirty file\n");
 });
 
+test("a packed dive reaches jump and reapplies its patch chain", () => {
+	const { bridge, diveId } = setup("resume");
+	const worktree = repoWorktree(bridge, "resume");
+	assertOk(run(["record.dive", "--ref", diveId, "--brief", "Resume packed work."], bridge));
+	write(join(worktree, "resumed.txt"), "resumed\n");
+	runTool("git", ["add", "resumed.txt"], worktree);
+	gitCommit(worktree, "resume me");
+	assertOk(run(["pack"], bridge), "pack failed");
+	assertOk(run(["jump"], bridge), "jump failed after pack");
+	assert.equal(readFileSync(join(worktree, "resumed.txt"), "utf8"), "resumed\n");
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.doesNotMatch(diveText, /rel: patch/);
+});
+
 test("pack refuses a read-only scope with unpacked work", () => {
 	const { bridge, effortId, diveId } = setup("readonly");
 	const roRepoId = "019fcf00-0000-7000-8000-000000000003";
@@ -294,10 +313,10 @@ test("pack with nothing to capture still resets and reports no-op", () => {
 	assert.match(result.stdout, new RegExp(`reset repo=${repoId}`));
 	assert.equal(existsSync(worktree), true);
 	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
-	assert.equal(
+	assert.notEqual(
 		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
 		beforeHead,
-		"a pack with nothing to capture should not create a commit",
+		"releasing a held dive should create a bridge commit",
 	);
 });
 

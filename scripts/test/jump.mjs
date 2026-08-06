@@ -278,8 +278,8 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.equal(commitSubject, "Jump Test picked up jump-test.nosedive");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
-	assert.match(commitBody, /Co-Authored-By: nosedive@0\.0\.0-dev <noreply@nosedive\.dev>/);
-	assert.equal((commitBody.match(/Co-Authored-By: nosedive@/g) ?? []).length, 1);
+	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 
 	// A second jump run has nothing left to apply (the chain was consumed and
 	// its link removed above) -- hydration must not force the scope back to

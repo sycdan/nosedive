@@ -216,8 +216,8 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and dehydrat
 	assert.equal(log, `dive(${diveText.match(/^name: (.+)$/m)[1]}): packed wip`);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
-	assert.match(commitBody, /Co-Authored-By: nosedive@0\.0\.0-dev <noreply@nosedive\.dev>/);
-	assert.equal((commitBody.match(/Co-Authored-By: nosedive@/g) ?? []).length, 1);
+	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.equal((commitBody.match(/Co-Authored-By: nosedive /g) ?? []).length, 1);
 
 	const bridgeHead = runTool("git", ["rev-parse", "main"], bridge).stdout.trim();
 	const originHead = runTool("git", ["rev-parse", "main"], origin).stdout.trim();

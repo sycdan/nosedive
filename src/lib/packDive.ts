@@ -22,7 +22,7 @@ import { KbDoc, loadKbDocs } from "./kbDocs.js";
 import { resolveEffortDoc } from "./repoEffortScopes.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
-import { resetHydratedWorktreeToPin } from "./repoWorktrees.js";
+import { resetHydratedWorktree } from "./repoWorktrees.js";
 
 /** A captured patch file, not yet wrapped in its `kind: memo` doc. */
 export interface CapturedPatch {
@@ -492,7 +492,7 @@ export function packDive(args: string[], io: CommandIo): void {
 		if (!resolved.path) continue;
 		const ref = scope.ref;
 		if (!ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to reset to`);
-		resetHydratedWorktreeToPin(scope.repoId, resolved.path, ref);
+		resetHydratedWorktree(scope.repoId, resolved.path, `${ref}^{commit}`);
 		io.log(`reset repo=${scope.repoId} path=${formatPath(resolved.path)} ref=${ref}`);
 	}
 }

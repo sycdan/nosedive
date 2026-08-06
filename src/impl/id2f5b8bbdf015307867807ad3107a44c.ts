@@ -23,8 +23,8 @@ import {
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
-import { gitRun } from "../lib/repoWorkspaceCore.js";
-import { resetHydratedWorktreeToPin } from "../lib/repoWorktrees.js";
+import { ensureManagedRepoCache, gitRun, resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
+import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
@@ -178,9 +178,12 @@ function land(_args: string[], io: CommandIo): void {
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 
 	for (const { scope, path } of hydratedWorktrees) {
-		const ref = scope.ref;
-		if (!ref) throw new Error(`land refuses: scoped repo ${scope.repoId} has no pinned ref`);
-		resetHydratedWorktreeToPin(scope.repoId, path, ref);
+		const repoDoc = resolveRepoDoc(kbDocs, scope.repoId);
+		const trunk = repoDoc.repoBaseBranch;
+		if (!trunk) throw new Error(`land refuses: repo ${scope.repoId} has no trunk setting`);
+		const cachePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
+		const commit = resolveRefCommit(cachePath, scope.repoId, trunk);
+		resetHydratedWorktree(scope.repoId, path, commit);
 	}
 
 	io.log(`landed "${dive.gist}"`);

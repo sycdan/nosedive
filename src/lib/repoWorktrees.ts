@@ -248,14 +248,14 @@ export function removeHydratedWorktree(repoId: string, targetPath: string, force
 	);
 }
 
-export function resetHydratedWorktreeToPin(repoId: string, targetPath: string, ref: string): void {
+export function resetHydratedWorktree(repoId: string, targetPath: string, commit: string): void {
 	ensureDehydrateTargetOwnership(repoId, targetPath);
-	if (!ref) throw new Error(`scoped repo ${repoId} has no pinned ref to reset to`);
 	gitRun(
 		targetPath,
-		["reset", "--hard", `${ref}^{commit}`],
+		["reset", "--hard", commit],
 		`failed to reset hydrated worktree for repo ${repoId} at ${formatPath(targetPath)}`,
 	);
+	ensureDetachedAtCommit(targetPath, commit, repoId, true);
 	gitRun(
 		targetPath,
 		["clean", "-fd"],

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -7,7 +7,9 @@ import {
 	assertOk,
 	createTmp,
 	gitCommit,
+	gitCommitEmpty,
 	run,
+	runGitUnchecked,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -220,7 +222,7 @@ test("jump refuses an unbriefed dive before hydrating its scopes", () => {
 });
 
 test("jump hydrates a packed dive's scoped repos and reapplies every patch chain", () => {
-	const { bridge, origin, repoId, diveId, pinnedRef } = setup("full");
+	const { bridge, origin, repoId, effortId, diveId, pinnedRef } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
 
 	write(join(worktree, "feature-a.txt"), "a\n");
@@ -276,6 +278,10 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.equal(commitSubject, "Jump Test picked up jump-test.nosedive");
+	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
+	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 
 	// A second jump run has nothing left to apply (the chain was consumed and
 	// its link removed above) -- hydration must not force the scope back to
@@ -327,6 +333,112 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 		runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(),
 		pinnedRef,
 		"scope should hydrate at the dive's pinned ref",
+	);
+});
+
+test("jump installs provenance for commits made in its hydrated worktree", () => {
+	const { bridge, repoId, effortId } = setup("commit-hook");
+	const worktree = repoWorktree(bridge, "commit-hook");
+
+	assertOk(run(["jump"], bridge), "jump failed");
+	write(join(worktree, "implementation.txt"), "implemented\n");
+	runTool("git", ["add", "implementation.txt"], worktree);
+	gitCommit(
+		worktree,
+		`implementation\n\nEffort: ${effortId}\nCo-Authored-By: nosedive 0.0.0-dev <noreply@nosedive.dev>`,
+	);
+
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.equal((message.match(new RegExp(`Effort: ${effortId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(/Co-Authored-By: nosedive 0\.0\.0-dev/g) ?? []).length, 1);
+	assert.equal(
+		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim()
+			.length > 0,
+		true,
+		"hook path should be configured in the worktree",
+	);
+	assert.equal(
+		runGitUnchecked(["config", "--local", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		"",
+		"hook path must not be written to shared repository config",
+	);
+});
+
+test("jump chains a repo prepare-commit-msg hook without modifying tracked files", () => {
+	const { bridge, effortId } = setup("foreign-hook");
+	const worktree = repoWorktree(bridge, "foreign-hook");
+	const foreignHooks = join(worktree, ".githooks");
+	const foreignHook = join(foreignHooks, "prepare-commit-msg");
+	const prePushHook = join(foreignHooks, "pre-push");
+	write(foreignHook, "#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n");
+	write(prePushHook, "#!/bin/sh\nprintf 'pre-push-ran\\n' > pre-push-ran\n");
+	chmodSync(foreignHook, 0o755);
+	chmodSync(prePushHook, 0o755);
+	runTool("git", ["add", ".githooks"], worktree);
+	gitCommit(worktree, "track repo hook");
+	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed with a foreign hook");
+	assert.equal(
+		readFileSync(foreignHook, "utf8"),
+		"#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n",
+	);
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.match(message, /Repo-Hook: ran/);
+	assert.match(message, new RegExp(`Effort: ${effortId}`));
+	assert.match(message, /Co-Authored-By: nosedive 0\.0\.0-dev/);
+	const managedHooks = runTool(
+		"git",
+		["config", "--worktree", "--get", "core.hooksPath"],
+		worktree,
+	).stdout.trim();
+	runTool("sh", [join(managedHooks, "pre-push")], worktree);
+	assert.equal(readFileSync(join(worktree, "pre-push-ran"), "utf8"), "pre-push-ran\n");
+	writeFileSync(join(worktree, "pre-push-ran"), "");
+	runTool("git", ["clean", "-f", "pre-push-ran"], worktree);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
+});
+
+test("jump preserves a failing repo prepare-commit-msg hook exit", () => {
+	const { bridge } = setup("failing-hook");
+	const worktree = repoWorktree(bridge, "failing-hook");
+	const failingHook = join(worktree, ".githooks", "prepare-commit-msg");
+	write(failingHook, "#!/bin/sh\nexit 23\n");
+	chmodSync(failingHook, 0o755);
+	runTool("git", ["add", ".githooks/prepare-commit-msg"], worktree);
+	gitCommit(worktree, "track failing hook");
+	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+	assertOk(run(["jump"], bridge), "jump failed");
+
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	const commit = runGitUnchecked(["commit", "--allow-empty", "-m", "must fail"], worktree);
+	assert.notEqual(commit.status, 0);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), head);
+});
+
+test("jump honors independent repo provenance opt-outs and still installs the wrapper", () => {
+	const { bridge, repoId } = setup("opt-outs");
+	const worktree = repoWorktree(bridge, "opt-outs");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    effort: false\n    co-author: false\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.doesNotMatch(message, /Effort:/);
+	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);
+	assert.notEqual(
+		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		"",
 	);
 });
 

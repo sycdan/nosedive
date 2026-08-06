@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { commitMessage } from "../lib/commitProvenance.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -21,6 +22,7 @@ import {
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { removeHydratedWorktree } from "../lib/repoWorktrees.js";
 
@@ -59,7 +61,12 @@ function stashExceptStaged(bridgeDir: string): boolean {
 	return before !== after;
 }
 
-function commitAndPushLand(bridgeDir: string, divePath: string, diveName: string): void {
+function commitAndPushLand(
+	bridgeDir: string,
+	divePath: string,
+	diveName: string,
+	effortId?: string,
+): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
 	gitRun(bridgeDir, ["add", "--", relPath], "failed to stage landed dive");
 
@@ -82,7 +89,7 @@ function commitAndPushLand(bridgeDir: string, divePath: string, diveName: string
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", `land(${diveName}): closed`],
+			["commit", "-m", commitMessage(`land(${diveName}): closed`, effortId)],
 			"failed to commit landed dive",
 		);
 		gitRun(
@@ -109,7 +116,7 @@ function land(_args: string[], io: CommandIo): void {
 	const dive = kbDocs.find((doc) => doc.id === marker.id);
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
 
-	const effort = dive.effortRef ? kbDocs.find((doc) => doc.id === dive.effortRef) : undefined;
+	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
 	const slug = slugForBranch(dive, effort);
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
@@ -159,7 +166,7 @@ function land(_args: string[], io: CommandIo): void {
 	const body = `${parsed.body.trimEnd()}\n\n## Outcome\n\n${dive.gist}\n\n${outcome}\n`;
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id);
 
 	// Marker cleared before dehydrate: the dive is already closed (kind: memo,
 	// pushed) at this point, so a dehydrate failure must not leave the marker

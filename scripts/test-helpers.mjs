@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { after } from "node:test";
@@ -8,6 +8,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const cli = join(root, "dist", "cli.js");
+/**
+ * The running package version. The publish workflow stamps a real version before
+ * running the suite, so a fixture that hard-codes the dev placeholder passes on
+ * PR CI and fails only on publish.
+ */
+export const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+
+/** `packageVersion` escaped for use inside a regular expression. */
+export const packageVersionPattern = packageVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export const lib = join(root, "dist", "nosedive.js");
 export const libUrl = pathToFileURL(lib).href;
 

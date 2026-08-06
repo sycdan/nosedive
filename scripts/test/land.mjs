@@ -8,6 +8,7 @@ import {
 	createTmp,
 	gitCommit,
 	gitCommitEmpty,
+	packageVersionPattern,
 	run,
 	runTool,
 	write,
@@ -85,7 +86,10 @@ test("land commits effort and nosedive provenance", () => {
 	assertOk(result, "land failed");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
-	assert.match(commitBody, /Co-Authored-By: nosedive 0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.match(
+		commitBody,
+		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
+	);
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 });
 

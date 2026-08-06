@@ -63,6 +63,7 @@ function commandDocs() {
 			gist: String(raw.gist ?? ""),
 			usage: String(raw.meta?.usage ?? ""),
 			deprecated: String(raw.meta?.deprecated ?? "").trim() === "true",
+			useInstead: String(raw.meta?.["use-instead"] ?? ""),
 			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
 	}
@@ -110,6 +111,14 @@ function commandRows(docs) {
 	]);
 }
 
+function deprecatedRows(docs) {
+	return docs.map((doc) => [
+		markdownLink(code(`${doc.command}@${doc.level}`), doc.relPath),
+		code(usageForReadme(doc.usage)),
+		doc.useInstead,
+	]);
+}
+
 function renderCommandSurface() {
 	const latestDocs = latestDocsByCommand(commandDocs());
 	const publicDocs = latestDocs.filter((doc) => !isInternalCommand(doc));
@@ -147,7 +156,7 @@ function renderCommandSurface() {
 		"",
 		"| Command | Usage | Use instead |",
 		"| --- | --- | --- |",
-		...commandRows(deprecatedDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
+		...deprecatedRows(deprecatedDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
 		endMarker,
 	];
 	return lines.join("\n");

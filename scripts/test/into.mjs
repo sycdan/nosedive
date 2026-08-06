@@ -89,7 +89,7 @@ test("into distinguishes own, foreign, and unheld marked dives", () => {
 	const foreignResult = run(["into"], foreign.bridge);
 	assert.notEqual(foreignResult.status, 0);
 	assert.match(foreignResult.stderr, /held by other@example\.test/);
-	assert.match(foreignResult.stderr, new RegExp(`--ref ${foreign.diveId} --diver ""`));
+	assert.match(foreignResult.stderr, new RegExp(`--ref ${foreign.diveId} --takeover`));
 
 	const free = heldBridge("free", undefined);
 	const freeResult = run(["into"], free.bridge);

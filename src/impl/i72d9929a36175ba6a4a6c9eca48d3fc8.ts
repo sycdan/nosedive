@@ -18,11 +18,7 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "../lib/coreParsing.js";
-import {
-	DiveWipScope,
-	readWorkspaceDiveMarker,
-	uniqueDiveWipScopes,
-} from "../lib/gitState.js";
+import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { isInsideDir } from "../lib/backlogDives.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
@@ -195,10 +191,7 @@ function resolveChainTarget(
 	throw new Error(`patch chain head '${headName}' matches no scoped repo or bridge-wip`);
 }
 
-function updateDiveDocAfterJump(
-	divePath: string,
-	appliedHeadIds: Set<string>,
-): void {
+function updateDiveDocAfterJump(divePath: string, appliedHeadIds: Set<string>): void {
 	const text = readFileSync(divePath, "utf8");
 	const block = splitMarkdownFrontmatter(text, formatPath(divePath));
 	const doc = parseDocument(block.yaml);

@@ -25,6 +25,7 @@ export interface RecordDiveOptions {
 	title?: string;
 	brief?: string;
 	diver?: string;
+	takeover: boolean;
 	scopes: string[];
 	clearScopes: boolean;
 }
@@ -36,11 +37,15 @@ function optionValue(args: string[], index: number, flag: string): string {
 }
 
 export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
-	const options: RecordDiveOptions = { scopes: [], clearScopes: false };
+	const options: RecordDiveOptions = { takeover: false, scopes: [], clearScopes: false };
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === "--clear-scopes") {
 			options.clearScopes = true;
+			continue;
+		}
+		if (arg === "--takeover") {
+			options.takeover = true;
 			continue;
 		}
 		const flag = ["--ref", "--effort", "--gist", "--title", "--brief", "--diver", "--scope"].find(
@@ -50,13 +55,8 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 			if (arg.startsWith("--")) throw new Error(`unknown record.dive option: ${arg}`);
 			throw new Error(`unexpected record.dive argument: ${arg}`);
 		}
-		const value =
-			arg === flag
-				? flag === "--diver"
-					? (args[i + 1] ?? "")
-					: optionValue(args, i + 1, flag)
-				: arg.slice(flag.length + 1);
-		if (!value && flag !== "--diver") throw new Error(`${flag} requires a value`);
+		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
+		if (!value) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
 		if (flag === "--scope") options.scopes.push(value);
 		else if (flag === "--ref") options.ref = value;
@@ -76,6 +76,12 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	}
 	if (options.brief !== undefined && !options.brief.trim())
 		throw new Error("brief cannot be empty");
+	if (options.takeover) {
+		// Takeover reads the holder off the dive and writes the pilot's own email,
+		// so a --diver alongside it can only contradict one of the two.
+		if (options.diver !== undefined) throw new Error("--takeover cannot be combined with --diver");
+		if (!options.ref) throw new Error("--takeover requires --ref");
+	}
 	return options;
 }
 
@@ -285,14 +291,21 @@ export function recordDive(args: string[], io: CommandIo): void {
 		doc.setIn(["meta", "effort"], effort.id);
 	}
 	if (options.gist !== undefined) doc.set("gist", options.gist.trim());
-	if (options.diver !== undefined) {
-		const previousDiver = dive.metaScalars.diver;
-		if (previousDiver && options.diver && previousDiver !== options.diver) {
+	const heldBy = dive.metaScalars.diver;
+	if (options.takeover) {
+		// Nothing to take over means the pilot has the wrong dive or the wrong
+		// command: a free dive is claimed with --diver, and claiming is not a
+		// handover anyone needs told about.
+		if (!heldBy) throw new Error(`dive ${dive.id} is not held; claim it with --diver instead`);
+		if (!pilotEmail) throw new Error("--takeover requires git config user.email in the bridge");
+		doc.setIn(["meta", "diver"], pilotEmail);
+	} else if (options.diver !== undefined) {
+		if (heldBy && heldBy !== options.diver) {
 			throw new Error(
-				`dive ${dive.id} is held by ${previousDiver}; clear it with \`record.dive --ref ${dive.id} --diver ""\` before assigning ${options.diver}`,
+				`dive ${dive.id} is held by ${heldBy}; take it over with \`record.dive --ref ${dive.id} --takeover\``,
 			);
 		}
-		doc.setIn(["meta", "diver"], options.diver || null);
+		doc.setIn(["meta", "diver"], options.diver);
 	}
 	if (options.clearScopes || options.scopes.length > 0) {
 		const scopes = options.clearScopes
@@ -321,11 +334,11 @@ export function recordDive(args: string[], io: CommandIo): void {
 		body = `${body.trimEnd()}\n\n${DIVE_BRIEF_HEADING}\n\n${options.brief.trim()}\n`;
 	}
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
+	const claimed = options.takeover ? pilotEmail : options.diver;
 	if (effort) {
-		const diver = options.diver !== undefined ? options.diver || undefined : dive.metaScalars.diver;
-		reconcileDiveEffortLinks(previousEffort, effort, dive.id, diver);
+		reconcileDiveEffortLinks(previousEffort, effort, dive.id, claimed ?? heldBy);
 	}
-	if (ensureActivation(dive, options.diver, pilotEmail, active)) {
+	if (ensureActivation(dive, claimed, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 	}
 	io.log(`Recorded ${formatPath(dive.path)}`);

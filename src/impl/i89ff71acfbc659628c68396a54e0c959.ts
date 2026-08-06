@@ -24,14 +24,17 @@ function effortAncestry(effort: KbDoc, kbDocs: KbDoc[]): KbDoc[] {
 }
 
 function spin(args: string[], io: CommandIo): void {
-	const words = args.join(" ").trim();
-	if (!words) throw new Error("spin requires words describing the loads to select");
-
 	const rc = readNosediveRc(process.cwd());
+	// Checked before the words, so a pilot with no dive is told the thing that
+	// blocks them rather than a usage error they would still hit afterwards.
 	if (!readActiveDiveId(rc.workspaceDir))
 		throw new Error(
 			"no active dive: spin needs an effort from the dive named in workspace/.nosedive-ref",
 		);
+
+	const words = args.join(" ").trim();
+	if (!words) throw new Error("spin requires words describing the loads to select");
+
 	if (!rc.kbDir) throw new Error("spin requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const effort = resolveActiveEffortDoc(kbDocs, rc);
@@ -45,12 +48,15 @@ function spin(args: string[], io: CommandIo): void {
 	}
 
 	const loads = new Map<string, KbDoc>();
-	const unscanned = new Map<string, KbDoc>();
+	// A repo with no loads has not necessarily gone unscanned: a library or a
+	// CLI has nothing runnable to record, and saying otherwise would assert a
+	// falsehood on every spin for the rest of that repo's life.
+	const loadless = new Map<string, KbDoc>();
 	for (const repo of repos.values()) {
 		const repoLoads = repo.links
 			.map((link) => kbDocs.find((doc) => doc.id === link.id))
 			.filter((doc): doc is KbDoc => doc?.kind === "load");
-		if (repoLoads.length === 0) unscanned.set(repo.id, repo);
+		if (repoLoads.length === 0) loadless.set(repo.id, repo);
 		for (const load of repoLoads) loads.set(load.id, load);
 	}
 
@@ -62,11 +68,13 @@ function spin(args: string[], io: CommandIo): void {
 	io.log("== load candidates ==");
 	if (loads.size === 0) io.log("(none)");
 	for (const load of loads.values()) io.log(`- ${load.name}: ${load.gist}`);
-	if (unscanned.size > 0) {
+	if (loadless.size > 0) {
 		io.log("");
 		io.log("== repos without loads ==");
-		for (const repo of unscanned.values())
-			io.log(`- ${repo.name} has not been scanned; run scan --repo ${repo.id}`);
+		for (const repo of loadless.values())
+			io.log(
+				`- ${repo.name} documents no loads; if it runs services, scan --repo ${repo.id} to record them`,
+			);
 	}
 }
 

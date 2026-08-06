@@ -36,6 +36,10 @@ test("spin refuses without an active dive", () => {
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /no active dive/);
 	assert.equal(result.stdout, "");
+
+	const wordless = run(["spin"], bridge);
+	assert.notEqual(wordless.status, 0);
+	assert.match(wordless.stderr, /no active dive/);
 });
 
 test("spin requires pilot words", () => {
@@ -92,7 +96,7 @@ test("spin lists unique loads from the active effort and its ancestors", () => {
 });
 
 test("spin identifies scoped repos without documented loads", () => {
-	const bridge = createBridge(tmp, "unscanned");
+	const bridge = createBridge(tmp, "loadless");
 	activeDive(bridge, ids.child);
 	writeDoc(
 		bridge,
@@ -102,12 +106,13 @@ test("spin identifies scoped repos without documented loads", () => {
 	writeDoc(
 		bridge,
 		"repo.md",
-		`kind: repo\nid: ${ids.childRepo}\nname: unscanned\ngist: "Unscanned repo"`,
+		`kind: repo\nid: ${ids.childRepo}\nname: toolbox\ngist: "A library with nothing runnable"`,
 	);
 	const result = run(["spin", "web"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(
 		result.stdout,
-		new RegExp(`unscanned has not been scanned; run scan --repo ${ids.childRepo}`),
+		new RegExp(`toolbox documents no loads; if it runs services, scan --repo ${ids.childRepo}`),
 	);
+	assert.doesNotMatch(result.stdout, /has not been scanned/);
 });

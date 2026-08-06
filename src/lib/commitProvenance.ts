@@ -9,3 +9,21 @@ export function commitMessage(subject: string, effortId?: string): string {
 	// `git interpret-trailers`.
 	return `${subject}\n\n${trailers.join("\n")}`;
 }
+
+/** Generates the worktree hook that gives implementation commits provenance. */
+export function prepareCommitMsgHook(effortId: string): string {
+	const trailers = [
+		`Effort: ${effortId}`,
+		`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`,
+	];
+	return [
+		"#!/bin/sh",
+		"# nosedive-managed prepare-commit-msg",
+		...trailers.flatMap((trailer) => [
+			`if ! grep -Fqx -- '${trailer}' "$1"; then`,
+			`  git interpret-trailers --in-place --trailer '${trailer}' "$1" || exit 1`,
+			"fi",
+		]),
+		"",
+	].join("\n");
+}

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { isInsideDir } from "./backlogDives.js";
+import { prepareCommitMsgHook } from "./commitProvenance.js";
 import { formatPath, resolveFrom } from "./coreParsing.js";
 import { REPO_MARKER_EXCLUDE_SPEC, replaceManagedExcludeBlock } from "./gitState.js";
 import { KbDoc, repoDocs } from "./kbDocs.js";
@@ -313,6 +314,64 @@ export function ensureRepoMarkerExcluded(targetPath: string, repoId: string): bo
 
 export function worktreeConfigEnabled(targetPath: string): boolean {
 	return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
+}
+
+export interface PrepareCommitMsgHookResult {
+	changed: boolean;
+	foreignHookPath?: string;
+}
+
+/** Installs the provenance hook without replacing an existing hook setup. */
+export function reconcilePrepareCommitMsgHook(
+	targetPath: string,
+	effortId: string,
+	repoId: string,
+): PrepareCommitMsgHookResult {
+	const gitDirRaw = gitOutput(targetPath, ["rev-parse", "--git-dir"]);
+	if (!gitDirRaw) throw new Error(`failed to resolve git directory for repo ${repoId}`);
+	const gitDir = resolveFrom(targetPath, gitDirRaw);
+	const managedHooksPath = join(gitDir, "nosedive-hooks");
+	const managedHookPath = join(managedHooksPath, "prepare-commit-msg");
+	const configuredHooksPath = gitOutput(targetPath, ["config", "--get", "core.hooksPath"]);
+
+	if (configuredHooksPath) {
+		const configuredPath = resolveFrom(targetPath, configuredHooksPath);
+		const configuredHookPath = join(configuredPath, "prepare-commit-msg");
+		const managed =
+			resolve(configuredPath) === resolve(managedHooksPath) &&
+			existsSync(configuredHookPath) &&
+			readFileSync(configuredHookPath, "utf8").includes("nosedive-managed prepare-commit-msg");
+		if (!managed) return { changed: false, foreignHookPath: configuredHookPath };
+	} else {
+		const effectiveHooksPathRaw = gitOutput(targetPath, ["rev-parse", "--git-path", "hooks"]);
+		if (!effectiveHooksPathRaw)
+			throw new Error(`failed to resolve hooks directory for repo ${repoId}`);
+		const existingHookPath = join(
+			resolveFrom(targetPath, effectiveHooksPathRaw),
+			"prepare-commit-msg",
+		);
+		if (existsSync(existingHookPath)) {
+			return { changed: false, foreignHookPath: existingHookPath };
+		}
+	}
+
+	const hook = prepareCommitMsgHook(effortId);
+	let changed = false;
+	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
+		mkdirSync(managedHooksPath, { recursive: true });
+		writeFileAtomic(managedHookPath, hook);
+		chmodSync(managedHookPath, 0o755);
+		changed = true;
+	}
+	if (!configuredHooksPath) {
+		gitRun(
+			targetPath,
+			["config", "--worktree", "core.hooksPath", managedHooksPath],
+			`failed to configure commit provenance hook for repo ${repoId}`,
+		);
+		changed = true;
+	}
+	return { changed };
 }
 
 export interface GitWorktreeEntry {

@@ -44,6 +44,7 @@ import {
 	expectedWorktreePath,
 	isDirEmpty,
 	pruneStaleWorktrees,
+	reconcilePrepareCommitMsgHook,
 	resolveRefCommit,
 	worktreeConfigEnabled,
 	writeRepoMarker,
@@ -63,6 +64,8 @@ function hydrateScopeAtPin(
 	kbDocs: KbDoc[],
 	bridgeDir: string,
 	workspaceDir: string,
+	effortId: string,
+	io: CommandIo,
 ): string {
 	const repoDoc = maybeResolveRepoDoc(kbDocs, scope.repoId);
 	if (!repoDoc) {
@@ -123,6 +126,12 @@ function hydrateScopeAtPin(
 		);
 	}
 	ensureLinkedWorktreesNonBare(sourcePath, scope.repoId);
+	const hook = reconcilePrepareCommitMsgHook(targetPath, effortId, scope.repoId);
+	if (hook.foreignHookPath) {
+		io.log(
+			`foreign prepare-commit-msg hook setup at ${formatPath(hook.foreignHookPath)}; leaving it unchanged`,
+		);
+	}
 
 	return targetPath;
 }
@@ -365,10 +374,13 @@ export function jump(args: string[], io: CommandIo): void {
 	if (failures.length > 0) {
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
 	}
+	const effortRef = dive.metaScalars.effort;
+	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
+	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
 
 	const scopePaths = new Map<string, string>();
 	for (const scope of scopes) {
-		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir);
+		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, effort.id, io);
 		scopePaths.set(scope.repoId, path);
 		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
 	}
@@ -410,9 +422,6 @@ export function jump(args: string[], io: CommandIo): void {
 
 	const pilot = readPilotIdentity(rc.bridgeDir);
 	if (!pilot.name) throw new Error("jump requires git config user.name in the bridge");
-	const effortRef = dive.metaScalars.effort;
-	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
-	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
 	const effortSlug = effort.name;
 	const diverValue = `${pilot.name} picked up ${effortSlug}`;
 

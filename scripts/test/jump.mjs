@@ -8,6 +8,7 @@ import {
 	createTmp,
 	gitCommit,
 	run,
+	runGitUnchecked,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -331,6 +332,53 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 		runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(),
 		pinnedRef,
 		"scope should hydrate at the dive's pinned ref",
+	);
+});
+
+test("jump installs provenance for commits made in its hydrated worktree", () => {
+	const { bridge, repoId, effortId } = setup("commit-hook");
+	const worktree = repoWorktree(bridge, "commit-hook");
+
+	assertOk(run(["jump"], bridge), "jump failed");
+	write(join(worktree, "implementation.txt"), "implemented\n");
+	runTool("git", ["add", "implementation.txt"], worktree);
+	gitCommit(
+		worktree,
+		`implementation\n\nEffort: ${effortId}\nCo-Authored-By: nosedive 0.0.0-dev <noreply@nosedive.dev>`,
+	);
+
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.equal((message.match(new RegExp(`Effort: ${effortId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(/Co-Authored-By: nosedive 0\.0\.0-dev/g) ?? []).length, 1);
+	assert.equal(
+		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim()
+			.length > 0,
+		true,
+		"hook path should be configured in the worktree",
+	);
+	assert.equal(
+		runGitUnchecked(["config", "--local", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		"",
+		"hook path must not be written to shared repository config",
+	);
+});
+
+test("jump leaves a foreign prepare-commit-msg hook setup unchanged and reports it", () => {
+	const { bridge } = setup("foreign-hook");
+	const worktree = repoWorktree(bridge, "foreign-hook");
+	const foreignHooks = join(worktree, "foreign-hooks");
+	const foreignHook = join(foreignHooks, "prepare-commit-msg");
+	write(foreignHook, "#!/bin/sh\n# foreign hook\n");
+	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
+	runTool("git", ["config", "--worktree", "core.hooksPath", foreignHooks], worktree);
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed with a foreign hook");
+	assert.match(result.stdout, /foreign prepare-commit-msg hook setup .* leaving it unchanged/);
+	assert.equal(readFileSync(foreignHook, "utf8"), "#!/bin/sh\n# foreign hook\n");
+	assert.equal(
+		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		foreignHooks,
 	);
 });
 

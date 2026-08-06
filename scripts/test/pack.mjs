@@ -88,7 +88,7 @@ scopes:
 	assert.ok(diveId, `record.dive did not report a dive id:\n${diveResult.stdout}`);
 	// record.dive also writes the effort's reciprocal link; on a real bridge jump
 	// commits both, so start from that state rather than pre-loading bridge WIP.
-	runTool("git", ["add", "-A"], bridge);
+	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "record dive");
 
 	return { bridge, origin, source, repoId, effortId, diveId };

@@ -28,6 +28,15 @@ function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
 }
 
+function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
+	const commits = gitRun(
+		worktreePath,
+		["rev-list", "--abbrev-commit", `${scopeRef}..HEAD`],
+		`failed to list commits ahead of pin for repo ${repoId}`,
+	);
+	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
+}
+
 /** Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own `origin`
  * (already set up by hydration; read-only scopes never reach here). */
 function landRepoScope(worktreePath: string, branch: string): string {
@@ -102,7 +111,6 @@ function land(_args: string[], io: CommandIo): void {
 
 	const effort = dive.effortRef ? kbDocs.find((doc) => doc.id === dive.effortRef) : undefined;
 	const slug = slugForBranch(dive, effort);
-	const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -111,12 +119,27 @@ function land(_args: string[], io: CommandIo): void {
 
 	const pushed: string[] = [];
 	const hydratedWorktrees: { repoId: string; path: string }[] = [];
+	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
-		if (scope.readOnly) continue;
 		if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (failure) throw new Error(`land refuses: ${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
+		if (scope.readOnly) {
+			if (!scope.ref)
+				throw new Error(`land refuses: read-only scope ${scope.repoId} has no pinned ref`);
+			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
+			if (commits.length > 0)
+				throw new Error(
+					`land refuses: read-only scope ${scope.repoId} is ahead of pinned ref ${scope.ref}: ${commits.join(", ")}`,
+				);
+			continue;
+		}
+		writableScopes.push({ scope, path });
+	}
+
+	for (const { scope, path } of writableScopes) {
+		const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 		hydratedWorktrees.push({ repoId: scope.repoId, path });
@@ -148,7 +171,7 @@ function land(_args: string[], io: CommandIo): void {
 		removeHydratedWorktree(repoId, path, true);
 	}
 
-	io.log(`landed "${dive.gist}" -> ${branch}`);
+	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
 }
 

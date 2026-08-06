@@ -172,6 +172,11 @@ export function gitCommit(cwd, message) {
 	runTool("git", [...testIdentity, "commit", "-m", message], cwd);
 }
 
+/** `gitCommit` for a commit with no changes -- a fixture that only needs HEAD to move. */
+export function gitCommitEmpty(cwd, message) {
+	runTool("git", [...testIdentity, "commit", "--allow-empty", "-m", message], cwd);
+}
+
 /**
  * A bridge at the current compatibility level. Fixtures want an L1 bridge
  * unless they are specifically exercising migration, and hand-writing the

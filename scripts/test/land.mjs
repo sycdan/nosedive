@@ -21,6 +21,7 @@ const effortId = "019fd470-0000-7000-8000-000000000002";
 function setup(name, repoMeta = "") {
 	const source = join(tmp, `${name}-source`);
 	const bridge = join(tmp, name);
+	const origin = join(tmp, `${name}-origin.git`);
 	mkdirSync(source, { recursive: true });
 	runTool("git", ["init", "-b", "main"], source);
 	write(join(source, "README.md"), "base\n");
@@ -61,6 +62,10 @@ scopes:
 	);
 	runTool("git", ["add", "--", "kb", ".nosedive"], bridge);
 	gitCommit(bridge, "initial bridge state");
+	mkdirSync(origin, { recursive: true });
+	runTool("git", ["init", "--bare", "-b", "main"], origin);
+	runTool("git", ["remote", "add", "origin", origin], bridge);
+	runTool("git", ["push", "-u", "origin", "main"], bridge);
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate failed");
 	const dive = run(
 		["record.dive", "--effort", effortId, "--diver", "nosedive@example.invalid"],
@@ -73,6 +78,16 @@ scopes:
 	gitCommit(bridge, "record dive");
 	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
 }
+
+test("land commits effort and nosedive provenance", () => {
+	const { bridge } = setup("provenance");
+	const result = run(["land"], bridge);
+	assertOk(result, "land failed");
+	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
+	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitBody, /Co-Authored-By: nosedive@0\.0\.0-dev <noreply@nosedive\.dev>/);
+	assert.equal((commitBody.match(/Co-Authored-By: nosedive@/g) ?? []).length, 1);
+});
 
 test("land refuses a read-only scope that has commits past its pin", () => {
 	const { bridge, worktree, diveId } = setup("readonly");

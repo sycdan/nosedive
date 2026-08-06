@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { commitMessage } from "../lib/commitProvenance.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -17,6 +18,7 @@ import {
 import { readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
 /** Mirrors packDive's stash-except-staged: never `-u`, workspace repo checkouts
@@ -37,6 +39,7 @@ function commitAndPushBail(
 	divePath: string,
 	diveName: string,
 	reason: string,
+	effortId?: string,
 ): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
 	gitRun(bridgeDir, ["add", "--", relPath], "failed to stage bailed dive");
@@ -60,7 +63,7 @@ function commitAndPushBail(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", `bail(${diveName}): ${reason}`],
+			["commit", "-m", commitMessage(`bail(${diveName}): ${reason}`, effortId)],
 			"failed to commit bailed dive",
 		);
 		gitRun(
@@ -110,7 +113,13 @@ function bail(args: string[], io: CommandIo): void {
 
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
 
-	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason);
+	commitAndPushBail(
+		rc.bridgeDir,
+		dive.path,
+		dive.name,
+		reason,
+		dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
+	);
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);
 }

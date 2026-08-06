@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { commitMessage } from "../lib/commitProvenance.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
 import {
 	formatPath,
@@ -235,6 +236,7 @@ function commitAndPushJump(
 	divePath: string,
 	otherAbsPaths: string[],
 	message: string,
+	effortId?: string,
 ): void {
 	const pathsToStage = [divePath, ...otherAbsPaths].map((path) =>
 		toPosixPath(relative(bridgeDir, path)),
@@ -263,7 +265,11 @@ function commitAndPushJump(
 			["merge", "--ff-only", upstream],
 			"failed to fast-forward bridge before jump push; resolve manually and retry",
 		);
-		gitRun(bridgeDir, ["commit", "-m", message], "failed to commit jumped dive");
+		gitRun(
+			bridgeDir,
+			["commit", "-m", commitMessage(message, effortId)],
+			"failed to commit jumped dive",
+		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after jump; dive is committed locally");
 	} finally {
 		if (stashed) {
@@ -418,7 +424,13 @@ export function jump(args: string[], io: CommandIo): void {
 	// The effort carries the reciprocal `rel` link `record.dive` wrote, so it is
 	// part of the same bookkeeping -- left unstaged it lingers as bridge WIP that
 	// the next pack captures as though it were work.
-	commitAndPushJump(rc.bridgeDir, dive.path, [...appliedFileAbsPaths, effort.path], diverValue);
+	commitAndPushJump(
+		rc.bridgeDir,
+		dive.path,
+		[...appliedFileAbsPaths, effort.path],
+		diverValue,
+		effort.id,
+	);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 

@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
 import { CommandIo, createUuid7Minter } from "./bridgeSetupIo.js";
+import { commitMessage } from "./commitProvenance.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -18,6 +19,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { resolveEffortDoc } from "./repoEffortScopes.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
 import { ensureDehydrateTargetOwnership, removeHydratedWorktree } from "./repoWorktrees.js";
@@ -57,8 +59,6 @@ function gitRunPatch(cwd: string, args: string[], label: string): string {
 	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
 	throw new Error(`${label}: ${detail}`);
 }
-
-// --- per-repo capture --------------------------------------------------------
 
 function listAheadCommits(repoPath: string, pin: string, repoId: string): string[] {
 	const raw = gitRun(
@@ -156,8 +156,6 @@ function packRepoScope(
 	return entries;
 }
 
-// --- bridge kb/ wip capture ---------------------------------------------------
-
 function packBridgeWip(
 	bridgeDir: string,
 	kbDir: string,
@@ -231,8 +229,6 @@ function packBridgeWip(
 	const written = writeArtifact(kbDir, id, diff);
 	return { repoId: "", patchRelPath: written.relPath, patchAbsPath: written.absPath, dirty: true };
 }
-
-// --- patch memos ---------------------------------------------------------------
 
 /**
  * Links are for docs: a dive should never link a raw `.patch` file directly.
@@ -346,8 +342,6 @@ function appendDivePatchLinks(divePath: string, headRelPaths: string[]): void {
 	writeFileAtomic(divePath, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
 }
 
-// --- bridge commit + push ------------------------------------------------------
-
 /**
  * Deliberately no `--include-untracked`: a bridge's `workspace/<repo>` targets
  * are untracked nested git checkouts, and `git stash -u` sweeps up untracked
@@ -373,6 +367,7 @@ function commitAndPushPack(
 	divePath: string,
 	newArtifactAbsPaths: string[],
 	diveName: string,
+	effortId?: string,
 ): void {
 	const pathsToStage = [divePath, ...newArtifactAbsPaths].map((path) =>
 		toPosixPath(relative(bridgeDir, path)),
@@ -401,7 +396,7 @@ function commitAndPushPack(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", `dive(${diveName}): packed wip`],
+			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, effortId)],
 			"failed to commit packed dive",
 		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after pack; dive is committed locally");
@@ -411,8 +406,6 @@ function commitAndPushPack(
 		}
 	}
 }
-
-// --- entrypoint ------------------------------------------------------------
 
 export function packDive(args: string[], io: CommandIo): void {
 	if (args.length > 0) throw new Error(`pack takes no arguments: ${args.join(" ")}`);
@@ -483,7 +476,13 @@ export function packDive(args: string[], io: CommandIo): void {
 		}
 
 		appendDivePatchLinks(dive.path, headRelPaths);
-		commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name);
+		commitAndPushPack(
+			rc.bridgeDir,
+			dive.path,
+			newFileAbsPaths,
+			dive.name,
+			dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
+		);
 		io.log(`packed dive ${dive.id}: ${capturedCount} artifact(s)`);
 	} else {
 		io.log(`packed dive ${dive.id}: nothing to pack`);

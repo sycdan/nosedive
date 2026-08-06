@@ -7,6 +7,7 @@ import {
 	assertOk,
 	createTmp,
 	gitCommit,
+	gitCommitEmpty,
 	run,
 	runGitUnchecked,
 	runTool,
@@ -384,7 +385,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 		readFileSync(foreignHook, "utf8"),
 		"#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n",
 	);
-	runTool("git", ["commit", "--allow-empty", "-m", "implementation"], worktree);
+	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.match(message, /Repo-Hook: ran/);
 	assert.match(message, new RegExp(`Effort: ${effortId}`));
@@ -431,7 +432,7 @@ test("jump honors independent repo provenance opt-outs and still installs the wr
 		),
 	);
 	assertOk(run(["jump"], bridge), "jump failed");
-	runTool("git", ["commit", "--allow-empty", "-m", "implementation"], worktree);
+	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.doesNotMatch(message, /Effort:/);
 	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);

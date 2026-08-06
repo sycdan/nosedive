@@ -22,7 +22,7 @@ import { KbDoc, loadKbDocs } from "./kbDocs.js";
 import { resolveEffortDoc } from "./repoEffortScopes.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun, runGit } from "./repoWorkspaceCore.js";
-import { ensureDehydrateTargetOwnership, removeHydratedWorktree } from "./repoWorktrees.js";
+import { resetHydratedWorktree } from "./repoWorktrees.js";
 
 /** A captured patch file, not yet wrapped in its `kind: memo` doc. */
 export interface CapturedPatch {
@@ -431,7 +431,10 @@ export function packDive(args: string[], io: CommandIo): void {
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0)
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
-
+	for (const scope of scopes) {
+		if (!scope.ref)
+			throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
+	}
 	const mintUuid = createUuid7Minter();
 	const groups: CapturedPatch[][] = [];
 	let capturedCount = 0;
@@ -440,7 +443,6 @@ export function packDive(args: string[], io: CommandIo): void {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (resolved.failure) throw new Error(resolved.failure.reasons.join("; "));
 		if (!resolved.path) continue;
-
 		if (scope.readOnly) {
 			const failure = checkScopedRepoWip(scope, resolved.path);
 			if (failure) {
@@ -454,7 +456,6 @@ export function packDive(args: string[], io: CommandIo): void {
 		const patches = packRepoScope(scope, resolved.path, rc.kbDir, mintUuid);
 		if (patches.length > 0) groups.push(patches);
 	}
-
 	const bridgeWip = packBridgeWip(
 		rc.bridgeDir,
 		rc.kbDir,
@@ -463,7 +464,6 @@ export function packDive(args: string[], io: CommandIo): void {
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
-
 	if (groups.length > 0) {
 		const headRelPaths: string[] = [];
 		const newFileAbsPaths: string[] = [];
@@ -487,12 +487,12 @@ export function packDive(args: string[], io: CommandIo): void {
 	} else {
 		io.log(`packed dive ${dive.id}: nothing to pack`);
 	}
-
 	for (const scope of scopes) {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (!resolved.path) continue;
-		ensureDehydrateTargetOwnership(scope.repoId, resolved.path);
-		removeHydratedWorktree(scope.repoId, resolved.path, true);
-		io.log(`dehydrated repo=${scope.repoId} path=${formatPath(resolved.path)}`);
+		const ref = scope.ref;
+		if (!ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to reset to`);
+		resetHydratedWorktree(scope.repoId, resolved.path, `${ref}^{commit}`);
+		io.log(`reset repo=${scope.repoId} path=${formatPath(resolved.path)} ref=${ref}`);
 	}
 }

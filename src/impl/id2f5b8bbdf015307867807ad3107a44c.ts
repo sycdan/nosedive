@@ -23,8 +23,8 @@ import {
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
-import { gitRun } from "../lib/repoWorkspaceCore.js";
-import { removeHydratedWorktree } from "../lib/repoWorktrees.js";
+import { ensureManagedRepoCache, gitRun, resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
+import { maybeFetchSource, resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
@@ -123,15 +123,19 @@ function land(_args: string[], io: CommandIo): void {
 	if (failures.length > 0) {
 		throw new Error(`land refuses: ${failures.map((f) => f.reasons.join("; ")).join(" | ")}`);
 	}
+	for (const scope of scopes) {
+		if (!scope.ref) throw new Error(`land refuses: scoped repo ${scope.repoId} has no pinned ref`);
+	}
 
 	const pushed: string[] = [];
-	const hydratedWorktrees: { repoId: string; path: string }[] = [];
+	const hydratedWorktrees: { scope: (typeof scopes)[number]; path: string }[] = [];
 	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
 		if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (failure) throw new Error(`land refuses: ${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
+		hydratedWorktrees.push({ scope, path });
 		if (scope.readOnly) {
 			if (!scope.ref)
 				throw new Error(`land refuses: read-only scope ${scope.repoId} has no pinned ref`);
@@ -149,7 +153,6 @@ function land(_args: string[], io: CommandIo): void {
 		const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
-		hydratedWorktrees.push({ repoId: scope.repoId, path });
 	}
 
 	const text = readFileSync(dive.path, "utf8");
@@ -168,14 +171,22 @@ function land(_args: string[], io: CommandIo): void {
 
 	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id);
 
-	// Marker cleared before dehydrate: the dive is already closed (kind: memo,
-	// pushed) at this point, so a dehydrate failure must not leave the marker
+	// Marker cleared before reset: the dive is already closed (kind: memo,
+	// pushed) at this point, so a reset failure must not leave the marker
 	// pointing at a dive that can no longer be jumped/packed/bailed.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 
-	for (const { repoId, path } of hydratedWorktrees) {
-		removeHydratedWorktree(repoId, path, true);
+	for (const { scope, path } of hydratedWorktrees) {
+		const repoDoc = resolveRepoDoc(kbDocs, scope.repoId);
+		const trunk = repoDoc.repoBaseBranch;
+		if (!trunk) throw new Error(`land refuses: repo ${scope.repoId} has no trunk setting`);
+		const cachePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
+		// The cache is only fetched when it is first cloned, so without this the
+		// pilot is parked on the trunk from before this land's own push.
+		maybeFetchSource(cachePath, scope.repoId);
+		const commit = resolveRefCommit(cachePath, scope.repoId, trunk);
+		resetHydratedWorktree(scope.repoId, path, commit);
 	}
 
 	io.log(`landed "${dive.gist}"`);

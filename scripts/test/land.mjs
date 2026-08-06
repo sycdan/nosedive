@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -10,6 +10,7 @@ import {
 	gitCommitEmpty,
 	packageVersionPattern,
 	run,
+	runGitUnchecked,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -80,10 +81,23 @@ scopes:
 	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
 }
 
-test("land commits effort and nosedive provenance", () => {
-	const { bridge } = setup("provenance");
+test("land resets the retained worktree to freshly fetched trunk", () => {
+	const { bridge, worktree, diveId } = setup("provenance");
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(diveText)?.[1];
+	assert.ok(pin, "dive should have a scope pin");
+	const source = join(tmp, "provenance-source");
+	write(join(source, "README.md"), "advanced trunk\n");
+	runTool("git", ["add", "README.md"], source);
+	gitCommit(source, "advance trunk");
+	const trunk = runTool("git", ["rev-parse", "main"], source).stdout.trim();
+	assert.notEqual(trunk, pin, "test must advance trunk beyond the dive pin");
 	const result = run(["land"], bridge);
 	assertOk(result, "land failed");
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), trunk);
+	assert.notEqual(runGitUnchecked(["symbolic-ref", "-q", "HEAD"], worktree).status, 0);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
+	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
 	assert.match(

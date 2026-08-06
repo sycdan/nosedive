@@ -24,7 +24,6 @@ export function expectedWorktreePath(repoDoc: KbDoc, bridgeDir: string): string 
 	}
 	return resolveFrom(bridgeDir, worktreePath);
 }
-
 export function worktreeHasExpectedSource(targetPath: string, sourcePath: string): boolean {
 	const sourceCommonRaw = gitOutput(sourcePath, ["rev-parse", "--git-common-dir"]);
 	const targetCommonRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
@@ -34,7 +33,6 @@ export function worktreeHasExpectedSource(targetPath: string, sourcePath: string
 	const targetCommonPath = realpathStable(resolveFrom(targetPath, targetCommonRaw));
 	return sourceCommonPath === targetCommonPath;
 }
-
 export function maybeFetchSource(sourcePath: string, repoId: string): void {
 	const remotes = gitOutput(sourcePath, ["remote"]);
 	if (!remotes) return;
@@ -46,7 +44,6 @@ export function maybeFetchSource(sourcePath: string, repoId: string): void {
 		);
 	}
 }
-
 export function pruneStaleWorktrees(sourcePath: string, repoId: string): void {
 	gitRun(
 		sourcePath,
@@ -54,7 +51,6 @@ export function pruneStaleWorktrees(sourcePath: string, repoId: string): void {
 		`failed to prune stale worktrees for repo ${repoId} at ${formatPath(sourcePath)}`,
 	);
 }
-
 export function resolveRefCommit(sourcePath: string, repoId: string, ref: string): string {
 	maybeFetchSource(sourcePath, repoId);
 	const remoteCommit = gitOutput(sourcePath, [
@@ -69,15 +65,12 @@ export function resolveRefCommit(sourcePath: string, repoId: string, ref: string
 		`failed to resolve ref for repo ${repoId}: ref=${ref}`,
 	);
 }
-
 export function markerPathForTarget(targetPath: string): string {
 	return join(targetPath, ".nosedive-ref");
 }
-
 export function isDirEmpty(path: string): boolean {
 	return readdirSync(path).length === 0;
 }
-
 export function ensureReusableExistingTarget(
 	repoId: string,
 	targetPath: string,
@@ -108,7 +101,6 @@ export function ensureReusableExistingTarget(
 		);
 	}
 }
-
 export function ensureDehydratePathInsideWorkspace(
 	pathRef: string,
 	bridgeDir: string,
@@ -128,7 +120,6 @@ export function ensureDehydratePathInsideWorkspace(
 	}
 	return candidate;
 }
-
 export function resolveDehydrateTargetFromPath(
 	pathRef: string,
 	kbDocs: KbDoc[],
@@ -168,7 +159,6 @@ export function resolveDehydrateTargetFromPath(
 
 	return { repoDoc, targetPath };
 }
-
 export function ensureDehydrateTargetOwnership(repoId: string, targetPath: string): void {
 	if (!statSync(targetPath).isDirectory()) {
 		throw new Error(
@@ -196,7 +186,6 @@ export function ensureDehydrateTargetOwnership(repoId: string, targetPath: strin
 		);
 	}
 }
-
 export function dehydrateHasUncommittedWork(targetPath: string): boolean {
 	const status = gitOutput(targetPath, ["status", "--short"]);
 	return Boolean(status && status.trim());
@@ -256,6 +245,21 @@ export function removeHydratedWorktree(repoId: string, targetPath: string, force
 		sourcePath,
 		args,
 		`failed to remove hydrated worktree for repo ${repoId} at ${formatPath(targetPath)}`,
+	);
+}
+
+export function resetHydratedWorktree(repoId: string, targetPath: string, commit: string): void {
+	ensureDehydrateTargetOwnership(repoId, targetPath);
+	gitRun(
+		targetPath,
+		["reset", "--hard", commit],
+		`failed to reset hydrated worktree for repo ${repoId} at ${formatPath(targetPath)}`,
+	);
+	ensureDetachedAtCommit(targetPath, commit, repoId, true);
+	gitRun(
+		targetPath,
+		["clean", "-fd"],
+		`failed to clean hydrated worktree for repo ${repoId} at ${formatPath(targetPath)}`,
 	);
 }
 

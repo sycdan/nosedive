@@ -272,12 +272,8 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);
-	const previousEffort = dive.effortRef
-		? resolveEffortDoc(kbDocs, rc, dive.effortRef)
-		: undefined;
-	const effort = options.effort
-		? resolveEffortDoc(kbDocs, rc, options.effort)
-		: previousEffort;
+	const previousEffort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const effort = options.effort ? resolveEffortDoc(kbDocs, rc, options.effort) : previousEffort;
 	if (options.effort) {
 		if (!effort) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
 		doc.set("name", managedName(effort, dive.id));

@@ -36,11 +36,13 @@ test("scan resolves, hydrates, and prints the documentation-only load brief", ()
 		/Read README files, contributing guides, docs\/, hooks, and CI configuration\. Do not inspect source code\./,
 	);
 	assert.match(result.stdout, /quality gates and local conventions/);
-	assert.match(result.stdout, /one meaningfully named kind: load doc/);
+	assert.match(result.stdout, /create and link one kind: load doc/);
+	assert.match(result.stdout, /what spin matches against/);
 	assert.match(
 		result.stdout,
 		/update the matching documented workload's existing kind: load doc in place/,
 	);
+	assert.match(result.stdout, /no longer describe/);
 
 	const missing = run(["scan"], bridge);
 	assert.notEqual(missing.status, 0);

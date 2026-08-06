@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
@@ -21,11 +22,37 @@ import {
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
-import { gitRun } from "../lib/repoWorkspaceCore.js";
+import { gitRun, maybeResolveRepoDoc } from "../lib/repoWorkspaceCore.js";
 import { removeHydratedWorktree } from "../lib/repoWorktrees.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
+}
+
+function branchForRepo(repo: KbDoc, slug: string, fallbackPrefix: string): string {
+	return `${repo.metaScalars["branch-prefix"] ?? fallbackPrefix}${slug}`;
+}
+
+function runRepoCheck(repo: KbDoc, worktreePath: string): void {
+	const check = repo.metaScalars.check;
+	if (!check) return;
+	const result = spawnSync(check, {
+		cwd: worktreePath,
+		encoding: "utf8",
+		shell: true,
+	});
+	if (result.status === 0) return;
+	const detail = result.stderr?.trim() || result.stdout?.trim() || "unknown error";
+	throw new Error(`repo ${repo.id} check failed (${check}): ${detail}`);
+}
+
+function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
+	const commits = gitRun(
+		worktreePath,
+		["rev-list", "--abbrev-commit", `${scopeRef}..HEAD`],
+		`failed to list commits ahead of pin for repo ${repoId}`,
+	);
+	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
 }
 
 /** Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own `origin`
@@ -102,7 +129,6 @@ function land(_args: string[], io: CommandIo): void {
 
 	const effort = dive.effortRef ? kbDocs.find((doc) => doc.id === dive.effortRef) : undefined;
 	const slug = slugForBranch(dive, effort);
-	const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -111,12 +137,30 @@ function land(_args: string[], io: CommandIo): void {
 
 	const pushed: string[] = [];
 	const hydratedWorktrees: { repoId: string; path: string }[] = [];
+	const writableScopes: { scope: (typeof scopes)[number]; path: string; repo: KbDoc }[] = [];
 	for (const scope of scopes) {
-		if (scope.readOnly) continue;
 		if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (failure) throw new Error(`land refuses: ${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
+		if (scope.readOnly) {
+			if (!scope.ref)
+				throw new Error(`land refuses: read-only scope ${scope.repoId} has no pinned ref`);
+			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
+			if (commits.length > 0)
+				throw new Error(
+					`land refuses: read-only scope ${scope.repoId} is ahead of pinned ref ${scope.ref}: ${commits.join(", ")}`,
+				);
+			continue;
+		}
+		const repo = maybeResolveRepoDoc(kbDocs, scope.repoId);
+		if (!repo) throw new Error(`land refuses: scoped repo ${scope.repoId} has no kb repo doc`);
+		writableScopes.push({ scope, path, repo });
+	}
+
+	for (const { scope, path, repo } of writableScopes) {
+		runRepoCheck(repo, path);
+		const branch = branchForRepo(repo, slug, rc.workBranchPrefix ?? "work/");
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 		hydratedWorktrees.push({ repoId: scope.repoId, path });
@@ -148,7 +192,7 @@ function land(_args: string[], io: CommandIo): void {
 		removeHydratedWorktree(repoId, path, true);
 	}
 
-	io.log(`landed "${dive.gist}" -> ${branch}`);
+	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
 }
 

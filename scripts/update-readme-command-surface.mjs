@@ -62,6 +62,7 @@ function commandDocs() {
 			level: parsedName.level,
 			gist: String(raw.gist ?? ""),
 			usage: String(raw.meta?.usage ?? ""),
+			deprecated: String(raw.meta?.deprecated ?? "").trim() === "true",
 			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
 	}
@@ -94,7 +95,7 @@ function latestDocsByCommand(docs) {
 }
 
 function isExplicitlyDeprecated(doc) {
-	return /^deprecated\b/i.test(doc.gist.trim()) || /^deprecated\b/i.test(doc.body.trim());
+	return doc.deprecated;
 }
 
 function isInternalCommand(doc) {
@@ -142,7 +143,9 @@ function renderCommandSurface() {
 		"",
 		"### Deprecated Commands",
 		"",
-		"| Command | Usage | What it did |",
+		"Still functional, so nothing pinned to them breaks. Each names what to reach for now.",
+		"",
+		"| Command | Usage | Use instead |",
 		"| --- | --- | --- |",
 		...commandRows(deprecatedDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
 		endMarker,

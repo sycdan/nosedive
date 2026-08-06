@@ -140,9 +140,11 @@ Named with a leading underscore, invoked by `nosedive` itself or by a hook it in
 
 ### Deprecated Commands
 
-| Command | Usage | What it did |
+Still functional, so nothing pinned to them breaks. Each names what to reach for now.
+
+| Command | Usage | Use instead |
 | --- | --- | --- |
-| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | Deprecated. Use `preflight` to see the backlog and available free dives. |
+| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming an effort. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the

@@ -129,17 +129,24 @@ Named with a leading underscore, invoked by `nosedive` itself or by a hook it in
 `version` and `help` have no command doc; they print the package version and the
 command list.
 
-### How a command doc runs
+## Add your own command
 
-A command doc names one repo-root adapter artifact under `meta.adapter` and the
-exported function to run under `meta.entrypoint`. Entrypoints follow the command
-doc name deterministically: `hydrate-repo.workspace@0` maps to
-`L1__workspace_hydrateRepo`, and private commands preserve their leading
-underscore. The adapter receives `{ args, cwd }` and must return
-`{ stdout, stderr, exitCode }` (`output` is accepted as a stdout alias).
-Adapters call uuid-named implementations through `ctx.impl` and shared named
-helpers through `ctx.lib`; command behavior belongs in `src/impl` and `src/lib`,
-not in the command adapter artifact.
+The surface above is the whole interface, and it is generated from the command
+docs. Adding to it is authoring a document, not patching a dispatcher — so a
+command you need is a command you can contribute.
+
+Build it the way nosedive expects work to be built, using nosedive:
+
+1. Run `nosedive seed` in your own notes repo. That makes it a bridge.
+2. Add this repository to that bridge as a `kind: repo` document.
+3. `nosedive into "<what your command should do>"` and work the normal loop.
+
+Your first dive is on nosedive, using nosedive. If that path is rough, that is
+the product being rough — tell us, because it is the same path everyone takes.
+
+Each command doc links its own adapter and implementation; start at the doc for
+a command that resembles yours and follow it. There is no separate contributor
+guide to keep in sync.
 
 ## Development
 

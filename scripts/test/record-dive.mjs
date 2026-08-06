@@ -184,7 +184,22 @@ test("record.dive activates only for the pilot diver", () => {
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
 
-test("record.dive persists patched meta fields", () => {
+test("record.dive links a claimed dive as working without list-dives warnings", () => {
+	const { bridge } = setup("working-link");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(
+		["record.dive", "--effort", effortId, "--diver", "pilot@example.test"],
+		bridge,
+	);
+	assertOk(created, "record.dive create failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const listed = run(["list-dives", effortId], bridge);
+	assertOk(listed, "list-dives failed");
+	assert.match(listed.stdout, new RegExp(`Working:\n  - ${id} .* rel=working`));
+	assert.doesNotMatch(listed.stdout, /Warnings:/);
+});
+
+test("record.dive reassigns its reciprocal effort link", () => {
 	const { bridge } = setup("patch-meta");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
 	const created = run(["record.dive", "--effort", effortId], bridge);
@@ -215,4 +230,9 @@ gist: "Updated effort"
 	assert.match(doc, new RegExp(`^  effort: ${effort}$`, "m"));
 	assert.match(doc, /^  diver: pilot@example\.test$/m);
 	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
+	const oldEffort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
+	const newEffort = readFileSync(join(bridge, "kb", `${effort}.md`), "utf8");
+	assert.doesNotMatch(oldEffort, new RegExp(`kb/${id}\\.md`));
+	assert.equal((newEffort.match(new RegExp(`kb/${id}\\.md`, "g")) ?? []).length, 1);
+	assert.match(newEffort, new RegExp(`- kb/${id}\\.md:\n      rel: working`));
 });

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { isSeq, parseDocument } from "yaml";
+import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import {
 	NosediveRc,
@@ -100,6 +100,50 @@ export function appendLinkToDoc(path: string, targetId: string, rel: string): vo
 	}
 
 	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));
+}
+
+function linkTarget(entry: unknown): string | undefined {
+	if (!isMap(entry) || entry.items.length !== 1) return undefined;
+	const key = entry.items[0]?.key;
+	return isScalar(key) && typeof key.value === "string" ? key.value : undefined;
+}
+
+function reconcileDiveLink(path: string, diveId: string, rel: string | undefined): void {
+	const text = readFileSync(path, "utf8");
+	const label = formatPath(path);
+	const frontmatter = splitMarkdownFrontmatter(text, label);
+	const doc = parseDocument(frontmatter.yaml);
+	if (doc.errors.length > 0) {
+		throw new Error(
+			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
+		);
+	}
+
+	const target = `kb/${diveId}.md`;
+	const links = doc.get("links", true);
+	if (links !== undefined && links !== null && !isSeq(links)) {
+		throw new Error(`invalid links in ${label}: expected a YAML list`);
+	}
+	if (isSeq(links)) links.items = links.items.filter((entry) => linkTarget(entry) !== target);
+	if (rel) {
+		const entry = { [target]: { rel } };
+		if (isSeq(links)) links.add(entry);
+		else doc.set("links", [entry]);
+	}
+
+	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));
+}
+
+/** Keep an effort's dive index aligned with the dive's current assignment. */
+export function reconcileDiveEffortLinks(
+	previousEffort: KbDoc | undefined,
+	effort: KbDoc,
+	diveId: string,
+	diver: string | undefined,
+): void {
+	if (previousEffort && previousEffort.id !== effort.id)
+		reconcileDiveLink(previousEffort.path, diveId, undefined);
+	reconcileDiveLink(effort.path, diveId, diver ? "working" : "pending");
 }
 
 export function formatEffortScopeEntry(

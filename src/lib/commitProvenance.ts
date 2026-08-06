@@ -15,8 +15,38 @@ export interface CommitProvenanceOptions {
 	coAuthor: boolean;
 }
 
+export const GIT_HOOK_NAMES = [
+	"applypatch-msg",
+	"commit-msg",
+	"fsmonitor-watchman",
+	"post-applypatch",
+	"post-checkout",
+	"post-commit",
+	"post-merge",
+	"post-receive",
+	"post-rewrite",
+	"post-update",
+	"pre-applypatch",
+	"pre-auto-gc",
+	"pre-commit",
+	"pre-merge-commit",
+	"pre-push",
+	"pre-rebase",
+	"pre-receive",
+	"prepare-commit-msg",
+	"proc-receive",
+	"push-to-checkout",
+	"reference-transaction",
+	"sendemail-validate",
+	"update",
+] as const;
+
 function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+export function proxyHook(originalHookPath: string): string {
+	return `#!/bin/sh\nexec ${shellQuote(originalHookPath)} "$@"\n`;
 }
 
 /** Generates the worktree hook that gives implementation commits provenance. */

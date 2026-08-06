@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync }
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { isInsideDir } from "./backlogDives.js";
-import { prepareCommitMsgHook } from "./commitProvenance.js";
+import { GIT_HOOK_NAMES, prepareCommitMsgHook, proxyHook } from "./commitProvenance.js";
 import { formatPath, resolveFrom } from "./coreParsing.js";
 import { REPO_MARKER_EXCLUDE_SPEC, replaceManagedExcludeBlock } from "./gitState.js";
 import { KbDoc, repoDocs } from "./kbDocs.js";
@@ -316,44 +316,6 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 	return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
 }
 
-export interface PrepareCommitMsgHookResult {
-	changed: boolean;
-}
-
-const GIT_HOOK_NAMES = [
-	"applypatch-msg",
-	"commit-msg",
-	"fsmonitor-watchman",
-	"post-applypatch",
-	"post-checkout",
-	"post-commit",
-	"post-merge",
-	"post-receive",
-	"post-rewrite",
-	"post-update",
-	"pre-applypatch",
-	"pre-auto-gc",
-	"pre-commit",
-	"pre-merge-commit",
-	"pre-push",
-	"pre-rebase",
-	"pre-receive",
-	"prepare-commit-msg",
-	"proc-receive",
-	"push-to-checkout",
-	"reference-transaction",
-	"sendemail-validate",
-	"update",
-] as const;
-
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function proxyHook(originalHookPath: string): string {
-	return `#!/bin/sh\nexec ${shellQuote(originalHookPath)} "$@"\n`;
-}
-
 function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: boolean } {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -368,7 +330,7 @@ export function reconcilePrepareCommitMsgHook(
 	targetPath: string,
 	effortId: string,
 	repoDoc: KbDoc,
-): PrepareCommitMsgHookResult {
+): void {
 	const repoId = repoDoc.id;
 	const gitDirRaw = gitOutput(targetPath, ["rev-parse", "--git-dir"]);
 	if (!gitDirRaw) throw new Error(`failed to resolve git directory for repo ${repoId}`);
@@ -400,12 +362,10 @@ export function reconcilePrepareCommitMsgHook(
 	}
 
 	const hook = prepareCommitMsgHook(effortId, originalHookPath, commitProvenanceOptions(repoDoc));
-	let changed = false;
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(managedHookPath, hook);
 		chmodSync(managedHookPath, 0o755);
-		changed = true;
 	}
 	if (originalHookPath) {
 		const originalHooksPath = dirname(originalHookPath);
@@ -419,7 +379,6 @@ export function reconcilePrepareCommitMsgHook(
 			mkdirSync(managedHooksPath, { recursive: true });
 			writeFileAtomic(proxyPath, proxy);
 			chmodSync(proxyPath, 0o755);
-			changed = true;
 		}
 	}
 	const originalHookRecord = originalHookPath ? `${originalHookPath}\n` : "";
@@ -429,7 +388,6 @@ export function reconcilePrepareCommitMsgHook(
 	) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(originalHookRecordPath, originalHookRecord);
-		changed = true;
 	}
 	if (!managedConfigured) {
 		gitRun(
@@ -437,9 +395,7 @@ export function reconcilePrepareCommitMsgHook(
 			["config", "--worktree", "core.hooksPath", managedHooksPath],
 			`failed to configure commit provenance hook for repo ${repoId}`,
 		);
-		changed = true;
 	}
-	return { changed };
 }
 
 export interface GitWorktreeEntry {

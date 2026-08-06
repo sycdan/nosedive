@@ -24,7 +24,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { ensureManagedRepoCache, gitRun, resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
-import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
+import { maybeFetchSource, resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
@@ -182,6 +182,9 @@ function land(_args: string[], io: CommandIo): void {
 		const trunk = repoDoc.repoBaseBranch;
 		if (!trunk) throw new Error(`land refuses: repo ${scope.repoId} has no trunk setting`);
 		const cachePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
+		// The cache is only fetched when it is first cloned, so without this the
+		// pilot is parked on the trunk from before this land's own push.
+		maybeFetchSource(cachePath, scope.repoId);
 		const commit = resolveRefCommit(cachePath, scope.repoId, trunk);
 		resetHydratedWorktree(scope.repoId, path, commit);
 	}

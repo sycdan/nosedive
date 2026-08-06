@@ -30,7 +30,7 @@ import {
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
 
-function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
+export function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 	const options = parseHydrateRepoWorkspaceArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");

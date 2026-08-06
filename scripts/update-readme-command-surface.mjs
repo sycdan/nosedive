@@ -62,6 +62,7 @@ function commandDocs() {
 			level: parsedName.level,
 			gist: String(raw.gist ?? ""),
 			usage: String(raw.meta?.usage ?? ""),
+			useInstead: String(raw.meta?.["use-instead"] ?? ""),
 			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
 	}
@@ -94,7 +95,9 @@ function latestDocsByCommand(docs) {
 }
 
 function isExplicitlyDeprecated(doc) {
-	return /^deprecated\b/i.test(doc.gist.trim()) || /^deprecated\b/i.test(doc.body.trim());
+	// A replacement is the deprecation: naming one is the only way to mark a
+	// command dead, so the mark and the advice cannot drift apart.
+	return doc.useInstead.trim() !== "";
 }
 
 function isInternalCommand(doc) {
@@ -106,6 +109,14 @@ function commandRows(docs) {
 		markdownLink(code(`${doc.command}@${doc.level}`), doc.relPath),
 		code(usageForReadme(doc.usage)),
 		doc.gist,
+	]);
+}
+
+function deprecatedRows(docs) {
+	return docs.map((doc) => [
+		markdownLink(code(`${doc.command}@${doc.level}`), doc.relPath),
+		code(usageForReadme(doc.usage)),
+		doc.useInstead,
 	]);
 }
 
@@ -142,9 +153,11 @@ function renderCommandSurface() {
 		"",
 		"### Deprecated Commands",
 		"",
-		"| Command | Usage | What it did |",
+		"Still functional, so nothing pinned to them breaks. Each names what to reach for now.",
+		"",
+		"| Command | Usage | Use instead |",
 		"| --- | --- | --- |",
-		...commandRows(deprecatedDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
+		...deprecatedRows(deprecatedDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
 		endMarker,
 	];
 	return lines.join("\n");

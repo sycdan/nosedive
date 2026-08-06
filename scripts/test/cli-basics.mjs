@@ -73,7 +73,7 @@ test("cli-basics", () => {
 	assert.match(help.stdout, /render/);
 	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);
-	assert.match(help.stdout, /list-dives/);
+	assert.doesNotMatch(help.stdout, /list-dives/);
 	assert.match(help.stdout, /pitch/);
 	assert.match(help.stdout, /hydrate-repo\.workspace/);
 	assert.match(help.stdout, /dehydrate-repo\.workspace/);

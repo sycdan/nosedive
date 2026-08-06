@@ -115,7 +115,6 @@ Invoked directly by humans, or indirectly via agents.
 | [`into@1`](kb/558376d5-9812-5c7a-b675-960f473a0c94.md) | `npx nosedive into [<context>]` | Cold-start entrypoint -- print pilot identity, backlog, and the pilot's context, then hand off to the piped agent to claim or create a dive. |
 | [`jump@1`](kb/06ae979d-86b0-5df1-83aa-c2a58a2ec678.md) | `npx nosedive jump` | Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top. |
 | [`land@1`](kb/5a267b93-99da-5469-98f7-17d6dd5b18f4.md) | `npx nosedive land` | Canonicalize the active dive -- push every writable scoped repo to work-branch-prefix<slug>, close the dive as a memo with an outcome section, dehydrate. |
-| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | Print pickupable and working dives for an open effort, read from the effort's durable `links:` frontmatter. |
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
 | [`pack@1`](kb/0a4fe90c-9f9a-57e4-8234-750660f174d4.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, then force-dehydrate every scoped repo. |
@@ -141,8 +140,11 @@ Named with a leading underscore, invoked by `nosedive` itself or by a hook it in
 
 ### Deprecated Commands
 
-| Command | Usage | What it did |
+Still functional, so nothing pinned to them breaks. Each names what to reach for now.
+
+| Command | Usage | Use instead |
 | --- | --- | --- |
+| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming an effort. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the

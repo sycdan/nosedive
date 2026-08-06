@@ -364,6 +364,7 @@ for (const [key, docs] of docsByCommandLevel) {
 for (const doc of commandDocs
 	.filter((doc) => isExplicitlyDeprecated(doc))
 	.sort((a, b) => a.name.localeCompare(b.name))) {
+	if (doc.level === currentLevel) continue;
 	const deprecatedByIds = deprecatedByMigrationIds(doc);
 	if (deprecatedByIds.length === 0) {
 		fail(

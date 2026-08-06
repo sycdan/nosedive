@@ -65,7 +65,6 @@ function hydrateScopeAtPin(
 	bridgeDir: string,
 	workspaceDir: string,
 	effortId: string,
-	io: CommandIo,
 ): string {
 	const repoDoc = maybeResolveRepoDoc(kbDocs, scope.repoId);
 	if (!repoDoc) {
@@ -126,12 +125,7 @@ function hydrateScopeAtPin(
 		);
 	}
 	ensureLinkedWorktreesNonBare(sourcePath, scope.repoId);
-	const hook = reconcilePrepareCommitMsgHook(targetPath, effortId, scope.repoId);
-	if (hook.foreignHookPath) {
-		io.log(
-			`foreign prepare-commit-msg hook setup at ${formatPath(hook.foreignHookPath)}; leaving it unchanged`,
-		);
-	}
+	reconcilePrepareCommitMsgHook(targetPath, effortId, repoDoc);
 
 	return targetPath;
 }
@@ -380,7 +374,7 @@ export function jump(args: string[], io: CommandIo): void {
 
 	const scopePaths = new Map<string, string>();
 	for (const scope of scopes) {
-		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, effort.id, io);
+		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, effort.id);
 		scopePaths.set(scope.repoId, path);
 		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
 	}

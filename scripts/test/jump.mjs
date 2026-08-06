@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -363,22 +363,69 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	);
 });
 
-test("jump leaves a foreign prepare-commit-msg hook setup unchanged and reports it", () => {
-	const { bridge } = setup("foreign-hook");
+test("jump chains a repo prepare-commit-msg hook without modifying tracked files", () => {
+	const { bridge, effortId } = setup("foreign-hook");
 	const worktree = repoWorktree(bridge, "foreign-hook");
-	const foreignHooks = join(worktree, "foreign-hooks");
+	const foreignHooks = join(worktree, ".githooks");
 	const foreignHook = join(foreignHooks, "prepare-commit-msg");
-	write(foreignHook, "#!/bin/sh\n# foreign hook\n");
+	write(foreignHook, "#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n");
+	chmodSync(foreignHook, 0o755);
+	runTool("git", ["add", ".githooks/prepare-commit-msg"], worktree);
+	gitCommit(worktree, "track repo hook");
 	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
-	runTool("git", ["config", "--worktree", "core.hooksPath", foreignHooks], worktree);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
 
 	const result = run(["jump"], bridge);
 	assertOk(result, "jump failed with a foreign hook");
-	assert.match(result.stdout, /foreign prepare-commit-msg hook setup .* leaving it unchanged/);
-	assert.equal(readFileSync(foreignHook, "utf8"), "#!/bin/sh\n# foreign hook\n");
 	assert.equal(
+		readFileSync(foreignHook, "utf8"),
+		"#!/bin/sh\nprintf 'Repo-Hook: ran\\n' >> \"$1\"\n",
+	);
+	runTool("git", ["commit", "--allow-empty", "-m", "implementation"], worktree);
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.match(message, /Repo-Hook: ran/);
+	assert.match(message, new RegExp(`Effort: ${effortId}`));
+	assert.match(message, /Co-Authored-By: nosedive 0\.0\.0-dev/);
+	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
+});
+
+test("jump preserves a failing repo prepare-commit-msg hook exit", () => {
+	const { bridge } = setup("failing-hook");
+	const worktree = repoWorktree(bridge, "failing-hook");
+	const failingHook = join(worktree, ".githooks", "prepare-commit-msg");
+	write(failingHook, "#!/bin/sh\nexit 23\n");
+	chmodSync(failingHook, 0o755);
+	runTool("git", ["add", ".githooks/prepare-commit-msg"], worktree);
+	gitCommit(worktree, "track failing hook");
+	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+	assertOk(run(["jump"], bridge), "jump failed");
+
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	const commit = runGitUnchecked(["commit", "--allow-empty", "-m", "must fail"], worktree);
+	assert.notEqual(commit.status, 0);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), head);
+});
+
+test("jump honors independent repo provenance opt-outs and still installs the wrapper", () => {
+	const { bridge, repoId } = setup("opt-outs");
+	const worktree = repoWorktree(bridge, "opt-outs");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    effort: false\n    co-author: false\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	runTool("git", ["commit", "--allow-empty", "-m", "implementation"], worktree);
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.doesNotMatch(message, /Effort:/);
+	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);
+	assert.notEqual(
 		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
-		foreignHooks,
+		"",
 	);
 });
 

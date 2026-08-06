@@ -318,44 +318,54 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 
 export interface PrepareCommitMsgHookResult {
 	changed: boolean;
-	foreignHookPath?: string;
 }
 
-/** Installs the provenance hook without replacing an existing hook setup. */
+function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: boolean } {
+	const raw = repoDoc.metaRaw["commit-provenance"];
+	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+	return {
+		effort: options.effort !== false,
+		coAuthor: options["co-author"] !== false,
+	};
+}
+
+/** Installs the provenance hook while chaining the repo's own hook. */
 export function reconcilePrepareCommitMsgHook(
 	targetPath: string,
 	effortId: string,
-	repoId: string,
+	repoDoc: KbDoc,
 ): PrepareCommitMsgHookResult {
+	const repoId = repoDoc.id;
 	const gitDirRaw = gitOutput(targetPath, ["rev-parse", "--git-dir"]);
 	if (!gitDirRaw) throw new Error(`failed to resolve git directory for repo ${repoId}`);
 	const gitDir = resolveFrom(targetPath, gitDirRaw);
 	const managedHooksPath = join(gitDir, "nosedive-hooks");
 	const managedHookPath = join(managedHooksPath, "prepare-commit-msg");
+	const originalHookRecordPath = join(managedHooksPath, "original-prepare-commit-msg");
 	const configuredHooksPath = gitOutput(targetPath, ["config", "--get", "core.hooksPath"]);
+	const configuredPath = configuredHooksPath
+		? resolveFrom(targetPath, configuredHooksPath)
+		: undefined;
+	const managedConfigured = configuredPath && resolve(configuredPath) === resolve(managedHooksPath);
+	let originalHookPath: string | undefined;
 
-	if (configuredHooksPath) {
-		const configuredPath = resolveFrom(targetPath, configuredHooksPath);
-		const configuredHookPath = join(configuredPath, "prepare-commit-msg");
-		const managed =
-			resolve(configuredPath) === resolve(managedHooksPath) &&
-			existsSync(configuredHookPath) &&
-			readFileSync(configuredHookPath, "utf8").includes("nosedive-managed prepare-commit-msg");
-		if (!managed) return { changed: false, foreignHookPath: configuredHookPath };
-	} else {
-		const effectiveHooksPathRaw = gitOutput(targetPath, ["rev-parse", "--git-path", "hooks"]);
-		if (!effectiveHooksPathRaw)
-			throw new Error(`failed to resolve hooks directory for repo ${repoId}`);
-		const existingHookPath = join(
-			resolveFrom(targetPath, effectiveHooksPathRaw),
-			"prepare-commit-msg",
-		);
-		if (existsSync(existingHookPath)) {
-			return { changed: false, foreignHookPath: existingHookPath };
+	if (!managedConfigured) {
+		if (configuredPath) {
+			originalHookPath = join(configuredPath, "prepare-commit-msg");
+		} else {
+			const effectiveHooksPathRaw = gitOutput(targetPath, ["rev-parse", "--git-path", "hooks"]);
+			if (!effectiveHooksPathRaw)
+				throw new Error(`failed to resolve hooks directory for repo ${repoId}`);
+			originalHookPath = join(resolveFrom(targetPath, effectiveHooksPathRaw), "prepare-commit-msg");
 		}
+		if (!configuredPath && !existsSync(originalHookPath)) originalHookPath = undefined;
+	} else {
+		originalHookPath = existsSync(originalHookRecordPath)
+			? readFileSync(originalHookRecordPath, "utf8").trim() || undefined
+			: undefined;
 	}
 
-	const hook = prepareCommitMsgHook(effortId);
+	const hook = prepareCommitMsgHook(effortId, originalHookPath, commitProvenanceOptions(repoDoc));
 	let changed = false;
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
@@ -363,7 +373,16 @@ export function reconcilePrepareCommitMsgHook(
 		chmodSync(managedHookPath, 0o755);
 		changed = true;
 	}
-	if (!configuredHooksPath) {
+	const originalHookRecord = originalHookPath ? `${originalHookPath}\n` : "";
+	if (
+		!existsSync(originalHookRecordPath) ||
+		readFileSync(originalHookRecordPath, "utf8") !== originalHookRecord
+	) {
+		mkdirSync(managedHooksPath, { recursive: true });
+		writeFileAtomic(originalHookRecordPath, originalHookRecord);
+		changed = true;
+	}
+	if (!managedConfigured) {
 		gitRun(
 			targetPath,
 			["config", "--worktree", "core.hooksPath", managedHooksPath],

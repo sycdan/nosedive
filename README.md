@@ -47,6 +47,25 @@ and work its brief. `bail` to **undo**: abandon an attempt. `pack` to
 **switch**: capture WIP and release a dive for later. `land` to **deliver**:
 push writable scopes to their work branches and close the dive for review.
 
+## Where this is going
+
+The goal is that anyone can run this, start to finish, from a single reference:
+
+```text
+nosedive into <uuid>     ->  [careful review]
+nosedive jump            ->  [cursory review]
+nosedive land            ->  pull request
+```
+
+The two reviews are deliberately uneven. The careful one comes first, when what
+exists is only a plan -- cheap to redirect, expensive to get wrong. The second is
+cursory because the work was done against a brief already agreed.
+
+That is the target, not a description of today. `into` currently takes prose
+context rather than a reference, and `land` pushes a branch that you open a pull
+request from yourself. The generated command surface below is what actually
+exists right now; where it disagrees with this section, believe the surface.
+
 ## Commands
 
 Every user-facing command is defined by a `kind: command` document in this

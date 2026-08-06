@@ -86,6 +86,10 @@ scopes:
 	assertOk(diveResult, "record.dive failed");
 	const diveId = /^Recorded kb[\\/]([0-9a-f-]{36})\.md$/m.exec(diveResult.stdout)?.[1];
 	assert.ok(diveId, `record.dive did not report a dive id:\n${diveResult.stdout}`);
+	// record.dive also writes the effort's reciprocal link; on a real bridge jump
+	// commits both, so start from that state rather than pre-loading bridge WIP.
+	runTool("git", ["add", "-A"], bridge);
+	gitCommit(bridge, "record dive");
 
 	return { bridge, origin, source, repoId, effortId, diveId };
 }

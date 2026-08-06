@@ -233,10 +233,10 @@ function stashExceptStaged(bridgeDir: string): boolean {
 function commitAndPushJump(
 	bridgeDir: string,
 	divePath: string,
-	removedAbsPaths: string[],
+	otherAbsPaths: string[],
 	message: string,
 ): void {
-	const pathsToStage = [divePath, ...removedAbsPaths].map((path) =>
+	const pathsToStage = [divePath, ...otherAbsPaths].map((path) =>
 		toPosixPath(relative(bridgeDir, path)),
 	);
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage jump dive update");
@@ -415,7 +415,10 @@ export function jump(args: string[], io: CommandIo): void {
 		if (existsSync(path)) unlinkSync(path);
 	}
 
-	commitAndPushJump(rc.bridgeDir, dive.path, appliedFileAbsPaths, diverValue);
+	// The effort carries the reciprocal `rel` link `record.dive` wrote, so it is
+	// part of the same bookkeeping -- left unstaged it lingers as bridge WIP that
+	// the next pack captures as though it were work.
+	commitAndPushJump(rc.bridgeDir, dive.path, [...appliedFileAbsPaths, effort.path], diverValue);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 

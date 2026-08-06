@@ -8,7 +8,7 @@ import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { formatPath, parseMarkdownDoc, readNosediveRc, stringifyYaml } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
-import { resolveEffortDoc } from "./repoEffortScopes.js";
+import { reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
@@ -257,6 +257,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		const id = uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, effort, options, scopes));
+		reconcileDiveEffortLinks(undefined, effort, id, options.diver);
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
@@ -271,8 +272,10 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);
+	const previousEffort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const effort = options.effort ? resolveEffortDoc(kbDocs, rc, options.effort) : previousEffort;
 	if (options.effort) {
-		const effort = resolveEffortDoc(kbDocs, rc, options.effort);
+		if (!effort) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
 		doc.set("name", managedName(effort, dive.id));
 		doc.setIn(["meta", "effort"], effort.id);
 	}
@@ -307,6 +310,10 @@ export function recordDive(args: string[], io: CommandIo): void {
 		body = `${body.trimEnd()}\n\n${DIVE_BRIEF_HEADING}\n\n${options.brief.trim()}\n`;
 	}
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
+	if (effort) {
+		const diver = options.diver !== undefined ? options.diver || undefined : dive.metaScalars.diver;
+		reconcileDiveEffortLinks(previousEffort, effort, dive.id, diver);
+	}
 	if (ensureActivation(dive, options.diver, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 	}

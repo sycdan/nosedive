@@ -27,5 +27,9 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 	assertDropTargetReached(effort, target, today);
 
 	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
-	return { stdout: renderDropPrompt(readPromptBody(promptDoc), effort, target, today), stderr: "", exitCode: 0 };
+	return {
+		stdout: renderDropPrompt(readPromptBody(promptDoc), effort, target, today),
+		stderr: "",
+		exitCode: 0,
+	};
 }

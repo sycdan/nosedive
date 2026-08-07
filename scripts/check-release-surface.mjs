@@ -227,8 +227,14 @@ for (const filename of readdirSync(kbDir)
 		const minimumEffort = raw.meta?.["minimum-effort"];
 		const maximumEffort = raw.meta?.["maximum-effort"];
 		if (minimumEffort !== undefined || maximumEffort !== undefined) {
-			const minimum = minimumEffort === undefined ? 0 : parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
-			const maximum = maximumEffort === undefined ? undefined : parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
+			const minimum =
+				minimumEffort === undefined
+					? 0
+					: parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
+			const maximum =
+				maximumEffort === undefined
+					? undefined
+					: parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
 			if (minimum !== undefined && maximum !== undefined && maximum < minimum) {
 				fail(`${filename} command meta.maximum-effort is below meta.minimum-effort`);
 			}

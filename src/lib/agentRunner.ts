@@ -4,10 +4,18 @@ import { delimiter, extname, join } from "node:path";
 
 import { formatPath, type NosediveRc } from "./coreParsing.js";
 
-/** The prompt reaches the runner on stdin, so this token contributes no argv word. */
-export const STDIN_PLACEHOLDER = "<nosedive-stdout-piped-to-stdin>";
+/** The prompt nosedive built. It sits left of the pipe, where a reader expects the source of stdin. */
+export const STDOUT_PLACEHOLDER = "<nosedive-command-stdout>";
 /** Replaced by the `agent-tier-<n>` model for the effort being attempted. */
 export const MODEL_PLACEHOLDER = "<nosedive-effort-model>";
+/**
+ * The one pipe is structural, not shell. Everything else a shell would act on
+ * is refused, so a usage string that looks like a command line cannot quietly
+ * become one.
+ */
+const SHELL_METACHARACTERS = /[&;<>$`"'()]/;
+/** Placeholders wear the same angle brackets a shell redirects with, so they are set aside first. */
+const PLACEHOLDER_SHAPED = /<[^<>\s]*>/g;
 
 export interface ColdStartCommand {
 	executable: string;
@@ -22,46 +30,54 @@ export interface AgentAttempt {
 	exitCode: number;
 }
 
+const USAGE_TEMPLATE = `${STDOUT_PLACEHOLDER} | <runner> [args] ${MODEL_PLACEHOLDER} [args]`;
+
+function usageError(problem: string): Error {
+	return new Error(`agent runner meta.cold-start-usage ${problem}; expected: ${USAGE_TEMPLATE}`);
+}
+
 /**
- * The usage string is a grammar, not a suggestion: it is split on whitespace
- * into literal argv words with two known placeholders substituted, and spawned
- * without a shell. An agent cannot be trusted to assemble a command line, so
- * nothing here interpolates, quotes or evaluates -- an unknown `<placeholder>`
- * is an error rather than a literal argument.
+ * The usage string reads as a pipeline because that is what it describes -- but
+ * it is a template with one fixed shape, not a shell command. The single pipe
+ * separates the prompt from the runner; everything a shell would act on beyond
+ * that is refused, and the right side becomes literal argv words spawned
+ * without a shell. An agent that could assemble a command line could run
+ * anything, so nothing here interpolates, quotes or evaluates.
  */
 export function parseColdStartUsage(usage: string, model: string): ColdStartCommand {
-	const tokens = usage.trim().split(/\s+/).filter(Boolean);
-	if (tokens.length === 0) throw new Error("agent runner meta.cold-start-usage is empty");
-
-	const stdinCount = tokens.filter((token) => token === STDIN_PLACEHOLDER).length;
-	const modelCount = tokens.filter((token) => token === MODEL_PLACEHOLDER).length;
-	if (stdinCount !== 1) {
-		throw new Error(
-			`agent runner meta.cold-start-usage must use ${STDIN_PLACEHOLDER} exactly once`,
-		);
+	const trimmed = usage.trim();
+	if (!trimmed) throw usageError("is empty");
+	if (SHELL_METACHARACTERS.test(trimmed.replace(PLACEHOLDER_SHAPED, ""))) {
+		throw usageError("is a template, not a shell command, so it cannot use shell operators");
 	}
-	if (modelCount !== 1) {
-		throw new Error(
-			`agent runner meta.cold-start-usage must use ${MODEL_PLACEHOLDER} exactly once`,
-		);
+
+	const sides = trimmed.split("|");
+	if (sides.length !== 2) throw usageError("must have exactly one pipe");
+	const [source, runner] = sides as [string, string];
+	if (source.trim() !== STDOUT_PLACEHOLDER) {
+		throw usageError(`must pipe ${STDOUT_PLACEHOLDER} into the runner`);
+	}
+
+	const tokens = runner.trim().split(/\s+/).filter(Boolean);
+	if (tokens.filter((token) => token === MODEL_PLACEHOLDER).length !== 1) {
+		throw usageError(`must use ${MODEL_PLACEHOLDER} exactly once`);
 	}
 
 	const words: string[] = [];
 	for (const token of tokens) {
-		if (token === STDIN_PLACEHOLDER) continue;
 		if (token === MODEL_PLACEHOLDER) {
 			words.push(model);
 			continue;
 		}
 		if (token.startsWith("<") && token.endsWith(">")) {
-			throw new Error(`agent runner meta.cold-start-usage has an unknown placeholder: ${token}`);
+			throw usageError(`has an unknown placeholder: ${token}`);
 		}
 		words.push(token);
 	}
 
 	const executable = words[0];
 	if (executable === undefined || executable === model) {
-		throw new Error("agent runner meta.cold-start-usage must start with the runner executable");
+		throw usageError("must name the runner executable right of the pipe");
 	}
 	return { executable, args: words.slice(1) };
 }

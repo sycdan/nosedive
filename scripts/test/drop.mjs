@@ -35,7 +35,7 @@ function createRunnableBridge(tmp, name, models) {
 			"name: fake.agent-runner",
 			'gist: "Fake runner."',
 			"meta:",
-			`  cold-start-usage: "node ${fakeRunner.replaceAll("\\", "/")} <nosedive-stdout-piped-to-stdin> --model <nosedive-effort-model> --log ${log.replaceAll("\\", "/")}"`,
+			`  cold-start-usage: "<nosedive-command-stdout> | node ${fakeRunner.replaceAll("\\", "/")} --model <nosedive-effort-model> --log ${log.replaceAll("\\", "/")}"`,
 			"---",
 			"",
 			"# Fake",
@@ -225,6 +225,65 @@ test("drop refuses a prompt doc that is not the command's own idea", () => {
 	assert.match(dropped.stderr, /must be kind: idea, not memo/);
 });
 
+/** Swap in a usage string that should never reach a spawn, and say why it did not. */
+function assertUsageRefused(name, usage, expected) {
+	const { bridge } = createRunnableBridge(tmp, `drop-${name}-bridge`, [
+		"tier-0-succeeds",
+		"tier-1",
+		"tier-2",
+	]);
+	write(
+		join(bridge, "kb", `${runnerId}.md`),
+		[
+			"---",
+			"kind: memo",
+			`id: ${runnerId}`,
+			"name: fake.agent-runner",
+			'gist: "Fake runner."',
+			"meta:",
+			`  cold-start-usage: ${JSON.stringify(usage)}`,
+			"---",
+			"",
+			"# Fake",
+			"",
+		].join("\n"),
+	);
+	writeEffort(
+		bridge,
+		`019fd9ff-b1f1-7770-aa0b-45d95c3b3${name.length}0a`,
+		`${name}.release`,
+		"2020-01-01",
+	);
+
+	const dropped = run(["drop", name], bridge);
+	assert.equal(dropped.status, 1);
+	assert.match(dropped.stderr, expected);
+}
+
+test("drop refuses a usage that reaches for the shell", () => {
+	assertUsageRefused(
+		"redirect",
+		"<nosedive-command-stdout> | node runner.mjs --model <nosedive-effort-model> 2>&1",
+		/cannot use shell operators/,
+	);
+});
+
+test("drop refuses a usage that pipes more than once", () => {
+	assertUsageRefused(
+		"tee",
+		"<nosedive-command-stdout> | node runner.mjs --model <nosedive-effort-model> | tee log",
+		/must have exactly one pipe/,
+	);
+});
+
+test("drop refuses a usage whose left side is not the prompt", () => {
+	assertUsageRefused(
+		"backwards",
+		"node runner.mjs --model <nosedive-effort-model> | <nosedive-command-stdout>",
+		/must pipe <nosedive-command-stdout> into the runner/,
+	);
+});
+
 test("drop refuses a runner usage with an unknown placeholder", () => {
 	const { bridge } = createRunnableBridge(tmp, "drop-badusage-bridge", [
 		"tier-0-succeeds",
@@ -240,7 +299,7 @@ test("drop refuses a runner usage with an unknown placeholder", () => {
 			"name: fake.agent-runner",
 			'gist: "Fake runner."',
 			"meta:",
-			'  cold-start-usage: "node runner.mjs <nosedive-stdout-piped-to-stdin> --model <nosedive-effort-model> --key <api-key>"',
+			'  cold-start-usage: "<nosedive-command-stdout> | node runner.mjs --model <nosedive-effort-model> --key <api-key>"',
 			"---",
 			"",
 			"# Fake",

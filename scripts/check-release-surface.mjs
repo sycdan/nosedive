@@ -213,26 +213,22 @@ for (const filename of readdirSync(kbDir)
 		if (raw.meta?.handler !== undefined) {
 			fail(`${filename} command must use meta.adapter and meta.entrypoint, not meta.handler`);
 		}
-		// Every command an agent can reach must say when to reach for it, or it
-		// is silently dropped from the agent-facing surface seed writes.
+		// Omitting the trigger makes a command human-only, and leaves it off the
+		// agent-facing surface seed writes.
 		if (!match[1].startsWith("_")) {
 			const useWhen = raw.meta?.["agents-use-when"];
-			if (typeof useWhen !== "string" || useWhen.trim() === "") {
-				fail(`${filename} command must have meta.agents-use-when`);
-			} else if (/\s{2,}|\r|\n/.test(useWhen)) {
+			if (useWhen !== undefined && (typeof useWhen !== "string" || useWhen.trim() === "")) {
+				fail(`${filename} command meta.agents-use-when must be non-empty when present`);
+			} else if (typeof useWhen === "string" && /\s{2,}|\r|\n/.test(useWhen)) {
 				fail(`${filename} command meta.agents-use-when must be a single line`);
 			}
 		}
-		// An effort range is only meaningful for a command that reaches for an
-		// agent, so it is optional -- but a half-declared range would pick a
-		// model nobody chose, so both keys travel together or neither does.
+		// A single bound gets its documented default at execution time.
 		const minimumEffort = raw.meta?.["minimum-effort"];
 		const maximumEffort = raw.meta?.["maximum-effort"];
-		if ((minimumEffort === undefined) !== (maximumEffort === undefined)) {
-			fail(`${filename} command must declare both meta.minimum-effort and meta.maximum-effort`);
-		} else if (minimumEffort !== undefined) {
-			const minimum = parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
-			const maximum = parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
+		if (minimumEffort !== undefined || maximumEffort !== undefined) {
+			const minimum = minimumEffort === undefined ? 0 : parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
+			const maximum = maximumEffort === undefined ? undefined : parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
 			if (minimum !== undefined && maximum !== undefined && maximum < minimum) {
 				fail(`${filename} command meta.maximum-effort is below meta.minimum-effort`);
 			}

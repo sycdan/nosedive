@@ -77,22 +77,22 @@ export interface NosediveRc {
 	pilotEmail?: string;
 	/** `agent-runner`: id of the memo whose `meta.cold-start-usage` runs an agent. */
 	agentRunner?: string;
-	/** `agent-tier-<n>`: the model a command escalating to effort `<n>` runs on. */
-	agentTiers: Record<number, string>;
+	/** `agent-effort-<n>`: the model a command escalating to effort `<n>` runs on. */
+	agentEfforts: Record<number, string>;
 	/** `<command>-prompt`: id of the `kind: idea` doc a command builds its prompt from. */
 	prompts: Record<string, string>;
 }
 
-const AGENT_TIER_KEY = /^agent-tier-([0-9]+)$/;
+const AGENT_EFFORT_KEY = /^agent-effort-([0-9]+)$/;
 const COMMAND_PROMPT_KEY = /^(.+)-prompt$/;
 
-export function parseAgentTiers(scalars: Record<string, string>): Record<number, string> {
-	const tiers: Record<number, string> = {};
+export function parseAgentEfforts(scalars: Record<string, string>): Record<number, string> {
+	const efforts: Record<number, string> = {};
 	for (const [key, value] of Object.entries(scalars)) {
-		const tier = AGENT_TIER_KEY.exec(key);
-		if (tier) tiers[Number.parseInt(tier[1]!, 10)] = value;
+		const effort = AGENT_EFFORT_KEY.exec(key);
+		if (effort) efforts[Number.parseInt(effort[1]!, 10)] = value;
 	}
-	return tiers;
+	return efforts;
 }
 
 export function parseCommandPrompts(scalars: Record<string, string>): Record<string, string> {
@@ -304,7 +304,7 @@ export function readNosediveRc(start: string): NosediveRc {
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
 		agentRunner: rc.scalars["agent-runner"],
-		agentTiers: parseAgentTiers(rc.scalars),
+		agentEfforts: parseAgentEfforts(rc.scalars),
 		prompts: parseCommandPrompts(rc.scalars),
 	};
 }
@@ -321,7 +321,7 @@ export interface RcSettings {
 	pilotEmail: string;
 	/**
 	 * Config keys nosedive does not own, kept verbatim so a re-seed cannot
-	 * silently delete a pilot's `agent-tier-<n>`, `agent-runner` or
+	 * silently delete a pilot's `agent-effort-<n>`, `agent-runner` or
 	 * `<command>-prompt` settings. Seed rewrites the whole file; anything it
 	 * does not carry across is gone.
 	 */

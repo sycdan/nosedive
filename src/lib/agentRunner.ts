@@ -6,7 +6,7 @@ import { formatPath, type NosediveRc } from "./coreParsing.js";
 
 /** The prompt nosedive built. It sits left of the pipe, where a reader expects the source of stdin. */
 export const STDOUT_PLACEHOLDER = "<nosedive-command-stdout>";
-/** Replaced by the `agent-tier-<n>` model for the effort being attempted. */
+/** Replaced by the `agent-effort-<n>` model for the effort being attempted. */
 export const MODEL_PLACEHOLDER = "<nosedive-effort-model>";
 /**
  * The one pipe is structural, not shell. Everything else a shell would act on
@@ -87,9 +87,9 @@ export function resolveEffortLadder(rc: NosediveRc, minimum: number, maximum: nu
 	const models: string[] = [];
 	const missing: string[] = [];
 	for (let effort = minimum; effort <= maximum; effort += 1) {
-		const model = rc.agentTiers[effort];
+		const model = rc.agentEfforts[effort];
 		if (model) models.push(model);
-		else missing.push(`agent-tier-${effort}`);
+		else missing.push(`agent-effort-${effort}`);
 	}
 	if (missing.length > 0) {
 		throw new Error(`${formatPath(rc.path)} is missing ${missing.join(", ")}`);

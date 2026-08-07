@@ -19,7 +19,7 @@ test("pitch writes an effort doc from a bare gist", () => {
 	const pitched = run(["pitch", "Exercise the L1 pitch contract."], bridge);
 	assertOk(pitched, "pitch with only a gist failed");
 	const doc = effortDoc(bridge, pitched.stdout);
-	assert.match(doc, /^kind: effort$/m);
+	assert.match(doc, /^kind: feat$/m);
 	assert.match(doc, /^id: [0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/m);
 	assert.match(doc, /^gist: "Exercise the L1 pitch contract\."$/m);
 	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);

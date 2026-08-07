@@ -94,7 +94,7 @@ test("contract help", () => {
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
-kind: effort
+kind: feat
 id: 019f8584-453f-79ea-9d53-5f1b20b4cda9
 name: deprecated-list-dives
 gist: "Legacy command fixture."

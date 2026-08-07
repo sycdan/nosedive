@@ -17,11 +17,11 @@ function createRunnableBridge(tmp, name, models) {
 	write(
 		join(bridge, ".nosedive", "config.yaml"),
 		[
-			"compatibility-level: 1",
+			"compatibility-level: 2",
 			"workspace: ./workspace",
 			"kb: ./kb",
 			`agent-runner: ${runnerId}`,
-			...models.map((model, tier) => `agent-tier-${tier}: ${model}`),
+			...models.map((model, tier) => `agent-effort-${tier}: ${model}`),
 			`drop-prompt: ${promptId}`,
 			"",
 		].join("\n"),
@@ -62,7 +62,7 @@ function createRunnableBridge(tmp, name, models) {
 }
 
 function writeEffort(bridge, id, name, target) {
-	const lines = ["---", "kind: effort", `id: ${id}`, `name: ${name}`, `gist: "${name}."`];
+	const lines = ["---", "kind: feat", `id: ${id}`, `name: ${name}`, `gist: "${name}."`];
 	if (target) lines.push("meta:", `  target: ${target}`);
 	lines.push("---", "", `# ${name}`, "");
 	write(join(bridge, "kb", `${id}.md`), lines.join("\n"));
@@ -100,7 +100,7 @@ test("drop refuses a ladder the bridge has not configured", () => {
 
 	const dropped = run(["drop", "shipped"], bridge);
 	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /is missing agent-tier-0, agent-tier-1, agent-tier-2/);
+	assert.match(dropped.stderr, /is missing agent-effort-0, agent-effort-1, agent-effort-2/);
 });
 
 test("drop passes the gate on the target date itself", () => {
@@ -178,7 +178,7 @@ test("drop generates the context block rather than trusting the prompt doc", () 
 		join(bridge, "kb", "019fd96e-b1f1-7770-aa0b-45d95c3b30b2.md"),
 		[
 			"---",
-			"kind: effort",
+			"kind: feat",
 			"id: 019fd96e-b1f1-7770-aa0b-45d95c3b30b2",
 			"name: scoped.release",
 			'gist: "Scoped."',

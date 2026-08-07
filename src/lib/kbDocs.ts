@@ -94,7 +94,7 @@ export function renderPitchedEffort(options: {
 	const leaf = options.name.split(".")[0]!;
 	const lines = [
 		"---",
-		"kind: effort",
+		"kind: feat",
 		`id: ${options.id}`,
 		`name: ${options.name}`,
 		`gist: ${quoteYamlString(options.gist)}`,

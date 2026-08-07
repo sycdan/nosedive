@@ -179,7 +179,7 @@ export function effortHasParentLink(doc: KbDoc): boolean {
 
 export function loadBacklogKbEfforts(kbDocs: KbDoc[]): BacklogKbEffort[] {
 	return kbDocs
-		.filter((doc) => doc.kind === "effort")
+		.filter((doc) => doc.kind === "feat")
 		.map((doc) => {
 			if (!doc.id) throw new Error(`effort doc is missing id: ${formatPath(doc.path)}`);
 			if (!uuidLike(doc.id)) throw new Error(`effort doc id is not UUID-shaped: ${doc.id}`);

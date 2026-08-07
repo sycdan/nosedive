@@ -61,7 +61,7 @@ test("add-repo-effort", () => {
 	runTool("git", ["config", "user.name", "Nosedive Dev"], addRepoEffortBridge);
 	write(
 		join(addRepoEffortBridge, ".nosedive", "config.yaml"),
-		`compatibility-level: 1
+		`compatibility-level: 2
 workspace: ./workspace
 kb: ./kb
 backlog: 019fbf74-9c6e-71a2-a3f2-f0c99be3e000
@@ -70,7 +70,7 @@ backlog: 019fbf74-9c6e-71a2-a3f2-f0c99be3e000
 	write(
 		join(addRepoEffortBridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: feature
 gist: "Feature effort for add-repo.effort tests."

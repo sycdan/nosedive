@@ -34,7 +34,7 @@ actions through explicit commands that compose safely for a human or an agent.
 
 _nosedive_ organizes work around two core concepts:
 
-- **Effort** — a `kind: effort` KB document for a unit of potentially
+- **Effort** — a `kind: feat` KB document for a unit of potentially
   cross-repository work. `scopes:` declares its repositories and `rel: parent`
   links nest related efforts. The generated backlog memo lists open efforts.
 - **Dive** — one concrete iteration on an effort. Dives are `kind: dive` docs
@@ -110,7 +110,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`add-repo.effort@1`](kb/bc20378b-76e7-54ce-a36e-3c22e1a8753c.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active effort's `scopes:` by resolving the repo by id or exact name. |
 | [`bail@1`](kb/d5559757-9eca-5014-a2b2-7e89681d425f.md) | `npx nosedive bail [<reason>]` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
 | [`dehydrate-repo.workspace@1`](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
-| [`drop@1`](kb/b2a24935-a759-5a62-96d5-1f0c4666cb7b.md) | `npx nosedive drop "<name>"` | Release a named drop on or after its target date, escalating through the configured agent effort tiers until one succeeds. |
+| [`drop@2`](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md) | `npx nosedive drop "<name>"` | Print a dated drop's release prompt after its target date. |
 | [`dump-backlog@1`](kb/d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
 | [`hydrate-repo.workspace@1`](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
 | [`into@1`](kb/558376d5-9812-5c7a-b675-960f473a0c94.md) | `npx nosedive into [<context>]` | Cold-start entrypoint -- print pilot identity, backlog, and the pilot's context, then hand off to the piped agent to claim or create a dive. |
@@ -119,7 +119,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
 | [`pack@1`](kb/0a4fe90c-9f9a-57e4-8234-750660f174d4.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, then force-dehydrate every scoped repo. |
-| [`pitch@1`](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <effort>]` | Create a new `kind: effort` KB doc, optionally nested under a parent effort. |
+| [`pitch@1`](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <effort>]` | Create a new `kind: feat` KB doc, optionally nested under a parent effort. |
 | [`preflight@1`](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | `npx nosedive preflight` | Confirm the bridge pre-push hook is wired, then print the session-start report -- bridge status, pilot identity, and open work. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
 | [`record.dive@1`](kb/9822f048-0b75-5ed3-b912-fb566e31d9e8.md) | `npx nosedive record.dive [--ref <dive-ref>] [--effort <effort-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--scope <repo-ref>]... [--clear-scopes]` | Create or patch an effort-owned dive record while preserving omitted update fields. |

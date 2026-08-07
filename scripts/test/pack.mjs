@@ -63,7 +63,7 @@ meta:
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: pack-test.nosedive
 gist: "Pack test effort"

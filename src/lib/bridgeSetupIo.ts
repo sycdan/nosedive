@@ -115,6 +115,7 @@ export interface MigrationRunSummary {
 	sourceDir?: string;
 	copiedFiles?: string[];
 	effortCount?: number;
+	featCount?: number;
 	backlogMemoId?: string;
 	bridgeRepo?: {
 		id?: string;
@@ -205,6 +206,7 @@ export function printMigrationSummary(
 	io.log(`Migration ${migration.docId} complete.`);
 	if (summary.sourceDir) io.log(`Source: ${toPosixPath(summary.sourceDir)}`);
 	if (summary.effortCount !== undefined) io.log(`Efforts copied: ${summary.effortCount}`);
+	if (summary.featCount !== undefined) io.log(`Feats migrated: ${summary.featCount}`);
 	if (summary.backlogMemoId) io.log(`Backlog memo: ${summary.backlogMemoId}`);
 	if (summary.bridgeRepo?.id) {
 		const status = summary.bridgeRepo.status ? `${summary.bridgeRepo.status} ` : "";

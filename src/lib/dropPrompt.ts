@@ -25,12 +25,18 @@ function effortScalar(meta: Record<string, string>, key: string, label: string):
  * command doc: the range is part of the command's contract, not a per-run flag,
  * so no caller can talk a cheap command into an expensive model.
  */
-export function parseEffortRange(commandDocPath: string): EffortRange {
+export function parseEffortRange(commandDocPath: string, highestConfigured?: number): EffortRange | undefined {
 	const label = formatPath(commandDocPath);
 	const doc = parseMarkdownDoc(readFileSync(commandDocPath, "utf8"), label);
 	const meta = doc.fm.nested.meta ?? {};
-	const minimum = effortScalar(meta, "minimum-effort", label);
-	const maximum = effortScalar(meta, "maximum-effort", label);
+	const hasMinimum = meta["minimum-effort"] !== undefined;
+	const hasMaximum = meta["maximum-effort"] !== undefined;
+	if (!hasMinimum && !hasMaximum) return undefined;
+	const minimum = hasMinimum ? effortScalar(meta, "minimum-effort", label) : 0;
+	if (!hasMaximum && highestConfigured === undefined) {
+		throw new Error(`command ${label} has no meta.maximum-effort and the bridge has no agent-effort-<n>`);
+	}
+	const maximum = hasMaximum ? effortScalar(meta, "maximum-effort", label) : highestConfigured!;
 	if (maximum < minimum) {
 		throw new Error(`command ${label} meta.maximum-effort is below meta.minimum-effort`);
 	}

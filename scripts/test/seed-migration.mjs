@@ -161,7 +161,7 @@ Child body.
 		.filter((name) => name.endsWith(".md"))
 		.map((name) => [name, readFileSync(join(backlogBridge, "kb", name), "utf8")]);
 	const topEffort = kbTexts.find(
-		([, text]) => /^kind: effort$/m.test(text) && /^name: project$/m.test(text),
+		([, text]) => /^kind: feat$/m.test(text) && /^name: project$/m.test(text),
 	);
 	assert.ok(topEffort, "top-level effort doc was not created");
 	const topEffortId = /^id: ([0-9a-f-]{36})$/m.exec(topEffort[1])?.[1];
@@ -175,7 +175,7 @@ Child body.
 	assert.match(topEffort[1], /meta:\n  priority: high/);
 
 	const goggleboxEffort = kbTexts.find(
-		([, text]) => /^kind: effort$/m.test(text) && /^name: episode-one\.gogglebox$/m.test(text),
+		([, text]) => /^kind: feat$/m.test(text) && /^name: episode-one\.gogglebox$/m.test(text),
 	);
 	assert.ok(goggleboxEffort, "namespaced gogglebox effort doc was not created");
 	const goggleboxEffortId = /^id: ([0-9a-f-]{36})$/m.exec(goggleboxEffort[1])?.[1];
@@ -183,7 +183,7 @@ Child body.
 	assert.match(goggleboxEffort[1], /^gist: Gogglebox gist$/m);
 
 	const childDoc = readFileSync(join(backlogBridge, "kb", `${childEffortId}.md`), "utf8");
-	assert.match(childDoc, /^kind: effort$/m);
+	assert.match(childDoc, /^kind: feat$/m);
 	assert.match(childDoc, new RegExp(`^id: ${childEffortId}$`, "m"));
 	assert.match(childDoc, /^name: main-effort\.project$/m);
 	assert.match(childDoc, /^gist: Child gist$/m);
@@ -233,7 +233,7 @@ Child body.
 	write(
 		join(backlogBridge, "kb", `${betaEffortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${betaEffortId}
 name: beta
 gist: Beta gist
@@ -316,7 +316,7 @@ gist: Solo gist
 	mkdirSync(ambiguousBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], ambiguousBridge);
 	write(join(ambiguousBridge, ".nosediverc"), "workspace: ./workspace\n");
-	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 1\n");
+	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 2\n");
 	const initAmbiguous = run(["seed", "--headless"], ambiguousBridge, "");
 	assert.notEqual(initAmbiguous.status, 0, "init with ambiguous config unexpectedly succeeded");
 	assert.match(initAmbiguous.stderr, /bridge config is ambiguous/);
@@ -327,7 +327,7 @@ gist: Solo gist
 	);
 	assert.equal(
 		readFileSync(join(ambiguousBridge, ".nosedive", "config.yaml"), "utf8"),
-		"compatibility-level: 1\n",
+		"compatibility-level: 2\n",
 	);
 
 	// A split base config with no readable compatibility-level is likewise

@@ -344,7 +344,10 @@ async function runContractAdapter(
 			name: contract.name,
 			path: contract.path,
 		},
-		impl: createImplRegistry({ cwd: process.cwd() }),
+		impl: createImplRegistry({
+			cwd: process.cwd(),
+			commandDoc: { id: contract.id, name: contract.name, path: contract.path },
+		}),
 		lib,
 	};
 

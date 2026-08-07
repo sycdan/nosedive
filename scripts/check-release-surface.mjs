@@ -223,6 +223,21 @@ for (const filename of readdirSync(kbDir)
 				fail(`${filename} command meta.agents-use-when must be a single line`);
 			}
 		}
+		// An effort range is only meaningful for a command that reaches for an
+		// agent, so it is optional -- but a half-declared range would pick a
+		// model nobody chose, so both keys travel together or neither does.
+		const minimumEffort = raw.meta?.["minimum-effort"];
+		const maximumEffort = raw.meta?.["maximum-effort"];
+		if ((minimumEffort === undefined) !== (maximumEffort === undefined)) {
+			fail(`${filename} command must declare both meta.minimum-effort and meta.maximum-effort`);
+		} else if (minimumEffort !== undefined) {
+			const minimum = parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
+			const maximum = parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
+			if (minimum !== undefined && maximum !== undefined && maximum < minimum) {
+				fail(`${filename} command meta.maximum-effort is below meta.minimum-effort`);
+			}
+		}
+
 		const level = Number.parseInt(match[2], 10);
 		const expectedEntrypoint = commandEntrypointName(match[1], level);
 		if (typeof raw.meta?.entrypoint !== "string" || raw.meta.entrypoint.trim() === "") {

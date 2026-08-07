@@ -381,3 +381,77 @@ gist: Solo gist
 		writeFileSync(migrationScriptPath, originalMigrationScript, "utf8");
 	}
 });
+
+/**
+ * The L1 -> L2 migration rewrites doc kinds in place, so the thing to prove is
+ * not only that it converts, but that it leaves alone the prose it was never
+ * asked about. A doc explaining the kind is exactly the doc a careless regex
+ * would corrupt.
+ */
+test("seed migrates effort docs to feat without touching bodies", () => {
+	const bridge = join(tmp, "l2-rekind-bridge");
+	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	runTool("git", ["config", "user.name", "Rekind Person"], bridge);
+	runTool("git", ["config", "user.email", "rekind@example.invalid"], bridge);
+	write(
+		join(bridge, ".nosedive", "config.yaml"),
+		["compatibility-level: 1", "workspace: ./workspace", "kb: ./kb", ""].join("\n"),
+	);
+
+	const featId = "00000000-0000-7000-8000-0000000009a1";
+	const memoId = "00000000-0000-7000-8000-0000000009a2";
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		[
+			"---",
+			"kind: effort",
+			`id: ${featId}`,
+			"name: rekind-me",
+			'gist: "Rekind."',
+			"---",
+			"",
+			"# Rekind Me",
+			"",
+		].join("\n"),
+	);
+	// A memo whose body documents the old kind, in a fenced block.
+	write(
+		join(bridge, "kb", `${memoId}.md`),
+		[
+			"---",
+			"kind: memo",
+			`id: ${memoId}`,
+			"name: explains-the-kind",
+			'gist: "Explains."',
+			"---",
+			"",
+			"# Explains",
+			"",
+			"```yaml",
+			"kind: effort",
+			"```",
+			"",
+		].join("\n"),
+	);
+
+	write(
+		join(bridge, "AGENTS.md"),
+		[
+			"# Agents",
+			"",
+			"<!-- BEGIN nosedive managed instructions -->",
+			"<!-- END nosedive managed instructions -->",
+			"",
+		].join("\n"),
+	);
+
+	const seeded = run(["seed", "--headless"], bridge);
+	assert.equal(seeded.status, 0, seeded.stderr);
+	assert.match(seeded.stdout, /Feats migrated: 1/);
+
+	assert.match(readFileSync(join(bridge, "kb", `${featId}.md`), "utf8"), /^kind: feat$/m);
+	const memo = readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8");
+	assert.match(memo, /^kind: memo$/m, "the memo's own kind is untouched");
+	assert.match(memo, /```yaml\r?\nkind: effort\r?\n```/, "its documented example is untouched");
+});

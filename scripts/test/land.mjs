@@ -107,6 +107,67 @@ test("land resets the retained worktree to freshly fetched trunk", () => {
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 });
 
+/**
+ * The whole never-unblock design rests on this git behavior: a `pushurl`
+ * override applies only to the named remote, so land can publish by resolved
+ * URL from a worktree an agent cannot push from. If this ever regresses,
+ * hydrated worktrees would have to be unblocked to land.
+ */
+test("a pushurl sentinel blocks the named remote but not the resolved URL", () => {
+	const { bridge, worktree } = setup("url-push");
+	const sentinel = runTool(
+		"git",
+		["config", "--worktree", "--get", "remote.origin.pushurl"],
+		worktree,
+	).stdout.trim();
+	assert.equal(sentinel, "nosedive-render-587d3f73-2534-5179-b111-ce6c83d6814d");
+
+	gitCommitEmpty(worktree, "agent work");
+	const blocked = runGitUnchecked(["push", "origin", "HEAD:refs/heads/agent-attempt"], worktree);
+	assert.notEqual(blocked.status, 0, "pushing to the named remote must stay blocked");
+	assert.match(blocked.stderr, /nosedive-render-587d3f73-2534-5179-b111-ce6c83d6814d/);
+
+	const noVerify = runGitUnchecked(
+		["push", "--no-verify", "origin", "HEAD:refs/heads/agent-attempt"],
+		worktree,
+	);
+	assert.notEqual(noVerify.status, 0, "--no-verify must not defeat a pushurl override");
+
+	const url = runTool("git", ["config", "--get", "remote.origin.url"], worktree).stdout.trim();
+	runTool("git", ["push", url, "HEAD:refs/heads/land-attempt"], worktree);
+	assert.equal(
+		runTool(
+			"git",
+			["config", "--worktree", "--get", "remote.origin.pushurl"],
+			worktree,
+		).stdout.trim(),
+		sentinel,
+		"landing must not disturb the sentinel",
+	);
+	// runTool asserts a zero exit: fetch must keep working through the override.
+	runTool("git", ["fetch", "origin"], worktree);
+});
+
+test("land publishes without ever lifting push isolation", () => {
+	const { bridge, worktree } = setup("isolation-kept");
+	const before = runTool(
+		"git",
+		["config", "--worktree", "--get", "remote.origin.pushurl"],
+		worktree,
+	).stdout.trim();
+	gitCommitEmpty(worktree, "landable work");
+	assertOk(run(["land"], bridge), "land failed");
+	assert.equal(
+		runTool(
+			"git",
+			["config", "--worktree", "--get", "remote.origin.pushurl"],
+			worktree,
+		).stdout.trim(),
+		before,
+		"land must leave the sentinel exactly as it found it",
+	);
+});
+
 test("land refuses a read-only scope that has commits past its pin", () => {
 	const { bridge, worktree, diveId } = setup("readonly");
 	gitCommitEmpty(worktree, "read-only work");

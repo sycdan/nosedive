@@ -7,6 +7,7 @@ export * from "./nukeApply.js";
 export * from "./packageBacklog.js";
 export * from "./proveCore.js";
 export * from "./proveHostRender.js";
+export * from "./kbRefs.js";
 export * from "./renderPlan.js";
 export * from "./repoWorkspaceCore.js";
 export * from "./repoWorktrees.js";

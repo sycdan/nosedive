@@ -25,10 +25,10 @@ import {
 	expectedWorktreePath,
 	isDirEmpty,
 	pruneStaleWorktrees,
-	reconcilePushReadOnly,
 	resolveRefCommit,
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
+import { reconcilePushIsolation } from "../lib/repoHardening.js";
 
 export function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 	const options = parseHydrateRepoWorkspaceArgs(args);
@@ -82,7 +82,7 @@ export function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 		if (ensureRepoMarkerExcluded(targetPath, repoId)) changed = true;
 	}
 
-	if (reconcilePushReadOnly(sourcePath, targetPath, options.readOnly, repoId)) changed = true;
+	if (reconcilePushIsolation(sourcePath, targetPath, options.readOnly, repoId)) changed = true;
 	if (status !== "created") status = changed ? "updated" : "noop";
 
 	const result: HydrateRepoWorkspaceResult = {

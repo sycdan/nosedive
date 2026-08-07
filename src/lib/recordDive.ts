@@ -15,6 +15,7 @@ import {
 	parseRepoMarkerStrict,
 	uuidLike,
 } from "./repoWorkspaceCore.js";
+import { isReadOnlyPushUrl } from "./repoHardening.js";
 import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
 import { uuid7AtMs } from "./uuid7.js";
 
@@ -146,8 +147,7 @@ function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string): Scop
 		const marker = parseRepoMarkerStrict(join(path, ".nosedive-ref"));
 		if (marker.id !== repo.id)
 			throw new Error(`workspace marker does not match repo ${repo.id}: ${formatPath(path)}`);
-		readOnly =
-			gitOutput(path, ["config", "--get", "remote.origin.pushurl"]) === "no_push://disabled";
+		readOnly = isReadOnlyPushUrl(gitOutput(path, ["config", "--get", "remote.origin.pushurl"]));
 	}
 	const cache = ensureManagedRepoCache(repo, bridgeDir);
 	const trunk = repo.repoBaseBranch ?? "main";

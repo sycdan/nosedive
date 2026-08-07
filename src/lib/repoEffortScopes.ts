@@ -12,7 +12,7 @@ import {
 	toPosixPath,
 } from "./coreParsing.js";
 import { EffortRepo, KbDoc, readActiveDiveId } from "./kbDocs.js";
-import { parseScopeRefs } from "./proveHostRender.js";
+import { parseScopeRefs } from "./kbRefs.js";
 import { writeFileAtomic } from "./renderPlan.js";
 
 export function effortDocs(kbDocs: KbDoc[]): KbDoc[] {

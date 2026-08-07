@@ -33,17 +33,15 @@ import {
 } from "../lib/repoWorkspaceCore.js";
 import {
 	ensureDetachedAtCommit,
-	ensureLinkedWorktreesNonBare,
 	ensureRepoMarkerExcluded,
 	ensureReusableExistingTarget,
 	expectedWorktreePath,
 	isDirEmpty,
 	pruneStaleWorktrees,
-	reconcilePrepareCommitMsgHook,
 	resolveRefCommit,
-	worktreeConfigEnabled,
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
+import { reconcilePrepareCommitMsgHook, reconcilePushIsolation } from "../lib/repoHardening.js";
 
 /** One patch memo in reapply order, walked from a dive's `rel: patch` head via `rel: next`. */
 interface PatchStep {
@@ -106,20 +104,12 @@ function hydrateScopeAtPin(
 	ensureRepoMarkerExcluded(targetPath, scope.repoId);
 
 	/**
-	 * A linked worktree off a bare-cloned managed cache inherits the cache's
-	 * repo-global `core.bare=true` unless a worktree-local override exists,
-	 * which requires `extensions.worktreeConfig` first -- without both, git
-	 * treats the worktree as bare and every non-log command in it fails with
-	 * "this operation must be run in a work tree".
+	 * Also enables `extensions.worktreeConfig` and the per-worktree
+	 * `core.bare=false` a linked worktree off a bare-cloned cache needs --
+	 * without both, git treats the worktree as bare and every non-log command
+	 * in it fails with "this operation must be run in a work tree".
 	 */
-	if (!worktreeConfigEnabled(sourcePath)) {
-		gitRun(
-			sourcePath,
-			["config", "extensions.worktreeConfig", "true"],
-			`failed to enable worktree-local config for repo ${scope.repoId}`,
-		);
-	}
-	ensureLinkedWorktreesNonBare(sourcePath, scope.repoId);
+	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, scope.repoId);
 	reconcilePrepareCommitMsgHook(targetPath, effortId, repoDoc);
 
 	return targetPath;

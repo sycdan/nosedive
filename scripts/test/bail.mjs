@@ -30,7 +30,7 @@ test("bail commits effort and nosedive provenance", () => {
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: bail-test.nosedive
 gist: "Bail test effort"

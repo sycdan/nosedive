@@ -53,7 +53,7 @@ ${repoMeta}---
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: land-test.nosedive
 gist: "Land test effort"

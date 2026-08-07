@@ -16,7 +16,7 @@ import { parseScopeRefs } from "./proveHostRender.js";
 import { writeFileAtomic } from "./renderPlan.js";
 
 export function effortDocs(kbDocs: KbDoc[]): KbDoc[] {
-	return kbDocs.filter((doc) => doc.kind === "effort");
+	return kbDocs.filter((doc) => doc.kind === "feat");
 }
 
 export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: string): KbDoc {

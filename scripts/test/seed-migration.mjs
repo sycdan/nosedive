@@ -161,7 +161,7 @@ Child body.
 		.filter((name) => name.endsWith(".md"))
 		.map((name) => [name, readFileSync(join(backlogBridge, "kb", name), "utf8")]);
 	const topEffort = kbTexts.find(
-		([, text]) => /^kind: effort$/m.test(text) && /^name: project$/m.test(text),
+		([, text]) => /^kind: feat$/m.test(text) && /^name: project$/m.test(text),
 	);
 	assert.ok(topEffort, "top-level effort doc was not created");
 	const topEffortId = /^id: ([0-9a-f-]{36})$/m.exec(topEffort[1])?.[1];
@@ -175,7 +175,7 @@ Child body.
 	assert.match(topEffort[1], /meta:\n  priority: high/);
 
 	const goggleboxEffort = kbTexts.find(
-		([, text]) => /^kind: effort$/m.test(text) && /^name: episode-one\.gogglebox$/m.test(text),
+		([, text]) => /^kind: feat$/m.test(text) && /^name: episode-one\.gogglebox$/m.test(text),
 	);
 	assert.ok(goggleboxEffort, "namespaced gogglebox effort doc was not created");
 	const goggleboxEffortId = /^id: ([0-9a-f-]{36})$/m.exec(goggleboxEffort[1])?.[1];
@@ -183,7 +183,7 @@ Child body.
 	assert.match(goggleboxEffort[1], /^gist: Gogglebox gist$/m);
 
 	const childDoc = readFileSync(join(backlogBridge, "kb", `${childEffortId}.md`), "utf8");
-	assert.match(childDoc, /^kind: effort$/m);
+	assert.match(childDoc, /^kind: feat$/m);
 	assert.match(childDoc, new RegExp(`^id: ${childEffortId}$`, "m"));
 	assert.match(childDoc, /^name: main-effort\.project$/m);
 	assert.match(childDoc, /^gist: Child gist$/m);
@@ -233,7 +233,7 @@ Child body.
 	write(
 		join(backlogBridge, "kb", `${betaEffortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${betaEffortId}
 name: beta
 gist: Beta gist
@@ -316,7 +316,7 @@ gist: Solo gist
 	mkdirSync(ambiguousBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], ambiguousBridge);
 	write(join(ambiguousBridge, ".nosediverc"), "workspace: ./workspace\n");
-	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 1\n");
+	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 2\n");
 	const initAmbiguous = run(["seed", "--headless"], ambiguousBridge, "");
 	assert.notEqual(initAmbiguous.status, 0, "init with ambiguous config unexpectedly succeeded");
 	assert.match(initAmbiguous.stderr, /bridge config is ambiguous/);
@@ -327,7 +327,7 @@ gist: Solo gist
 	);
 	assert.equal(
 		readFileSync(join(ambiguousBridge, ".nosedive", "config.yaml"), "utf8"),
-		"compatibility-level: 1\n",
+		"compatibility-level: 2\n",
 	);
 
 	// A split base config with no readable compatibility-level is likewise
@@ -380,4 +380,78 @@ gist: Solo gist
 	} finally {
 		writeFileSync(migrationScriptPath, originalMigrationScript, "utf8");
 	}
+});
+
+/**
+ * The L1 -> L2 migration rewrites doc kinds in place, so the thing to prove is
+ * not only that it converts, but that it leaves alone the prose it was never
+ * asked about. A doc explaining the kind is exactly the doc a careless regex
+ * would corrupt.
+ */
+test("seed migrates effort docs to feat without touching bodies", () => {
+	const bridge = join(tmp, "l2-rekind-bridge");
+	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	runTool("git", ["config", "user.name", "Rekind Person"], bridge);
+	runTool("git", ["config", "user.email", "rekind@example.invalid"], bridge);
+	write(
+		join(bridge, ".nosedive", "config.yaml"),
+		["compatibility-level: 1", "workspace: ./workspace", "kb: ./kb", ""].join("\n"),
+	);
+
+	const featId = "00000000-0000-7000-8000-0000000009a1";
+	const memoId = "00000000-0000-7000-8000-0000000009a2";
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		[
+			"---",
+			"kind: effort",
+			`id: ${featId}`,
+			"name: rekind-me",
+			'gist: "Rekind."',
+			"---",
+			"",
+			"# Rekind Me",
+			"",
+		].join("\n"),
+	);
+	// A memo whose body documents the old kind, in a fenced block.
+	write(
+		join(bridge, "kb", `${memoId}.md`),
+		[
+			"---",
+			"kind: memo",
+			`id: ${memoId}`,
+			"name: explains-the-kind",
+			'gist: "Explains."',
+			"---",
+			"",
+			"# Explains",
+			"",
+			"```yaml",
+			"kind: effort",
+			"```",
+			"",
+		].join("\n"),
+	);
+
+	write(
+		join(bridge, "AGENTS.md"),
+		[
+			"# Agents",
+			"",
+			"<!-- BEGIN nosedive managed instructions -->",
+			"<!-- END nosedive managed instructions -->",
+			"",
+		].join("\n"),
+	);
+
+	const seeded = run(["seed", "--headless"], bridge);
+	assert.equal(seeded.status, 0, seeded.stderr);
+	assert.match(seeded.stdout, /Feats migrated: 1/);
+
+	assert.match(readFileSync(join(bridge, "kb", `${featId}.md`), "utf8"), /^kind: feat$/m);
+	const memo = readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8");
+	assert.match(memo, /^kind: memo$/m, "the memo's own kind is untouched");
+	assert.match(memo, /```yaml\r?\nkind: effort\r?\n```/, "its documented example is untouched");
 });

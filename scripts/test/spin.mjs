@@ -45,7 +45,7 @@ test("spin refuses without an active dive", () => {
 test("spin requires pilot words", () => {
 	const bridge = createBridge(tmp, "no-words");
 	activeDive(bridge, ids.child);
-	writeDoc(bridge, "effort.md", `kind: effort\nid: ${ids.child}\nname: effort\ngist: "Effort"`);
+	writeDoc(bridge, "effort.md", `kind: feat\nid: ${ids.child}\nname: effort\ngist: "Effort"`);
 	const result = run(["spin"], bridge);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /requires words/);
@@ -57,12 +57,12 @@ test("spin lists unique loads from the active effort and its ancestors", () => {
 	writeDoc(
 		bridge,
 		"child.md",
-		`kind: effort\nid: ${ids.child}\nname: child\ngist: "Child"\nscopes:\n  - ${ids.childRepo}: {}\nlinks:\n  - kb/${ids.parent}.md:\n      rel: parent`,
+		`kind: feat\nid: ${ids.child}\nname: child\ngist: "Child"\nscopes:\n  - ${ids.childRepo}: {}\nlinks:\n  - kb/${ids.parent}.md:\n      rel: parent`,
 	);
 	writeDoc(
 		bridge,
 		"parent.md",
-		`kind: effort\nid: ${ids.parent}\nname: parent\ngist: "Parent"\nscopes:\n  - ${ids.parentRepo}: {}`,
+		`kind: feat\nid: ${ids.parent}\nname: parent\ngist: "Parent"\nscopes:\n  - ${ids.parentRepo}: {}`,
 	);
 	writeDoc(
 		bridge,
@@ -101,7 +101,7 @@ test("spin identifies scoped repos without documented loads", () => {
 	writeDoc(
 		bridge,
 		"effort.md",
-		`kind: effort\nid: ${ids.child}\nname: effort\ngist: "Effort"\nscopes:\n  - ${ids.childRepo}: {}`,
+		`kind: feat\nid: ${ids.child}\nname: effort\ngist: "Effort"\nscopes:\n  - ${ids.childRepo}: {}`,
 	);
 	writeDoc(
 		bridge,

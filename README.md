@@ -7,7 +7,7 @@
 ⚠️ This repo is currently undergoing active development and may undergo breaking changes without warning. ⚠️
 
 **_nosedive_ assembles cross-repo, context-aware prompts for agents.** It does
-not do the work itself: it gathers the effort, its ancestry, dives, scoped
+not do the work itself: it gathers the feat, its ancestry, dives, scoped
 repositories, recorded conventions, gates, and loads, then hands that context
 to an agent. The result is a safer way for a developer and their agents to pick
 up work spanning several repositories without juggling clones, branches,
@@ -27,22 +27,22 @@ infra repo at once. Today that means:
   and shepherding it through review is manual and inconsistent across people.
 
 _nosedive_ addresses these by making the unit of work a first-class, on-disk
-object, creating effort-scoped multi-repo workspaces, and routing developer
+object, creating feat-scoped multi-repo workspaces, and routing developer
 actions through explicit commands that compose safely for a human or an agent.
 
-## Efforts and dives
+## Feats and dives
 
 _nosedive_ organizes work around two core concepts:
 
-- **Effort** — a `kind: effort` KB document for a unit of potentially
+- **Feat** — a `kind: feat` KB document for a unit of potentially
   cross-repository work. `scopes:` declares its repositories and `rel: parent`
-  links nest related efforts. The generated backlog memo lists open efforts.
-- **Dive** — one concrete iteration on an effort. Dives are `kind: dive` docs
+  links nest related feats. The generated backlog memo lists open feats.
+- **Dive** — one concrete iteration on a feat. Dives are `kind: dive` docs
   that record who is actively working, the pinned scopes, a brief, and handoff
   notes.
 
-The working arc is `into` to **think**: assemble context, choose or pitch an
-effort, and claim a dive. `jump` to **execute**: restore that dive's workspace
+The working arc is `into` to **think**: assemble context, choose or pitch a
+feat, and claim a dive. `jump` to **execute**: restore that dive's workspace
 and work its brief. `bail` to **undo**: abandon an attempt. `pack` to
 **switch**: capture WIP and release a dive for later. `land` to **deliver**:
 push writable scopes to their work branches and close the dive for review.
@@ -107,27 +107,27 @@ Invoked directly by humans, or indirectly via agents.
 
 | Command | Usage | What it does |
 | --- | --- | --- |
-| [`add-repo.effort@1`](kb/bc20378b-76e7-54ce-a36e-3c22e1a8753c.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active effort's `scopes:` by resolving the repo by id or exact name. |
-| [`bail@1`](kb/d5559757-9eca-5014-a2b2-7e89681d425f.md) | `npx nosedive bail [<reason>]` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
+| [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active feat's `scopes:` by resolving the repo by id or exact name. |
+| [`bail@2`](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md) | `npx nosedive bail [<reason>]` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
 | [`dehydrate-repo.workspace@1`](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
-| [`drop@1`](kb/b2a24935-a759-5a62-96d5-1f0c4666cb7b.md) | `npx nosedive drop "<name>"` | Refuse to release a named drop until the calendar reaches its effort's `meta.target` date. |
-| [`dump-backlog@1`](kb/d90673eb-a8c6-537f-8c6c-3c38ddd13cc1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
+| [`drop@2`](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md) | `npx nosedive drop "<name>"` | Print a dated drop's release prompt after its target date. |
+| [`dump-backlog@2`](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
 | [`hydrate-repo.workspace@1`](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
-| [`into@1`](kb/558376d5-9812-5c7a-b675-960f473a0c94.md) | `npx nosedive into [<context>]` | Cold-start entrypoint -- print pilot identity, backlog, and the pilot's context, then hand off to the piped agent to claim or create a dive. |
-| [`jump@1`](kb/06ae979d-86b0-5df1-83aa-c2a58a2ec678.md) | `npx nosedive jump` | Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top. |
-| [`land@1`](kb/5a267b93-99da-5469-98f7-17d6dd5b18f4.md) | `npx nosedive land` | Canonicalize the active dive -- push every writable scoped repo to work-branch-prefix<slug>, close the dive as a memo with an outcome section, dehydrate. |
+| [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | Cold-start entrypoint -- print pilot identity, backlog, and the pilot's context, then hand off to the piped agent to claim or create a dive. |
+| [`jump@2`](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md) | `npx nosedive jump` | Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top. |
+| [`land@2`](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md) | `npx nosedive land` | Canonicalize the active dive -- push every writable scoped repo to work-branch-prefix<slug>, close the dive as a memo with an outcome section, dehydrate. |
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
-| [`pack@1`](kb/0a4fe90c-9f9a-57e4-8234-750660f174d4.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, then force-dehydrate every scoped repo. |
-| [`pitch@1`](kb/f9325040-bb48-57f5-a98e-bfa0f2497661.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <effort>]` | Create a new `kind: effort` KB doc, optionally nested under a parent effort. |
-| [`preflight@1`](kb/d6e4bbe3-b158-5e6d-a734-e0ce77acfdce.md) | `npx nosedive preflight` | Confirm the bridge pre-push hook is wired, then print the session-start report -- bridge status, pilot identity, and open work. |
+| [`pack@2`](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, then force-dehydrate every scoped repo. |
+| [`pitch@2`](kb/d59ff8d4-3366-54cd-ac2e-7ef869752b3a.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <feat>]` | Create a new `kind: feat` KB doc, optionally nested under a parent feat. |
+| [`preflight@2`](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md) | `npx nosedive preflight` | Confirm the bridge pre-push hook is wired, then print the session-start report -- bridge status, pilot identity, and open work. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
-| [`record.dive@1`](kb/9822f048-0b75-5ed3-b912-fb566e31d9e8.md) | `npx nosedive record.dive [--ref <dive-ref>] [--effort <effort-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--scope <repo-ref>]... [--clear-scopes]` | Create or patch an effort-owned dive record while preserving omitted update fields. |
+| [`record.dive@2`](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md) | `npx nosedive record.dive [--ref <dive-ref>] [--effort <effort-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--scope <repo-ref>]... [--clear-scopes]` | Create or patch a feat-owned dive record while preserving omitted update fields. |
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid> [--gist]` | Print the markdown body, or with --gist the gist line, of a packaged nosedive KB document by uuid. |
 | [`scan@1`](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md) | `npx nosedive scan --repo <repo-id-or-name>` | Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
-| [`spin@1`](kb/6899065c-182d-5c9b-b0f0-08eaa921e3ed.md) | `npx nosedive spin <loads>` | Brief a runner with documented loads reachable from the active dive's effort ancestry. |
-| [`update-backlog@1`](kb/eb6305b4-9aa6-5fdb-b622-e0d17b6303bb.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB effort docs. |
+| [`spin@2`](kb/44dc2f43-c972-5204-96fe-2b92e61bb346.md) | `npx nosedive spin <loads>` | Brief a runner with documented loads reachable from the active dive's feat ancestry. |
+| [`update-backlog@2`](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB feat docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 
 ### Internal Commands
@@ -145,7 +145,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 
 | Command | Usage | Use instead |
 | --- | --- | --- |
-| [`list-dives@1`](kb/ad3bc6d7-d4cd-5381-a98f-cb13f9a801d6.md) | `npx nosedive list-dives <effort> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming an effort. |
+| [`list-dives@2`](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md) | `npx nosedive list-dives <feat> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming a feat. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the

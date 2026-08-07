@@ -55,7 +55,7 @@ function setup(name) {
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: record-dive.nosedive
 gist: "Record dives"
@@ -92,7 +92,7 @@ test("record.dive defaults to the effort's cached default-branch repositories", 
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: record-dive.nosedive
 gist: "Record dives"
@@ -241,7 +241,7 @@ test("record.dive reassigns its reciprocal effort link", () => {
 	write(
 		join(bridge, "kb", `${effort}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effort}
 name: updated-effort
 gist: "Updated effort"

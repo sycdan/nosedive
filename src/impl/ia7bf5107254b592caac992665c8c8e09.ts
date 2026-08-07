@@ -6,6 +6,12 @@ import {
 	resolveDropEffort,
 	todayIsoDate,
 } from "../lib/drop.js";
+import {
+	readPromptBody,
+	renderDropPrompt,
+	resolvePromptDoc,
+	resolveRunnerUsage,
+} from "../lib/dropPrompt.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
@@ -14,11 +20,16 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 	const rc = readNosediveRc(runtime.cwd);
 	if (!rc.kbDir) throw new Error("drop requires a configured kb directory");
 
-	const effort = resolveDropEffort(loadKbDocs(rc.kbDir, rc.bridgeDir), options.name);
+	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const effort = resolveDropEffort(kbDocs, options.name);
 	const target = dropTargetDate(effort);
-	assertDropTargetReached(effort, target, todayIsoDate());
+	const today = todayIsoDate();
+	assertDropTargetReached(effort, target, today);
 
-	throw new Error(
-		`${effort.name} is droppable as of ${target}, but dropping is not implemented yet`,
-	);
+	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
+	return {
+		stdout: renderDropPrompt(readPromptBody(promptDoc), effort, target, today),
+		stderr: "",
+		exitCode: 0,
+	};
 }

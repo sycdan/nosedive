@@ -35,7 +35,7 @@ test("path-bearing parse errors use POSIX separators", () => {
 	write(
 		join(bridge, "kb", `${effortId}.md`),
 		`---
-kind: effort
+kind: feat
 id: ${effortId}
 name: invalid-path-rendering
 scopes: invalid

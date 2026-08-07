@@ -58,7 +58,26 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
 		pilotName: "",
 		pilotEmail: "",
+		extra: unownedConfigScalars(base.scalars),
 	};
+}
+
+/** Config keys seed writes itself; everything else is the pilot's and is preserved. */
+const SEEDED_CONFIG_KEYS = new Set([
+	"compatibility-level",
+	"workspace",
+	"backlog",
+	"kb",
+	"home-branch",
+	"work-branch-prefix",
+]);
+
+export function unownedConfigScalars(scalars: Record<string, string>): Record<string, string> {
+	const extra: Record<string, string> = {};
+	for (const [key, value] of Object.entries(scalars)) {
+		if (!SEEDED_CONFIG_KEYS.has(key)) extra[key] = value;
+	}
+	return extra;
 }
 
 export function renderBaseConfig(settings: RcSettings, compatibilityLevel: number): string {
@@ -69,6 +88,7 @@ export function renderBaseConfig(settings: RcSettings, compatibilityLevel: numbe
 		`kb: ${toPosixPath(settings.kb)}`,
 		`home-branch: ${settings.homeBranch}`,
 		`work-branch-prefix: ${settings.workBranchPrefix}`,
+		...Object.entries(settings.extra).map(([key, value]) => `${key}: ${value}`),
 		"",
 	].join("\n");
 }
@@ -95,6 +115,7 @@ export interface MigrationRunSummary {
 	sourceDir?: string;
 	copiedFiles?: string[];
 	effortCount?: number;
+	featCount?: number;
 	backlogMemoId?: string;
 	bridgeRepo?: {
 		id?: string;
@@ -185,6 +206,7 @@ export function printMigrationSummary(
 	io.log(`Migration ${migration.docId} complete.`);
 	if (summary.sourceDir) io.log(`Source: ${toPosixPath(summary.sourceDir)}`);
 	if (summary.effortCount !== undefined) io.log(`Efforts copied: ${summary.effortCount}`);
+	if (summary.featCount !== undefined) io.log(`Feats migrated: ${summary.featCount}`);
 	if (summary.backlogMemoId) io.log(`Backlog memo: ${summary.backlogMemoId}`);
 	if (summary.bridgeRepo?.id) {
 		const status = summary.bridgeRepo.status ? `${summary.bridgeRepo.status} ` : "";

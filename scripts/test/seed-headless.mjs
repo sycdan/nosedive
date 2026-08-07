@@ -91,7 +91,7 @@ test("seed-headless", () => {
 	assert.equal(
 		freshConfig,
 		[
-			"compatibility-level: 1",
+			"compatibility-level: 2",
 			"workspace: ./workspace",
 			`backlog: ${freshMemoId}`,
 			"kb: ./kb",
@@ -170,7 +170,7 @@ current:
 	assert.equal(
 		existingConfig,
 		[
-			"compatibility-level: 1",
+			"compatibility-level: 2",
 			"workspace: ./custom-workspace",
 			`backlog: ${existingMemoId}`,
 			"kb: ./custom-kb",

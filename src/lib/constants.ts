@@ -47,7 +47,7 @@ export const BASE_CONFIG_FILENAME = "config.yaml";
 export const LEGACY_CONFIG_FILENAME = ".nosediverc";
 export const MIGRATION_BACKUP_DIRNAME = "migration-backups";
 
-export const CURRENT_COMPATIBILITY_LEVEL = 1;
+export const CURRENT_COMPATIBILITY_LEVEL = 2;
 
 export const BASE_CONFIG_KNOWN_KEYS = [
 	"compatibility-level",

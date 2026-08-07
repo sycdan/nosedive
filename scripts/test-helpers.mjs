@@ -196,7 +196,7 @@ export function writeBridgeConfig(
 	bridgeDir,
 	{ workspace = "./workspace", kb = "./kb", backlog } = {},
 ) {
-	const lines = ["compatibility-level: 1", `workspace: ${workspace}`, `kb: ${kb}`];
+	const lines = ["compatibility-level: 2", `workspace: ${workspace}`, `kb: ${kb}`];
 	if (backlog) lines.push(`backlog: ${backlog}`);
 	lines.push("");
 	write(join(bridgeDir, ".nosedive", "config.yaml"), lines.join("\n"));

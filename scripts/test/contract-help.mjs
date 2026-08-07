@@ -48,7 +48,23 @@ const noBridge = createNoBridge(tmp);
 test("contract help", () => {
 	const whoamiContractBridge = createBridge(tmp, "contract-help-bridge", { backlog: "./backlog" });
 
-	// L0 is gone: every command the package ships is contracted at L1.
+	/**
+	 * The builtin route serves a command's latest level, so the explicit route
+	 * has to be asked for that same level or the two legitimately differ. Read
+	 * it from the package rather than pinning a number here, which is what made
+	 * this test fail the first time a command was republished at @2.
+	 */
+	const latestLevels = new Map();
+	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
+		const docText = readFileSync(join(root, "kb", docName), "utf8");
+		if (!/^kind: command$/m.test(docText)) continue;
+		const named = /^name: (.+)@(\d+)$/m.exec(docText);
+		if (!named) continue;
+		const level = Number(named[2]);
+		if (level > (latestLevels.get(named[1]) ?? -1)) latestLevels.set(named[1], level);
+	}
+
+	// L0 is gone: every command the package ships is contracted at L1 or above.
 	const contractedCommands = [
 		["add-repo.effort", /Usage: nosedive add-repo\.effort <repo-id-or-name>/],
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
@@ -65,7 +81,7 @@ test("contract help", () => {
 		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],
-	].map(([command, usage]) => [command, usage, 1]);
+	].map(([command, usage]) => [command, usage, latestLevels.get(command) ?? 1]);
 
 	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
 		const docText = readFileSync(join(root, "kb", docName), "utf8");
@@ -89,12 +105,12 @@ test("contract help", () => {
 	}
 	const deprecatedListDivesHelp = run(["list-dives", "--help"], noBridge);
 	assertOk(deprecatedListDivesHelp, "list-dives --help failed");
-	assert.match(deprecatedListDivesHelp.stdout, /Usage: nosedive list-dives <effort>/);
+	assert.match(deprecatedListDivesHelp.stdout, /Usage: nosedive list-dives <feat>/);
 	assert.match(deprecatedListDivesHelp.stdout, /Use `preflight` instead/);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
-kind: effort
+kind: feat
 id: 019f8584-453f-79ea-9d53-5f1b20b4cda9
 name: deprecated-list-dives
 gist: "Legacy command fixture."

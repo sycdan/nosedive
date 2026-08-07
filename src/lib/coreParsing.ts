@@ -75,6 +75,33 @@ export interface NosediveRc {
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
+	/** `agent-runner`: id of the memo whose `meta.cold-start-usage` runs an agent. */
+	agentRunner?: string;
+	/** `agent-effort-<n>`: the model a command escalating to effort `<n>` runs on. */
+	agentEfforts: Record<number, string>;
+	/** `<command>-prompt`: id of the `kind: idea` doc a command builds its prompt from. */
+	prompts: Record<string, string>;
+}
+
+const AGENT_EFFORT_KEY = /^agent-effort-([0-9]+)$/;
+const COMMAND_PROMPT_KEY = /^(.+)-prompt$/;
+
+export function parseAgentEfforts(scalars: Record<string, string>): Record<number, string> {
+	const efforts: Record<number, string> = {};
+	for (const [key, value] of Object.entries(scalars)) {
+		const effort = AGENT_EFFORT_KEY.exec(key);
+		if (effort) efforts[Number.parseInt(effort[1]!, 10)] = value;
+	}
+	return efforts;
+}
+
+export function parseCommandPrompts(scalars: Record<string, string>): Record<string, string> {
+	const prompts: Record<string, string> = {};
+	for (const [key, value] of Object.entries(scalars)) {
+		const prompt = COMMAND_PROMPT_KEY.exec(key);
+		if (prompt) prompts[prompt[1]!] = value;
+	}
+	return prompts;
 }
 
 export function emptyYaml(): SimpleYaml {
@@ -276,6 +303,9 @@ export function readNosediveRc(start: string): NosediveRc {
 		workBranchPrefix: rc.scalars["work-branch-prefix"],
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
+		agentRunner: rc.scalars["agent-runner"],
+		agentEfforts: parseAgentEfforts(rc.scalars),
+		prompts: parseCommandPrompts(rc.scalars),
 	};
 }
 
@@ -289,6 +319,13 @@ export interface RcSettings {
 	workBranchPrefix: string;
 	pilotName: string;
 	pilotEmail: string;
+	/**
+	 * Config keys nosedive does not own, kept verbatim so a re-seed cannot
+	 * silently delete a pilot's `agent-effort-<n>`, `agent-runner` or
+	 * `<command>-prompt` settings. Seed rewrites the whole file; anything it
+	 * does not carry across is gone.
+	 */
+	extra: Record<string, string>;
 }
 
 export interface SeedOptions {

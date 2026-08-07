@@ -25,6 +25,7 @@ import {
 	type KbDoc,
 } from "./lib/commands.js";
 import { lib, namespacedUuid, type CommandLibRegistry } from "./lib/index.js";
+import { executePrompt } from "./lib/promptExecution.js";
 
 export { createCapturingIo, createConsoleIo, readNosediveRc };
 
@@ -319,7 +320,7 @@ async function runContractAdapter(
 	contract: ContractDoc,
 	args: string[],
 	requestedCompatibilityLevel: number,
-): Promise<void> {
+): Promise<ContractRunOutput> {
 	if (!contract.adapter) {
 		throw new Error(`command ${contract.name} has no meta.adapter`);
 	}
@@ -344,7 +345,10 @@ async function runContractAdapter(
 			name: contract.name,
 			path: contract.path,
 		},
-		impl: createImplRegistry({ cwd: process.cwd() }),
+		impl: createImplRegistry({
+			cwd: process.cwd(),
+			commandDoc: { id: contract.id, name: contract.name, path: contract.path },
+		}),
 		lib,
 	};
 
@@ -364,9 +368,40 @@ async function runContractAdapter(
 	}
 
 	const result = assertContractRunOutput(await entrypoint(value, ctx), contract);
+	return result;
+}
+
+function writeCommandOutput(result: ContractRunOutput): void {
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);
 	if (result.exitCode !== 0) process.exitCode = result.exitCode;
+}
+
+async function runPromptCommand(
+	contract: ContractDoc,
+	args: string[],
+	targetLevel: number,
+): Promise<void> {
+	if (!args.includes("--exec")) {
+		writeCommandOutput(await runContractAdapter(contract, args, targetLevel));
+		return;
+	}
+	const result = await runContractAdapter(
+		contract,
+		args.filter((arg) => arg !== "--exec"),
+		targetLevel,
+	);
+	// The command's own stderr is its progress and warnings, and it is worth the
+	// same to a pilot whether or not the prompt then gets executed. Only stdout
+	// changes meaning under --exec: it stops being the prompt and becomes the
+	// runner's answer.
+	if (result.stderr) process.stderr.write(result.stderr);
+	if (result.exitCode !== 0) {
+		if (result.stdout) process.stdout.write(result.stdout);
+		process.exitCode = result.exitCode;
+		return;
+	}
+	executePrompt(contract.command, contract.path, result.stdout);
 }
 
 /** The one command an out-of-date bridge may still run, because it migrates. */
@@ -413,7 +448,7 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 		return true;
 	}
 
-	await runContractAdapter(contract, args, targetLevel);
+	await runPromptCommand(contract, args, targetLevel);
 	return true;
 }
 

@@ -19,6 +19,7 @@ import {
 	assertGeneratedFrontmatter,
 	assertOk,
 	cli,
+	createBridge,
 	createNoBridge,
 	createTmp,
 	escapeRegExp,
@@ -152,4 +153,67 @@ test("cli-basics", () => {
 	const missingRender = run(["render", "019f9f95-ffff-7fff-bfff-ffffffffffff"], noBridge);
 	assert.notEqual(missingRender.status, 0, "render missing package doc unexpectedly succeeded");
 	assert.match(missingRender.stderr, /package kb doc not found/);
+});
+
+/**
+ * A level is exercised before any bridge has migrated to it, so an explicit
+ * `@N` has to keep working past the refusal that catches the plain route. It
+ * still has to say it is off the supported path.
+ */
+test("explicit @N runs ahead of the bridge with a warning", () => {
+	const backlogId = "00000000-0000-7000-8000-0000000000a1";
+	const backlogMemo = [
+		"---",
+		"kind: memo",
+		`id: ${backlogId}`,
+		"name: ahead-of-bridge-backlog",
+		'gist: "Backlog memo."',
+		"---",
+		"",
+		"# Ahead Of Bridge Backlog",
+		"",
+	].join("\n");
+
+	const staleBridge = join(tmp, "ahead-of-bridge");
+	mkdirSync(staleBridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], staleBridge);
+	write(
+		join(staleBridge, ".nosedive", "config.yaml"),
+		[
+			"compatibility-level: 1",
+			"workspace: ./workspace",
+			"kb: ./kb",
+			`backlog: ${backlogId}`,
+			"",
+		].join("\n"),
+	);
+	write(join(staleBridge, "kb", `${backlogId}.md`), backlogMemo);
+
+	const plain = run(["dump-backlog"], staleBridge);
+	assert.notEqual(plain.status, 0, "plain route unexpectedly ran against a level 1 bridge");
+	assert.match(plain.stderr, /bridge is at compatibility level 1; run `nosedive seed`/);
+
+	const ahead = run(["dump-backlog@2"], staleBridge);
+	assertOk(ahead, "explicit dump-backlog@2 failed against a level 1 bridge");
+	assert.match(
+		ahead.stderr,
+		/nosedive: warning: dump-backlog@2 is ahead of this bridge \(level 1\); running a command ahead of the bridge is not an officially-supported pathway/,
+	);
+	assert.match(ahead.stdout, /^# Ahead Of Bridge Backlog$/m, "dump-backlog@2 produced no output");
+
+	// At or behind the bridge is the ordinary route, and stays quiet.
+	const behind = run(["dump-backlog@1"], staleBridge);
+	assertOk(behind, "explicit dump-backlog@1 failed against a level 1 bridge");
+	assert.doesNotMatch(behind.stderr, /ahead of this bridge/);
+
+	const currentBridge = createBridge(tmp, "ahead-of-bridge-current", { backlog: backlogId });
+	write(join(currentBridge, "kb", `${backlogId}.md`), backlogMemo);
+	const atLevel = run(["dump-backlog@2"], currentBridge);
+	assertOk(atLevel, "explicit dump-backlog@2 failed against a level 2 bridge");
+	assert.doesNotMatch(atLevel.stderr, /ahead of this bridge/);
+
+	// No bridge to be ahead of, so nothing to warn about.
+	const outside = run(["mint@1"], noBridge);
+	assertOk(outside, "explicit mint@1 outside a bridge failed");
+	assert.doesNotMatch(outside.stderr, /ahead of this bridge/);
 });

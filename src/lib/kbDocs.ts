@@ -15,7 +15,7 @@ import {
 	toPosixPath,
 } from "./coreParsing.js";
 import { gitRelPath } from "./gitState.js";
-import { parseLinkRefs, parseScopeRefs } from "./proveHostRender.js";
+import { parseLinkRefs, parseScopeRefs } from "./kbRefs.js";
 import { gitOutput, quoteYamlString } from "./renderPlan.js";
 import { uuid7AtMs } from "./uuid7.js";
 
@@ -163,6 +163,8 @@ export interface LinkRef {
 	target: string;
 	rel?: string;
 	anchor?: string;
+	/** Every scalar key written on the link, `rel`/`anchor` included. Open set: the reading command validates what it needs. */
+	attrs: Record<string, string>;
 }
 
 export interface TargetDoc {

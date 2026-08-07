@@ -468,6 +468,17 @@ meta:
 	const peerWorktree = join(hydrateBridge, "workspace", "hydrated-peer");
 	runTool("git", ["worktree", "add", "--detach", peerWorktree, cloudMainCommit], hydrateCache);
 
+	const hydrateAdoptsPeer = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assertOk(hydrateAdoptsPeer, "hydrate-repo.workspace peer adoption failed");
+	assert.match(
+		hydrateAdoptsPeer.stdout,
+		new RegExp(
+			`^updated repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
+			"m",
+		),
+		"marking the raw-added peer worktree non-bare is a real change",
+	);
+
 	const hydrateNoop = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(hydrateNoop, "hydrate-repo.workspace noop failed");
 	assert.match(
@@ -476,6 +487,15 @@ meta:
 			`^noop repo=${hydrateRepoId} path=workspace/hydrated-target commit=[0-9a-f]{40}$`,
 			"m",
 		),
+	);
+	assert.equal(
+		runTool(
+			"git",
+			["config", "--worktree", "--get", "remote.origin.pushurl"],
+			join(hydrateBridge, "workspace", "hydrated-target"),
+		).stdout.trim(),
+		"nosedive-render-587d3f73-2534-5179-b111-ce6c83d6814d",
+		"writable hydration is push-isolated too; land publishes by explicit URL",
 	);
 
 	const hydrateReadOnly = run(
@@ -495,14 +515,14 @@ meta:
 		["config", "--worktree", "--get", "remote.origin.pushurl"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	).stdout.trim();
-	assert.equal(pushUrlReadOnly, "no_push://disabled");
+	assert.equal(pushUrlReadOnly, "nosedive-render-c4e93002-2925-58bd-9b70-d917017a9fc7");
 	const pushUrlReadOnlyFromOrdinaryConfig = runGitUnchecked(
 		["config", "--get", "remote.origin.pushurl"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	);
 	assert.equal(
 		pushUrlReadOnlyFromOrdinaryConfig.stdout.trim(),
-		"no_push://disabled",
+		"nosedive-render-c4e93002-2925-58bd-9b70-d917017a9fc7",
 		"effective pushurl should still block pushes from the hydrated worktree",
 	);
 	const sharedCachePushUrlReadOnly = runGitUnchecked(
@@ -553,14 +573,15 @@ meta:
 			"m",
 		),
 	);
-	const pushUrlAfterRestore = runGitUnchecked(
+	const pushUrlAfterRestore = runTool(
+		"git",
 		["config", "--worktree", "--get", "remote.origin.pushurl"],
 		join(hydrateBridge, "workspace", "hydrated-target"),
 	);
-	assert.notEqual(
-		pushUrlAfterRestore.status,
-		0,
-		"worktree-local pushurl override should be removed in writable mode",
+	assert.equal(
+		pushUrlAfterRestore.stdout.trim(),
+		"nosedive-render-587d3f73-2534-5179-b111-ce6c83d6814d",
+		"writable mode swaps the read-only sentinel for the land-only one, never unblocks",
 	);
 	const sharedCachePushUrlAfterRestore = runGitUnchecked(
 		["config", "--get", "remote.origin.pushurl"],
@@ -925,7 +946,20 @@ meta:
 	// Once the commit is published to the branch's configured upstream, hydrate
 	// may safely move the worktree back to the requested ref.
 	runTool("git", ["checkout", "-b", "proof/published"], unpublishedTarget);
-	runTool("git", ["push", "--set-upstream", "origin", "proof/published"], unpublishedTarget);
+	// Hydrated worktrees are push-isolated, so publish the way `land` does:
+	// straight to the resolved URL, which no `pushurl` override intercepts.
+	const unpublishedOriginUrl = runTool(
+		"git",
+		["config", "--get", "remote.origin.url"],
+		unpublishedTarget,
+	).stdout.trim();
+	runTool("git", ["push", unpublishedOriginUrl, "proof/published"], unpublishedTarget);
+	runTool("git", ["config", "branch.proof/published.remote", "origin"], unpublishedTarget);
+	runTool(
+		"git",
+		["config", "branch.proof/published.merge", "refs/heads/proof/published"],
+		unpublishedTarget,
+	);
 	const hydrateAfterPublish = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
 	assertOk(hydrateAfterPublish, "hydrate after publishing to the upstream should succeed");
 	assert.equal(

@@ -35,9 +35,9 @@ import {
 	parseRepoMarkerStrict,
 	realpathStable,
 } from "./repoWorkspaceCore.js";
+import { gitWorktreeEntries } from "./repoHardening.js";
 import {
 	expectedWorktreePath,
-	gitWorktreeEntries,
 	markerPathForTarget,
 	removeHydratedWorktree,
 } from "./repoWorktrees.js";

@@ -113,6 +113,32 @@ export function bridgeCompatibilityLevel(start: string): number | undefined {
 	return configCompatibilityLevel(base, resolved.basePath);
 }
 
+/** The level of the bridge under `start`, or undefined if none is readable. */
+export function maybeBridgeCompatibilityLevel(start: string): number | undefined {
+	try {
+		return bridgeCompatibilityLevel(start);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * An explicit `<command>@<N>` may outrun the bridge it is pointed at, because
+ * that is how a level gets exercised before any bridge has migrated to it. Say
+ * so out loud so nobody mistakes the escape hatch for a supported route.
+ */
+export function aheadOfBridgeWarning(
+	command: string,
+	level: number,
+	bridgeLevel: number | undefined,
+): string | undefined {
+	if (bridgeLevel === undefined || level <= bridgeLevel) return undefined;
+	return (
+		`nosedive: warning: ${command}@${level} is ahead of this bridge (level ${bridgeLevel}); ` +
+		`running a command ahead of the bridge is not an officially-supported pathway\n`
+	);
+}
+
 export let commandHelpPrinter: ((command: string, io: CommandIo) => void) | undefined;
 
 export function setCommandHelpPrinter(print: (command: string, io: CommandIo) => void): void {

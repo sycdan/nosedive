@@ -30,10 +30,10 @@ import {
 	expectedWorktreePath,
 	isDirEmpty,
 	pruneStaleWorktrees,
-	reconcilePushReadOnly,
 	resolveRefCommit,
 	writeRepoMarker,
 } from "./repoWorktrees.js";
+import { reconcilePushIsolation } from "./repoHardening.js";
 
 export interface ProverHostRequest {
 	bridgeDir: string;
@@ -342,7 +342,7 @@ export function ensureProverRepoHydrated(
 			const drift = driftedScope(repoId, scope, targetPath, commit);
 			if (drift) drifted.push(drift);
 			warnings.push(...validateExistingProverRepo(repoId, scope, targetPath, commit));
-			reconcilePushReadOnly(sourcePath, targetPath, scope.readOnly, repoId);
+			reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, repoId);
 			return targetPath;
 		}
 		if (!isDirEmpty(targetPath)) {
@@ -361,7 +361,7 @@ export function ensureProverRepoHydrated(
 	);
 	writeRepoMarker(targetPath, repoId);
 	ensureRepoMarkerExcluded(targetPath, repoId);
-	reconcilePushReadOnly(sourcePath, targetPath, scope.readOnly, repoId);
+	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, repoId);
 	return targetPath;
 }
 

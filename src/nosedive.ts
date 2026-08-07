@@ -4,12 +4,13 @@ import { isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
 import {
-	bridgeCompatibilityLevel,
+	aheadOfBridgeWarning,
 	createCapturingIo,
 	createConsoleIo,
 	CURRENT_COMPATIBILITY_LEVEL,
 	formatPath,
 	isInsideDir,
+	maybeBridgeCompatibilityLevel,
 	packageDocsOfKind,
 	packageRoot,
 	parseLinkRefs,
@@ -171,14 +172,6 @@ function packageContractDocs(): ContractDoc[] {
 	return packageDocsOfKind("command").map((doc) =>
 		parsePackageContractDoc(join(packageKbDir, doc.filename), doc.content),
 	);
-}
-
-function maybeBridgeCompatibilityLevel(start: string): number | undefined {
-	try {
-		return bridgeCompatibilityLevel(start);
-	} catch {
-		return undefined;
-	}
 }
 
 function resolveContract(
@@ -410,15 +403,17 @@ const MIGRATION_COMMAND = "seed";
 async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): Promise<boolean> {
 	const explicitLevel = parsed.explicitCompatibilityLevel;
 	const exact = explicitLevel !== undefined;
-	const bridgeLevel = exact ? undefined : maybeBridgeCompatibilityLevel(process.cwd());
+	const bridgeLevel = maybeBridgeCompatibilityLevel(process.cwd());
 	const isHelp = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
 
 	// A bridge below the current level holds data this build no longer reads.
 	// Rather than let each command fail its own confusing way, refuse early and
 	// name the fix. Exceptions: `seed`, which is the fix; `--help`, which
 	// touches no bridge data; and anything that is not a contracted command at
-	// all, such as the `version` builtin, which never reads the bridge.
+	// all, such as the `version` builtin, which never reads the bridge; and an
+	// explicit `@N`, which answers to `aheadOfBridgeWarning` instead.
 	if (
+		!exact &&
 		bridgeLevel !== undefined &&
 		bridgeLevel < CURRENT_COMPATIBILITY_LEVEL &&
 		!isHelp &&
@@ -448,6 +443,10 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 		return true;
 	}
 
+	if (exact) {
+		const warning = aheadOfBridgeWarning(parsed.name, explicitLevel, bridgeLevel);
+		if (warning) process.stderr.write(warning);
+	}
 	await runPromptCommand(contract, args, targetLevel);
 	return true;
 }

@@ -373,6 +373,66 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	);
 });
 
+test("jump push-isolates its hydrated worktree without breaking fetch", () => {
+	const { bridge } = setup("push-isolation");
+	const worktree = repoWorktree(bridge, "push-isolation");
+	assertOk(run(["jump"], bridge), "jump failed");
+
+	assert.equal(
+		runTool(
+			"git",
+			["config", "--worktree", "--get", "remote.origin.pushurl"],
+			worktree,
+		).stdout.trim(),
+		"nosedive-render-587d3f73-2534-5179-b111-ce6c83d6814d",
+	);
+	const blocked = runGitUnchecked(["push", "origin", "HEAD:refs/heads/agent"], worktree);
+	assert.notEqual(blocked.status, 0, "an agent must not be able to push from a hydrated worktree");
+	runTool("git", ["fetch", "origin"], worktree);
+});
+
+/**
+ * npm's `prepare` lifecycle runs `git config core.hooksPath .githooks` inside
+ * whatever worktree the agent is working in, which lands in the *shared*
+ * repository config. The worktree override has to outrank it, and jump has to
+ * clear the stale shared value it leaves behind.
+ */
+test("jump survives tooling that rewrites core.hooksPath in shared config", () => {
+	const { bridge, effortId } = setup("hooks-pollution");
+	const worktree = repoWorktree(bridge, "hooks-pollution");
+	assertOk(run(["jump"], bridge), "jump failed");
+	const managedHooks = runTool(
+		"git",
+		["config", "--worktree", "--get", "core.hooksPath"],
+		worktree,
+	).stdout.trim();
+
+	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+	assert.equal(
+		runTool("git", ["config", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		managedHooks,
+		"the worktree override must outrank a shared-config write",
+	);
+	gitCommitEmpty(worktree, "commit after tooling ran");
+	assert.match(
+		runTool("git", ["log", "-1", "--format=%B"], worktree).stdout,
+		new RegExp(`Effort: ${effortId}`),
+		"managed hooks must still fire after the shared config was rewritten",
+	);
+
+	assertOk(run(["jump"], bridge), "second jump failed");
+	assert.equal(
+		runGitUnchecked(["config", "--local", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		"",
+		"jump should clear the stale shared-config hooksPath",
+	);
+	assert.equal(
+		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
+		managedHooks,
+		"re-running jump should not churn the managed hook path",
+	);
+});
+
 test("jump chains a repo prepare-commit-msg hook without modifying tracked files", () => {
 	const { bridge, effortId } = setup("foreign-hook");
 	const worktree = repoWorktree(bridge, "foreign-hook");

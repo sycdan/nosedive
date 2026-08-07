@@ -21,7 +21,7 @@ import {
 	printCommandHelp,
 	sortedBacklogKbChildren,
 } from "./packageBacklog.js";
-import { parseLinkRefs } from "./proveHostRender.js";
+import { parseLinkRefs } from "./kbRefs.js";
 import { quoteYamlString } from "./renderPlan.js";
 
 export function appendBacklogKbDisplayNode(

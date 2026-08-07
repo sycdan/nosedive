@@ -21,6 +21,13 @@ import {
 	uniqueDiveWipScopes,
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import {
+	collectLandGates,
+	DEFAULT_CLOCK,
+	parseClockSeconds,
+	renderGateReport,
+	runLandGates,
+} from "../lib/landGates.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { ensureManagedRepoCache, gitRun, resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
@@ -39,12 +46,24 @@ function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: strin
 	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
 }
 
-/** Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own `origin`
- * (already set up by hydration; read-only scopes never reach here). */
+/**
+ * Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own
+ * cloud remote (read-only scopes never reach here).
+ *
+ * Deliberately by resolved URL rather than by remote name: hydration leaves
+ * every worktree with a `remote.origin.pushurl` sentinel so an agent working in
+ * it cannot push, and a `pushurl` override applies only to the *named* remote.
+ * Landing this way means the isolation is never lifted, not even briefly.
+ */
 function landRepoScope(worktreePath: string, branch: string): string {
+	const url = gitRun(
+		worktreePath,
+		["config", "--get", "remote.origin.url"],
+		`failed to resolve origin URL for ${formatPath(worktreePath)}`,
+	);
 	gitRun(
 		worktreePath,
-		["push", "origin", `HEAD:refs/heads/${branch}`],
+		["push", url, `HEAD:refs/heads/${branch}`],
 		`failed to push ${formatPath(worktreePath)} to ${branch}`,
 	);
 	return branch;
@@ -103,7 +122,60 @@ function commitAndPushLand(
 	}
 }
 
-function land(_args: string[], io: CommandIo): void {
+function parseLandArgs(args: string[]): { clock: string } {
+	let clock = DEFAULT_CLOCK;
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === "--clock") {
+			const value = args[i + 1];
+			if (!value) throw new Error("--clock requires a value");
+			clock = value;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith("--clock=")) {
+			clock = arg.slice("--clock=".length);
+			if (!clock) throw new Error("--clock requires a value");
+			continue;
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown land option: ${arg}`);
+		throw new Error(`unexpected land argument: ${arg}`);
+	}
+	return { clock };
+}
+
+/**
+ * Gates address repos by kb `name`, not uuid: a gate script is read and written
+ * by people, and `ctx.repos.nosedive.root` survives a doc being re-minted in a
+ * way a hard-coded uuid does not.
+ */
+function gateRepoContext(
+	hydrated: { repoId: string; path: string }[],
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): Record<string, { root: string }> {
+	const repos: Record<string, { root: string }> = {};
+	for (const entry of hydrated) {
+		const doc = kbDocs.find((candidate) => candidate.id === entry.repoId);
+		if (!doc?.name) continue;
+		repos[doc.name] = { root: toPosixPath(relative(bridgeDir, entry.path)) };
+	}
+	return repos;
+}
+
+/**
+ * Appends the gate report to the dive without closing it, so a refused land
+ * leaves the next agent everything it needs and the dive stays jumpable.
+ */
+function appendGateReportToDive(divePath: string, report: string): void {
+	const text = readFileSync(divePath, "utf8");
+	const heading = `## Land report ${new Date().toISOString()}`;
+	writeFileAtomic(divePath, `${text.trimEnd()}\n\n${heading}\n\n${report}\n`);
+}
+
+function land(args: string[], io: CommandIo): void {
+	const { clock } = parseLandArgs(args);
+	const clockSeconds = parseClockSeconds(clock);
 	const rc = readNosediveRc(process.cwd());
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
@@ -147,6 +219,54 @@ function land(_args: string[], io: CommandIo): void {
 			continue;
 		}
 		writableScopes.push({ scope, path });
+	}
+
+	/**
+	 * Gates run before anything is published, and all of them run: a dive that
+	 * scopes several repos must not half-land, so one blocking failure stops
+	 * every push, not just the failing repo's.
+	 */
+	/**
+	 * A dive reaches its feat through `effort:` and its repos through `scopes:`,
+	 * neither of which is a link, so all three are seeded as roots. Order is
+	 * closest-first, which is what first-seen-wins depends on.
+	 */
+	const gateRoots = [
+		dive,
+		...(effort ? [effort] : []),
+		...scopes
+			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
+			.filter((doc): doc is KbDoc => doc !== undefined),
+	];
+	const gates = collectLandGates(gateRoots, kbDocs, rc.bridgeDir);
+	if (gates.length > 0) {
+		const outcome = runLandGates(gates, {
+			clockSeconds,
+			context: {
+				bridgeRoot: rc.bridgeDir,
+				diveId: dive.id,
+				repos: gateRepoContext(
+					hydratedWorktrees.map((entry) => ({ repoId: entry.scope.repoId, path: entry.path })),
+					kbDocs,
+					rc.bridgeDir,
+				),
+			},
+		});
+		const report = renderGateReport(gates, outcome, clockSeconds);
+		io.log(report);
+		if (outcome.failed) {
+			/**
+			 * Reported rather than thrown: a thrown command's buffered output is
+			 * discarded, and the report *is* the refusal. Exit code carries the
+			 * failure; the dive keeps the copy the next agent will read.
+			 */
+			appendGateReportToDive(dive.path, report);
+			io.err(
+				`land refuses: gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,
+			);
+			io.setExitCode(1);
+			return;
+		}
 	}
 
 	for (const { scope, path } of writableScopes) {

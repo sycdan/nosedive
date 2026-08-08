@@ -133,7 +133,8 @@ test("pack requires an active dive marker", () => {
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	const result = run(["pack"], bridge);
 	assert.notEqual(result.status, 0, "pack without a dive marker unexpectedly succeeded");
-	assert.match(result.stderr, /pack requires an active dive marker/);
+	assert.match(result.stderr, /^nosedive-error: \S/m);
+	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
 });
 
 test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets", () => {

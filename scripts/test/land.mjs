@@ -81,6 +81,18 @@ scopes:
 	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
 }
 
+test("land refuses when no dive is on deck", () => {
+	const bridge = join(tmp, "no-marker");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
+	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land without a dive marker unexpectedly succeeded");
+	assert.match(result.stderr, /^nosedive-error: \S/m);
+	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
+});
+
 test("land retains the worktree at the pushed HEAD commit", () => {
 	const { bridge, worktree, diveId } = setup("provenance");
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");

@@ -4,6 +4,7 @@ import { isSeq, parseDocument } from "yaml";
 
 import { CommandIo, createUuid7Minter } from "./bridgeSetupIo.js";
 import { commitMessage } from "./commitProvenance.js";
+import { NO_ACTIVE_DIVE_ERROR_ID } from "./constants.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -338,11 +339,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
-	if (!marker.present) {
-		throw new Error(
-			`pack requires an active dive marker at ${formatPath(join(rc.workspaceDir, ".nosedive-ref"))}`,
-		);
-	}
+	if (!marker.present) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
 	if (marker.error || !marker.id) {
 		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
 	}

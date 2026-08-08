@@ -8,6 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
+import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -178,7 +179,7 @@ function land(args: string[], io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
-	if (!marker.present) throw new Error(`no dive, run nosedive into "<something>"`);
+	if (!marker.present) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
 	if (marker.error || !marker.id)
 		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
 

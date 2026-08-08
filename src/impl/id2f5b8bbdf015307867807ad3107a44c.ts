@@ -30,8 +30,7 @@ import {
 } from "../lib/landGates.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
-import { ensureManagedRepoCache, gitRun, resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
-import { maybeFetchSource, resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
+import { gitRun } from "../lib/repoWorkspaceCore.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
 	return effort?.name ?? dive.name;
@@ -291,23 +290,9 @@ function land(args: string[], io: CommandIo): void {
 
 	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id);
 
-	// Marker cleared before reset: the dive is already closed (kind: memo,
-	// pushed) at this point, so a reset failure must not leave the marker
-	// pointing at a dive that can no longer be jumped/packed/bailed.
+	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");
 	if (existsSync(markerPath)) unlinkSync(markerPath);
-
-	for (const { scope, path } of hydratedWorktrees) {
-		const repoDoc = resolveRepoDoc(kbDocs, scope.repoId);
-		const trunk = repoDoc.repoBaseBranch;
-		if (!trunk) throw new Error(`land refuses: repo ${scope.repoId} has no trunk setting`);
-		const cachePath = ensureManagedRepoCache(repoDoc, rc.bridgeDir);
-		// The cache is only fetched when it is first cloned, so without this the
-		// pilot is parked on the trunk from before this land's own push.
-		maybeFetchSource(cachePath, scope.repoId);
-		const commit = resolveRefCommit(cachePath, scope.repoId, trunk);
-		resetHydratedWorktree(scope.repoId, path, commit);
-	}
 
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);

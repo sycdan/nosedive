@@ -4,6 +4,7 @@
 	"description": "Turns a plain notes repo into a hub for cross-repo work.",
 	"keywords": [
 		"cli",
+		"agentic",
 		"workflow",
 		"multi-repo",
 		"polyrepo",

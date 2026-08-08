@@ -13,6 +13,7 @@ import { KbDoc, ScopeRef, parseRawFrontmatterObject } from "./kbDocs.js";
 import { uuidLike } from "./repoWorkspaceCore.js";
 import {
 	BacklogKbDisplayNode,
+	BacklogKbEffort,
 	appendBacklogKbEffortLine,
 	effortHasParentLink,
 	insertBacklogKbEffort,
@@ -49,6 +50,24 @@ export function appendBacklogKbDisplayNode(
 		appendBacklogKbDisplayNode(lines, child, depth + 1);
 }
 
+/**
+ * Every repo the backlog covers, as the union of its efforts' own scopes. The
+ * memo is rebuilt from scratch on each `update-backlog`, so this is recomputed
+ * rather than carried forward: a scope written on the memo by hand would not
+ * survive the next run, and one that outlives the effort that justified it
+ * would leave `record.dive --free` hydrating a repo nothing is working on.
+ */
+function backlogScopeRepoIds(efforts: BacklogKbEffort[], kbDocs: KbDoc[]): string[] {
+	const repoIds = new Set<string>();
+	for (const effort of efforts) {
+		for (const scope of effort.doc.scopes) {
+			if (scope.repoId !== ".") repoIds.add(scope.repoId);
+		}
+	}
+	const nameById = new Map(kbDocs.map((doc) => [doc.id, doc.name]));
+	return [...repoIds].sort((a, b) => (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b));
+}
+
 export function renderUpdatedBacklogMemo(
 	rc: NosediveRc,
 	memo: MarkdownDoc,
@@ -58,6 +77,7 @@ export function renderUpdatedBacklogMemo(
 	const efforts = loadBacklogKbEfforts(kbDocs);
 	const root: BacklogKbDisplayNode = { slug: "", children: new Map() };
 	for (const effort of efforts) insertBacklogKbEffort(root, effort);
+	const scopeRepoIds = backlogScopeRepoIds(efforts, kbDocs);
 
 	const topEfforts = efforts.filter((effort) => !effortHasParentLink(effort.doc));
 	const links = topEfforts.map((effort) => ({
@@ -79,6 +99,9 @@ export function renderUpdatedBacklogMemo(
 		`id: ${memoId}`,
 		`name: ${quoteYamlString(name)}`,
 		`gist: ${quoteYamlString(gist)}`,
+		...(scopeRepoIds.length > 0
+			? ["scopes:", ...scopeRepoIds.map((repoId) => `  - ${repoId}`)]
+			: []),
 		...(links.length > 0
 			? [
 					"links:",

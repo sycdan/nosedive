@@ -18,6 +18,7 @@ const repoId = "019fc623-0000-7000-8000-000000000001";
 const effortId = "019fc623-0000-7000-8000-000000000002";
 const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
 const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
+const backlogId = "019fc623-0000-7000-8000-000000000005";
 
 function createRepo(path, id) {
 	mkdirSync(path, { recursive: true });
@@ -67,6 +68,56 @@ scopes:
 `,
 	);
 	return { bridge, repo, repoCommit };
+}
+
+/** A bridge whose configured backlog memo scopes the fixture repo, for `--free`. */
+function setupFree(name, { scopeRepo = true } = {}) {
+	const bridge = createBridge(tmp, name, { backlog: backlogId });
+	const repo = join(bridge, "workspace", "repo");
+	const repoCommit = createRepo(repo, repoId);
+	write(
+		join(bridge, "kb", `${repoId}.md`),
+		`---
+kind: repo
+id: ${repoId}
+name: repo
+gist: "Test repo"
+meta:
+  path: workspace/repo
+  trunk: main
+  default-mode: rw
+  remotes:
+    local: workspace/repo
+---
+`,
+	);
+	write(
+		join(bridge, "kb", `${backlogId}.md`),
+		`---
+kind: memo
+id: ${backlogId}
+name: "backlog.test"
+gist: "Test backlog."
+${scopeRepo ? `scopes:\n  - ${repoId}\n` : ""}---
+
+# Backlog
+`,
+	);
+	write(
+		join(bridge, "kb", `${effortId}.md`),
+		`---
+kind: feat
+id: ${effortId}
+name: record-dive.nosedive
+gist: "Record dives"
+scopes:
+  - ${repoId}
+---
+
+# Record Dive
+`,
+	);
+	return { bridge, repoCommit };
 }
 
 function recordedPath(bridge, stdout) {
@@ -226,6 +277,64 @@ test("record.dive links a claimed dive as working", () => {
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
 	const effort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
 	assert.match(effort, new RegExp(`- kb/${id}\\.md:\n      rel: working`));
+});
+
+test("record.dive --free records an empty dive scoping the backlog read-only", () => {
+	const { bridge, repoCommit } = setupFree("free");
+	const result = run(["record.dive", "--free"], bridge);
+	assertOk(result, "record.dive --free failed");
+	const path = recordedPath(bridge, result.stdout);
+	const doc = readFileSync(path, "utf8");
+	const id = /^id: (.+)$/m.exec(doc)[1];
+	assert.match(doc, /^kind: dive$/m);
+	// The id stands in for the name a free dive has not been given yet.
+	assert.match(doc, new RegExp(`^name: ${id}$`, "m"));
+	// ro despite the repo doc's default-mode: rw -- nothing about an unbriefed,
+	// unclaimed dive justifies a writable checkout.
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: ro$`, "m"));
+	assert.doesNotMatch(doc, /^gist:/m);
+	assert.doesNotMatch(doc, /^meta:/m);
+	assert.doesNotMatch(doc, /^links:/m);
+	assert.doesNotMatch(doc, /^# /m);
+	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
+});
+
+test("record.dive --free warns when the backlog scopes no repos", () => {
+	const { bridge } = setupFree("free-empty", { scopeRepo: false });
+	const result = run(["record.dive", "--free"], bridge);
+	assertOk(result, "record.dive --free failed");
+	assert.match(result.stderr, /scopes no repos/);
+	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
+});
+
+test("record.dive --free takes no other option", () => {
+	const { bridge } = setupFree("free-exclusive");
+	const created = run(["record.dive", "--effort", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	for (const extra of [
+		["--effort", effortId],
+		["--ref", id],
+		["--diver", "pilot@example.test"],
+		["--scope", repoId],
+		["--clear-scopes"],
+		["--takeover"],
+	]) {
+		const result = run(["record.dive", "--free", ...extra], bridge, "");
+		assert.notEqual(result.status, 0, `--free ${extra.join(" ")} unexpectedly succeeded`);
+		assert.match(result.stderr, /--free cannot be combined with any other option/);
+	}
+});
+
+test("record.dive --free ignores the active dive", () => {
+	const { bridge } = setupFree("free-active");
+	const created = run(["record.dive", "--effort", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	writeFileSync(marker, `id: ${id}\n`);
+	assertOk(run(["record.dive", "--free"], bridge), "record.dive --free failed");
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
 });
 
 test("record.dive reassigns its reciprocal effort link", () => {

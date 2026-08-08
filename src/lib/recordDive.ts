@@ -5,7 +5,13 @@ import { parseDocument } from "yaml";
 import { titleFromSlug } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
-import { formatPath, parseMarkdownDoc, readNosediveRc, stringifyYaml } from "./coreParsing.js";
+import {
+	formatPath,
+	NosediveRc,
+	parseMarkdownDoc,
+	readNosediveRc,
+	stringifyYaml,
+} from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
@@ -27,6 +33,7 @@ export interface RecordDiveOptions {
 	brief?: string;
 	diver?: string;
 	takeover: boolean;
+	free: boolean;
 	scopes: string[];
 	clearScopes: boolean;
 }
@@ -38,11 +45,20 @@ function optionValue(args: string[], index: number, flag: string): string {
 }
 
 export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
-	const options: RecordDiveOptions = { takeover: false, scopes: [], clearScopes: false };
+	const options: RecordDiveOptions = {
+		takeover: false,
+		free: false,
+		scopes: [],
+		clearScopes: false,
+	};
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === "--clear-scopes") {
 			options.clearScopes = true;
+			continue;
+		}
+		if (arg === "--free") {
+			options.free = true;
 			continue;
 		}
 		if (arg === "--takeover") {
@@ -66,6 +82,13 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		else if (flag === "--title") options.title = value;
 		else if (flag === "--brief") options.brief = value;
 		else options.diver = value;
+	}
+	// A free dive takes its every field from the bridge, so any other option can
+	// only describe a dive this is not: it is checked first, and returns before
+	// the rules that assume an effort-owned dive.
+	if (options.free) {
+		if (args.length !== 1) throw new Error("--free cannot be combined with any other option");
+		return options;
 	}
 	if (options.clearScopes && options.scopes.length > 0) {
 		throw new Error("--clear-scopes cannot be combined with --scope");
@@ -208,6 +231,58 @@ function renderNewDive(
 	return lines.join("\n");
 }
 
+/**
+ * A free dive carries only what the bridge can supply: no effort, so no managed
+ * name, gist, title, brief, meta or links. Its own id stands in for the name it
+ * has not been given yet. `jump` refuses it -- no `meta.effort`, no brief -- so
+ * it is a record to hang work off, not a dive anything can pick up as-is.
+ */
+function renderFreeDive(id: string, scopes: ScopeRef[]): string {
+	return ["---", "kind: dive", `id: ${id}`, `name: ${id}`, ...renderScopes(scopes), "---", ""].join(
+		"\n",
+	);
+}
+
+function backlogMemoDoc(rc: NosediveRc, kbDocs: KbDoc[]): KbDoc {
+	const id = rc.backlog;
+	if (!id) throw new Error("record.dive --free requires a configured backlog memo id");
+	if (!uuidLike(id))
+		throw new Error(`record.dive --free requires a UUID-shaped backlog memo id: ${id}`);
+	const doc = kbDocs.find((candidate) => candidate.id === id);
+	if (!doc) throw new Error(`bridge backlog memo not found: ${id}`);
+	return doc;
+}
+
+function recordFreeDive(
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	kbDir: string,
+	workspaceDir: string,
+	io: CommandIo,
+): void {
+	const backlog = backlogMemoDoc(rc, kbDocs);
+	const scopes = backlog.scopes.map((scope) => ({
+		...cachedScope(
+			resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+			rc.bridgeDir,
+			workspaceDir,
+		),
+		// Stamped on after `cachedScope`, which derives the mode from the repo doc
+		// and would hand back rw: an unbriefed dive nobody holds has no claim on a
+		// writable checkout.
+		readOnly: true,
+	}));
+	if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
+		throw new Error("duplicate repo scope");
+	if (scopes.length === 0) {
+		io.err(`backlog memo ${backlog.id} scopes no repos; recording a free dive with no scopes`);
+	}
+	const id = uuid7AtMs(Date.now());
+	const path = join(kbDir, `${id}.md`);
+	writeFileAtomic(path, renderFreeDive(id, scopes));
+	io.log(`Recorded ${formatPath(path)}`);
+}
+
 function replaceTitle(body: string, title: string): string {
 	if (/^#\s+.*$/m.test(body)) return body.replace(/^#\s+.*$/m, `# ${title}`);
 	return `# ${title}\n\n${body}`;
@@ -243,6 +318,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	// Before the active-dive read: a free dive is never activated and never
+	// claimed, so what the workspace currently holds cannot bear on it.
+	if (options.free) {
+		recordFreeDive(rc, kbDocs, rc.kbDir, rc.workspaceDir, io);
+		return;
+	}
 	const active = activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = gitOutput(rc.bridgeDir, ["config", "user.email"]) ?? "";
 	const workspaceDir = rc.workspaceDir;

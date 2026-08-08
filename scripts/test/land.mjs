@@ -81,7 +81,7 @@ scopes:
 	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
 }
 
-test("land resets the retained worktree to freshly fetched trunk", () => {
+test("land retains the worktree at the pushed HEAD commit", () => {
 	const { bridge, worktree, diveId } = setup("provenance");
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(diveText)?.[1];
@@ -92,9 +92,12 @@ test("land resets the retained worktree to freshly fetched trunk", () => {
 	gitCommit(source, "advance trunk");
 	const trunk = runTool("git", ["rev-parse", "main"], source).stdout.trim();
 	assert.notEqual(trunk, pin, "test must advance trunk beyond the dive pin");
+	gitCommitEmpty(worktree, "landable work");
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
 	const result = run(["land"], bridge);
 	assertOk(result, "land failed");
-	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), trunk);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), head);
+	assert.notEqual(head, trunk, "land must not reset the worktree to fetched trunk");
 	assert.notEqual(runGitUnchecked(["symbolic-ref", "-q", "HEAD"], worktree).status, 0);
 	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
 	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");

@@ -21,6 +21,7 @@ export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1'
 export const PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID = "019fce99-1d6e-7fa4-aa0c-a548d7049643";
 export const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 export const HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID = "019fcb35-d660-7318-ac4c-3d5aeed3a81e";
+export const NO_ACTIVE_DIVE_ERROR_ID = "019fe2f7-5922-72d5-abda-b5b8cb7300cf";
 
 export const GIT_LOCAL_ENV_KEYS = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",

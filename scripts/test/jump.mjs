@@ -207,7 +207,8 @@ test("jump requires an active dive marker", () => {
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump without a dive marker unexpectedly succeeded");
-	assert.match(result.stderr, /jump requires an active dive marker/);
+	assert.match(result.stderr, /^nosedive-error: \S/m);
+	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
 });
 
 test("jump refuses an unbriefed dive before hydrating its scopes", () => {

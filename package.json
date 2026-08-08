@@ -5,7 +5,9 @@
 	"keywords": [
 		"cli",
 		"workflow",
-		"multi-repo"
+		"multi-repo",
+		"polyrepo",
+		"monorepo"
 	],
 	"license": "MIT",
 	"author": "Dan Stace <dstace@gmail.com>",

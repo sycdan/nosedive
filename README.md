@@ -27,7 +27,7 @@ infra repo at once. Today that means:
   and shepherding it through review is manual and inconsistent across people.
 
 _nosedive_ addresses these by making the unit of work a first-class, on-disk
-object, creating feat-scoped multi-repo workspaces, and routing developer
+object, creating feat-scoped polyrepo workspaces, and routing developer
 actions through explicit commands that compose safely for a human or an agent.
 
 ## Feats and dives

@@ -1,203 +1,241 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createBridge, createTmp, run, write } from "../test-helpers.mjs";
+import { createBridge, createTmp, gitCommit, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("drop");
 const promptId = "019fd9e1-26e2-785d-937b-d3c722074683";
+const featId = "019fd96e-b1f1-7770-aa0b-45d95c3b30a6";
+const memoId = "019fd96e-b1f1-7770-aa0b-45d95c3b30a7";
+const diveId = "019fd96e-b1f1-7770-aa0b-45d95c3b30a8";
+const repoId = "019fd96e-b1f1-7770-aa0b-45d95c3b30a9";
+const gateId = "019fd96e-b1f1-7770-aa0b-45d95c3b30aa";
 
-/** A bridge holding a drop.prompt idea doc, which is all drop needs to print. */
-function createDroppableBridge(tmp, name) {
+function createDroppableBridge(name) {
 	const bridge = createBridge(tmp, name);
 	write(
 		join(bridge, "kb", `${promptId}.md`),
-		[
-			"---",
-			"kind: idea",
-			`id: ${promptId}`,
-			"name: drop.prompt",
-			'gist: "Drop prompt."',
-			"---",
-			"",
-			"# Drop It",
-			"",
-			"Release the drop named below.",
-			"",
-		].join("\n"),
+		`---
+kind: idea
+id: ${promptId}
+name: drop.prompt
+gist: "Drop prompt."
+---
+
+# Drop It
+
+SHIP THIS BODY VERBATIM.
+`,
 	);
 	write(
 		join(bridge, ".nosedive", "config.yaml"),
-		[
-			"compatibility-level: 2",
-			"workspace: ./workspace",
-			"kb: ./kb",
-			`drop-prompt: ${promptId}`,
-			"",
-		].join("\n"),
+		`compatibility-level: 2
+workspace: ./workspace
+kb: ./kb
+work-branch-prefix: work/
+drop-prompt: ${promptId}
+`,
 	);
 	return bridge;
 }
 
-function writeFeat(bridge, id, name, target) {
-	const lines = ["---", "kind: feat", `id: ${id}`, `name: ${name}`, `gist: "${name}."`];
+function writeEffort(
+	bridge,
+	{ kind = "feat", name = "ship-it.development", target, scopes = [], links = [] } = {},
+) {
+	const lines = [
+		"---",
+		`kind: ${kind}`,
+		`id: ${featId}`,
+		`name: ${name}`,
+		'gist: "Ship the completed work."',
+	];
+	if (scopes.length > 0) lines.push("scopes:", ...scopes.map((id) => `  - ${id}`));
+	if (links.length > 0) {
+		lines.push("links:");
+		for (const link of links) lines.push(`  - kb/${link.id}.md:`, `      rel: ${link.rel}`);
+	}
 	if (target) lines.push("meta:", `  target: ${target}`);
-	lines.push("---", "", `# ${name}`, "");
-	write(join(bridge, "kb", `${id}.md`), lines.join("\n"));
+	lines.push("---", "", "# Ship It", "");
+	write(join(bridge, "kb", `${featId}.md`), lines.join("\n"));
 }
 
-function isoDaysFromNow(days) {
-	const date = new Date();
-	date.setDate(date.getDate() + days);
-	const pad = (value) => String(value).padStart(2, "0");
-	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-test("drop refuses a target date that has not been reached", () => {
-	const bridge = createDroppableBridge(tmp, "drop-future-bridge");
-	writeFeat(
-		bridge,
-		"019fd96e-b1f1-7770-aa0b-45d95c3b30a6",
-		"judgement-day.release.nosedive",
-		"2999-01-01",
-	);
-
-	const dropped = run(["drop", "judgement day"], bridge);
-	assert.equal(dropped.status, 1);
-	assert.equal(dropped.stdout, "", "a refused drop prints no prompt");
-	assert.match(dropped.stderr, /judgement-day\.release\.nosedive drops on 2999-01-01; today is /);
-});
-
-test("drop prints the release prompt on the target date and runs nothing", () => {
-	const bridge = createDroppableBridge(tmp, "drop-today-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30a8", "today.release", isoDaysFromNow(0));
-
-	const dropped = run(["drop", "today"], bridge);
-	assert.equal(dropped.status, 0, dropped.stderr);
-	assert.match(dropped.stdout, /Release the drop named below\./);
-	assert.match(dropped.stdout, /^name: today\.release$/m);
-});
-
-test("drop generates the context block rather than trusting the prompt doc", () => {
-	const bridge = createDroppableBridge(tmp, "drop-context-bridge");
-	const target = isoDaysFromNow(-1);
+function writeLinkedDoc(bridge, id, kind, name) {
 	write(
-		join(bridge, "kb", "019fd96e-b1f1-7770-aa0b-45d95c3b30b2.md"),
-		[
-			"---",
-			"kind: feat",
-			"id: 019fd96e-b1f1-7770-aa0b-45d95c3b30b2",
-			"name: scoped.release",
-			'gist: "Scoped."',
-			"scopes:",
-			"  - 019f514e-d8d5-7bc1-bf3f-d8e5092c6596",
-			"meta:",
-			`  target: ${target}`,
-			"---",
-			"",
-			"# Scoped",
-			"",
-		].join("\n"),
+		join(bridge, "kb", `${id}.md`),
+		`---
+kind: ${kind}
+id: ${id}
+name: ${name}
+gist: "Linked drop fixture."
+---
+`,
 	);
+}
 
-	const dropped = run(["drop", "scoped"], bridge);
+function createCloudBranch(name, branch) {
+	const source = join(tmp, `${name}-source`);
+	const cloud = join(tmp, `${name}-cloud.git`);
+	mkdirSync(source, { recursive: true });
+	mkdirSync(cloud, { recursive: true });
+	runTool("git", ["init", "-b", "main"], source);
+	write(join(source, "README.md"), `${name}\n`);
+	runTool("git", ["add", "README.md"], source);
+	gitCommit(source, "fixture");
+	runTool("git", ["init", "--bare", "-b", "main"], cloud);
+	runTool("git", ["remote", "add", "cloud", cloud], source);
+	runTool("git", ["push", "cloud", `HEAD:refs/heads/${branch}`], source);
+	const sha = runTool("git", ["rev-parse", "HEAD"], source).stdout.trim();
+	return { cloud: cloud.replaceAll("\\", "/"), sha };
+}
+
+function writeRepo(bridge, cloud, merge = "pull-request") {
+	const mergeLine = merge === null ? "" : `  merge: ${merge}\n`;
+	write(
+		join(bridge, "kb", `${repoId}.md`),
+		`---
+kind: repo
+id: ${repoId}
+name: app
+gist: "App repo."
+meta:
+  path: workspace/app
+  trunk: main
+${mergeLine}  branch-convention: feature branches
+  remotes:
+    cloud: ${cloud}
+---
+`,
+	);
+}
+
+test("drop prints a ready feat context after the prompt body", () => {
+	const bridge = createDroppableBridge("ready");
+	const branch = "work/ship-it.development";
+	const { cloud, sha } = createCloudBranch("ready", branch);
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeRepo(bridge, cloud);
+	write(
+		join(bridge, "kb", `${gateId}.md`),
+		`---
+kind: gate
+id: ${gateId}
+name: app-tests
+gist: "App tests."
+meta:
+  test-script: kb/app-tests.mjs
+---
+`,
+	);
+	write(join(bridge, "kb", "app-tests.mjs"), "export function run() { return true; }\n");
+	writeEffort(bridge, {
+		scopes: [repoId],
+		links: [
+			{ id: memoId, rel: "working" },
+			{ id: gateId, rel: "land-gated-by" },
+		],
+	});
+
+	const dropped = run(["drop", "ship it"], bridge);
 	assert.equal(dropped.status, 0, dropped.stderr);
-	assert.match(dropped.stdout, /^name: scoped\.release$/m);
-	assert.match(dropped.stdout, /^doc: kb\/019fd96e-b1f1-7770-aa0b-45d95c3b30b2\.md$/m);
-	assert.match(dropped.stdout, new RegExp(`^target: ${target}$`, "m"));
-	assert.match(dropped.stdout, /^ {2}- 019f514e-d8d5-7bc1-bf3f-d8e5092c6596 \(rw\)$/m);
+	assert.equal(dropped.stderr, "");
+	assert.ok(dropped.stdout.indexOf("SHIP THIS BODY VERBATIM.") < dropped.stdout.indexOf("## Drop"));
+	assert.match(dropped.stdout, /^feat: ship-it\.development$/m);
+	assert.match(dropped.stdout, new RegExp(`^doc: kb/${featId}\\.md$`, "m"));
+	assert.match(dropped.stdout, /^gist: Ship the completed work\.$/m);
+	assert.match(dropped.stdout, /^target: \(none\)$/m);
+	assert.match(dropped.stdout, /^note: no kind: repo doc matches a bridge git remote;/m);
+	assert.match(dropped.stdout, /^### Blockers\n\n\(none\)$/m);
+	assert.match(dropped.stdout, /^- app -- workspace\/app$/m);
+	assert.match(dropped.stdout, /^    merge: pull-request$/m);
+	assert.match(dropped.stdout, /^    branch-convention: feature branches$/m);
+	assert.match(dropped.stdout, new RegExp(`^    work branch: ${branch} -> ${sha}$`, "m"));
+	assert.match(
+		dropped.stdout,
+		new RegExp(`^    nosedive run-gate ${gateId}    # app-tests \\(height 0\\)$`, "m"),
+	);
+	assert.match(dropped.stdout, new RegExp(`^1\\. Close kb/${featId}\\.md:`, "m"));
 });
 
-/**
- * The point of the redesign: releasing is a pilot's decision, so the one
- * command that can ship software refuses to drive an agent itself.
- */
-test("drop refuses --exec because releasing is human-only", () => {
-	const bridge = createDroppableBridge(tmp, "drop-exec-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30b5", "manual.release", isoDaysFromNow(-1));
+test("drop reports an open dive only on stderr", () => {
+	const bridge = createDroppableBridge("open-dive");
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeLinkedDoc(bridge, diveId, "dive", "unfinished-slice");
+	writeEffort(bridge, {
+		links: [
+			{ id: memoId, rel: "working" },
+			{ id: diveId, rel: "working" },
+		],
+	});
 
-	const dropped = run(["drop", "manual", "--exec"], bridge);
+	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /drop does not output a prompt, so --exec cannot run it/);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, /open dive: unfinished-slice/);
 });
 
-test("drop refuses a feat with no target", () => {
-	const bridge = createDroppableBridge(tmp, "drop-untargeted-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30a9", "undated.release");
+test("drop blocks a feat with no landed dive", () => {
+	const bridge = createDroppableBridge("no-landed-dive");
+	writeEffort(bridge);
 
-	const dropped = run(["drop", "undated"], bridge);
+	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /has no meta\.target release date/);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, /no landed dive/);
 });
 
-test("drop refuses an ambiguous name and names the candidates", () => {
-	const bridge = createDroppableBridge(tmp, "drop-ambiguous-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30aa", "twin.release", "2999-01-01");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30ab", "twin.development", "2999-01-01");
+test("drop blocks a scoped repo with no merge policy", () => {
+	const bridge = createDroppableBridge("no-merge");
+	const branch = "work/ship-it.development";
+	const { cloud } = createCloudBranch("no-merge", branch);
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeRepo(bridge, cloud, null);
+	writeEffort(bridge, { scopes: [repoId], links: [{ id: memoId, rel: "working" }] });
+
+	const dropped = run(["drop", "ship-it.development"], bridge);
+	assert.equal(dropped.status, 1);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, new RegExp(`repo app has no meta\\.merge; fix kb/${repoId}\\.md`));
+});
+
+test("drop does not block a future target date", () => {
+	const bridge = createDroppableBridge("future-target");
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeEffort(bridge, { target: "2999-01-01", links: [{ id: memoId, rel: "working" }] });
+
+	const dropped = run(["drop", "ship-it.development"], bridge);
+	assert.equal(dropped.status, 0, dropped.stderr);
+	assert.match(dropped.stdout, /^target: 2999-01-01$/m);
+});
+
+test("drop treats an already closed feat as not found", () => {
+	const bridge = createDroppableBridge("closed");
+	writeEffort(bridge, { kind: "memo" });
+
+	const dropped = run(["drop", "ship-it.development"], bridge);
+	assert.equal(dropped.status, 1);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, /drop not found: ship-it\.development/);
+});
+
+test("drop reports every candidate for an ambiguous slug", () => {
+	const bridge = createDroppableBridge("ambiguous");
+	writeEffort(bridge, { name: "twin.release" });
+	write(
+		join(bridge, "kb", "019fd96e-b1f1-7770-aa0b-45d95c3b30ab.md"),
+		`---
+kind: feat
+id: 019fd96e-b1f1-7770-aa0b-45d95c3b30ab
+name: twin.development
+gist: "Twin."
+---
+`,
+	);
 
 	const dropped = run(["drop", "twin"], bridge);
 	assert.equal(dropped.status, 1);
+	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /drop name is ambiguous: twin \(twin\.development, twin\.release\)/);
-});
-
-test("drop ignores an undated namesake when one candidate is dated", () => {
-	const bridge = createDroppableBridge(tmp, "drop-namesake-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30ad", "judgement-day.release", "2999-01-01");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30ae", "judgement-day.gogglebox");
-
-	const dropped = run(["drop", "judgement day"], bridge);
-	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /judgement-day\.release drops on 2999-01-01; today is /);
-});
-
-test("drop refuses a name that resolves to nothing", () => {
-	const bridge = createDroppableBridge(tmp, "drop-missing-bridge");
-	writeFeat(bridge, "019fd96e-b1f1-7770-aa0b-45d95c3b30ac", "other.release", "2999-01-01");
-
-	const dropped = run(["drop", "nothing here"], bridge);
-	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /drop not found: nothing here/);
-});
-
-test("drop requires a name", () => {
-	const bridge = createDroppableBridge(tmp, "drop-nameless-bridge");
-
-	const dropped = run(["drop"], bridge);
-	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /drop requires a name/);
-});
-
-test("drop refuses a prompt doc that is not the command's own idea", () => {
-	const bridge = createDroppableBridge(tmp, "drop-badprompt-bridge");
-	write(
-		join(bridge, "kb", `${promptId}.md`),
-		["---", "kind: memo", `id: ${promptId}`, "name: drop.prompt", "---", "", "# Nope", ""].join(
-			"\n",
-		),
-	);
-	writeFeat(
-		bridge,
-		"019fd96e-b1f1-7770-aa0b-45d95c3b30b3",
-		"badprompt.release",
-		isoDaysFromNow(-1),
-	);
-
-	const dropped = run(["drop", "badprompt"], bridge);
-	assert.equal(dropped.status, 1);
-	assert.match(dropped.stderr, /must be kind: idea, not memo/);
-});
-
-test("drop needs no agent runner configured, because it never starts one", () => {
-	const bridge = createDroppableBridge(tmp, "drop-runnerless-bridge");
-	writeFeat(
-		bridge,
-		"019fd96e-b1f1-7770-aa0b-45d95c3b30b6",
-		"runnerless.release",
-		isoDaysFromNow(-1),
-	);
-
-	const dropped = run(["drop", "runnerless"], bridge);
-	assert.equal(dropped.status, 0, dropped.stderr);
-	assert.ok(!existsSync(join(bridge, "runner.log")), "no runner should have been called");
 });

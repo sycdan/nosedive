@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("pitch");
 
@@ -117,4 +117,54 @@ test("a pitched effort reaches the backlog memo", () => {
 	const dumped = run(["dump-backlog"], bridge);
 	assertOk(dumped, "dump-backlog failed");
 	assert.match(dumped.stdout, /Indexed effort\./);
+});
+
+test("update-backlog rewrites the memo's scopes from its efforts", () => {
+	const bridge = createBridge(tmp, "pitch-backlog-scopes-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const backlogId = /^backlog: (.+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+	const zebraRepo = "019fc623-0000-7000-8000-0000000000a1";
+	const appleRepo = "019fc623-0000-7000-8000-0000000000a2";
+	const staleRepo = "019fc623-0000-7000-8000-0000000000a3";
+	for (const [id, name] of [
+		[zebraRepo, "zebra"],
+		[appleRepo, "apple"],
+	]) {
+		write(
+			join(bridge, "kb", `${id}.md`),
+			`---\nkind: repo\nid: ${id}\nname: ${name}\ngist: "Test repo"\n---\n`,
+		);
+	}
+	write(
+		join(bridge, "kb", "019fc623-0000-7000-8000-0000000000b1.md"),
+		`---\nkind: feat\nid: 019fc623-0000-7000-8000-0000000000b1\nname: scoped\ngist: "Scoped effort"\nscopes:\n  - ${zebraRepo}\n  - ${appleRepo}\n---\n\n# Scoped\n`,
+	);
+	// A scope the efforts no longer justify is replaced, not merged.
+	write(
+		backlogPath,
+		readFileSync(backlogPath, "utf8").replace(
+			/^kind: memo$/m,
+			`kind: memo\nscopes:\n  - ${staleRepo}`,
+		),
+	);
+
+	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	const memo = readFileSync(backlogPath, "utf8");
+	// Sorted by repo doc name, not by uuid.
+	assert.match(memo, new RegExp(`^scopes:\n  - ${appleRepo}\n  - ${zebraRepo}$`, "m"));
+	assert.doesNotMatch(memo, new RegExp(staleRepo));
+});
+
+test("update-backlog omits scopes when no effort scopes a repo", () => {
+	const bridge = createBridge(tmp, "pitch-backlog-noscopes-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	assertOk(run(["pitch", "Unscoped effort."], bridge), "pitch failed");
+	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	const backlogId = /^backlog: (.+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	assert.doesNotMatch(readFileSync(join(bridge, "kb", `${backlogId}.md`), "utf8"), /^scopes:/m);
 });

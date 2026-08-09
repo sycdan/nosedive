@@ -113,7 +113,6 @@ Invoked directly by humans, or indirectly via agents.
 | [`drop@2`](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md) | `npx nosedive drop "<name>"` | Print a dated drop's release prompt after its target date. |
 | [`dump-backlog@2`](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |
 | [`hydrate-repo.workspace@1`](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
-| [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | Cold-start entrypoint -- print pilot identity, backlog, and the pilot's context, then hand off to the piped agent to claim or create a dive. |
 | [`jump@2`](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md) | `npx nosedive jump` | Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top. |
 | [`land@2`](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md) | `npx nosedive land [--clock <seconds>]` | Canonicalize the active dive -- push every writable scoped repo to work-branch-prefix<slug>, close the dive as a memo with an outcome section, dehydrate. |
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
@@ -145,6 +144,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 
 | Command | Usage | Use instead |
 | --- | --- | --- |
+| [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `preflight`, which prints pilot identity, the backlog, and open work without requiring a piped agent. |
 | [`list-dives@2`](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md) | `npx nosedive list-dives <feat> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming a feat. |
 <!-- END nosedive-command-surface -->
 

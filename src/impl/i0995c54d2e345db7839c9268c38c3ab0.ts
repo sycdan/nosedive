@@ -11,6 +11,7 @@ import { loadKbDocs } from "../lib/kbDocs.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 
 function into(args: string[], io: CommandIo): void {
+	io.err("warning: into is deprecated; use preflight to start a session.");
 	const context = args.join(" ").trim();
 	const rc = readNosediveRc(process.cwd());
 

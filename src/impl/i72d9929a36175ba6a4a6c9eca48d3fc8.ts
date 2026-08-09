@@ -23,6 +23,7 @@ import {
 	toPosixPath,
 } from "../lib/coreParsing.js";
 import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
+import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { isInsideDir } from "../lib/backlogDives.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
@@ -316,6 +317,26 @@ function printWorkDirective(dive: KbDoc, effort: KbDoc | undefined, io: CommandI
 	);
 }
 
+/**
+ * Mechanical record of what jump hydrated and where, appended to the dive so
+ * "has this dive ever been jumped" is readable off its absence -- one line
+ * per scoped repo, by kb `name` rather than uuid, same reasoning as
+ * `land`'s gate-context repo keys.
+ */
+function renderHydratedSection(
+	entries: { scope: DiveWipScope; path: string }[],
+	kbDocs: KbDoc[],
+): string {
+	return entries
+		.map(({ scope, path }) => {
+			const repoDoc = kbDocs.find((doc) => doc.id === scope.repoId);
+			const name = repoDoc?.name ?? scope.repoId;
+			const mode = scope.readOnly ? "ro" : "rw";
+			return `- repo=${name} path=${formatPath(path)} mode=${mode} ref=${scope.ref}`;
+		})
+		.join("\n");
+}
+
 export function jump(args: string[], io: CommandIo): void {
 	if (args.length > 0) throw new Error(`jump takes no arguments: ${args.join(" ")}`);
 
@@ -352,9 +373,11 @@ export function jump(args: string[], io: CommandIo): void {
 	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
 
 	const scopePaths = new Map<string, string>();
+	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
 	for (const scope of scopes) {
 		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, effort.id);
 		scopePaths.set(scope.repoId, path);
+		hydratedEntries.push({ scope, path });
 		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
 	}
 
@@ -397,6 +420,8 @@ export function jump(args: string[], io: CommandIo): void {
 	for (const path of appliedFileAbsPaths) {
 		if (existsSync(path)) unlinkSync(path);
 	}
+
+	appendTimestampedSection(dive.path, renderHydratedSection(hydratedEntries, kbDocs));
 
 	// The effort carries the reciprocal `rel` link `record.dive` wrote, so it is
 	// part of the same bookkeeping -- left unstaged it lingers as bridge WIP that

@@ -256,6 +256,16 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.doesNotMatch(diveText, /rel: patch/, "applied patch links should be removed");
 	assert.match(diveText, /diver: "jump@example\.test"/);
+	assert.match(
+		diveText,
+		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		"a timestamped hydrated-section heading should be appended",
+	);
+	assert.match(
+		diveText,
+		new RegExp(`repo=full-repo path=\\S+ mode=rw ref=${pinnedRef}`),
+		"the hydrated section should name the scoped repo, its path, mode, and pinned ref",
+	);
 
 	for (const suffix of ["a", "b", "c"]) {
 		assert.equal(
@@ -278,6 +288,13 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const bridgeHead = runTool("git", ["rev-parse", "main"], bridge).stdout.trim();
 	const originHead = runTool("git", ["rev-parse", "main"], origin).stdout.trim();
 	assert.equal(bridgeHead, originHead, "jump should push the bridge to its remote");
+
+	const pushedDiveText = runTool("git", ["show", `origin/main:kb/${diveId}.md`], bridge).stdout;
+	assert.match(
+		pushedDiveText,
+		new RegExp(`repo=full-repo path=\\S+ mode=rw ref=${pinnedRef}`),
+		"the hydrated section should be part of the commit jump pushes",
+	);
 
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked work$/);
@@ -549,6 +566,11 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(diveText, /rel: patch/, "the failed chain's link should remain for retry");
 	assert.match(diveText, /diver: "jump@example\.test"/);
+	assert.match(
+		diveText,
+		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		"a partial-success run still hydrated a usable workspace, so the section is still appended",
+	);
 
 	for (const suffix of ["a", "b", "c"]) {
 		assert.equal(
@@ -594,4 +616,11 @@ meta:
 	assert.notEqual(result.status, 0, "jump should refuse a meta.patch that escapes kb/artifacts");
 	assert.match(result.stderr, /unsafe meta\.patch/);
 	assert.equal(readFileSync(decoyPath, "utf8"), "should survive\n", "decoy file must be untouched");
+
+	const diveTextAfter = readFileSync(join(kbDir, `${diveId}.md`), "utf8");
+	assert.doesNotMatch(
+		diveTextAfter,
+		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		"a total-failure run never reaches the commit, so nothing should be appended",
+	);
 });

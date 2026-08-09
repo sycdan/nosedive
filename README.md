@@ -108,7 +108,7 @@ Invoked directly by humans, or indirectly via agents.
 | Command | Usage | What it does |
 | --- | --- | --- |
 | [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active feat's `scopes:` by resolving the repo by id or exact name. |
-| [`bail@2`](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md) | `npx nosedive bail [<reason>]` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
+| [`bail@2`](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md) | `npx nosedive bail --reason "<why>"` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
 | [`dehydrate-repo.workspace@1`](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
 | [`drop@2`](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md) | `npx nosedive drop "<feat>"` | Ship a ready feat by printing the configured drop prompt followed by generated repo, branch, gate and close-out context for an agent; run nothing and report every readiness blocker on stderr. |
 | [`dump-backlog@2`](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md) | `npx nosedive dump-backlog` | Render the configured backlog memo from bridge KB. |

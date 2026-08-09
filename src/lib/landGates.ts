@@ -1,16 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 
-import { formatPath, resolveFrom } from "./coreParsing.js";
+import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn, spawnOutputText } from "./gitState.js";
 import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./renderPlan.js";
 
 /** Kinds a `land-gated-by` edge may point at. Anything else is a mis-linked doc, not a gate. */
-const GATE_KINDS = new Set(["assertion", "test", "gate", "check", "proof", "prover"]);
+export const GATE_KINDS = new Set(["assertion", "test", "gate", "check", "proof", "prover"]);
 const GATE_REL = "land-gated-by";
 
 export const DEFAULT_CLOCK = "30";
@@ -78,7 +78,7 @@ function gateAttrBool(value: string | undefined, label: string): boolean {
  * cannot produce a runnable script is a hard failure -- silently skipping one
  * would turn a broken gate into a passing land.
  */
-function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
+export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 	const label = `gate ${doc.id} (${doc.relPath}) meta.test-script`;
 	const rel = doc.metaScalars["test-script"];
 	if (!rel) {
@@ -165,6 +165,21 @@ export interface GateContext {
 	bridgeRoot: string;
 	diveId: string;
 	repos: Record<string, GateRepoContext>;
+}
+
+/** Builds the stable, human-readable repo map passed to gate scripts. */
+export function gateRepoContext(
+	hydrated: { repoId: string; path: string }[],
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): Record<string, GateRepoContext> {
+	const repos: Record<string, GateRepoContext> = {};
+	for (const entry of hydrated) {
+		const doc = kbDocs.find((candidate) => candidate.id === entry.repoId);
+		if (!doc?.name) continue;
+		repos[doc.name] = { root: toPosixPath(relative(bridgeDir, entry.path)) };
+	}
+	return repos;
 }
 
 /**

@@ -26,6 +26,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectLandGates,
 	DEFAULT_CLOCK,
+	gateRepoContext,
 	parseClockSeconds,
 	renderGateReport,
 	runLandGates,
@@ -143,25 +144,6 @@ function parseLandArgs(args: string[]): { clock: string } {
 		throw new Error(`unexpected land argument: ${arg}`);
 	}
 	return { clock };
-}
-
-/**
- * Gates address repos by kb `name`, not uuid: a gate script is read and written
- * by people, and `ctx.repos.nosedive.root` survives a doc being re-minted in a
- * way a hard-coded uuid does not.
- */
-function gateRepoContext(
-	hydrated: { repoId: string; path: string }[],
-	kbDocs: KbDoc[],
-	bridgeDir: string,
-): Record<string, { root: string }> {
-	const repos: Record<string, { root: string }> = {};
-	for (const entry of hydrated) {
-		const doc = kbDocs.find((candidate) => candidate.id === entry.repoId);
-		if (!doc?.name) continue;
-		repos[doc.name] = { root: toPosixPath(relative(bridgeDir, entry.path)) };
-	}
-	return repos;
 }
 
 /**

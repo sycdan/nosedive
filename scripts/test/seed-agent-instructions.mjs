@@ -25,7 +25,10 @@ function assertManagedBlock(text, label) {
 	// The invocation names the nosedive that wrote the block: a published
 	// install pins its version, this test's local checkout points at its cli.
 	assert.match(text, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
-	assert.match(text, /^- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown\.$/m);
+	assert.match(
+		text,
+		/^- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown\.$/m,
+	);
 	assert.match(text, /^These commands are available to you:$/m);
 	assert.match(text, /^Usage: nosedive <command>$/m);
 	// The agent surface is a block per command, not the pilot-facing table, so a

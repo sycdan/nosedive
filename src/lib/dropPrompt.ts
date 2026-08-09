@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { formatPath, parseMarkdownDoc, type NosediveRc } from "./coreParsing.js";
 import type { KbDoc } from "./kbDocs.js";
+import type { DropRepo } from "./drop.js";
+import type { LandGate } from "./landGates.js";
 import { packageDocsOfKind, packageRoot } from "./packageBacklog.js";
 
 export interface EffortRange {
@@ -115,24 +117,57 @@ export function readPromptBody(promptDoc: KbDoc): string {
  */
 export function renderDropPrompt(
 	promptBody: string,
-	effort: KbDoc,
-	target: string,
-	today: string,
+	context: {
+		effort: KbDoc;
+		today: string;
+		repos: DropRepo[];
+		gates: LandGate[];
+		bridgeRepoNote?: string;
+	},
 ): string {
-	const scopes = effort.scopes.map(
-		(scope) => `  - ${scope.repoId} (${scope.readOnly ? "ro" : "rw"})`,
+	const { effort, today, repos, gates, bridgeRepoNote } = context;
+	const repoLines = repos.flatMap((repo) => [
+		`- ${repo.doc.name} -- ${repo.worktreePath}`,
+		`    trunk: ${repo.trunk}`,
+		`    merge: ${repo.merge}`,
+		`    branch-convention: ${repo.branchConvention || "(none)"}`,
+		`    work branch: ${repo.workBranch} -> ${repo.workBranchSha}`,
+	]);
+	const gateLines = gates.map(
+		(gate) =>
+			`    nosedive run-gate ${gate.doc.id}    # ${gate.doc.name} (height ${gate.gateHeight})`,
 	);
 	return [
 		promptBody,
 		"",
 		"## Drop",
 		"",
-		`name: ${effort.name}`,
+		`feat: ${effort.name}`,
 		`doc: ${effort.relPath}`,
-		`target: ${target}`,
+		`gist: ${effort.gist}`,
 		`today: ${today}`,
-		"scopes:",
-		...(scopes.length > 0 ? scopes : ["  (none)"]),
+		`target: ${(effort.metaScalars.target ?? "").trim() || "(none)"}`,
+		...(bridgeRepoNote ? ["", `note: ${bridgeRepoNote}`] : []),
+		"",
+		"### Blockers",
+		"",
+		"(none)",
+		"",
+		"### Repos",
+		"",
+		...(repoLines.length > 0 ? repoLines : ["(none)"]),
+		"",
+		"### Gates",
+		"",
+		"Run each, in this order, from the bridge root:",
+		"",
+		...(gateLines.length > 0 ? gateLines : ["    (none)"]),
+		"",
+		"### Close out",
+		"",
+		`1. Close kb/${effort.id}.md: kind: feat -> kind: memo, plus a \"## Drop report\" section.`,
+		"2. nosedive update-backlog",
+		"3. Commit and push the bridge.",
 		"",
 	].join("\n");
 }

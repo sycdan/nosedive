@@ -1,8 +1,8 @@
 import { readNosediveRc } from "../lib/coreParsing.js";
 import {
-	assertDropTargetReached,
-	dropTargetDate,
+	collectDropReadiness,
 	parseDropArgs,
+	resolveBridgeRepoDoc,
 	resolveDropEffort,
 	todayIsoDate,
 } from "../lib/drop.js";
@@ -13,6 +13,7 @@ import {
 	resolveRunnerUsage,
 } from "../lib/dropPrompt.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
+import { collectLandGates } from "../lib/landGates.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
@@ -22,13 +23,33 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const effort = resolveDropEffort(kbDocs, options.name);
-	const target = dropTargetDate(effort);
-	const today = todayIsoDate();
-	assertDropTargetReached(effort, target, today);
+	const readiness = collectDropReadiness(effort, kbDocs, rc);
+	if (readiness.blockers.length > 0) {
+		return {
+			stdout: "",
+			stderr: `${["drop blocked:", ...readiness.blockers.map((blocker) => `- ${blocker}`)].join("\n")}\n`,
+			exitCode: 1,
+		};
+	}
 
+	const bridgeRepo = resolveBridgeRepoDoc(kbDocs, rc.bridgeDir);
+	const roots = [
+		effort,
+		...readiness.repos.map((repo) => repo.doc),
+		...(bridgeRepo ? [bridgeRepo] : []),
+	];
+	const gates = collectLandGates(roots, kbDocs, rc.bridgeDir);
 	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
 	return {
-		stdout: renderDropPrompt(readPromptBody(promptDoc), effort, target, today),
+		stdout: renderDropPrompt(readPromptBody(promptDoc), {
+			effort,
+			today: todayIsoDate(),
+			repos: readiness.repos,
+			gates,
+			bridgeRepoNote: bridgeRepo
+				? undefined
+				: "no kind: repo doc matches a bridge git remote; bridge gates were not added",
+		}),
 		stderr: "",
 		exitCode: 0,
 	};

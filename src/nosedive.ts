@@ -3,10 +3,12 @@ import { createRequire } from "node:module";
 import { isAbsolute, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
+import { setCommandIoFactory } from "./impl/commandAdapter.js";
 import {
 	aheadOfBridgeWarning,
 	createCapturingIo,
 	createConsoleIo,
+	createStreamingIo,
 	CURRENT_COMPATIBILITY_LEVEL,
 	formatPath,
 	isInsideDir,
@@ -378,22 +380,24 @@ async function runPromptCommand(
 	args: string[],
 	targetLevel: number,
 ): Promise<void> {
-	if (!args.includes("--exec")) {
-		writeCommandOutput(await runContractAdapter(contract, args, targetLevel));
+	const exec = args.includes("--exec");
+	setCommandIoFactory(() => createStreamingIo(exec ? { stdout: false } : undefined));
+	let result: ContractRunOutput;
+	try {
+		result = await runContractAdapter(
+			contract,
+			exec ? args.filter((arg) => arg !== "--exec") : args,
+			targetLevel,
+		);
+	} finally {
+		setCommandIoFactory(undefined);
+	}
+	if (!exec) {
+		writeCommandOutput(result);
 		return;
 	}
-	const result = await runContractAdapter(
-		contract,
-		args.filter((arg) => arg !== "--exec"),
-		targetLevel,
-	);
-	// The command's own stderr is its progress and warnings, and it is worth the
-	// same to a pilot whether or not the prompt then gets executed. Only stdout
-	// changes meaning under --exec: it stops being the prompt and becomes the
-	// runner's answer.
 	if (result.stderr) process.stderr.write(result.stderr);
 	if (result.exitCode !== 0) {
-		if (result.stdout) process.stdout.write(result.stdout);
 		process.exitCode = result.exitCode;
 		return;
 	}
@@ -409,12 +413,7 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 	const bridgeLevel = maybeBridgeCompatibilityLevel(process.cwd());
 	const isHelp = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
 
-	// A bridge below the current level holds data this build no longer reads.
-	// Rather than let each command fail its own confusing way, refuse early and
-	// name the fix. Exceptions: `seed`, which is the fix; `--help`, which
-	// touches no bridge data; and anything that is not a contracted command at
-	// all, such as the `version` builtin, which never reads the bridge; and an
-	// explicit `@N`, which answers to `aheadOfBridgeWarning` instead.
+	// Refuse old bridge data early, except migration, help, builtins, and explicit `@N`.
 	if (
 		!exact &&
 		bridgeLevel !== undefined &&

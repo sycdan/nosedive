@@ -27,7 +27,7 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 	if (readiness.blockers.length > 0) {
 		return {
 			stdout: "",
-			stderr: ["drop blocked:", ...readiness.blockers.map((blocker) => `- ${blocker}`)].join("\n"),
+			stderr: `${["drop blocked:", ...readiness.blockers.map((blocker) => `- ${blocker}`)].join("\n")}\n`,
 			exitCode: 1,
 		};
 	}

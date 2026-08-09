@@ -21,6 +21,7 @@ import {
 	readWorkspaceDiveMarker,
 	uniqueDiveWipScopes,
 } from "../lib/gitState.js";
+import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectLandGates,
@@ -168,9 +169,7 @@ function gateRepoContext(
  * leaves the next agent everything it needs and the dive stays jumpable.
  */
 function appendGateReportToDive(divePath: string, report: string): void {
-	const text = readFileSync(divePath, "utf8");
-	const heading = `## Land report ${new Date().toISOString()}`;
-	writeFileAtomic(divePath, `${text.trimEnd()}\n\n${heading}\n\n${report}\n`);
+	appendTimestampedSection(divePath, report, "Land report");
 }
 
 function land(args: string[], io: CommandIo): void {

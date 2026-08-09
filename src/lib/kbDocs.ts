@@ -3,6 +3,8 @@ import { isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { assertSlug, titleFromSlug } from "./backlogDives.js";
+import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
+import { TIMESTAMPED_SECTION_HEADING_PATTERN } from "./kbSections.js";
 import {
 	formatPath,
 	NosediveRc,
@@ -142,6 +144,9 @@ export interface KbDoc {
 	repoPath?: string;
 	repoBaseBranch?: string;
 	effortRef?: string;
+	/** Body facts, kept as booleans so the body itself never has to be carried. */
+	hasBrief: boolean;
+	hasLog: boolean;
 	metaScalars: Record<string, string>;
 	metaLists: Record<string, string[]>;
 	metaRaw: Record<string, unknown>;
@@ -254,39 +259,44 @@ function kbMetaPath(path: string | undefined): string | undefined {
 	return path === undefined ? undefined : toPosixPath(path);
 }
 
+export function readKbDoc(path: string, bridgeDir: string): KbDoc {
+	const label = formatPath(path);
+	const text = readFileSync(path, "utf8");
+	const fm = parseMarkdownFrontmatter(text, label);
+	const raw = fm.raw;
+	return {
+		path,
+		relPath: toPosixPath(relative(bridgeDir, path)),
+		id: fm.scalars.id,
+		name: fm.scalars.name,
+		kind: fm.scalars.kind,
+		// A doc with no `gist:` has no gist, not the four-character string
+		// `undefined`: the field is typed as present, so every reader would
+		// otherwise have to guard a value the type says cannot happen.
+		gist: fm.scalars.gist ?? "",
+		hasBrief: DIVE_BRIEF_HEADING_PATTERN.test(text),
+		hasLog: TIMESTAMPED_SECTION_HEADING_PATTERN.test(text),
+		repoPath: kbMetaPath(fm.nested.meta?.path),
+		repoBaseBranch:
+			fm.nested.meta?.trunk ??
+			fm.nested.meta?.["base-branch"] ??
+			fm.nested.meta?.["default-branch"],
+		effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
+		metaScalars: fm.nested.meta ?? {},
+		metaLists: fm.nestedLists.meta ?? {},
+		metaRaw:
+			raw.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta)
+				? (raw.meta as Record<string, unknown>)
+				: {},
+		scopes: parseScopeRefs(raw.scopes, path),
+		links: parseLinkRefs(raw.links, path),
+	};
+}
+
 export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
-	const entries = readdirSync(kbDir, { withFileTypes: true });
-	return entries
+	return readdirSync(kbDir, { withFileTypes: true })
 		.filter((e) => e.isFile() && e.name.endsWith(".md"))
-		.map((e) => {
-			const path = join(kbDir, e.name);
-			const label = formatPath(path);
-			const text = readFileSync(path, "utf8");
-			const fm = parseMarkdownFrontmatter(text, label);
-			const raw = fm.raw;
-			return {
-				path,
-				relPath: toPosixPath(relative(bridgeDir, path)),
-				id: fm.scalars.id,
-				name: fm.scalars.name,
-				kind: fm.scalars.kind,
-				gist: fm.scalars.gist,
-				repoPath: kbMetaPath(fm.nested.meta?.path),
-				repoBaseBranch:
-					fm.nested.meta?.trunk ??
-					fm.nested.meta?.["base-branch"] ??
-					fm.nested.meta?.["default-branch"],
-				effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
-				metaScalars: fm.nested.meta ?? {},
-				metaLists: fm.nestedLists.meta ?? {},
-				metaRaw:
-					raw.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta)
-						? (raw.meta as Record<string, unknown>)
-						: {},
-				scopes: parseScopeRefs(raw.scopes, path),
-				links: parseLinkRefs(raw.links, path),
-			};
-		});
+		.map((e) => readKbDoc(join(kbDir, e.name), bridgeDir));
 }
 
 export function parseRawFrontmatterObject(text: string, label: string): Record<string, unknown> {

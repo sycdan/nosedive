@@ -23,7 +23,7 @@ import {
 	sortedBacklogKbChildren,
 } from "./packageBacklog.js";
 import { parseLinkRefs } from "./kbRefs.js";
-import { quoteYamlString } from "./renderPlan.js";
+import { gitOutput, quoteYamlString } from "./renderPlan.js";
 
 export function appendBacklogKbDisplayNode(
 	lines: string[],
@@ -143,6 +143,7 @@ export interface ListedDive {
 	rel?: string;
 	diver?: string;
 	scopes: string[];
+	tags: string[];
 	source: string;
 }
 
@@ -185,6 +186,31 @@ export function diveDocs(kbDocs: KbDoc[]): KbDoc[] {
 	return kbDocs.filter((doc) => doc.kind === "dive");
 }
 
+/**
+ * Ids of kb docs the bridge has not committed. Invisible by design: a dive
+ * still being framed belongs to whoever is framing it, and no other checkout
+ * should see it until it has a name and a gist to be seen by.
+ */
+export function localOnlyKbDocIds(bridgeDir: string, kbDir: string): Set<string> {
+	const rel = toPosixPath(relative(bridgeDir, kbDir)) || ".";
+	const status = gitOutput(bridgeDir, [
+		"status",
+		"--porcelain",
+		"--untracked-files=all",
+		"--",
+		rel,
+	]);
+	const ids = new Set<string>();
+	for (const line of (status ?? "").split(/\r?\n/)) {
+		// `XY <path>`, and a rename reads `XY <old> -> <new>`; the new path is the
+		// one on disk, so it is the one whose id is uncommitted.
+		const path = line.slice(3).trim().split(" -> ").at(-1) ?? "";
+		if (!path.endsWith(".md")) continue;
+		ids.add(basename(path, ".md"));
+	}
+	return ids;
+}
+
 export function formatScopeRef(scope: ScopeRef): string {
 	const bits = [scope.repoId];
 	if (scope.ref) bits.push(`@${scope.ref}`);
@@ -193,16 +219,45 @@ export function formatScopeRef(scope: ScopeRef): string {
 	return bits.join("");
 }
 
-export function listedDive(doc: KbDoc, rel?: string): ListedDive {
+/**
+ * `record.dive` writes `diver: null` rather than omitting the key when no
+ * `--diver` is given, so an unheld dive reads back as the four-character string
+ * `null`. Held-ness is asked often enough to be worth one place to ask it.
+ */
+export function diveDiver(doc: KbDoc): string | undefined {
+	const diver = (doc.metaScalars.diver ?? "").trim();
+	return diver && diver !== "null" ? diver : undefined;
+}
+
+/**
+ * What a dive still needs before it is worth anything to anyone, read off the
+ * file rather than tracked in a field. `local-only` is the exception and states
+ * a fact rather than a need: an unframed dive is refused by the bridge's commit
+ * gate, so it is not missing a commit, it is not allowed one yet.
+ */
+export function diveTags(doc: KbDoc, localOnlyIds: ReadonlySet<string>): string[] {
+	const tags: string[] = [];
+	if (!doc.name || doc.name === doc.id) tags.push("needs-name");
+	if (!doc.gist.trim()) tags.push("needs-gist");
+	if (!doc.hasBrief) tags.push("needs-brief");
+	if (!doc.scopes.some((scope) => scope.repoId !== ".")) tags.push("needs-scopes");
+	if (!diveDiver(doc)) tags.push("needs-diver");
+	if (!doc.hasLog) tags.push("never-jumped");
+	if (localOnlyIds.has(doc.id)) tags.push("local-only");
+	return tags;
+}
+
+export function listedDive(doc: KbDoc, rel?: string, tags: string[] = []): ListedDive {
 	return {
 		id: doc.id,
 		name: doc.name,
 		gist: doc.gist,
 		rel,
-		diver: doc.metaScalars.diver || undefined,
+		diver: diveDiver(doc),
 		scopes: doc.scopes
 			.filter((scope) => scope.repoId !== ".")
 			.map((scope) => formatScopeRef(scope)),
+		tags,
 		source: doc.relPath,
 	};
 }
@@ -255,7 +310,7 @@ export function collectListDives(
 		linkedDiveIds.add(dive.id);
 		if (link.rel === "pending") {
 			pending.push(listedDive(dive, link.rel));
-		} else if (DIVE_WORKING_RELS.has(link.rel ?? "") || dive.metaScalars.diver) {
+		} else if (DIVE_WORKING_RELS.has(link.rel ?? "") || diveDiver(dive)) {
 			working.push(listedDive(dive, link.rel));
 		} else {
 			provenance.push(listedDive(dive, link.rel));
@@ -268,7 +323,7 @@ export function collectListDives(
 	for (const dive of dives) {
 		if (linkedDiveIds.has(dive.id)) continue;
 		if (!sameEffortRef(dive.effortRef, effort)) continue;
-		if (dive.metaScalars.diver) {
+		if (diveDiver(dive)) {
 			warnings.push(
 				`held dive ${dive.id} points at ${effortLabel} but is not linked from the effort`,
 			);
@@ -285,12 +340,22 @@ export function collectListDives(
 	};
 }
 
+/**
+ * A markdown link rather than a bare id: the path is ctrl-clickable from a
+ * terminal, and anyone reading the output later can follow it to the scopes and
+ * brief this line deliberately does not restate. The effort is left off for the
+ * same reason -- a managed dive name already carries the feat slug.
+ */
 export function formatListedDive(dive: ListedDive): string {
 	const rel = dive.rel ? ` rel=${dive.rel}` : "";
 	const diver = dive.diver ? ` diver=${dive.diver}` : "";
-	const scopes = dive.scopes.length > 0 ? ` scopes=${dive.scopes.join(",")}` : "";
+	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
+	const states = dive.tags.filter((tag) => !tag.startsWith("needs-"));
+	const needsPart =
+		needs.length > 0 ? ` needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}` : "";
+	const statePart = states.length > 0 ? ` ${states.join(" ")}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
-	return `  - ${dive.id} ${dive.name}${rel}${diver}${scopes}${gist}`;
+	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
 }
 
 export function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {

@@ -200,6 +200,108 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 	assert.match(preflight.stdout, /Report the dive\./);
 });
 
+const BARE_DIVE_ID = "019fe500-0000-7000-8000-00000000dead";
+const FRAMED_DIVE_ID = "019fe500-0000-7000-8000-00000000beef";
+
+test("preflight lists every dive with computed tags, split by pickup-ability", () => {
+	const bridge = createBridge(tmp, "dives-bridge");
+	setIdentity(bridge, "Dive Pilot", "dive-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	// Shaped like `record.dive --free` leaves one: named by its own id, no gist,
+	// no brief, and `diver: null` rather than an absent key.
+	write(
+		join(bridge, "kb", `${BARE_DIVE_ID}.md`),
+		[
+			"---",
+			"kind: dive",
+			`id: ${BARE_DIVE_ID}`,
+			`name: ${BARE_DIVE_ID}`,
+			"meta:",
+			"  diver: null",
+			"---",
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "kb", `${FRAMED_DIVE_ID}.md`),
+		[
+			"---",
+			"kind: dive",
+			`id: ${FRAMED_DIVE_ID}`,
+			"name: framed-dive",
+			'gist: "A dive with everything filled in."',
+			"scopes:",
+			"  - 019f514e-d8d5-7bc1-bf3f-d8e5092c6596:",
+			"      mode: rw",
+			"meta:",
+			"  diver: dive-pilot@example.invalid",
+			"---",
+			"",
+			"# Dive Record",
+			"",
+			"## Brief",
+			"",
+			"Do the thing.",
+			"",
+			"## 2026-08-09T05:02:49.670Z",
+			"",
+			"- repo=nosedive path=workspace/nosedive mode=rw ref=deadbee",
+			"",
+		].join("\n"),
+	);
+	// Only the framed one is committed, so `local-only` separates them.
+	runTool("git", ["add", "--", `kb/${FRAMED_DIVE_ID}.md`], bridge);
+	runTool("git", ["commit", "-m", "commit the framed dive"], bridge);
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with dives failed");
+	assert.match(preflight.stdout, /^== dives ==$/m);
+
+	const bare = new RegExp(
+		`^ {2}- \\[${escapeRegExp(BARE_DIVE_ID)}\\]\\(${escapeRegExp(`kb/${BARE_DIVE_ID}.md`)}\\) needs=name,gist,brief,scopes,diver never-jumped local-only$`,
+		"m",
+	);
+	assert.match(preflight.stdout, bare);
+	const framed = new RegExp(
+		`^ {2}- \\[framed-dive\\]\\(${escapeRegExp(`kb/${FRAMED_DIVE_ID}.md`)}\\) diver=dive-pilot@example\\.invalid - A dive with everything filled in\\.$`,
+		"m",
+	);
+	assert.match(preflight.stdout, framed);
+
+	// Grouping: the unclaimed one is offered, the claimed one is context.
+	const available = preflight.stdout.indexOf("Available:");
+	const held = preflight.stdout.indexOf("Held:");
+	assert.ok(available !== -1 && held !== -1 && available < held, "expected Available above Held");
+	assert.ok(
+		preflight.stdout.indexOf(BARE_DIVE_ID) > available &&
+			preflight.stdout.indexOf(BARE_DIVE_ID) < held,
+		"an unclaimed dive belongs under Available",
+	);
+	assert.ok(preflight.stdout.indexOf("framed-dive") > held, "a claimed dive belongs under Held");
+
+	// Dives outrank the backlog: what the pilot is in the middle of comes first.
+	assert.ok(
+		preflight.stdout.indexOf("== dives ==") <
+			preflight.stdout.indexOf("== open work: current effort backlog =="),
+		"the dive section should print above the backlog",
+	);
+	assert.match(preflight.stdout, /Run `jump` only when the pilot asks for it\./);
+});
+
+test("preflight names record.dive --free when there is no dive to pick up", () => {
+	const bridge = createBridge(tmp, "no-dives-bridge");
+	setIdentity(bridge, "Empty Pilot", "empty-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with no dives failed");
+	assert.match(preflight.stdout, /^== dives ==$/m);
+	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
+	assert.doesNotMatch(preflight.stdout, /^Available:$/m);
+	assert.doesNotMatch(preflight.stdout, /^Held:$/m);
+});
+
 test("preflight fails like whoami when git identity is incomplete", () => {
 	const bridge = freshGitBridge("no-identity-bridge");
 	runTool("git", ["config", "user.name", "Only Git Name"], bridge);

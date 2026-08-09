@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { parseDocument } from "yaml";
 
-import { titleFromSlug } from "./backlogDives.js";
+import { diveTags, localOnlyKbDocIds, titleFromSlug } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import {
@@ -12,7 +12,7 @@ import {
 	readNosediveRc,
 	stringifyYaml,
 } from "./coreParsing.js";
-import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
+import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
 import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
 import {
@@ -281,6 +281,10 @@ function recordFreeDive(
 	const path = join(kbDir, `${id}.md`);
 	writeFileAtomic(path, renderFreeDive(id, scopes));
 	io.log(`Recorded ${formatPath(path)}`);
+	// The agent that just made the dive is the one that has to fill it in, so it
+	// is told what is missing here rather than having to run preflight to find out.
+	const tags = diveTags(readKbDoc(path, rc.bridgeDir), localOnlyKbDocIds(rc.bridgeDir, kbDir));
+	if (tags.length > 0) io.log(`needs: ${tags.join(", ")}`);
 }
 
 function replaceTitle(body: string, title: string): string {

@@ -5,9 +5,17 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { bridgeBacklogMemoBody } from "../lib/backlogDives.js";
+import {
+	appendDiveSection,
+	bridgeBacklogMemoBody,
+	diveDocs,
+	diveTags,
+	ListedDive,
+	listedDive,
+	localOnlyKbDocIds,
+} from "../lib/backlogDives.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { PRE_PUSH_HOOK } from "../lib/constants.js";
+import { PREFLIGHT_GUIDANCE, PREFLIGHT_NO_DIVE_LINE, PRE_PUSH_HOOK } from "../lib/constants.js";
 import {
 	formatPath,
 	NosediveRc,
@@ -81,11 +89,30 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): boolean {
 }
 
 /**
+ * Every kb doc, or undefined with the reason on stderr. Loaded once per run and
+ * shared: both the current-dive lines and the dive list read the same set, and
+ * the parse is the expensive part of either.
+ */
+function loadBridgeKbDocs(rc: NosediveRc, io: CommandIo): KbDoc[] | undefined {
+	if (!rc.kbDir) return undefined;
+	try {
+		return loadKbDocs(rc.kbDir, rc.bridgeDir);
+	} catch (err) {
+		io.err(err instanceof Error ? err.message : String(err));
+		return undefined;
+	}
+}
+
+/**
  * Prints `nosedive-current-dive-id`/`-gist`/`nosedive-current-effort`. No
  * active dive means no lines and no noise; a marker that fails to resolve
  * past that point prints whatever did resolve and puts the reason on stderr.
  */
-function printCurrentDiveAndEffort(rc: NosediveRc, io: CommandIo): void {
+function printCurrentDiveAndEffort(
+	rc: NosediveRc,
+	kbDocs: KbDoc[] | undefined,
+	io: CommandIo,
+): void {
 	const activeDiveId = readActiveDiveId(rc.workspaceDir);
 	if (!activeDiveId) return;
 	io.log(`nosedive-current-dive-id: ${activeDiveId}`);
@@ -94,14 +121,7 @@ function printCurrentDiveAndEffort(rc: NosediveRc, io: CommandIo): void {
 		io.err(`dive ${activeDiveId} is active but no kb directory is configured`);
 		return;
 	}
-
-	let kbDocs: KbDoc[];
-	try {
-		kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	} catch (err) {
-		io.err(err instanceof Error ? err.message : String(err));
-		return;
-	}
+	if (!kbDocs) return;
 
 	const activeDive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeDiveId);
 	if (!activeDive) {
@@ -119,6 +139,40 @@ function printCurrentDiveAndEffort(rc: NosediveRc, io: CommandIo): void {
 	}
 }
 
+/**
+ * Every `kind: dive` in the kb, split by whether it can be picked up. The split
+ * is `needs-diver` rather than owner: a dive recorded with `--free` carries no
+ * `meta.diver`, so filing by owner would put every unclaimed dive under nobody.
+ */
+function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo): void {
+	io.log("== dives ==");
+	if (!kbDocs || !rc.kbDir) {
+		io.err("no kb directory is configured, so no dives can be listed");
+		return;
+	}
+
+	const localOnly = localOnlyKbDocIds(rc.bridgeDir, rc.kbDir);
+	const available: ListedDive[] = [];
+	const held: ListedDive[] = [];
+	for (const doc of diveDocs(kbDocs)) {
+		const tags = diveTags(doc, localOnly);
+		(tags.includes("needs-diver") ? available : held).push(listedDive(doc, undefined, tags));
+	}
+
+	if (available.length === 0 && held.length === 0) {
+		io.log(PREFLIGHT_NO_DIVE_LINE);
+		return;
+	}
+	appendDiveSectionTo(io, "Available", available);
+	appendDiveSectionTo(io, "Held", held);
+}
+
+function appendDiveSectionTo(io: CommandIo, label: string, dives: ListedDive[]): void {
+	const lines: string[] = [];
+	appendDiveSection(lines, label, dives);
+	for (const line of lines) io.log(line);
+}
+
 function printSessionReport(rc: NosediveRc, io: CommandIo): void {
 	if (!rc.workspaceDir) throw new Error("preflight requires a configured workspace directory");
 
@@ -130,13 +184,21 @@ function printSessionReport(rc: NosediveRc, io: CommandIo): void {
 		return;
 	}
 
+	const kbDocs = loadBridgeKbDocs(rc, io);
+
 	io.log("== bridge status ==");
 	io.log(`nosedive-workspace: ${toPosixPath(rc.workspaceDir)}`);
-	printCurrentDiveAndEffort(rc, io);
+	printCurrentDiveAndEffort(rc, kbDocs, io);
 	io.log("");
 
 	io.log("== pilot identification ==");
 	io.writeOut(pilotIdentityLines(identity));
+	io.log("");
+
+	// Identity first, so a reader knows whose dives these are; dives before the
+	// backlog, because what the pilot is in the middle of outranks what they
+	// could start.
+	printDives(rc, kbDocs, io);
 	io.log("");
 
 	io.log("== open work: current effort backlog ==");
@@ -145,6 +207,8 @@ function printSessionReport(rc: NosediveRc, io: CommandIo): void {
 	} catch (err) {
 		io.err(err instanceof Error ? err.message : String(err));
 	}
+	io.log("");
+	io.log(PREFLIGHT_GUIDANCE);
 }
 
 function preflight(_args: string[], io: CommandIo): void {

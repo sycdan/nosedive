@@ -15,6 +15,28 @@ export const REPO_MARKER_EXCLUDE_END = "# END nosedive-managed repo-marker exclu
 export const DIVE_BRIEF_HEADING = "## Brief";
 export const DIVE_BRIEF_HEADING_PATTERN = /^##\s+Brief\s*$/m;
 
+/**
+ * Printed when nothing in the kb can be picked up. A `nose:` line addresses the
+ * agent rather than the pilot, and preflight names the command instead of
+ * running it: a preflight that minted its own dive would leave
+ * `record.dive --free` with no caller at all.
+ */
+export const PREFLIGHT_NO_DIVE_LINE =
+	"nose: no dive to pick up; run `record.dive --free` before acting on the pilot's first instruction";
+
+/**
+ * The tail of the session-start report. It is guidance, not a document the
+ * pilot goes and reads, so it lives here rather than in a kb doc -- and it is
+ * deliberately not a prompt fed to a subprocess, which is what the `.prompt`
+ * convention exists for.
+ */
+export const PREFLIGHT_GUIDANCE = [
+	"Help the pilot choose what to work on next -- from the dives above, or from the backlog",
+	"below -- but do not choose for them and do not start work they have not asked for.",
+	"Once they say which, claim it with `record.dive --ref <id> --diver <email>`, then fill in",
+	"its gist, name, brief and scopes together. Run `jump` only when the pilot asks for it.",
+].join("\n");
+
 export const PRE_PUSH_HOOK =
 	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
 export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1';

@@ -297,6 +297,12 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	assert.doesNotMatch(doc, /^links:/m);
 	assert.doesNotMatch(doc, /^# /m);
 	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
+	// The agent that just made the dive is the one that has to fill it in, so it
+	// is told what is missing without having to run preflight to find out.
+	assert.match(
+		result.stdout,
+		/^needs: needs-name, needs-gist, needs-brief, needs-diver, never-jumped, local-only$/m,
+	);
 });
 
 test("record.dive --free warns when the backlog scopes no repos", () => {

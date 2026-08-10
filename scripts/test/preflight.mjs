@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
@@ -12,6 +13,7 @@ import {
 	runTool,
 	write,
 	writeBridgeConfig,
+	cli,
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("preflight");
@@ -65,6 +67,28 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 	const preflightAgain = run(["preflight"], bridge);
 	assertOk(preflightAgain, "preflight idempotent refresh failed");
 	assert.equal(readFileSync(installedHook, "utf8"), MANAGED_HOOK);
+});
+
+test("preflight streams its first line before the CLI exits", async () => {
+	const bridge = freshGitBridge("streaming");
+	setIdentity(bridge, "Streaming Pilot", "streaming-pilot@example.invalid");
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+
+	const child = spawn(process.execPath, [cli, "preflight"], { cwd: bridge });
+	let exited = false;
+	let firstLineBeforeExit = false;
+	child.stdout.once("data", (chunk) => {
+		firstLineBeforeExit =
+			!exited && chunk.toString().startsWith("Installed nosedive pre-push hook:");
+	});
+	await new Promise((resolve, reject) => {
+		child.once("error", reject);
+		child.once("exit", () => {
+			exited = true;
+		});
+		child.once("close", resolve);
+	});
+	assert.equal(firstLineBeforeExit, true, "preflight output arrived only after the CLI exited");
 });
 
 test("preflight hard-fails on an unwired foreign hook", () => {

@@ -137,7 +137,7 @@ function appendGateReportToDive(divePath: string, report: string): void {
 	appendTimestampedSection(divePath, report, "Land report");
 }
 
-function land(args: string[], io: CommandIo): void {
+async function land(args: string[], io: CommandIo): Promise<void> {
 	parseLandArgs(args);
 	const rc = readNosediveRc(process.cwd());
 
@@ -203,7 +203,10 @@ function land(args: string[], io: CommandIo): void {
 	];
 	const gates = collectLandGates(gateRoots, kbDocs, rc.bridgeDir);
 	if (gates.length > 0) {
-		const outcome = runLandGates(gates, {
+		const outcome = await runLandGates(gates, {
+			// Live gate output goes to stderr, where a gate's own progress already
+			// goes; the recorded report keeps its copy and still lands on stdout.
+			sink: { out: (text) => io.writeErr(text), err: (text) => io.writeErr(text) },
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId: dive.id,

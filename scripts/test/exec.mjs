@@ -84,6 +84,7 @@ test("--exec runs the prompt and prints only the runner's stdout", () => {
 	const result = run(["into", "some context", "--exec"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "dropped by effort-0-succeeds\n");
+	assert.doesNotMatch(result.stdout, /some context/);
 	assert.match(result.stderr, /into: effort 0, effort-0-succeeds/);
 	// The prompt reached the runner rather than the pilot.
 	assert.match(readFileSync(log, "utf8"), /some context/);

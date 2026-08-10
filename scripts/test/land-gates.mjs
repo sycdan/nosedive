@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import {
 	assertOk,
+	cli,
 	createTmp,
 	gitCommit,
 	gitCommitEmpty,
@@ -32,6 +34,9 @@ const GATE_FALSE =
 	'export function run() {\n\tconsole.error("returned false");\n\treturn false;\n}\n';
 const GATE_SLOW =
 	'export function run() {\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n\tconsole.error("slow gate finished");\n}\n';
+/** Speaks, then stalls: the only shape that can tell streaming from buffering. */
+const GATE_TALKS_THEN_STALLS =
+	'export function run() {\n\tconsole.error("gate speaking early");\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);\n}\n';
 const orderGate = (logPath, name) =>
 	`import { appendFileSync } from "node:fs";\n\nexport function run() {\n\tappendFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(`${name}\n`)});\n}\n`;
 /** Resolves its repo through ctx, from the bridge, the way every gate must. */
@@ -362,6 +367,47 @@ test("a test-script with no run export is a gate failure", () => {
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stdout, /gate module must export run\(ctx\)/);
+});
+
+test("a gate's output reaches the terminal while that gate is still running", async () => {
+	const { bridge, worktree } = setup("streaming", [
+		gate("019fd471-0000-7000-8000-000000000030", "talks-early", GATE_TALKS_THEN_STALLS),
+	]);
+	gitCommitEmpty(worktree, "work");
+
+	const child = spawn(process.execPath, [cli, "land"], { cwd: bridge });
+	let exited = false;
+	let spokeBeforeExit = false;
+	child.stderr.on("data", (chunk) => {
+		if (!exited && chunk.toString().includes("gate speaking early")) spokeBeforeExit = true;
+	});
+	child.stdout.on("data", () => {});
+	await new Promise((resolve, reject) => {
+		child.once("error", reject);
+		child.once("exit", () => {
+			exited = true;
+		});
+		child.once("close", resolve);
+	});
+
+	assert.equal(
+		spokeBeforeExit,
+		true,
+		"the gate's line arrived only after land exited, so it was buffered",
+	);
+});
+
+test("a streamed gate is still recorded in the report byte for byte", () => {
+	const { bridge, worktree, diveId } = setup("streamed-report", [
+		gate("019fd471-0000-7000-8000-000000000031", "noisy", GATE_FAIL),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0);
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /gate says no/, "streaming must not consume the captured text");
+	assert.match(diveText, /FAILED \(exit 1\)/);
 });
 
 test("a slow gate does not stop the gates behind it from running", () => {

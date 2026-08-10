@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
-import { commandForSpawn, spawnOutputText } from "./gitState.js";
+import { commandForSpawn } from "./gitState.js";
 import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./renderPlan.js";
@@ -206,42 +206,116 @@ function writeGateRunner(): string {
 }
 
 /**
- * Sequential by design: gates share the hydrated worktrees, so two at once
- * would fight over the same build outputs and index.
- *
- * Every selected gate runs. There is no time budget: a stopwatch could only
- * drop whichever gates happened to be last, which makes coverage a property of
- * how fast the machine is, and it never protected against a runaway gate
- * anyway -- the budget was checked between gates and never interrupted one.
+ * Where a gate's output goes while it is still running. The text is captured
+ * for `renderGateReport` either way; a sink only decides whether a human also
+ * sees it live. Callers pass their command's io rather than writing to the
+ * process directly, so a gate's chatter obeys the same routing as everything
+ * else the command says.
  */
-export function runLandGates(gates: LandGate[], options: { context: GateContext }): GateOutcome {
-	const runs: GateRun[] = [];
-	const started = Date.now();
-	const runnerPath = gates.length > 0 ? writeGateRunner() : undefined;
-	const serializedContext = JSON.stringify(options.context);
+export interface GateOutputSink {
+	out(text: string): void;
+	err(text: string): void;
+}
 
-	for (const gate of gates) {
-		const startedAt = new Date();
-		const spawn = commandForSpawn("node", [runnerPath!]);
-		const result = spawnSync(spawn.command, spawn.args, {
-			cwd: options.context.bridgeRoot,
-			encoding: "utf8",
+/**
+ * Spawned async rather than with `spawnSync`, which cannot both inherit and
+ * capture: the report needs the text and the pilot needs it before the gate
+ * ends. Every chunk is therefore appended and forwarded.
+ */
+function runGateChild(
+	runnerPath: string,
+	gate: LandGate,
+	context: GateContext,
+	serializedContext: string,
+	sink?: GateOutputSink,
+): Promise<{ status: number; stdout: string; stderr: string }> {
+	return new Promise((resolve) => {
+		const command = commandForSpawn("node", [runnerPath]);
+		const child = spawn(command.command, command.args, {
+			cwd: context.bridgeRoot,
 			env: {
 				...cleanGitEnv(),
 				NOSEDIVE_GATE_MODULE: gate.scriptPath,
 				NOSEDIVE_GATE_CONTEXT: serializedContext,
 			},
 		});
+		let stdout = "";
+		let stderr = "";
+		let settled = false;
+		const settle = (status: number): void => {
+			if (settled) return;
+			settled = true;
+			resolve({ status, stdout, stderr });
+		};
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk: string) => {
+			stdout += chunk;
+			sink?.out(chunk);
+		});
+		child.stderr.on("data", (chunk: string) => {
+			stderr += chunk;
+			sink?.err(chunk);
+		});
+		// A runner that cannot start is a failed gate, not a crashed command.
+		child.on("error", (error: Error) => {
+			const message = `gate could not start: ${error.message}\n`;
+			stderr += message;
+			sink?.err(message);
+			settle(1);
+		});
+		child.on("close", (code) => settle(code ?? 1));
+	});
+}
+
+/**
+ * Sequential by design: gates share the hydrated worktrees, so two at once
+ * would fight over the same build outputs and index. Being sequential is also
+ * what lets output stream unprefixed -- only one gate can be talking.
+ *
+ * Every selected gate runs. There is no time budget: a stopwatch could only
+ * drop whichever gates happened to be last, which makes coverage a property of
+ * how fast the machine is, and it never protected against a runaway gate
+ * anyway -- the budget was checked between gates and never interrupted one.
+ */
+export async function runLandGates(
+	gates: LandGate[],
+	options: { context: GateContext; sink?: GateOutputSink },
+): Promise<GateOutcome> {
+	const runs: GateRun[] = [];
+	const started = Date.now();
+	const runnerPath = gates.length > 0 ? writeGateRunner() : undefined;
+	const serializedContext = JSON.stringify(options.context);
+
+	// A header says which gate is talking. With one gate there is nothing to
+	// disambiguate, so `test <gate>` stays as quiet as the gate itself.
+	const headers = options.sink !== undefined && gates.length > 1;
+
+	for (const gate of gates) {
+		const startedAt = new Date();
+		if (headers) options.sink?.err(`\n--- ${gateLabel(gate)} ---\n`);
+		const result = await runGateChild(
+			runnerPath!,
+			gate,
+			options.context,
+			serializedContext,
+			options.sink,
+		);
 		const endedAt = new Date();
 		runs.push({
 			gate,
-			status: result.status ?? 1,
-			stderr: spawnOutputText(result.stderr),
-			stdout: spawnOutputText(result.stdout),
+			status: result.status,
+			stderr: result.stderr,
+			stdout: result.stdout,
 			startedAt: startedAt.toISOString(),
 			endedAt: endedAt.toISOString(),
 			elapsedMs: endedAt.getTime() - startedAt.getTime(),
 		});
+		if (headers) {
+			options.sink?.err(
+				`--- ${gateLabel(gate)}: ${result.status === 0 ? "passed" : `FAILED (exit ${result.status})`} in ${endedAt.getTime() - startedAt.getTime()}ms ---\n`,
+			);
+		}
 	}
 
 	const failed = runs.some((run) => run.status !== 0 && !run.gate.flaky);

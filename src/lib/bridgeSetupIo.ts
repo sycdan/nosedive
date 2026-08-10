@@ -419,6 +419,48 @@ export function createCapturingIo(): CapturingCommandIo {
 	};
 }
 
+/**
+ * Captures selected streams while forwarding the rest immediately. The adapter
+ * still returns the captured streams, so a streamed stream cannot be replayed.
+ */
+export function createStreamingIo({
+	stdout = true,
+	stderr = true,
+}: { stdout?: boolean; stderr?: boolean } = {}): CapturingCommandIo {
+	const prompter = createStdinPrompter();
+	let capturedStdout = "";
+	let capturedStderr = "";
+	let exitCode = 0;
+	return {
+		log(message = ""): void {
+			const text = `${message}\n`;
+			if (stdout) process.stdout.write(text);
+			else capturedStdout += text;
+		},
+		err(message: string): void {
+			const text = `${message}\n`;
+			if (stderr) process.stderr.write(text);
+			else capturedStderr += text;
+		},
+		writeOut(text: string): void {
+			if (stdout) process.stdout.write(text);
+			else capturedStdout += text;
+		},
+		writeErr(text: string): void {
+			if (stderr) process.stderr.write(text);
+			else capturedStderr += text;
+		},
+		prompt: prompter.prompt,
+		setExitCode(code: number): void {
+			exitCode = code;
+		},
+		close: prompter.close,
+		captured(): CapturedCommandOutput {
+			return { stdout: capturedStdout, stderr: capturedStderr, exitCode };
+		},
+	};
+}
+
 export async function promptScalar(io: CommandIo, label: string, current: string): Promise<string> {
 	const line = await io.prompt(`${label} [${current}]: `);
 	return !line ? current : line;

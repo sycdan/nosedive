@@ -46,7 +46,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		marker.id && kbDocs.some((candidate) => candidate.id === marker.id && candidate.kind === "dive")
 			? marker.id
 			: "";
-	const outcome = runLandGates(
+	const outcome = await runLandGates(
 		[
 			{
 				doc,
@@ -58,6 +58,9 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 			},
 		],
 		{
+			// The gate's own streams, as it writes them. Nothing is replayed
+			// afterwards -- a pilot watching a gate run has already seen it.
+			sink: { out: (text) => io.writeOut(text), err: (text) => io.writeErr(text) },
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId,
@@ -65,10 +68,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 			},
 		},
 	);
-	const result = outcome.runs[0]!;
-	if (result.stdout) io.writeOut(result.stdout);
-	if (result.stderr) io.writeErr(result.stderr);
-	io.setExitCode(result.status);
+	io.setExitCode(outcome.runs[0]!.status);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

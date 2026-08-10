@@ -17,6 +17,7 @@ import {
 const tmp = createTmp("land-gates");
 const repoId = "019fd471-0000-7000-8000-000000000001";
 const effortId = "019fd471-0000-7000-8000-000000000002";
+const legacyGateRel = ["land", "gated", "by"].join("-");
 
 /**
  * Gate scripts live in the bridge (meta.test-script is bridge-relative), so
@@ -67,7 +68,7 @@ ${scopes}${meta}---
 /**
  * @param name unique per test; also names the workspace repo
  * @param gates array of { id, name, body, links } written into kb and linked
- * @param linkFrom "dive" | "effort" -- which doc carries the land-gated-by edges
+ * @param linkFrom "dive" | "effort" -- which doc carries the land.gate edges
  */
 function setup(name, gates = [], { linkFrom = "effort", extraDocs = [] } = {}) {
 	const source = join(tmp, `${name}-source`);
@@ -111,7 +112,7 @@ meta:
 	const gateLinks = gates
 		.filter((gate) => gate.link !== false)
 		.map((gate) => {
-			const attrs = { rel: "land-gated-by", ...(gate.attrs ?? {}) };
+			const attrs = { rel: "land.gate", ...(gate.attrs ?? {}) };
 			const attrLines = Object.entries(attrs)
 				.map(([key, value]) => `      ${key}: ${value}`)
 				.join("\n");
@@ -166,6 +167,18 @@ test("a dive with no gates still lands", () => {
 	const { bridge, worktree } = setup("no-gates");
 	gitCommitEmpty(worktree, "work");
 	assertOk(run(["land"], bridge), "land without gates should push");
+});
+
+test("a legacy gate edge refuses rather than silently skipping the gate", () => {
+	const { bridge, worktree } = setup("legacy-edge", [
+		gate("019fd471-0000-7000-8000-000000000020", "builds", GATE_PASS),
+	]);
+	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	write(effortPath, readFileSync(effortPath, "utf8").replace("rel: land.gate", `rel: ${legacyGateRel}`));
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "a legacy edge must block the land");
+	assert.match(result.stderr, /obsolete; rename it to land\.gate/);
 });
 
 test("land runs a passing gate and publishes", () => {
@@ -253,7 +266,7 @@ name: relay
 gist: "Links the same gate again, without the flaky marking"
 links:
   - kb/${gateId}.md:
-      rel: land-gated-by
+      rel: land.gate
 ---
 `,
 				},
@@ -397,8 +410,8 @@ test("unknown scalar link attributes are carried, non-scalar ones rejected", () 
 	write(
 		effortPath,
 		readFileSync(effortPath, "utf8").replace(
-			"      rel: land-gated-by\n",
-			"      rel: land-gated-by\n      tags:\n        - a\n        - b\n",
+			"      rel: land.gate\n",
+			"      rel: land.gate\n      tags:\n        - a\n        - b\n",
 		),
 	);
 	gitCommitEmpty(listValue.worktree, "work");

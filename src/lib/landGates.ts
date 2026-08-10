@@ -9,9 +9,10 @@ import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./renderPlan.js";
 
-/** Kinds a `land-gated-by` edge may point at. Anything else is a mis-linked doc, not a gate. */
+/** Kinds a `land.gate` edge may point at. Anything else is a mis-linked doc, not a gate. */
 export const GATE_KINDS = new Set(["assertion", "test", "gate", "check", "proof", "prover"]);
-const GATE_REL = "land-gated-by";
+const GATE_REL = "land.gate";
+const LEGACY_GATE_REL = ["land", "gated", "by"].join("-");
 
 export const DEFAULT_CLOCK = "30";
 
@@ -116,6 +117,11 @@ export function collectLandGates(roots: KbDoc[], kbDocs: KbDoc[], bridgeDir: str
 
 		for (const link of doc.links) {
 			const target = byId.get(link.id);
+			if (link.rel === LEGACY_GATE_REL) {
+				throw new Error(
+					`${LEGACY_GATE_REL} link in ${doc.relPath} is obsolete; rename it to ${GATE_REL}`,
+				);
+			}
 			if (link.rel === GATE_REL) {
 				if (!target) {
 					throw new Error(`${GATE_REL} link in ${doc.relPath} names an unknown doc: ${link.id}`);

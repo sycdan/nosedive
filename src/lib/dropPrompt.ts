@@ -69,9 +69,6 @@ export function resolveRunnerUsage(kbDocs: KbDoc[], rc: NosediveRc): string {
 
 	const bridgeDoc = kbDocs.find((doc) => doc.id === runnerId);
 	if (!bridgeDoc) throw new Error(`agent runner not found: ${runnerId}`);
-	if (bridgeDoc.kind !== "memo") {
-		throw new Error(`agent runner ${runnerId} must be kind: memo, not ${bridgeDoc.kind}`);
-	}
 	return requireColdStartUsage(
 		bridgeDoc.metaScalars["cold-start-usage"],
 		formatPath(bridgeDoc.path),

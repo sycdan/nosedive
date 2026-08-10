@@ -10,7 +10,6 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectDiveGates,
 	collectLandGates,
-	GATE_KINDS,
 	gateRepoContext,
 	LandGate,
 	resolveGateScript,
@@ -138,11 +137,6 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
 	const doc = kbDocs.find((candidate) => candidate.id === id);
 	if (!doc) throw new Error(`gate not found: ${id}`);
-	if (!GATE_KINDS.has(doc.kind)) {
-		throw new Error(
-			`gate ${id} has kind: ${doc.kind}; expected one of ${[...GATE_KINDS].join("|")}`,
-		);
-	}
 	return {
 		doc,
 		scriptPath: resolveGateScript(doc, bridgeDir),

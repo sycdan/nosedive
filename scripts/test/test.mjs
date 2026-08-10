@@ -10,15 +10,14 @@ const passId = "019fe100-0000-7000-8000-000000000001";
 const failId = "019fe100-0000-7000-8000-000000000002";
 const wrongKindId = "019fe100-0000-7000-8000-000000000003";
 
-function gateDoc(id, kind = "assertion") {
+function gateDoc(id, kind = "assertion", { script = `kb/artifacts/${id}.mjs` } = {}) {
+	const meta = script === null ? "meta:\n" : `meta:\n  test-script: ${script}\n`;
 	return `---
 kind: ${kind}
 id: ${id}
 name: ${id}
 gist: "Run gate fixture"
-meta:
-  test-script: kb/artifacts/${id}.mjs
----
+${meta}---
 `;
 }
 
@@ -34,7 +33,7 @@ function setup(name) {
 		join(bridge, "kb", "artifacts", `${failId}.mjs`),
 		'export function run() { console.error("failed gate"); return false; }\n',
 	);
-	write(join(bridge, "kb", `${wrongKindId}.md`), gateDoc(wrongKindId, "memo"));
+	write(join(bridge, "kb", `${wrongKindId}.md`), gateDoc(wrongKindId, "memo", { script: null }));
 	return bridge;
 }
 
@@ -56,10 +55,10 @@ test("test clearly rejects an unknown id", () => {
 	assert.match(result.stderr, /gate not found: 019fe100-0000-7000-8000-000000000099/);
 });
 
-test("test clearly rejects a document with the wrong kind", () => {
+test("test clearly rejects a document with no test-script", () => {
 	const result = run(["test", wrongKindId], setup("wrong-kind"));
 	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /has kind: memo; expected one of/);
+	assert.match(result.stderr, /meta\.test-script is missing/);
 });
 
 const diveId = "019fe100-0000-7000-8000-000000000010";

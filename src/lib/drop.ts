@@ -118,10 +118,10 @@ export function collectDropReadiness(
 	for (const dive of working.filter((doc) => doc.kind === "dive")) {
 		blockers.push(`open dive: ${dive.name}`);
 	}
-	for (const child of linkedDocs(effort, kbDocs, "child").filter((doc) => doc.kind === "feat")) {
+	for (const child of linkedDocs(effort, kbDocs, "child")) {
 		blockers.push(`open child feat: ${child.name}`);
 	}
-	for (const needed of linkedDocs(effort, kbDocs, "needs").filter((doc) => doc.kind === "feat")) {
+	for (const needed of linkedDocs(effort, kbDocs, "needs")) {
 		blockers.push(`open needed feat: ${needed.name}`);
 	}
 

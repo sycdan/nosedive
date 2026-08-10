@@ -14,7 +14,7 @@ function effortAncestry(effort: KbDoc, kbDocs: KbDoc[]): KbDoc[] {
 	for (;;) {
 		const parentRef = current.links.find((link) => link.rel === "parent")?.id;
 		if (!parentRef) return efforts;
-		const parent = kbDocs.find((doc) => doc.kind === "feat" && doc.id === parentRef);
+		const parent = kbDocs.find((doc) => doc.id === parentRef);
 		if (!parent) throw new Error(`effort ${current.id} links missing parent effort ${parentRef}`);
 		if (seen.has(parent.id)) throw new Error(`effort ancestry contains a cycle at ${parent.id}`);
 		seen.add(parent.id);

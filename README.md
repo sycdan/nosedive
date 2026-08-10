@@ -123,10 +123,10 @@ Invoked directly by humans, or indirectly via agents.
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
 | [`record.dive@2`](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md) | `npx nosedive record.dive [--ref <dive-ref>] [--effort <effort-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--scope <repo-ref>]... [--clear-scopes] [--free]` | Create or patch a feat-owned dive record while preserving omitted update fields. |
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid> [--gist]` | Print the markdown body, or with --gist the gist line, of a packaged nosedive KB document by uuid. |
-| [`run-gate@1`](kb/23936c11-585f-5e4f-a9a0-36218b931919.md) | `npx nosedive run-gate <gate-id>` | Runs one named gate and returns its status. |
 | [`scan@1`](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md) | `npx nosedive scan --repo <repo-id-or-name>` | Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
 | [`spin@2`](kb/44dc2f43-c972-5204-96fe-2b92e61bb346.md) | `npx nosedive spin <loads>` | Brief a runner with documented loads reachable from the active dive's feat ancestry. |
+| [`test@1`](kb/8d2f6ab6-6173-5527-b176-9b03e3c9d531.md) | `npx nosedive test <gate-id>` | Runs one named gate and exits with its status. |
 | [`update-backlog@2`](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB feat docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 

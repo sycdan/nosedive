@@ -37,7 +37,7 @@ import { run as i89ff71acfbc659628c68396a54e0c959 } from "./i89ff71acfbc659628c6
 import { run as ia38800e7a3cc59599adc89e43a67da27 } from "./ia38800e7a3cc59599adc89e43a67da27.js";
 import { run as ia7bf5107254b592caac992665c8c8e09 } from "./ia7bf5107254b592caac992665c8c8e09.js";
 import { run as i980e96ba3cdf5a998a775ade7dc57386 } from "./i980e96ba3cdf5a998a775ade7dc57386.js";
-import { run as i5f9b663f51125d72aab0cfe2698f6099 } from "./i5f9b663f51125d72aab0cfe2698f6099.js";
+import { run as i806df6b4c38c515fa02c2b060e021a5b } from "./i806df6b4c38c515fa02c2b060e021a5b.js";
 import type { ImplRuntime } from "./types.js";
 
 export function createImplRegistry(runtime: ImplRuntime) {
@@ -120,8 +120,8 @@ export function createImplRegistry(runtime: ImplRuntime) {
 			ia7bf5107254b592caac992665c8c8e09(args, runtime),
 		i980e96ba3cdf5a998a775ade7dc57386: (args: string[]) =>
 			i980e96ba3cdf5a998a775ade7dc57386(args, runtime),
-		i5f9b663f51125d72aab0cfe2698f6099: (args: string[]) =>
-			i5f9b663f51125d72aab0cfe2698f6099(args, runtime),
+		i806df6b4c38c515fa02c2b060e021a5b: (args: string[]) =>
+			i806df6b4c38c515fa02c2b060e021a5b(args, runtime),
 	} as const;
 }
 

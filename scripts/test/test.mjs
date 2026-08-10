@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 import { createBridge, createTmp, run, write } from "../test-helpers.mjs";
 
-const tmp = createTmp("run-gate");
+const tmp = createTmp("test");
 const passId = "019fe100-0000-7000-8000-000000000001";
 const failId = "019fe100-0000-7000-8000-000000000002";
 const wrongKindId = "019fe100-0000-7000-8000-000000000003";
@@ -37,26 +37,26 @@ function setup(name) {
 	return bridge;
 }
 
-test("run-gate runs a passing gate", () => {
-	const result = run(["run-gate", passId], setup("passing"));
+test("test runs a passing gate", () => {
+	const result = run(["test", passId], setup("passing"));
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "passed gate\n");
 });
 
-test("run-gate returns a failing gate status", () => {
-	const result = run(["run-gate", failId], setup("failing"));
+test("test returns a failing gate status", () => {
+	const result = run(["test", failId], setup("failing"));
 	assert.notEqual(result.status, 0);
 	assert.equal(result.stderr, "failed gate\n");
 });
 
-test("run-gate clearly rejects an unknown id", () => {
-	const result = run(["run-gate", "019fe100-0000-7000-8000-000000000099"], setup("unknown"));
+test("test clearly rejects an unknown id", () => {
+	const result = run(["test", "019fe100-0000-7000-8000-000000000099"], setup("unknown"));
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /gate not found: 019fe100-0000-7000-8000-000000000099/);
 });
 
-test("run-gate clearly rejects a document with the wrong kind", () => {
-	const result = run(["run-gate", wrongKindId], setup("wrong-kind"));
+test("test clearly rejects a document with the wrong kind", () => {
+	const result = run(["test", wrongKindId], setup("wrong-kind"));
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /has kind: memo; expected one of/);
 });

@@ -216,7 +216,7 @@ process.exit(outcome === false ? 1 : 0);
 
 function writeGateRunner(): string {
 	const dir = mkdtempSync(join(tmpdir(), "nosedive-gate-"));
-	const path = join(dir, "run-gate.mjs");
+	const path = join(dir, "gate-runner.mjs");
 	writeFileSync(path, GATE_RUNNER);
 	return path;
 }

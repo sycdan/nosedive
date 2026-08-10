@@ -134,8 +134,7 @@ export function renderDropPrompt(
 		`    work branch: ${repo.workBranch} -> ${repo.workBranchSha}`,
 	]);
 	const gateLines = gates.map(
-		(gate) =>
-			`    nosedive run-gate ${gate.doc.id}    # ${gate.doc.name} (height ${gate.gateHeight})`,
+		(gate) => `    nosedive test ${gate.doc.id}    # ${gate.doc.name} (height ${gate.gateHeight})`,
 	);
 	return [
 		promptBody,

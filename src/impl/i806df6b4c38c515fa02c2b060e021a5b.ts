@@ -9,15 +9,15 @@ import { loadKbDocs } from "../lib/kbDocs.js";
 import { GATE_KINDS, gateRepoContext, resolveGateScript, runLandGates } from "../lib/landGates.js";
 
 function gateId(args: string[]): string {
-	if (args.length === 0) throw new Error("run-gate requires a gate id");
-	if (args.length > 1) throw new Error(`unexpected run-gate argument: ${args[1]}`);
+	if (args.length === 0) throw new Error("test requires a gate id");
+	if (args.length > 1) throw new Error(`unexpected test argument: ${args[1]}`);
 	return args[0]!;
 }
 
-async function runGate(args: string[], io: CommandIo): Promise<void> {
+async function test(args: string[], io: CommandIo): Promise<void> {
 	const id = gateId(args);
 	const rc = readNosediveRc(process.cwd());
-	if (!rc.kbDir) throw new Error("run-gate requires a configured kb directory");
+	if (!rc.kbDir) throw new Error("test requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const doc = kbDocs.find((candidate) => candidate.id === id);
 	if (!doc) throw new Error(`gate not found: ${id}`);
@@ -36,8 +36,7 @@ async function runGate(args: string[], io: CommandIo): Promise<void> {
 				rc.bridgeDir,
 				rc.workspaceDir,
 			);
-			if (resolved.failure)
-				throw new Error(`run-gate refuses: ${resolved.failure.reasons.join("; ")}`);
+			if (resolved.failure) throw new Error(`test refuses: ${resolved.failure.reasons.join("; ")}`);
 			if (resolved.path) hydrated.push({ repoId: repo.id, path: resolved.path });
 		}
 	}
@@ -59,7 +58,6 @@ async function runGate(args: string[], io: CommandIo): Promise<void> {
 			},
 		],
 		{
-			clockSeconds: Number.POSITIVE_INFINITY,
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId,
@@ -74,5 +72,5 @@ async function runGate(args: string[], io: CommandIo): Promise<void> {
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
-	return captureCommand(runGate, args);
+	return captureCommand(test, args);
 }

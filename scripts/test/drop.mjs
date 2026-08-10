@@ -154,7 +154,7 @@ meta:
 	assert.match(dropped.stdout, new RegExp(`^    work branch: ${branch} -> ${sha}$`, "m"));
 	assert.match(
 		dropped.stdout,
-		new RegExp(`^    nosedive run-gate ${gateId}    # app-tests \\(height 0\\)$`, "m"),
+		new RegExp(`^    nosedive test ${gateId}    # app-tests \\(height 0\\)$`, "m"),
 	);
 	assert.match(dropped.stdout, new RegExp(`^1\\. Close kb/${featId}\\.md:`, "m"));
 });

@@ -25,9 +25,7 @@ import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectLandGates,
-	DEFAULT_CLOCK,
 	gateRepoContext,
-	parseClockSeconds,
 	renderGateReport,
 	runLandGates,
 } from "../lib/landGates.js";
@@ -124,26 +122,11 @@ function commitAndPushLand(
 	}
 }
 
-function parseLandArgs(args: string[]): { clock: string } {
-	let clock = DEFAULT_CLOCK;
-	for (let i = 0; i < args.length; i += 1) {
-		const arg = args[i]!;
-		if (arg === "--clock") {
-			const value = args[i + 1];
-			if (!value) throw new Error("--clock requires a value");
-			clock = value;
-			i += 1;
-			continue;
-		}
-		if (arg.startsWith("--clock=")) {
-			clock = arg.slice("--clock=".length);
-			if (!clock) throw new Error("--clock requires a value");
-			continue;
-		}
+function parseLandArgs(args: string[]): void {
+	for (const arg of args) {
 		if (arg.startsWith("--")) throw new Error(`unknown land option: ${arg}`);
 		throw new Error(`unexpected land argument: ${arg}`);
 	}
-	return { clock };
 }
 
 /**
@@ -155,8 +138,7 @@ function appendGateReportToDive(divePath: string, report: string): void {
 }
 
 function land(args: string[], io: CommandIo): void {
-	const { clock } = parseLandArgs(args);
-	const clockSeconds = parseClockSeconds(clock);
+	parseLandArgs(args);
 	const rc = readNosediveRc(process.cwd());
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
@@ -222,7 +204,6 @@ function land(args: string[], io: CommandIo): void {
 	const gates = collectLandGates(gateRoots, kbDocs, rc.bridgeDir);
 	if (gates.length > 0) {
 		const outcome = runLandGates(gates, {
-			clockSeconds,
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId: dive.id,
@@ -233,7 +214,7 @@ function land(args: string[], io: CommandIo): void {
 				),
 			},
 		});
-		const report = renderGateReport(gates, outcome, clockSeconds);
+		const report = renderGateReport(gates, outcome);
 		io.log(report);
 		if (outcome.failed) {
 			/**

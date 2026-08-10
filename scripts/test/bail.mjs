@@ -187,7 +187,14 @@ scopes:
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(readFileSync(divePath, "utf8"))?.[1];
 	assert.ok(pin, "dive should carry a scope pin");
-	return { bridge, diveId, divePath, worktree: join(bridge, "workspace", `${label}-repo`), pin };
+	return {
+		bridge,
+		diveId,
+		divePath,
+		source,
+		worktree: join(bridge, "workspace", `${label}-repo`),
+		pin,
+	};
 }
 
 test("bail records every commit above the pin, restorably, in one bridge commit", () => {
@@ -255,4 +262,57 @@ test("bail reports a missing worktree instead of throwing", () => {
 	assertOk(result, "bail failed on a missing worktree");
 	const doc = readFileSync(divePath, "utf8");
 	assert.match(doc, /no worktree on disk; nothing to record/);
+});
+
+// --- reset to trunk ------------------------------------------------------
+
+test("bail returns a scope ahead of its pin to its repo trunk, not to the pin", () => {
+	const { bridge, source, worktree, pin } = bridgeWithScopedDive("reset-ahead");
+	// Trunk moves after the dive is pinned, so trunk and pin are distinguishable.
+	write(join(source, "trunk.txt"), "trunk\n");
+	runTool("git", ["add", "trunk.txt"], source);
+	gitCommit(source, "advance trunk");
+	const trunk = runTool("git", ["rev-parse", "HEAD"], source).stdout.trim();
+
+	write(join(worktree, "a.txt"), "a\n");
+	runTool("git", ["add", "a.txt"], worktree);
+	gitCommit(worktree, "abandoned work");
+	const bailedHead = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+
+	const result = run(["bail", "--reason", "wrong approach entirely"], bridge);
+	assertOk(result, "bail failed");
+
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	assert.equal(head, trunk);
+	assert.notEqual(head, pin);
+	assert.notEqual(head, bailedHead);
+	assert.match(result.stdout, /reset repo=reset-ahead-repo/);
+	// the orphaned sha is still reachable right after the reset
+	assert.equal(
+		runTool("git", ["rev-parse", "--verify", `${bailedHead}^{commit}`], worktree).status,
+		0,
+	);
+	// reset in place, not re-hydrated from scratch
+	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true);
+});
+
+test("bail leaves a scope already on trunk on trunk", () => {
+	const { bridge, worktree, pin } = bridgeWithScopedDive("reset-on-trunk");
+	const result = run(["bail", "--reason", "nothing came of it"], bridge);
+	assertOk(result, "bail failed");
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), pin);
+	assert.match(result.stdout, /reset repo=reset-on-trunk-repo/);
+});
+
+test("bail warns and still succeeds when a scope has no worktree to reset", () => {
+	const { bridge, worktree } = bridgeWithScopedDive("reset-missing");
+	assertOk(run(["dehydrate-repo.workspace", scopedRepoId], bridge), "dehydrate scoped repo failed");
+	assert.equal(existsSync(worktree), false);
+
+	const result = run(["bail", "--reason", "abandoned cold"], bridge);
+	assertOk(result, "bail failed on a missing worktree");
+	assert.match(result.stderr, /warning: repo=reset-missing-repo/);
+	assert.match(result.stderr, /workspace\/reset-missing-repo/);
+	assert.match(result.stderr, /not reset: no worktree on disk/);
+	assert.doesNotMatch(result.stdout, /reset repo=/);
 });

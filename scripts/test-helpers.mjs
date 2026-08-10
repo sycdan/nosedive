@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { after } from "node:test";
@@ -128,12 +136,58 @@ export function runTool(command, args, cwd) {
 	const env = { ...process.env };
 	for (const key of gitLocalEnvKeys) delete env[key];
 	const result = spawnSync(command, args, { cwd, encoding: "utf8", env });
+	// A child that never started reports status null with undefined streams, which
+	// asserts as `null !== 0` and reads exactly like a real failure. Name the
+	// spawn error instead, so a missing dependency cannot pose as a broken build.
+	assert.equal(
+		result.error,
+		undefined,
+		`${command} could not start: ${result.error?.message ?? ""}`,
+	);
 	assert.equal(
 		result.status,
 		0,
 		`${command} ${args.join(" ")} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
 	);
 	return result;
+}
+
+let cachedPosixShell;
+
+/**
+ * A POSIX shell for running hook fixtures.
+ *
+ * `sh` is on PATH on macOS and Linux and is not on Windows, where the only
+ * `bash` may be WSL's launcher rather than a shell that understands Windows
+ * paths. Git for Windows ships its own `sh` under `usr/bin`, and git is already
+ * a hard dependency of every nosedive command, so deriving the shell from
+ * `git --exec-path` adds no requirement a user did not already meet.
+ *
+ * Returns undefined when neither resolves, so a caller can skip with a stated
+ * reason rather than fail obscurely.
+ */
+export function posixShell() {
+	if (cachedPosixShell !== undefined) return cachedPosixShell || undefined;
+	const onPath = spawnSync("sh", ["-c", "exit 0"], { encoding: "utf8" });
+	if (!onPath.error && onPath.status === 0) {
+		cachedPosixShell = "sh";
+		return cachedPosixShell;
+	}
+	const execPath = spawnSync("git", ["--exec-path"], { encoding: "utf8" });
+	if (!execPath.error && execPath.status === 0) {
+		const gitRoot = resolve(execPath.stdout.trim(), "..", "..", "..");
+		for (const candidate of [
+			join(gitRoot, "usr", "bin", "sh.exe"),
+			join(gitRoot, "bin", "sh.exe"),
+		]) {
+			if (existsSync(candidate)) {
+				cachedPosixShell = candidate;
+				return cachedPosixShell;
+			}
+		}
+	}
+	cachedPosixShell = "";
+	return undefined;
 }
 
 export function runGitUnchecked(args, cwd) {

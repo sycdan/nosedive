@@ -134,7 +134,7 @@ meta:
 		scopes: [repoId],
 		links: [
 			{ id: memoId, rel: "working" },
-			{ id: gateId, rel: "land-gated-by" },
+			{ id: gateId, rel: "land.gate" },
 		],
 	});
 

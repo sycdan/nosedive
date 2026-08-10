@@ -17,7 +17,7 @@ import {
 const tmp = createTmp("land-gates");
 const repoId = "019fd471-0000-7000-8000-000000000001";
 const effortId = "019fd471-0000-7000-8000-000000000002";
-const legacyGateRel = ["land", "gated", "by"].join("-");
+const legacyGateRel = "land-gated-by";
 
 /**
  * Gate scripts live in the bridge (meta.test-script is bridge-relative), so

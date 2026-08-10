@@ -12,7 +12,13 @@ import { cleanGitEnv } from "./renderPlan.js";
 /** Kinds a `land.gate` edge may point at. Anything else is a mis-linked doc, not a gate. */
 export const GATE_KINDS = new Set(["assertion", "test", "gate", "check", "proof", "prover"]);
 const GATE_REL = "land.gate";
-const LEGACY_GATE_REL = ["land", "gated", "by"].join("-");
+/**
+ * The pre-`land.gate` spelling. Named in full, deliberately: a bridge being
+ * migrated is searched for this string, and the refusal below is the one place
+ * that can tell someone what to rename. Hiding it to satisfy a "no source file
+ * contains the old rel" check would make the migration path ungreppable.
+ */
+const LEGACY_GATE_REL = "land-gated-by";
 
 export const DEFAULT_CLOCK = "30";
 

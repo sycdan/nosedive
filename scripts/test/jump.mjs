@@ -10,6 +10,7 @@ import {
 	gitCommitEmpty,
 	packageVersion,
 	packageVersionPattern,
+	posixShell,
 	run,
 	runGitUnchecked,
 	runTool,
@@ -451,7 +452,12 @@ test("jump survives tooling that rewrites core.hooksPath in shared config", () =
 	);
 });
 
-test("jump chains a repo prepare-commit-msg hook without modifying tracked files", () => {
+test("jump chains a repo prepare-commit-msg hook without modifying tracked files", (t) => {
+	const shell = posixShell();
+	if (!shell) {
+		t.skip("no POSIX shell found on PATH or alongside git; cannot run a shell hook fixture");
+		return;
+	}
 	const { bridge, effortId } = setup("foreign-hook");
 	const worktree = repoWorktree(bridge, "foreign-hook");
 	const foreignHooks = join(worktree, ".githooks");
@@ -482,7 +488,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 		["config", "--worktree", "--get", "core.hooksPath"],
 		worktree,
 	).stdout.trim();
-	runTool("sh", [join(managedHooks, "pre-push")], worktree);
+	runTool(shell, [join(managedHooks, "pre-push")], worktree);
 	assert.equal(readFileSync(join(worktree, "pre-push-ran"), "utf8"), "pre-push-ran\n");
 	writeFileSync(join(worktree, "pre-push-ran"), "");
 	runTool("git", ["clean", "-f", "pre-push-ran"], worktree);

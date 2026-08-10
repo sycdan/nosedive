@@ -58,7 +58,6 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 			},
 		],
 		{
-			clockSeconds: Number.POSITIVE_INFINITY,
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId,

@@ -20,8 +20,6 @@ const GATE_REL = "land.gate";
  */
 const LEGACY_GATE_REL = "land-gated-by";
 
-export const DEFAULT_CLOCK = "30";
-
 export interface LandGate {
 	doc: KbDoc;
 	scriptPath: string;
@@ -45,22 +43,8 @@ export interface GateRun {
 
 export interface GateOutcome {
 	runs: GateRun[];
-	/** Gates the budget ran out before, in the order they would have run. */
-	skipped: LandGate[];
-	budgetExhausted: boolean;
-	/** Gate whose run pushed elapsed time past the budget, if any. */
-	overran?: LandGate;
 	failed: boolean;
 	elapsedMs: number;
-}
-
-/**
- * A bare integer is seconds. Anything richer (`5m`, `1h30m`) is rejected rather
- * than guessed at, leaving the syntax free to grow later.
- */
-export function parseClockSeconds(raw: string): number {
-	if (!/^\d+$/.test(raw.trim())) throw new Error(`unsupported clock: ${raw}`);
-	return Number.parseInt(raw.trim(), 10);
 }
 
 function gateAttrInt(value: string | undefined, label: string): number {
@@ -225,32 +209,18 @@ function writeGateRunner(): string {
  * Sequential by design: gates share the hydrated worktrees, so two at once
  * would fight over the same build outputs and index.
  *
- * The budget is checked before every gate, the first included, and never
- * interrupts one that is already running -- a gate is left to finish (or to be
- * killed by hand) rather than being cut off half way and reported as a failure
- * it did not commit.
+ * Every selected gate runs. There is no time budget: a stopwatch could only
+ * drop whichever gates happened to be last, which makes coverage a property of
+ * how fast the machine is, and it never protected against a runaway gate
+ * anyway -- the budget was checked between gates and never interrupted one.
  */
-export function runLandGates(
-	gates: LandGate[],
-	options: { clockSeconds: number; context: GateContext },
-): GateOutcome {
+export function runLandGates(gates: LandGate[], options: { context: GateContext }): GateOutcome {
 	const runs: GateRun[] = [];
-	const skipped: LandGate[] = [];
-	const budgetMs = options.clockSeconds * 1000;
 	const started = Date.now();
-	let budgetExhausted = false;
-	let overran: LandGate | undefined;
 	const runnerPath = gates.length > 0 ? writeGateRunner() : undefined;
 	const serializedContext = JSON.stringify(options.context);
 
 	for (const gate of gates) {
-		const elapsed = Date.now() - started;
-		if (elapsed >= budgetMs) {
-			budgetExhausted = true;
-			skipped.push(gate);
-			continue;
-		}
-
 		const startedAt = new Date();
 		const spawn = commandForSpawn("node", [runnerPath!]);
 		const result = spawnSync(spawn.command, spawn.args, {
@@ -272,15 +242,11 @@ export function runLandGates(
 			endedAt: endedAt.toISOString(),
 			elapsedMs: endedAt.getTime() - startedAt.getTime(),
 		});
-		if (!overran && Date.now() - started >= budgetMs) overran = gate;
 	}
 
-	const failed = budgetExhausted || runs.some((run) => run.status !== 0 && !run.gate.flaky);
+	const failed = runs.some((run) => run.status !== 0 && !run.gate.flaky);
 	return {
 		runs,
-		skipped,
-		budgetExhausted,
-		overran,
 		failed,
 		elapsedMs: Date.now() - started,
 	};
@@ -291,15 +257,9 @@ function gateLabel(gate: LandGate): string {
 }
 
 /** Written into the dive so the next `jump` hands the whole picture to the next agent. */
-export function renderGateReport(
-	gates: LandGate[],
-	outcome: GateOutcome,
-	clockSeconds: number,
-): string {
+export function renderGateReport(gates: LandGate[], outcome: GateOutcome): string {
 	const lines: string[] = [];
-	lines.push(`Clock: ${clockSeconds}s budget, ${(outcome.elapsedMs / 1000).toFixed(1)}s elapsed.`);
-	if (outcome.budgetExhausted) lines.push("Budget exhausted before every gate ran.");
-	if (outcome.overran) lines.push(`Overran the budget: ${gateLabel(outcome.overran)}.`);
+	lines.push(`Elapsed: ${(outcome.elapsedMs / 1000).toFixed(1)}s.`);
 	lines.push("");
 
 	lines.push("### Gates");

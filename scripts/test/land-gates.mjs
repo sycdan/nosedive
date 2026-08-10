@@ -364,35 +364,26 @@ test("a test-script with no run export is a gate failure", () => {
 	assert.match(result.stdout, /gate module must export run\(ctx\)/);
 });
 
-test("the clock budget stops later gates without killing a running one", () => {
-	const { bridge, worktree } = setup("clock", [
+test("a slow gate does not stop the gates behind it from running", () => {
+	const { bridge, worktree } = setup("slow-then-more", [
 		gate("019fd471-0000-7000-8000-000000000014", "slow", GATE_SLOW, { "gate-height": "10" }),
-		gate("019fd471-0000-7000-8000-000000000015", "never-runs", GATE_PASS, { "gate-height": "0" }),
+		gate("019fd471-0000-7000-8000-000000000015", "after-slow", GATE_PASS, { "gate-height": "0" }),
 	]);
 	gitCommitEmpty(worktree, "work");
-	const result = run(["land", "--clock", "1"], bridge);
-	assert.notEqual(result.status, 0, "an exhausted budget must refuse the land");
-	assert.match(result.stdout, /slow gate finished/, "a running gate must not be killed");
-	assert.match(result.stdout, /Budget exhausted/);
-	assert.match(result.stdout, /never-runs .*: never ran/);
-	assert.match(result.stdout, /Overran the budget: slow/);
+	const result = run(["land"], bridge);
+	assertOk(result, "a slow gate must not refuse the land");
+	assert.match(result.stdout, /slow gate finished/);
+	assert.match(result.stdout, /after-slow .*: passed/, "every selected gate must run");
 });
 
-test("--clock 0 runs nothing and refuses", () => {
-	const { bridge, worktree } = setup("clock-zero", [
+test("--clock is gone and is rejected rather than ignored", () => {
+	const { bridge, worktree } = setup("clock-gone", [
 		gate("019fd471-0000-7000-8000-000000000016", "builds", GATE_PASS),
 	]);
 	gitCommitEmpty(worktree, "work");
-	const result = run(["land", "--clock", "0"], bridge);
-	assert.notEqual(result.status, 0);
-	assert.match(result.stdout, /builds .*: never ran/);
-});
-
-test("--clock rejects anything that is not a bare integer", () => {
-	const { bridge } = setup("clock-bad");
-	const result = run(["land", "--clock", "5m"], bridge);
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /unsupported clock: 5m/);
+	const result = run(["land", "--clock", "300"], bridge);
+	assert.notEqual(result.status, 0, "a removed option must not be silently accepted");
+	assert.match(result.stderr, /unknown land option: --clock/);
 });
 
 test("unknown scalar link attributes are carried, non-scalar ones rejected", () => {

@@ -151,6 +151,59 @@ export function collectLandGates(roots: KbDoc[], kbDocs: KbDoc[], bridgeDir: str
 		.map((entry) => entry.gate);
 }
 
+/**
+ * The gates one document claims directly, without following anything else it
+ * links. This is what `test` selects with no arguments: the dive's own gates,
+ * not everything its feat and repos reach.
+ *
+ * The distinction is the point of the command. `land` walks wide because it is
+ * the trust boundary and must run whatever guards the work. A pilot mid-dive
+ * wants the checks for what they are changing, and wants them now.
+ *
+ * `gate-height` is read where present but nothing is reordered: height exists
+ * to sequence a land, and a dive-sized set is small enough that discovery order
+ * is the honest order. A dive gate needs no height.
+ *
+ * Gates that a gate itself depends on would be added here too, once
+ * `depends-on.gate` exists -- it does not yet, so there is nothing transitive
+ * to collect. See gate-ordering.
+ */
+export function collectDiveGates(root: KbDoc, kbDocs: KbDoc[], bridgeDir: string): LandGate[] {
+	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const gates: LandGate[] = [];
+	const seen = new Set<string>();
+
+	for (const link of root.links) {
+		if (link.rel === LEGACY_GATE_REL) {
+			throw new Error(
+				`${LEGACY_GATE_REL} link in ${root.relPath} is obsolete; rename it to ${GATE_REL}`,
+			);
+		}
+		if (link.rel !== GATE_REL) continue;
+		const target = byId.get(link.id);
+		if (!target) {
+			throw new Error(`${GATE_REL} link in ${root.relPath} names an unknown doc: ${link.id}`);
+		}
+		if (!GATE_KINDS.has(target.kind)) {
+			throw new Error(
+				`${GATE_REL} link in ${root.relPath} points at kind: ${target.kind} (${target.relPath}); expected one of ${[...GATE_KINDS].join("|")}`,
+			);
+		}
+		if (seen.has(target.id)) continue;
+		seen.add(target.id);
+		const label = `${GATE_REL} link to ${target.id} in ${root.relPath}`;
+		gates.push({
+			doc: target,
+			scriptPath: resolveGateScript(target, bridgeDir),
+			gateHeight: gateAttrInt(link.attrs["gate-height"], `${label}: gate-height`),
+			flaky: gateAttrBool(link.attrs["test-is-flaky"], `${label}: test-is-flaky`),
+			introducedBy: root,
+			shadowedBy: [],
+		});
+	}
+	return gates;
+}
+
 export interface GateRepoContext {
 	/** Bridge-relative path of the hydrated worktree, e.g. `workspace/nosedive`. */
 	root: string;

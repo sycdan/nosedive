@@ -174,7 +174,10 @@ test("a legacy gate edge refuses rather than silently skipping the gate", () => 
 		gate("019fd471-0000-7000-8000-000000000020", "builds", GATE_PASS),
 	]);
 	const effortPath = join(bridge, "kb", `${effortId}.md`);
-	write(effortPath, readFileSync(effortPath, "utf8").replace("rel: land.gate", `rel: ${legacyGateRel}`));
+	write(
+		effortPath,
+		readFileSync(effortPath, "utf8").replace("rel: land.gate", `rel: ${legacyGateRel}`),
+	);
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "a legacy edge must block the land");

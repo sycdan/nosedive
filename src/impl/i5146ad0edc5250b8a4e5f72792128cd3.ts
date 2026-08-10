@@ -78,8 +78,37 @@ function commitAndPushBail(
 	}
 }
 
+/** The reason is the one thing only the pilot knows, so it is a required flag:
+ * a flag with a value cannot be typed by accident, and no default can stand in
+ * for it. Parsed and enforced before any read or write, so a refusal changes
+ * nothing. */
+function parseBailArgs(args: string[]): string {
+	let reason: string | undefined;
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === "--reason") {
+			const value = args[i + 1];
+			if (value === undefined || value.startsWith("--"))
+				throw new Error("bail --reason requires a value");
+			reason = value;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith("--reason=")) {
+			reason = arg.slice("--reason=".length);
+			continue;
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown bail option: ${arg}`);
+		throw new Error(`unexpected bail argument: ${arg}; pass the reason as --reason "<why>"`);
+	}
+	if (reason === undefined) throw new Error('bail requires --reason "<why>"');
+	const trimmed = reason.trim();
+	if (!trimmed) throw new Error("bail reason cannot be empty");
+	return trimmed;
+}
+
 function bail(args: string[], io: CommandIo): void {
-	const reason = args.join(" ").trim() || "no reason given";
+	const reason = parseBailArgs(args);
 	const rc = readNosediveRc(process.cwd());
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);

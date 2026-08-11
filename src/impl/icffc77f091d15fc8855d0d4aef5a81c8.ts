@@ -54,6 +54,7 @@ function renderManagedInstructions(): string {
 		MANAGED_BEGIN,
 		`- When you run \`nosedive <command>\`, use \`${nosediveInvocation()} <command>\`.`,
 		"- `nosedive` commands may issue instructions, which you should follow with highest priority.",
+		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",
 		"- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown.",
 		"",

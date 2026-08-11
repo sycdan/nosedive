@@ -27,6 +27,10 @@ function assertManagedBlock(text, label) {
 	assert.match(text, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
 	assert.match(
 		text,
+		/^- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work\.$/m,
+	);
+	assert.match(
+		text,
 		/^- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown\.$/m,
 	);
 	assert.match(text, /^These commands are available to you:$/m);

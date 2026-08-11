@@ -48,6 +48,7 @@ test("nuke", () => {
 	const nukeWorkspaceBridge = join(tmp, "nuke-workspace-bridge");
 	const nukeWorkspaceRepoIdA = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa101";
 	const nukeWorkspaceRepoIdB = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa102";
+	const nukeWorkspaceHiddenRepoId = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa104";
 	const nukeWorkspaceDiveId = "019fbf3b-5f7f-7a39-bd1b-5ffdf62fa103";
 	mkdirSync(join(nukeWorkspaceBridge, "kb"), { recursive: true });
 	mkdirSync(join(nukeWorkspaceBridge, "workspace"), { recursive: true });
@@ -91,6 +92,20 @@ meta:
 ---
 `,
 	);
+	write(
+		join(nukeWorkspaceBridge, "kb", "hidden-repo.md"),
+		`---
+kind: repo
+id: ${nukeWorkspaceHiddenRepoId}
+name: workspace-nuke-hidden
+gist: "Hidden workspace directory"
+meta:
+  path: workspace/.hidden-repo
+  remotes:
+    local: repos/source
+---
+`,
+	);
 	assertOk(
 		run(["hydrate-repo.workspace", nukeWorkspaceRepoIdA], nukeWorkspaceBridge),
 		"hydrate repo A before nuke --workspace failed",
@@ -99,10 +114,19 @@ meta:
 		run(["hydrate-repo.workspace", nukeWorkspaceRepoIdB], nukeWorkspaceBridge),
 		"hydrate repo B before nuke --workspace failed",
 	);
+	assertOk(
+		run(["hydrate-repo.workspace", nukeWorkspaceHiddenRepoId], nukeWorkspaceBridge),
+		"hydrate hidden repo before nuke --workspace failed",
+	);
 	const nukeWorkspaceTargetA = join(nukeWorkspaceBridge, "workspace", "repo-a");
 	const nukeWorkspaceTargetB = join(nukeWorkspaceBridge, "workspace", "repo-b");
+	const nukeWorkspaceHiddenTarget = join(nukeWorkspaceBridge, "workspace", ".hidden-repo");
 	write(join(nukeWorkspaceTargetA, "dirty.txt"), "force removes me\n");
 	write(join(nukeWorkspaceBridge, "workspace", ".gitkeep"), "preserve me\n");
+	write(
+		join(nukeWorkspaceBridge, "workspace", ".scratch", nukeWorkspaceDiveId, "temp.txt"),
+		"keep me\n",
+	);
 	write(join(nukeWorkspaceBridge, "workspace", "scratch.txt"), "preserve me too\n");
 	write(
 		join(nukeWorkspaceBridge, "workspace", "wrong-path", ".nosedive-ref"),
@@ -115,14 +139,18 @@ meta:
 	write(join(nukeWorkspaceBridge, "workspace", ".nosedive-ref"), `id: ${nukeWorkspaceDiveId}\n`);
 	const nukeWorkspace = run(["nuke", "--workspace"], nukeWorkspaceBridge);
 	assertOk(nukeWorkspace, "nuke --workspace failed");
-	assert.match(nukeWorkspace.stdout, /Nuked workspace; removed 2 repos and 1 marker file/);
+	assert.match(
+		nukeWorkspace.stdout,
+		/Nuked workspace; removed 2 repos, 1 marker file, and 1 scratch directory/,
+	);
 	assert.deepEqual(
 		readdirSync(join(nukeWorkspaceBridge, "workspace")).sort(),
-		[".gitkeep", "scratch.txt", "unknown-repo", "wrong-path"],
-		"nuke --workspace should preserve unmanaged workspace entries",
+		[".gitkeep", ".hidden-repo", "scratch.txt", "unknown-repo", "wrong-path"],
+		"nuke --workspace should preserve other hidden and unmanaged workspace entries",
 	);
 	assert.equal(existsSync(nukeWorkspaceTargetA), false);
 	assert.equal(existsSync(nukeWorkspaceTargetB), false);
+	assert.equal(existsSync(nukeWorkspaceHiddenTarget), true);
 	assert.equal(
 		readFileSync(join(nukeWorkspaceBridge, "workspace", ".gitkeep"), "utf8"),
 		"preserve me\n",
@@ -131,6 +159,7 @@ meta:
 		readFileSync(join(nukeWorkspaceBridge, "workspace", "scratch.txt"), "utf8"),
 		"preserve me too\n",
 	);
+	assert.equal(existsSync(join(nukeWorkspaceBridge, "workspace", ".scratch")), false);
 	assert.equal(
 		readFileSync(join(nukeWorkspaceBridge, "workspace", "wrong-path", ".nosedive-ref"), "utf8"),
 		`id: ${nukeWorkspaceRepoIdA}\n`,

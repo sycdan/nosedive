@@ -52,7 +52,9 @@ gist: "Bail test effort"
 }
 
 test("bail commits effort and nosedive provenance", () => {
-	const { bridge, divePath } = bridgeWithDive("happy");
+	const { bridge, diveId, divePath } = bridgeWithDive("happy");
+	const scratchDir = join(bridge, "workspace", ".scratch", diveId);
+	write(join(scratchDir, "temp.txt"), "delete me\n");
 	const result = run(["bail", "--reason", "testing"], bridge);
 	assertOk(result, "bail failed");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
@@ -67,6 +69,7 @@ test("bail commits effort and nosedive provenance", () => {
 	assert.match(doc, /kind: memo/);
 	assert.match(doc, /-- bailed: testing/);
 	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
+	assert.equal(existsSync(scratchDir), false, "bail should remove dive scratch space");
 });
 
 test("bail without --reason refuses and writes nothing", () => {

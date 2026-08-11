@@ -105,6 +105,10 @@ test("seed-headless", () => {
 	assert.match(freshMemo, /^name: backlog\.headless-fresh-bridge$/m);
 	assert.match(freshMemo, /^# Backlog$/m);
 	assert.equal(existsSync(join(headlessFreshBridge, ".nosedive.local.yaml")), false);
+	assert.equal(
+		readFileSync(join(headlessFreshBridge, ".nosedive", ".gitignore"), "utf8"),
+		["cache/", "migration-backups/", ""].join("\n"),
+	);
 	for (const packageFoundationDoc of packageFoundationDocs) {
 		assert.equal(existsSync(join(headlessFreshBridge, "kb", packageFoundationDoc)), false);
 	}

@@ -324,7 +324,9 @@ export function readActiveDiveId(workspaceDir: string | undefined): string | und
 export function isWorkspaceEmpty(workspaceDir: string | undefined): boolean {
 	if (!workspaceDir || !existsSync(workspaceDir)) return true;
 	if (!statSync(workspaceDir).isDirectory()) return false;
-	return readdirSync(workspaceDir).filter((entry) => entry !== ".nosedive-ref").length === 0;
+	return readdirSync(workspaceDir).every(
+		(entry) => entry === ".nosedive-ref" || entry === ".scratch",
+	);
 }
 
 export function isPathIgnoredByGitStatus(repoRoot: string, path: string): boolean {

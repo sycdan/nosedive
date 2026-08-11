@@ -23,6 +23,7 @@ import {
 	toPosixPath,
 } from "../lib/coreParsing.js";
 import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
+import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { isInsideDir } from "../lib/backlogDives.js";
@@ -295,7 +296,13 @@ function applyPatchStep(step: PatchStep, targetPath: string, label: string): voi
  * none of the reasoning behind it. Paths are relative to the cwd `jump` ran in
  * so a plain read tool takes them verbatim.
  */
-function printWorkDirective(dive: KbDoc, effort: KbDoc | undefined, io: CommandIo): void {
+function printWorkDirective(
+	dive: KbDoc,
+	effort: KbDoc | undefined,
+	bridgeDir: string,
+	workspaceDir: string,
+	io: CommandIo,
+): void {
 	const divePath = toPosixPath(relative(process.cwd(), dive.path));
 	io.log("");
 	io.log(
@@ -315,6 +322,7 @@ function printWorkDirective(dive: KbDoc, effort: KbDoc | undefined, io: CommandI
 			`Do not edit the brief or change any scope pin. ` +
 			`Never push an implementation repo: only land may push to implementation remotes.`,
 	);
+	io.log(renderDiveScratchHandoff(bridgeDir, workspaceDir, dive.id));
 }
 
 /**
@@ -371,6 +379,7 @@ export function jump(args: string[], io: CommandIo): void {
 	const effortRef = dive.metaScalars.effort;
 	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
 	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
+	recreateDiveScratch(rc.workspaceDir, dive.id);
 
 	const scopePaths = new Map<string, string>();
 	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
@@ -447,7 +456,7 @@ export function jump(args: string[], io: CommandIo): void {
 		return;
 	}
 
-	printWorkDirective(dive, effort, io);
+	printWorkDirective(dive, effort, rc.bridgeDir, rc.workspaceDir, io);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -344,4 +344,25 @@ test("pack captures bridge kb/ WIP whose filename needs quoting under plain --po
 	assert.match(patchText, /space name\.md/);
 	assert.match(patchText, /has a space in its filename/);
 	void effortId;
+});
+
+test("pack does not capture ignored dive scratch contents", () => {
+	const { bridge, diveId } = setup("scratch");
+	write(join(bridge, "workspace", ".scratch", diveId, "temp.txt"), "local temp only\n");
+
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack failed with ignored scratch contents");
+	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: nothing to pack`));
+
+	const artifactDir = join(bridge, "kb", "artifacts");
+	if (existsSync(artifactDir)) {
+		for (const name of readdirSync(artifactDir)) {
+			assert.doesNotMatch(
+				readFileSync(join(artifactDir, name), "utf8"),
+				/local temp only/,
+				"scratch contents must not appear in pack artifacts",
+			);
+		}
+	}
+	assert.equal(existsSync(join(bridge, "workspace", ".scratch", diveId, "temp.txt")), true);
 });

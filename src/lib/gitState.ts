@@ -10,7 +10,7 @@ import {
 	HANDOFF_RUNBOOK_ID,
 	MANAGED_EXCLUDE_BEGIN,
 	MANAGED_EXCLUDE_END,
-	MANUAL_PRE_PUSH_LINE,
+	manualPrePushLine,
 	REPO_MARKER_EXCLUDE_BEGIN,
 	REPO_MARKER_EXCLUDE_END,
 } from "./constants.js";
@@ -23,7 +23,7 @@ import {
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
 import { rewriteMarkdownLinks } from "./markdownLinks.js";
-import { packageRoot } from "./packageBacklog.js";
+import { nosediveInvocation, packageRoot } from "./packageBacklog.js";
 import { executableForSpawn, gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
 import { ensureSafeTargetPath, maybeResolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -80,7 +80,7 @@ export function renderPackageKbGist(id: string): string {
 export function printManualHookAdvice(reason: string, io: CommandIo): void {
 	io.err(`WARNING: ${reason}`);
 	io.err("Add this line to your existing pre-push hook setup:");
-	io.err(`  ${MANUAL_PRE_PUSH_LINE}`);
+	io.err(`  ${manualPrePushLine(nosediveInvocation())}`);
 }
 
 /**

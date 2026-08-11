@@ -19,7 +19,7 @@ import {
 	CURRENT_COMPATIBILITY_LEVEL,
 	PREFLIGHT_GUIDANCE,
 	PREFLIGHT_NO_DIVE_LINE,
-	PRE_PUSH_HOOK,
+	prePushHook,
 } from "../lib/constants.js";
 import {
 	formatPath,
@@ -36,14 +36,14 @@ import {
 	readPilotIdentity,
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs, readActiveDiveId } from "../lib/kbDocs.js";
-import { bridgeCompatibilityLevel } from "../lib/packageBacklog.js";
+import { bridgeCompatibilityLevel, nosediveInvocation } from "../lib/packageBacklog.js";
 import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 
 function installHook(hookPath: string, io: CommandIo): void {
 	mkdirSync(dirname(hookPath), { recursive: true });
-	writeFileAtomic(hookPath, PRE_PUSH_HOOK);
+	writeFileAtomic(hookPath, prePushHook(nosediveInvocation()));
 	chmodSync(hookPath, 0o755);
 	io.log(`Installed nosedive pre-push hook: ${formatPath(hookPath)}`);
 }

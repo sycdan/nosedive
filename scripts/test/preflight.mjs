@@ -9,6 +9,9 @@ import {
 	createBridge,
 	createTmp,
 	escapeRegExp,
+	libUrl,
+	packageVersion,
+	root,
 	run,
 	runTool,
 	write,
@@ -17,8 +20,21 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("preflight");
+const { nosediveInvocationFor } = await import(libUrl);
 
-const MANAGED_HOOK = '#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
+const NOSEDIVE_INVOCATION = nosediveInvocationFor(packageVersion, root);
+const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
+
+test("nosedive invocation pins releases and shell-quotes local CLI paths", () => {
+	assert.equal(
+		nosediveInvocationFor("2026.8.11-1786460582229", "/unused"),
+		"npx -y nosedive@2026.8.11-1786460582229",
+	);
+	assert.equal(
+		nosediveInvocationFor("0.0.0-dev", "/tmp/nosedive's local build"),
+		"node '/tmp/nosedive'\\''s local build/dist/cli.js'",
+	);
+});
 
 function freshGitBridge(name) {
 	const bridge = join(tmp, name);
@@ -103,7 +119,10 @@ test("preflight hard-fails on an unwired foreign hook", () => {
 	assert.equal(readFileSync(foreignHook, "utf8"), foreignHookText);
 	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
 	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.match(foreignPreflight.stderr, /npx nosedive _pre-push\.hook "\$@" \|\| exit 1/);
+	assert.match(
+		foreignPreflight.stderr,
+		new RegExp(`${escapeRegExp(NOSEDIVE_INVOCATION)} _pre-push\\.hook "\\$@" \\|\\| exit 1`),
+	);
 	assert.equal(
 		foreignPreflight.stdout,
 		"",

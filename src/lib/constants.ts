@@ -37,9 +37,14 @@ export const PREFLIGHT_GUIDANCE = [
 	"its gist, name, brief and scopes together. Run `jump` only when the pilot asks for it.",
 ].join("\n");
 
-export const PRE_PUSH_HOOK =
-	'#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
-export const MANUAL_PRE_PUSH_LINE = 'npx nosedive _pre-push.hook "$@" || exit 1';
+/** Render a hook with the invocation that installed it, never an ambient CLI. */
+export function prePushHook(nosediveInvocation: string): string {
+	return `#!/bin/sh\n# nosedive-managed\nexec ${nosediveInvocation} _pre-push.hook "$@"\n`;
+}
+
+export function manualPrePushLine(nosediveInvocation: string): string {
+	return `${nosediveInvocation} _pre-push.hook "$@" || exit 1`;
+}
 export const PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID = "019fce99-1d6e-7fa4-aa0c-a548d7049643";
 export const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 export const HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID = "019fcb35-d660-7318-ac4c-3d5aeed3a81e";

@@ -16,6 +16,7 @@ import {
 	maybeBridgeCompatibilityLevel,
 	packageDocsOfKind,
 	packageRoot,
+	nosediveInvocationFor,
 	parseLinkRefs,
 	parseMarkdownDoc,
 	parseScopeRefs,
@@ -31,8 +32,7 @@ import {
 import { lib, namespacedUuid, type CommandLibRegistry } from "./lib/index.js";
 import { executePrompt } from "./lib/promptExecution.js";
 
-export { createCapturingIo, createConsoleIo, readNosediveRc };
-
+export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 const USAGE_HEADER = "Usage: nosedive <command>";

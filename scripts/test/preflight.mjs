@@ -9,6 +9,9 @@ import {
 	createBridge,
 	createTmp,
 	escapeRegExp,
+	libUrl,
+	packageVersion,
+	root,
 	run,
 	runTool,
 	write,
@@ -17,9 +20,21 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("preflight");
+const { nosediveInvocationFor } = await import(libUrl);
 
-const NOSEDIVE_INVOCATION = `node ${cli.replaceAll("\\", "/")}`;
+const NOSEDIVE_INVOCATION = nosediveInvocationFor(packageVersion, root);
 const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
+
+test("nosedive invocation pins releases and shell-quotes local CLI paths", () => {
+	assert.equal(
+		nosediveInvocationFor("2026.8.11-1786460582229", "/unused"),
+		"npx -y nosedive@2026.8.11-1786460582229",
+	);
+	assert.equal(
+		nosediveInvocationFor("0.0.0-dev", "/tmp/nosedive's local build"),
+		"node '/tmp/nosedive'\\''s local build/dist/cli.js'",
+	);
+});
 
 function freshGitBridge(name) {
 	const bridge = join(tmp, name);

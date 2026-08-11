@@ -15,6 +15,7 @@ import {
 	parseYamlBlock,
 	readNosediveRc,
 	resolveFrom,
+	toPosixPath,
 	truncate,
 } from "./coreParsing.js";
 import { KbDoc } from "./kbDocs.js";
@@ -28,12 +29,19 @@ export function packageRoot(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Renders the reproducible invocation for one package version and root. */
+export function nosediveInvocationFor(version: string, root: string): string {
+	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
+	return `node ${shellQuote(toPosixPath(join(root, "dist", "cli.js")))}`;
+}
+
 /** A reproducible invocation of the package version currently running. */
 export function nosediveInvocation(): string {
-	const root = packageRoot();
-	const version = nosedivePackageVersion();
-	if (version !== LOCAL_DEV_VERSION) return `npx -y nosedive@${version}`;
-	return `node ${formatPath(join(root, "dist", "cli.js"))}`;
+	return nosediveInvocationFor(nosedivePackageVersion(), packageRoot());
 }
 
 /** The version of the package executing this command. */

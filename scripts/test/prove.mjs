@@ -27,6 +27,7 @@ import {
 	handoffRunbookId,
 	lib,
 	libUrl,
+	packageVersion,
 	packageFoundationDocs,
 	packageMigrationDoc,
 	packageMigrationScript,
@@ -40,7 +41,8 @@ import {
 	writeBridgeConfig,
 } from "../test-helpers.mjs";
 
-const { readNosediveRc } = await import(libUrl);
+const { nosediveInvocationFor, readNosediveRc } = await import(libUrl);
+const nosediveInvocation = nosediveInvocationFor(packageVersion, root);
 const tmp = createTmp("prove");
 const noBridge = createNoBridge(tmp);
 
@@ -204,7 +206,7 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "seed", "--headless", "--file", "AGENTS.md"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
   const hookPath = ctx.path.join(sandbox.root, ".git", "hooks", "pre-push");
-  const expectedHook = ${JSON.stringify(`#!/bin/sh\n# nosedive-managed\nexec node ${cli.replaceAll("\\", "/")} _pre-push.hook "$@"\n`)};
+  const expectedHook = ${JSON.stringify(`#!/bin/sh\n# nosedive-managed\nexec ${nosediveInvocation} _pre-push.hook "$@"\n`)};
   const hook = await ctx.fs.readText(hookPath);
   ctx.assert.equal(hook, expectedHook);
   ctx.log("direct cli preflight succeeded");

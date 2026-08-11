@@ -66,7 +66,7 @@ export const DEFAULT_RC = {
 	"work-branch-prefix": "work/",
 };
 
-export const SPLIT_CONFIG_DIRNAME = ".nosedive";
+export const BRIDGE_STATE_DIRNAME = ".nosedive";
 export const BASE_CONFIG_FILENAME = "config.yaml";
 export const LEGACY_CONFIG_FILENAME = ".nosediverc";
 export const MIGRATION_BACKUP_DIRNAME = "migration-backups";

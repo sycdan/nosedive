@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -245,6 +252,14 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assertOk(result, "jump failed");
 	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
 	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: applied 3 artifact\\(s\\)`));
+	const scratchDir = join(bridge, "workspace", ".scratch", diveId);
+	assert.equal(existsSync(scratchDir), true, "jump should create dive scratch space");
+	assert.match(
+		result.stdout,
+		new RegExp(`Scratch space for this dive: workspace/\\.scratch/${diveId}/`),
+	);
+	assert.match(result.stdout, /Write temp files there, never \/tmp/);
+	assert.match(result.stdout, /pack will not capture it/);
 
 	const log = runTool("git", ["log", "--format=%s", pinnedRef + "..HEAD"], worktree).stdout.trim();
 	assert.equal(log, "add feature b\nadd feature a", "commits should reapply oldest first");
@@ -310,9 +325,11 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	// A second jump run has nothing left to apply (the chain was consumed and
 	// its link removed above) -- hydration must not force the scope back to
 	// its now-stale pin, silently discarding the reapplied commits.
+	write(join(scratchDir, "stale.tmp"), "remove me\n");
 	const rerun = run(["jump"], bridge);
 	assertOk(rerun, "second jump run failed");
 	assert.match(rerun.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.deepEqual(readdirSync(scratchDir), [], "re-jump should clear existing scratch space");
 	assert.equal(
 		runTool("git", ["log", "--format=%s", pinnedRef + "..HEAD"], worktree).stdout.trim(),
 		"add feature b\nadd feature a",
@@ -347,6 +364,10 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 	assert.match(
 		result.stdout,
 		/Never push an implementation repo: only land may push to implementation remotes/,
+	);
+	assert.match(
+		result.stdout,
+		new RegExp(`Scratch space for this dive: workspace/\\.scratch/${diveId}/`),
 	);
 	assert.equal(
 		existsSync(worktree),

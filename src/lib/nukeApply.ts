@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { mintUuid7Lines } from "./uuid7.js";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { SPLIT_CONFIG_DIRNAME } from "./constants.js";
+import { BRIDGE_STATE_DIRNAME } from "./constants.js";
+import { diveScratchRootPath } from "./diveScratch.js";
 import {
 	baseConfigPath,
 	findBridgeConfig,
@@ -93,7 +94,7 @@ export function nukeConfig(io: CommandIo): void {
 	for (const path of [
 		legacyConfigPath(bridgeDir),
 		baseConfigPath(bridgeDir),
-		join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"),
+		join(bridgeDir, BRIDGE_STATE_DIRNAME, ".gitignore"),
 	]) {
 		if (!existsSync(path)) continue;
 		rmSync(path, { force: true });
@@ -182,13 +183,19 @@ function workspaceManagedRepoId(
 	return repoId;
 }
 
+function isVisibleWorkspaceDirectory(targetPath: string, workspaceDir: string): boolean {
+	return relative(workspaceDir, targetPath)
+		.split(/[\\/]/)
+		.every((segment) => segment && segment !== ".." && !segment.startsWith("."));
+}
+
 export function nukeWorkspace(io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
 	const workspaceDir = rc.workspaceDir;
 	if (!existsSync(workspaceDir)) {
-		io.log("Nuked workspace; removed 0 repos and 0 marker files.");
+		io.log("Nuked workspace; removed 0 repos, 0 marker files, and 0 scratch directories.");
 		return;
 	}
 	if (!statSync(workspaceDir).isDirectory()) {
@@ -197,10 +204,16 @@ export function nukeWorkspace(io: CommandIo): void {
 
 	let removedRepos = 0;
 	let removedMarkers = 0;
+	let removedScratchDirs = 0;
 	const workspaceMarkerPath = join(workspaceDir, ".nosedive-ref");
 	if (existsSync(workspaceMarkerPath)) {
 		rmSync(workspaceMarkerPath, { recursive: true, force: true });
 		removedMarkers += 1;
+	}
+	const scratchPath = diveScratchRootPath(workspaceDir);
+	if (existsSync(scratchPath) && statSync(scratchPath).isDirectory()) {
+		rmSync(scratchPath, { recursive: true, force: true });
+		removedScratchDirs += 1;
 	}
 
 	const reposById = new Map(
@@ -214,6 +227,7 @@ export function nukeWorkspace(io: CommandIo): void {
 		} catch {
 			continue;
 		}
+		if (!isVisibleWorkspaceDirectory(targetPath, workspaceDir)) continue;
 		if (!existsSync(targetPath) || !statSync(targetPath).isDirectory()) continue;
 		const repoId = workspaceManagedRepoId(targetPath, workspaceDir, rc.bridgeDir, reposById);
 		if (!repoId) continue;
@@ -222,7 +236,7 @@ export function nukeWorkspace(io: CommandIo): void {
 	}
 
 	io.log(
-		`Nuked workspace; removed ${removedRepos} repo${removedRepos === 1 ? "" : "s"} and ${removedMarkers} marker file${removedMarkers === 1 ? "" : "s"}.`,
+		`Nuked workspace; removed ${removedRepos} repo${removedRepos === 1 ? "" : "s"}, ${removedMarkers} marker file${removedMarkers === 1 ? "" : "s"}, and ${removedScratchDirs} scratch director${removedScratchDirs === 1 ? "y" : "ies"}.`,
 	);
 }
 

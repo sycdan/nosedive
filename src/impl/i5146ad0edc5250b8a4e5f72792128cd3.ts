@@ -22,6 +22,7 @@ import {
 	readWorkspaceDiveMarker,
 	uniqueDiveWipScopes,
 } from "../lib/gitState.js";
+import { removeDiveScratch } from "../lib/diveScratch.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
@@ -273,6 +274,7 @@ function bail(args: string[], io: CommandIo): void {
 	if (status.startsWith("??")) {
 		unlinkSync(dive.path);
 		if (existsSync(markerPath)) unlinkSync(markerPath);
+		removeDiveScratch(rc.workspaceDir!, dive.id);
 		io.log(`bailed "${dive.gist}" (never committed) -- deleted ${formatPath(dive.path)}`);
 		return;
 	}
@@ -298,6 +300,7 @@ function bail(args: string[], io: CommandIo): void {
 		dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
 	);
 	if (existsSync(markerPath)) unlinkSync(markerPath);
+	removeDiveScratch(rc.workspaceDir!, dive.id);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);
 	resetScopesToTrunk(dive, kbDocs, rc.bridgeDir, rc.workspaceDir, io);
 }

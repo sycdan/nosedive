@@ -95,6 +95,8 @@ test("land refuses when no dive is on deck", () => {
 
 test("land retains the worktree at the pushed HEAD commit", () => {
 	const { bridge, worktree, diveId } = setup("provenance");
+	const scratchDir = join(bridge, "workspace", ".scratch", diveId);
+	write(join(scratchDir, "temp.txt"), "delete me\n");
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(diveText)?.[1];
 	assert.ok(pin, "dive should have a scope pin");
@@ -108,6 +110,7 @@ test("land retains the worktree at the pushed HEAD commit", () => {
 	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
 	const result = run(["land"], bridge);
 	assertOk(result, "land failed");
+	assert.equal(existsSync(scratchDir), false, "land should remove dive scratch space");
 	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), head);
 	assert.notEqual(head, trunk, "land must not reset the worktree to fetched trunk");
 	assert.notEqual(runGitUnchecked(["symbolic-ref", "-q", "HEAD"], worktree).status, 0);

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { pascalFromSlug, titleFromSlug } from "./backlogDives.js";
 import { CommandIo, Migration } from "./bridgeSetupIo.js";
-import { MIGRATION_BACKUP_DIRNAME, SPLIT_CONFIG_DIRNAME } from "./constants.js";
+import { BRIDGE_STATE_DIRNAME, MIGRATION_BACKUP_DIRNAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
 	findBridgeConfig,
@@ -131,7 +131,7 @@ export const NOSEDIVE_DIR_GITIGNORE = ["cache/", `${MIGRATION_BACKUP_DIRNAME}/`,
 
 /** nosedive owns ignore rules for its own state under `.nosedive/`: the git cache and migration backups are local, `config.yaml` is not. */
 export function writeNosediveDirGitignore(bridgeDir: string): void {
-	writeFileAtomic(join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
+	writeFileAtomic(join(bridgeDir, BRIDGE_STATE_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
 export interface BacklogKbEffort {

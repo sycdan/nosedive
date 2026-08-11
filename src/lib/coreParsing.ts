@@ -6,7 +6,7 @@ import {
 	BASE_CONFIG_FILENAME,
 	DEFAULT_RC,
 	LEGACY_CONFIG_FILENAME,
-	SPLIT_CONFIG_DIRNAME,
+	BRIDGE_STATE_DIRNAME,
 } from "./constants.js";
 export {
 	BASE_CONFIG_FILENAME,
@@ -27,7 +27,7 @@ export {
 	PRE_PUSH_HOOK,
 	REPO_MARKER_EXCLUDE_BEGIN,
 	REPO_MARKER_EXCLUDE_END,
-	SPLIT_CONFIG_DIRNAME,
+	BRIDGE_STATE_DIRNAME,
 	USAGE_HEADER,
 } from "./constants.js";
 
@@ -233,7 +233,7 @@ export function toPosixPath(path: string): string {
 }
 
 export function baseConfigPath(bridgeDir: string): string {
-	return join(bridgeDir, SPLIT_CONFIG_DIRNAME, BASE_CONFIG_FILENAME);
+	return join(bridgeDir, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME);
 }
 
 export function legacyConfigPath(bridgeDir: string): string {
@@ -265,7 +265,7 @@ export function findBridgeConfig(start: string): ResolvedBridgeConfig | undefine
 
 export function noBridgeConfigError(): Error {
 	return new Error(
-		`not inside a nosedive bridge: no ${SPLIT_CONFIG_DIRNAME}/${BASE_CONFIG_FILENAME} or ${LEGACY_CONFIG_FILENAME} found`,
+		`not inside a nosedive bridge: no ${BRIDGE_STATE_DIRNAME}/${BASE_CONFIG_FILENAME} or ${LEGACY_CONFIG_FILENAME} found`,
 	);
 }
 

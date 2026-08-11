@@ -23,6 +23,7 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { removeDiveScratch } from "../lib/diveScratch.js";
 import {
 	collectLandGates,
 	gateRepoContext,
@@ -259,6 +260,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");
 	if (existsSync(markerPath)) unlinkSync(markerPath);
+	removeDiveScratch(rc.workspaceDir!, dive.id);
 
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);

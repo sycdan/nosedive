@@ -162,6 +162,12 @@ export function bridgeNeedsMigration(bridgeLevel: number): boolean {
  * The refusal a contracted command owes a bridge whose data this package cannot
  * read, or `undefined` when it can. It names the levels in the gap, because
  * "level 1" on its own tells a pilot nothing about what they are missing.
+ *
+ * `--headless` is part of the instruction, not a detail left to the reader.
+ * Bare `seed` prompts for workspace, backlog, kb and home branch, so an agent
+ * following this refusal stalls on a question nobody is there to answer. It is
+ * also the right flag on its own terms: a migration should keep the values the
+ * bridge already has, not re-ask for them.
  */
 export function levelGateError(bridgeLevel: number): Error | undefined {
 	if (!bridgeNeedsMigration(bridgeLevel)) return undefined;
@@ -169,7 +175,7 @@ export function levelGateError(bridgeLevel: number): Error | undefined {
 		.map((level) => `  ${level.name}: ${level.gist}`)
 		.join("\n");
 	return new Error(
-		`bridge is at compatibility level ${bridgeLevel}; run \`nosedive seed\` ` +
+		`bridge is at compatibility level ${bridgeLevel}; run \`nosedive seed --headless\` ` +
 			`to migrate it to level ${CURRENT_COMPATIBILITY_LEVEL}\n${levels}`,
 	);
 }
@@ -213,7 +219,7 @@ export function describeBridgeLevelDrift(bridgeLevel: number): BridgeLevelDrift 
 			blocking: false,
 			line:
 				`nosedive-compatibility-level: ${bridgeLevel} (this nosedive is at ${current}; ` +
-				`nothing to migrate, the next \`nosedive seed\` bumps the line)`,
+				`nothing to migrate, the next \`nosedive seed --headless\` bumps the line)`,
 		};
 	}
 	return {
@@ -222,7 +228,7 @@ export function describeBridgeLevelDrift(bridgeLevel: number): BridgeLevelDrift 
 		line: `nosedive-compatibility-level: ${bridgeLevel} (this nosedive is at ${current})`,
 		detail: [
 			`bridge is at compatibility level ${bridgeLevel} and this nosedive is at ${current}; ` +
-				`run \`nosedive seed\` before working.`,
+				`run \`nosedive seed --headless\` before working.`,
 			"",
 			...gap.map(
 				(level) => `  ${level.name}${levelMigration(level) ? " (migration)" : ""}: ${level.gist}`,

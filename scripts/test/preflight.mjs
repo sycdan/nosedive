@@ -378,7 +378,9 @@ test("preflight reports level drift, and exits 1 when a migration is in the gap"
 	const blocked = run(["preflight"], legacy);
 	assert.notEqual(blocked.status, 0, "preflight on an unmigrated bridge unexpectedly succeeded");
 	assert.match(blocked.stderr, /bridge is at compatibility level 0 and this nosedive is at 2/);
-	assert.match(blocked.stderr, /run `nosedive seed` before working/);
+	// --headless is asserted, not incidental: bare seed prompts, so an agent
+	// following this advice would stall on a question nobody is there to answer.
+	assert.match(blocked.stderr, /run `nosedive seed --headless` before working/);
 	assert.match(blocked.stderr, /^ {2}level-1 \(migration\):/m);
 	assert.match(blocked.stderr, /^ {2}level-2:/m);
 	assert.doesNotMatch(blocked.stdout, /== bridge status ==/);
@@ -386,6 +388,9 @@ test("preflight reports level drift, and exits 1 when a migration is in the gap"
 	// And every other contracted command still refuses, naming the same levels.
 	const refused = run(["dump-backlog"], legacy);
 	assert.notEqual(refused.status, 0, "dump-backlog ran against an unmigrated bridge");
-	assert.match(refused.stderr, /bridge is at compatibility level 0; run `nosedive seed`/);
+	assert.match(
+		refused.stderr,
+		/bridge is at compatibility level 0; run `nosedive seed --headless`/,
+	);
 	assert.match(refused.stderr, /^ {2}level-1:/m);
 });

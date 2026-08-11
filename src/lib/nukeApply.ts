@@ -3,7 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { mintUuid7Lines } from "./uuid7.js";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { SPLIT_CONFIG_DIRNAME } from "./constants.js";
+import { BRIDGE_STATE_DIRNAME } from "./constants.js";
 import { diveScratchRootPath } from "./diveScratch.js";
 import {
 	baseConfigPath,
@@ -94,7 +94,7 @@ export function nukeConfig(io: CommandIo): void {
 	for (const path of [
 		legacyConfigPath(bridgeDir),
 		baseConfigPath(bridgeDir),
-		join(bridgeDir, SPLIT_CONFIG_DIRNAME, ".gitignore"),
+		join(bridgeDir, BRIDGE_STATE_DIRNAME, ".gitignore"),
 	]) {
 		if (!existsSync(path)) continue;
 		rmSync(path, { force: true });

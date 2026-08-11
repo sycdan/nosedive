@@ -20,8 +20,7 @@ export function effortDocs(kbDocs: KbDoc[]): KbDoc[] {
 }
 
 export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: string): KbDoc {
-	const efforts = effortDocs(kbDocs);
-	const byId = efforts.filter((doc) => doc.id === effortRef);
+	const byId = kbDocs.filter((doc) => doc.id === effortRef);
 	if (byId.length === 1) return byId[0];
 
 	const normalizedRef = toPosixPath(effortRef);
@@ -30,7 +29,7 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 		resolve(rc.bridgeDir, effortRef),
 		rc.kbDir ? resolve(rc.kbDir, effortRef) : undefined,
 	].filter((candidate): candidate is string => candidate !== undefined);
-	const byPath = efforts.filter(
+	const byPath = kbDocs.filter(
 		(doc) =>
 			doc.relPath === normalizedRef ||
 			pathCandidates.some((candidate) => resolve(doc.path) === candidate),
@@ -42,7 +41,7 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 		);
 	}
 
-	const byName = efforts.filter((doc) => doc.name === effortRef);
+	const byName = kbDocs.filter((doc) => doc.name === effortRef);
 	if (byName.length === 1) return byName[0];
 	if (byName.length > 1) {
 		throw new Error(

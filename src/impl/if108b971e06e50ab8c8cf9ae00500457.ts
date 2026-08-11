@@ -27,9 +27,6 @@ function updateBacklog(args: string[], io: CommandIo): void {
 	if (!existsSync(memoPath)) throw new Error(`bridge backlog memo not found: ${memoId}`);
 	if (!statSync(memoPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${memoId}`);
 	const memo = parseMarkdownDoc(readFileSync(memoPath, "utf8"), formatPath(memoPath));
-	if (memo.fm.scalars.kind && memo.fm.scalars.kind !== "memo") {
-		throw new Error(`configured backlog doc must be kind: memo: ${memoId}`);
-	}
 
 	const content = renderUpdatedBacklogMemo(rc, memo, memoId, loadKbDocs(rc.kbDir, rc.bridgeDir));
 	writeFileAtomic(memoPath, content);

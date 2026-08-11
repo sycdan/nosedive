@@ -186,6 +186,26 @@ test("drop blocks a feat with no landed dive", () => {
 	assert.match(dropped.stderr, /no landed dive/);
 });
 
+test("an open child blocks, and a closed one stops blocking", () => {
+	const childId = "019fd96e-b1f1-7770-aa0b-45d95c3b30ab";
+	const bridge = createDroppableBridge("open-child");
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeLinkedDoc(bridge, childId, "feat", "unfinished-child");
+	writeEffort(bridge, {
+		links: [
+			{ id: memoId, rel: "working" },
+			{ id: childId, rel: "child" },
+		],
+	});
+	assert.match(run(["drop", "ship-it.development"], bridge).stderr, /open child feat/);
+
+	// Closing a feat rewrites its kind and leaves the edge in place, so the
+	// blocker has to read done-ness rather than the presence of the link.
+	writeLinkedDoc(bridge, childId, "memo", "unfinished-child");
+	const reopened = run(["drop", "ship-it.development"], bridge);
+	assert.doesNotMatch(reopened.stderr, /open child feat/);
+});
+
 test("drop blocks a scoped repo with no merge policy", () => {
 	const bridge = createDroppableBridge("no-merge");
 	const branch = "work/ship-it.development";

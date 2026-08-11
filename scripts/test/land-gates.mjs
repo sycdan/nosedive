@@ -300,16 +300,15 @@ links:
 	assert.match(result.stdout, new RegExp(`also linked by .*${relayId}`));
 });
 
-test("an ineligible kind and a missing test-script both refuse the land", () => {
-	const badKind = setup("bad-kind", [
+test("a doc named after its own domain still gates the land, and a missing test-script refuses it", () => {
+	const namedForDomain = setup("bad-kind", [
 		gate("019fd471-0000-7000-8000-000000000010", "not-a-gate", GATE_PASS, undefined, {
-			kind: "memo",
+			kind: "banana",
 		}),
 	]);
-	gitCommitEmpty(badKind.worktree, "work");
-	const kindResult = run(["land"], badKind.bridge);
-	assert.notEqual(kindResult.status, 0);
-	assert.match(kindResult.stderr, /points at kind: memo/);
+	gitCommitEmpty(namedForDomain.worktree, "work");
+	const domainResult = run(["land"], namedForDomain.bridge);
+	assertOk(domainResult, "kind: banana with a working test-script should still gate the land");
 
 	const noScript = setup("no-script", [
 		{

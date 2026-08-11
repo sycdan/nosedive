@@ -118,10 +118,16 @@ export function collectDropReadiness(
 	for (const dive of working.filter((doc) => doc.kind === "dive")) {
 		blockers.push(`open dive: ${dive.name}`);
 	}
-	for (const child of linkedDocs(effort, kbDocs, "child").filter((doc) => doc.kind === "feat")) {
+	/**
+	 * `memo` is the terminal state, so it is the one kind read here -- as
+	 * done-ness, not as a type. Closing a feat rewrites its kind and leaves the
+	 * edge in place, so an unfiltered walk would let a dropped child block its
+	 * parent forever. Delete both filters once closing removes the edge instead.
+	 */
+	for (const child of linkedDocs(effort, kbDocs, "child").filter((doc) => doc.kind !== "memo")) {
 		blockers.push(`open child feat: ${child.name}`);
 	}
-	for (const needed of linkedDocs(effort, kbDocs, "needs").filter((doc) => doc.kind === "feat")) {
+	for (const needed of linkedDocs(effort, kbDocs, "needs").filter((doc) => doc.kind !== "memo")) {
 		blockers.push(`open needed feat: ${needed.name}`);
 	}
 

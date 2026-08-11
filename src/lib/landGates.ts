@@ -9,8 +9,6 @@ import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./renderPlan.js";
 
-/** Kinds a `land.gate` edge may point at. Anything else is a mis-linked doc, not a gate. */
-export const GATE_KINDS = new Set(["assertion", "test", "gate", "check", "proof", "prover"]);
 const GATE_REL = "land.gate";
 /**
  * The pre-`land.gate` spelling. Named in full, deliberately: a bridge being
@@ -120,11 +118,6 @@ export function collectLandGates(roots: KbDoc[], kbDocs: KbDoc[], bridgeDir: str
 				if (existing) {
 					existing.shadowedBy.push(doc);
 				} else {
-					if (!GATE_KINDS.has(target.kind)) {
-						throw new Error(
-							`${GATE_REL} link in ${doc.relPath} points at kind: ${target.kind} (${target.relPath}); expected one of ${[...GATE_KINDS].join("|")}`,
-						);
-					}
 					const label = `${GATE_REL} link to ${target.id} in ${doc.relPath}`;
 					claimed.set(target.id, {
 						doc: target,
@@ -183,11 +176,6 @@ export function collectDiveGates(root: KbDoc, kbDocs: KbDoc[], bridgeDir: string
 		const target = byId.get(link.id);
 		if (!target) {
 			throw new Error(`${GATE_REL} link in ${root.relPath} names an unknown doc: ${link.id}`);
-		}
-		if (!GATE_KINDS.has(target.kind)) {
-			throw new Error(
-				`${GATE_REL} link in ${root.relPath} points at kind: ${target.kind} (${target.relPath}); expected one of ${[...GATE_KINDS].join("|")}`,
-			);
 		}
 		if (seen.has(target.id)) continue;
 		seen.add(target.id);

@@ -126,7 +126,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`scan@1`](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md) | `npx nosedive scan --repo <repo-id-or-name>` | Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |
 | [`spin@2`](kb/44dc2f43-c972-5204-96fe-2b92e61bb346.md) | `npx nosedive spin <loads>` | Brief a runner with documented loads reachable from the active dive's feat ancestry. |
-| [`test@1`](kb/8d2f6ab6-6173-5527-b176-9b03e3c9d531.md) | `npx nosedive test [<gate-id>] [--full]` | Run the active dive's gates, streaming each one's output as it runs, and exit 1 if any failed. |
+| [`test@1`](kb/8d2f6ab6-6173-5527-b176-9b03e3c9d531.md) | `npx nosedive test [land \| <gate-id>...]` | Run the active dive's gates, streaming each one's output as it runs, and exit 1 if any failed. |
 | [`update-backlog@2`](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md) | `npx nosedive update-backlog` | Regenerate the configured backlog memo from bridge KB feat docs. |
 | [`whoami@1`](kb/a40303c1-1362-523f-b095-49178354f878.md) | `npx nosedive whoami` | Returns dev-identifying fields from git config in a way that nosedive-aware agents expect. |
 

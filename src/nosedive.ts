@@ -12,6 +12,7 @@ import {
 	CURRENT_COMPATIBILITY_LEVEL,
 	formatPath,
 	isInsideDir,
+	levelGateError,
 	maybeBridgeCompatibilityLevel,
 	packageDocsOfKind,
 	packageRoot,
@@ -404,8 +405,12 @@ async function runPromptCommand(
 	executePrompt(contract.command, contract.path, result.stdout);
 }
 
-/** The one command an out-of-date bridge may still run, because it migrates. */
-const MIGRATION_COMMAND = "seed";
+/**
+ * Exempt from the generic level gate: `seed` because it migrates, `preflight`
+ * because drift is its to report -- it names the levels in the gap and still
+ * fails, just better.
+ */
+const LEVEL_GATE_EXEMPT = new Set(["seed", "preflight"]);
 
 async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): Promise<boolean> {
 	const explicitLevel = parsed.explicitCompatibilityLevel;
@@ -413,24 +418,21 @@ async function maybeRunContractCommand(parsed: ParsedCommand, args: string[]): P
 	const bridgeLevel = maybeBridgeCompatibilityLevel(process.cwd());
 	const isHelp = args.length === 1 && (args[0] === "-h" || args[0] === "--help");
 
-	// Refuse old bridge data early, except migration, help, builtins, and explicit `@N`.
+	// Refuse only what the package cannot read: a gap with a migration in it.
 	if (
 		!exact &&
 		bridgeLevel !== undefined &&
-		bridgeLevel < CURRENT_COMPATIBILITY_LEVEL &&
 		!isHelp &&
-		parsed.name !== MIGRATION_COMMAND &&
+		!LEVEL_GATE_EXEMPT.has(parsed.name) &&
 		packageContractDoc(parsed.name, CURRENT_COMPATIBILITY_LEVEL) !== undefined
 	) {
-		throw new Error(
-			`bridge is at compatibility level ${bridgeLevel}; run \`nosedive ${MIGRATION_COMMAND}\` ` +
-				`to migrate it to level ${CURRENT_COMPATIBILITY_LEVEL}`,
-		);
+		const refusal = levelGateError(bridgeLevel);
+		if (refusal) throw refusal;
 	}
 
 	const targetLevel = exact
 		? explicitLevel
-		: parsed.name.startsWith("_") || parsed.name === MIGRATION_COMMAND
+		: parsed.name.startsWith("_") || LEVEL_GATE_EXEMPT.has(parsed.name)
 			? CURRENT_COMPATIBILITY_LEVEL
 			: (bridgeLevel ?? CURRENT_COMPATIBILITY_LEVEL);
 

@@ -383,58 +383,138 @@ gist: Solo gist
 });
 
 /**
- * The L1 -> L2 migration rewrites doc kinds in place, so the thing to prove is
- * not only that it converts, but that it leaves alone the prose it was never
- * asked about. A doc explaining the kind is exactly the doc a careless regex
- * would corrupt.
+ * L1 -> L2 declares no migration: the level is a release note, not a data
+ * change. What has to be proven is that seed crosses it writing nothing but the
+ * config line -- and the proof is git status on a fixture bridge, not the log.
  */
-test("seed migrates effort docs to feat without touching bodies", () => {
-	const bridge = join(tmp, "l2-rekind-bridge");
+test("seed bumps an L1 bridge to L2 with no kb writes at all", () => {
+	const bridge = join(tmp, "l2-bump-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
-	runTool("git", ["config", "user.name", "Rekind Person"], bridge);
-	runTool("git", ["config", "user.email", "rekind@example.invalid"], bridge);
-	write(
-		join(bridge, ".nosedive", "config.yaml"),
-		["compatibility-level: 1", "workspace: ./workspace", "kb: ./kb", ""].join("\n"),
-	);
+	runTool("git", ["config", "user.name", "Bump Person"], bridge);
+	runTool("git", ["config", "user.email", "bump@example.invalid"], bridge);
 
 	const featId = "00000000-0000-7000-8000-0000000009a1";
-	const memoId = "00000000-0000-7000-8000-0000000009a2";
+	const backlogId = "00000000-0000-7000-8000-0000000009a3";
+	write(
+		join(bridge, ".nosedive", "config.yaml"),
+		[
+			"compatibility-level: 1",
+			"workspace: ./workspace",
+			"kb: ./kb",
+			`backlog: ${backlogId}`,
+			"",
+		].join("\n"),
+	);
+	// Still says `kind: effort`, which is exactly what the retired migration
+	// used to rewrite. Nothing may touch it now.
 	write(
 		join(bridge, "kb", `${featId}.md`),
 		[
 			"---",
 			"kind: effort",
 			`id: ${featId}`,
-			"name: rekind-me",
-			'gist: "Rekind."',
+			"name: left-alone",
+			'gist: "Left alone."',
 			"---",
 			"",
-			"# Rekind Me",
+			"# Left Alone",
 			"",
 		].join("\n"),
 	);
-	// A memo whose body documents the old kind, in a fenced block.
 	write(
-		join(bridge, "kb", `${memoId}.md`),
+		join(bridge, "kb", `${backlogId}.md`),
 		[
 			"---",
 			"kind: memo",
-			`id: ${memoId}`,
-			"name: explains-the-kind",
-			'gist: "Explains."',
+			`id: ${backlogId}`,
+			"name: backlog.l2-bump",
+			'gist: "Backlog."',
 			"---",
 			"",
-			"# Explains",
+			"# Backlog",
 			"",
-			"```yaml",
-			"kind: effort",
-			"```",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "AGENTS.md"),
+		[
+			"# Agents",
+			"",
+			"<!-- BEGIN nosedive managed instructions -->",
+			"<!-- END nosedive managed instructions -->",
+			"",
+		].join("\n"),
+	);
+	runTool("git", ["add", "."], bridge);
+	runTool("git", ["commit", "-m", "l1 bridge"], bridge);
+
+	const seeded = run(["seed", "--headless"], bridge);
+	assert.equal(seeded.status, 0, seeded.stderr);
+	assert.doesNotMatch(seeded.stdout, /Running migration/);
+
+	assert.match(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+		/^compatibility-level: 2$/m,
+	);
+	const dirty = runGit(["status", "--porcelain", "--", "kb"], bridge).stdout.trim();
+	assert.equal(dirty, "", `seed wrote to the kb crossing a migration-free level:\n${dirty}`);
+	assert.match(readFileSync(join(bridge, "kb", `${featId}.md`), "utf8"), /^kind: effort$/m);
+});
+
+/**
+ * A bridge one level behind with no migration in the gap is not a data problem,
+ * so every contracted command runs, and nothing warns about it. Only preflight
+ * mentions drift, and only in its report.
+ */
+test("a migration-free level gap refuses nothing and warns nowhere", () => {
+	const bridge = join(tmp, "l1-quiet-bridge");
+	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	const backlogId = "00000000-0000-7000-8000-0000000009b1";
+	write(
+		join(bridge, ".nosedive", "config.yaml"),
+		[
+			"compatibility-level: 1",
+			"workspace: ./workspace",
+			"kb: ./kb",
+			`backlog: ${backlogId}`,
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "kb", `${backlogId}.md`),
+		[
+			"---",
+			"kind: memo",
+			`id: ${backlogId}`,
+			"name: backlog.l1-quiet",
+			'gist: "Backlog."',
+			"---",
+			"",
+			"# Quiet Backlog",
 			"",
 		].join("\n"),
 	);
 
+	const dumped = run(["dump-backlog"], bridge);
+	assertOk(dumped, "dump-backlog refused a bridge with no migration in the gap");
+	assert.match(dumped.stdout, /^# Quiet Backlog$/m);
+	assert.equal(dumped.stderr, "", `a migration-free gap must be silent, got: ${dumped.stderr}`);
+});
+
+/**
+ * `seed` writes the level line on every run, and the config is checked in and
+ * shared. A package older than the bridge must not write its own lower level
+ * over the higher one already there.
+ */
+test("seed refuses to write a level lower than the bridge already carries", () => {
+	const bridge = join(tmp, "downgrade-bridge");
+	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	const configPath = join(bridge, ".nosedive", "config.yaml");
+	const config = ["compatibility-level: 99", "workspace: ./workspace", "kb: ./kb", ""].join("\n");
+	write(configPath, config);
 	write(
 		join(bridge, "AGENTS.md"),
 		[
@@ -447,11 +527,9 @@ test("seed migrates effort docs to feat without touching bodies", () => {
 	);
 
 	const seeded = run(["seed", "--headless"], bridge);
-	assert.equal(seeded.status, 0, seeded.stderr);
-	assert.match(seeded.stdout, /Feats migrated: 1/);
-
-	assert.match(readFileSync(join(bridge, "kb", `${featId}.md`), "utf8"), /^kind: feat$/m);
-	const memo = readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8");
-	assert.match(memo, /^kind: memo$/m, "the memo's own kind is untouched");
-	assert.match(memo, /```yaml\r?\nkind: effort\r?\n```/, "its documented example is untouched");
+	assert.notEqual(seeded.status, 0, "seed unexpectedly wrote a level downgrade");
+	assert.match(seeded.stderr, /is at compatibility level 99/);
+	assert.match(seeded.stderr, /this nosedive is at level 2/);
+	assert.match(seeded.stderr, /render 019fee38-0674-7e46-be0c-a3405ece099e/);
+	assert.equal(readFileSync(configPath, "utf8"), config, "config bytes changed");
 });

@@ -15,7 +15,12 @@ import {
 	localOnlyKbDocIds,
 } from "../lib/backlogDives.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { PREFLIGHT_GUIDANCE, PREFLIGHT_NO_DIVE_LINE, PRE_PUSH_HOOK } from "../lib/constants.js";
+import {
+	CURRENT_COMPATIBILITY_LEVEL,
+	PREFLIGHT_GUIDANCE,
+	PREFLIGHT_NO_DIVE_LINE,
+	PRE_PUSH_HOOK,
+} from "../lib/constants.js";
 import {
 	formatPath,
 	NosediveRc,
@@ -31,6 +36,8 @@ import {
 	readPilotIdentity,
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs, readActiveDiveId } from "../lib/kbDocs.js";
+import { bridgeCompatibilityLevel } from "../lib/packageBacklog.js";
+import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
 
@@ -173,7 +180,7 @@ function appendDiveSectionTo(io: CommandIo, label: string, dives: ListedDive[]):
 	for (const line of lines) io.log(line);
 }
 
-function printSessionReport(rc: NosediveRc, io: CommandIo): void {
+function printSessionReport(rc: NosediveRc, levelLine: string, io: CommandIo): void {
 	if (!rc.workspaceDir) throw new Error("preflight requires a configured workspace directory");
 
 	// Identity is checked before anything is printed, same all-or-nothing shape as `whoami`.
@@ -188,6 +195,7 @@ function printSessionReport(rc: NosediveRc, io: CommandIo): void {
 
 	io.log("== bridge status ==");
 	io.log(`nosedive-workspace: ${toPosixPath(rc.workspaceDir)}`);
+	io.log(levelLine);
 	printCurrentDiveAndEffort(rc, kbDocs, io);
 	io.log("");
 
@@ -211,10 +219,26 @@ function printSessionReport(rc: NosediveRc, io: CommandIo): void {
 	io.log(PREFLIGHT_GUIDANCE);
 }
 
+/**
+ * Level drift is surfaced here and nowhere else: preflight runs once per
+ * session, so this is the earliest point at which the pilot can be told, and
+ * bailing at the first `jump` instead would cost them the work of choosing
+ * what to work on first. A gap with a migration in it blocks -- every other
+ * contracted command is refusing already, so preflight fails too; it just
+ * fails better.
+ */
 function preflight(_args: string[], io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!ensurePrePushHook(rc, io)) return;
-	printSessionReport(rc, io);
+	const drift = describeBridgeLevelDrift(
+		bridgeCompatibilityLevel(rc.bridgeDir) ?? CURRENT_COMPATIBILITY_LEVEL,
+	);
+	if (drift.blocking) {
+		io.err(drift.detail ?? drift.line);
+		io.setExitCode(1);
+		return;
+	}
+	printSessionReport(rc, drift.line, io);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

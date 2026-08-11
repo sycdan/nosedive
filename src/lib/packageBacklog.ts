@@ -63,45 +63,6 @@ export function packageMigrationDocs(): Array<{ filename: string; content: strin
 	return packageDocsOfKind("migration");
 }
 
-export function parsePackageMigration(doc: { filename: string; content: string }): Migration {
-	const path = join(packageRoot(), "kb", doc.filename);
-	const parsed = parseMarkdownDoc(doc.content, formatPath(path));
-	const id = parsed.fm.scalars.id;
-	const fromLevel = Number.parseInt(parsed.fm.nested.meta?.["from-level"] ?? "", 10);
-	const toLevel = Number.parseInt(parsed.fm.nested.meta?.["to-level"] ?? "", 10);
-	const scriptRelPath = parsed.fm.nested.meta?.script;
-	if (!id) throw new Error(`migration ${formatPath(path)} is missing id`);
-	if (!Number.isInteger(fromLevel) || fromLevel < 0) {
-		throw new Error(`migration ${formatPath(path)} is missing readable meta.from-level`);
-	}
-	if (!Number.isInteger(toLevel) || toLevel <= fromLevel) {
-		throw new Error(`migration ${formatPath(path)} is missing readable meta.to-level`);
-	}
-	if (
-		!scriptRelPath ||
-		!scriptRelPath.startsWith("kb/artifacts/") ||
-		isAbsolute(scriptRelPath) ||
-		unsafeLinkPath(scriptRelPath)
-	) {
-		throw new Error(
-			`migration ${formatPath(path)} must set meta.script to a safe repo-root kb/artifacts path`,
-		);
-	}
-	return {
-		fromLevel,
-		toLevel,
-		docId: id,
-		scriptRelPath,
-		summary: parsed.fm.scalars.gist ?? "",
-	};
-}
-
-export function packageMigrations(): Migration[] {
-	return packageMigrationDocs()
-		.map((doc) => parsePackageMigration(doc))
-		.sort((a, b) => a.fromLevel - b.fromLevel);
-}
-
 export function bridgeCompatibilityLevel(start: string): number | undefined {
 	const resolved = findBridgeConfig(start);
 	if (!resolved) return undefined;

@@ -428,7 +428,9 @@ function effortFrontmatter(effort, lookup) {
 	for (const child of effort.children) generated.push({ id: child.id, rel: "child" });
 
 	const fm = {
-		kind: "effort",
+		// The kind seed-L2-feats used to rewrite this to. That migration is
+		// retired, so this is now the only place an L0 bridge's efforts get named.
+		kind: "feat",
 		id: effort.id,
 		name: effort.chain,
 		gist: scalarString(effort.raw.gist) ?? "",

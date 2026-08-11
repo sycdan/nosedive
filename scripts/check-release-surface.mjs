@@ -185,7 +185,12 @@ function commandFrontmatterOrder(text, filename) {
 
 const commandDocs = [];
 const migrationDocs = new Map();
+const levelDocs = [];
 const packageDocsById = new Map();
+
+function uuidShaped(value) {
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value));
+}
 
 for (const filename of readdirSync(kbDir)
 	.filter((name) => name.endsWith(".md"))
@@ -304,18 +309,51 @@ for (const filename of readdirSync(kbDir)
 		if (/^---\r?\n[\s\S]*?\r?\n\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(text)) {
 			fail(`${filename} migration frontmatter must not contain blank lines`);
 		}
-		const fromLevel = parseLevel(raw.meta?.["from-level"], `${filename} meta.from-level`);
-		const toLevel = parseLevel(raw.meta?.["to-level"], `${filename} meta.to-level`);
 		if (typeof raw.id !== "string" || raw.id.trim() === "") {
 			fail(`${filename} migration must have a non-empty id`);
 			continue;
 		}
-		if (typeof raw.meta?.script !== "string" || !raw.meta.script.startsWith("kb/artifacts/")) {
-			fail(`${filename} migration meta.script must be a repo-root kb/artifacts path`);
+		// A migration is reached only through a level's `rel: migration` link, and
+		// carries a script only while it is live: a retired one keeps its prose as
+		// its level's release note and must not stay runnable.
+		if (raw.meta?.["from-level"] !== undefined || raw.meta?.["to-level"] !== undefined) {
+			fail(
+				`${filename} migration must not carry meta.from-level/meta.to-level; a migration linked from level-N migrates N-1 -> N by position`,
+			);
 		}
-		if (fromLevel !== undefined && toLevel !== undefined) {
-			migrationDocs.set(raw.id, { filename, id: raw.id, fromLevel, toLevel });
+		if (raw.meta?.script !== undefined) {
+			if (typeof raw.meta.script !== "string" || !raw.meta.script.startsWith("kb/artifacts/")) {
+				fail(`${filename} migration meta.script must be a repo-root kb/artifacts path`);
+			} else if (!existsSync(join(root, raw.meta.script))) {
+				fail(`${filename} migration meta.script does not exist: ${raw.meta.script}`);
+			}
 		}
+		migrationDocs.set(raw.id, { filename, id: raw.id, script: raw.meta?.script });
+	}
+
+	if (raw.kind === "level") {
+		const match = /^level-([0-9]+)$/.exec(String(raw.name ?? ""));
+		if (typeof raw.id !== "string" || !uuidShaped(raw.id)) {
+			fail(`${filename} level must have a UUID-shaped id`);
+			continue;
+		}
+		if (!match) {
+			fail(`${filename} level name must look like level-<N>, got ${raw.name}`);
+			continue;
+		}
+		if (filename !== `${raw.id}.md`) fail(`${raw.name} filename must be ${raw.id}.md`);
+		const migrations = linkIdsByRel({ raw }, "migration");
+		if (migrations.length > 1) {
+			fail(`${raw.name} declares more than one rel: migration link`);
+		}
+		levelDocs.push({
+			filename,
+			id: raw.id.toLowerCase(),
+			name: raw.name,
+			level: Number.parseInt(match[1], 10),
+			migrationId: migrations[0],
+			raw,
+		});
 	}
 }
 
@@ -372,6 +410,44 @@ for (const [memoId, memoDoc] of packageDocsById) {
 	}
 }
 
+// Level ids are minted at the instant each level came into being, so they
+// already sort into level order. The name is the declaration of which level a
+// doc is, and a name that disagrees with that ordering is an error, not a
+// warning -- the whole migration loop reads levels by name.
+const levelsById = [...levelDocs].sort((a, b) => a.id.localeCompare(b.id));
+for (const [position, doc] of levelsById.entries()) {
+	if (doc.level !== position) {
+		fail(
+			`${doc.filename} is named ${doc.name} but sits at position ${position} in minted order; levels are contiguous from 0 and their ids must sort in level order`,
+		);
+	}
+}
+const levelsByLevel = new Map();
+for (const doc of levelDocs) {
+	if (levelsByLevel.has(doc.level)) {
+		fail(`${doc.name} is ambiguous: ${levelsByLevel.get(doc.level).filename}, ${doc.filename}`);
+		continue;
+	}
+	levelsByLevel.set(doc.level, doc);
+}
+for (let level = 0; level <= currentLevel; level += 1) {
+	if (!levelsByLevel.has(level)) fail(`no kind: level doc declares level-${level}`);
+}
+for (const doc of levelDocs) {
+	if (doc.level > currentLevel) {
+		fail(`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel}`);
+	}
+	if (!doc.migrationId) continue;
+	const migration = migrationDocs.get(doc.migrationId);
+	if (!migration) {
+		fail(
+			`${doc.name} links rel: migration ${doc.migrationId}, but no packaged migration has that id`,
+		);
+	} else if (!migration.script) {
+		fail(`${doc.name} links rel: migration ${migration.filename}, which has no meta.script to run`);
+	}
+}
+
 for (const [key, docs] of docsByCommandLevel) {
 	if (docs.length > 1) {
 		fail(`${key} is ambiguous: ${docs.map((doc) => doc.filename).join(", ")}`);
@@ -385,27 +461,27 @@ for (const doc of commandDocs
 	const deprecatedByIds = deprecatedByMigrationIds(doc);
 	if (deprecatedByIds.length === 0) {
 		fail(
-			`${doc.name} is below current level ${currentLevel}; promote it or add a rel=deprecated-by migration link`,
+			`${doc.name} is below current level ${currentLevel}; promote it or add a rel=deprecated-by level link`,
 		);
 		continue;
 	}
 
 	let hasValidBoundary = false;
 	for (const id of deprecatedByIds) {
-		const migration = migrationDocs.get(id);
-		if (!migration) {
-			fail(`${doc.name} has rel=deprecated-by ${id}, but no package migration doc has that id`);
+		const level = levelDocs.find((candidate) => candidate.id === id);
+		if (!level) {
+			fail(`${doc.name} has rel=deprecated-by ${id}, but no packaged kind: level doc has that id`);
 			continue;
 		}
-		if (migration.fromLevel !== doc.level) {
+		if (level.level <= doc.level) {
 			fail(
-				`${doc.name} is deprecated by ${id}, but that migration starts at ${migration.fromLevel}; expected ${doc.level}`,
+				`${doc.name} is deprecated by ${level.name}, which is not above the command's own level ${doc.level}`,
 			);
 			continue;
 		}
-		if (migration.toLevel > currentLevel) {
+		if (level.level > currentLevel) {
 			fail(
-				`${doc.name} is deprecated by ${id}, but that migration ends at ${migration.toLevel}; current level is ${currentLevel}`,
+				`${doc.name} is deprecated by ${level.name}, which is above the current level ${currentLevel}`,
 			);
 			continue;
 		}
@@ -413,7 +489,7 @@ for (const doc of commandDocs
 	}
 
 	if (!hasValidBoundary) {
-		fail(`${doc.name} has no valid rel=deprecated-by migration boundary`);
+		fail(`${doc.name} has no valid rel=deprecated-by level boundary`);
 	}
 }
 

@@ -5,6 +5,7 @@ export * from "./gitState.js";
 export * from "./kbDocs.js";
 export * from "./nukeApply.js";
 export * from "./packageBacklog.js";
+export * from "./packageLevels.js";
 export * from "./proveCore.js";
 export * from "./proveHostRender.js";
 export * from "./kbRefs.js";

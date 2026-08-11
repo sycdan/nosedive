@@ -343,3 +343,49 @@ test("preflight fails like whoami when git identity is incomplete", () => {
 	// The hook still installs -- identity is a session-report concern, not a hook-wiring one.
 	assert.equal(readFileSync(join(bridge, ".git", "hooks", "pre-push"), "utf8"), MANAGED_HOOK);
 });
+
+/**
+ * Drift is surfaced here and nowhere else. A gap with a live migration in it
+ * blocks -- and blocks at preflight rather than at the first `jump`, which is
+ * the earliest point a pilot can be told without having wasted the work of
+ * choosing what to work on first.
+ */
+test("preflight reports level drift, and exits 1 when a migration is in the gap", () => {
+	const current = createBridge(tmp, "level-current-bridge");
+	setIdentity(current, "Current Pilot", "current-pilot@example.invalid");
+	const atLevel = run(["preflight"], current);
+	assertOk(atLevel, "preflight on a current bridge failed");
+	assert.match(atLevel.stdout, /^nosedive-compatibility-level: 2$/m);
+
+	// One level behind with nothing to run: a note in the report, exit 0.
+	const behind = freshGitBridge("level-behind-bridge");
+	setIdentity(behind, "Behind Pilot", "behind-pilot@example.invalid");
+	write(
+		join(behind, ".nosedive", "config.yaml"),
+		["compatibility-level: 1", "workspace: ./workspace", "kb: ./kb", "backlog: ./backlog", ""].join(
+			"\n",
+		),
+	);
+	const noMigration = run(["preflight"], behind);
+	assertOk(noMigration, "preflight refused a bridge with no migration in the gap");
+	assert.match(noMigration.stdout, /^nosedive-compatibility-level: 1 \(this nosedive is at 2;/m);
+	assert.match(noMigration.stdout, /nothing to migrate/);
+
+	// A live migration in the gap: the level docs, the fix, and exit 1.
+	const legacy = freshGitBridge("level-legacy-bridge");
+	setIdentity(legacy, "Legacy Pilot", "legacy-pilot@example.invalid");
+	write(join(legacy, ".nosediverc"), "workspace: ./workspace\nkb: ./kb\n");
+	const blocked = run(["preflight"], legacy);
+	assert.notEqual(blocked.status, 0, "preflight on an unmigrated bridge unexpectedly succeeded");
+	assert.match(blocked.stderr, /bridge is at compatibility level 0 and this nosedive is at 2/);
+	assert.match(blocked.stderr, /run `nosedive seed` before working/);
+	assert.match(blocked.stderr, /^ {2}level-1 \(migration\):/m);
+	assert.match(blocked.stderr, /^ {2}level-2:/m);
+	assert.doesNotMatch(blocked.stdout, /== bridge status ==/);
+
+	// And every other contracted command still refuses, naming the same levels.
+	const refused = run(["dump-backlog"], legacy);
+	assert.notEqual(refused.status, 0, "dump-backlog ran against an unmigrated bridge");
+	assert.match(refused.stderr, /bridge is at compatibility level 0; run `nosedive seed`/);
+	assert.match(refused.stderr, /^ {2}level-1:/m);
+});

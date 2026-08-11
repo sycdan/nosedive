@@ -4,7 +4,11 @@ import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { UUID7_MAX_TIMESTAMP_MS, uuid7AtMs } from "./uuid7.js";
 
-import { CURRENT_COMPATIBILITY_LEVEL, DEFAULT_RC } from "./constants.js";
+import {
+	CURRENT_COMPATIBILITY_LEVEL,
+	DEFAULT_RC,
+	SEED_LEVEL_DOWNGRADE_ERROR_ID,
+} from "./constants.js";
 import {
 	RcSettings,
 	SeedOptions,
@@ -16,7 +20,8 @@ import {
 	parseYamlBlock,
 	toPosixPath,
 } from "./coreParsing.js";
-import { packageMigrationDocs, packageMigrations, packageRoot } from "./packageBacklog.js";
+import { nosediveInvocation, packageMigrationDocs, packageRoot } from "./packageBacklog.js";
+import { levelMigration, levelsInGap } from "./packageLevels.js";
 import { gitOutput } from "./renderPlan.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
@@ -241,27 +246,31 @@ export async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Pro
 		);
 	}
 
-	let version =
+	const version =
 		shape.kind === "legacy" || (shape.kind === "none" && hasLegacyBacklogContent(bridgeDir))
 			? 0
 			: shape.kind === "none"
 				? CURRENT_COMPATIBILITY_LEVEL
 				: shape.version;
+	// A shared bridge is seeded by whoever ran last, and `npx` makes the package
+	// version invisible, so a stale cache writing its own lower level back into
+	// checked-in config is the default outcome of any level bump on a team.
+	if (version > CURRENT_COMPATIBILITY_LEVEL) {
+		throw new Error(
+			`${formatPath(baseConfigPath(bridgeDir))} is at compatibility level ${version}, but this ` +
+				`nosedive is at level ${CURRENT_COMPATIBILITY_LEVEL}; refusing to write the lower level over it.\n` +
+				`more info: ${nosediveInvocation()} render ${SEED_LEVEL_DOWNGRADE_ERROR_ID}`,
+		);
+	}
 	if (version === CURRENT_COMPATIBILITY_LEVEL) return; // already current: no-op, no further I/O
 
 	const ctx: MigrationContext = { bridgeDir, mintUuid: createUuid7Minter() };
-	const migrations = packageMigrations();
-	while (version < CURRENT_COMPATIBILITY_LEVEL) {
-		const migration = migrations.find((m) => m.fromLevel === version);
-		if (!migration) {
-			const known = migrations
-				.map((m) => `  L${m.fromLevel}->L${m.toLevel}: ${m.summary}`)
-				.join("\n");
-			throw new Error(
-				`no migration path from compatibility level ${version} to ${CURRENT_COMPATIBILITY_LEVEL}; ` +
-					`bridge config is in an unrecognized state.\nKnown migrations:\n${known}`,
-			);
-		}
+	// The level docs are the declaration of what exists, so a level missing from
+	// the package is an error; a level that declares no migration is a bump, and
+	// costs the bridge nothing but the config line seed writes below.
+	for (const level of levelsInGap(version, CURRENT_COMPATIBILITY_LEVEL)) {
+		const migration = levelMigration(level);
+		if (!migration) continue;
 
 		try {
 			io.log(`Running migration ${formatPath(migrationDocPath(migration))}...`);
@@ -274,8 +283,6 @@ export async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Pro
 					describeMigrationForError(migration.docId),
 			);
 		}
-
-		version = migration.toLevel;
 	}
 }
 

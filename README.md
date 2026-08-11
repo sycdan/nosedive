@@ -178,7 +178,7 @@ guide to keep in sync.
 
 ### [Level 2](kb/019fda55-7348-7568-825c-d039467180d6.md)
 
-Every `kind: effort` document becomes `kind: feat`, because effort acquired a second meaning. Its migration has since been retired -- kind may filter but may never reject, so nothing needs rewriting and an L1 bridge reaches L2 with nothing to run.
+The unit of work is `kind: feat`, not `kind: effort`, because effort had also come to mean how hard nosedive may try. Its migration is retired: level 1 now writes `feat` directly, so no bridge arrives at level 2 carrying the old kind and there is nothing left to rewrite.
 
 **No migration necessary.**
 

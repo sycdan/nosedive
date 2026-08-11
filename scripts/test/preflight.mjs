@@ -13,6 +13,7 @@ import {
 	packageVersion,
 	root,
 	run,
+	gitCommit,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -107,8 +108,76 @@ test("preflight streams its first line before the CLI exits", async () => {
 	assert.equal(firstLineBeforeExit, true, "preflight output arrived only after the CLI exited");
 });
 
+test("preflight fetches trunk and blocks stale bridge knowledge without rebasing", () => {
+	const remote = join(tmp, "sync-remote.git");
+	mkdirSync(remote, { recursive: true });
+	const seed = freshGitBridge("sync-seed");
+	setIdentity(seed, "Sync Pilot", "sync-pilot@example.invalid");
+	writeBridgeConfig(seed, { backlog: "./backlog" });
+	write(join(seed, "README.md"), "seed\n");
+	runTool("git", ["add", "--", "."], seed);
+	gitCommit(seed, "seed bridge");
+	runTool("git", ["init", "--bare", "-b", "main"], remote);
+	runTool("git", ["remote", "add", "origin", remote], seed);
+	runTool("git", ["push", "-u", "origin", "main"], seed);
+
+	const bridge = join(tmp, "sync-bridge");
+	runTool("git", ["clone", remote, bridge], tmp);
+	setIdentity(bridge, "Sync Pilot", "sync-pilot@example.invalid");
+	runTool("git", ["switch", "-c", "topic"], bridge);
+	write(join(bridge, "local.md"), "topic work\n");
+	runTool("git", ["add", "--", "local.md"], bridge);
+	gitCommit(bridge, "topic work");
+	const topicBefore = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+
+	const remoteDiveId = "019fe700-0000-7000-8000-00000000feed";
+	write(
+		join(seed, "kb", `${remoteDiveId}.md`),
+		[
+			"---",
+			"kind: dive",
+			`id: ${remoteDiveId}`,
+			"name: remote-dive",
+			'gist: "Freshly fetched dive."',
+			"---",
+			"",
+		].join("\n"),
+	);
+	runTool("git", ["add", "--", `kb/${remoteDiveId}.md`], seed);
+	gitCommit(seed, "add remote dive");
+	runTool("git", ["push"], seed);
+
+	const preflight = run(["preflight"], bridge);
+	assert.notEqual(preflight.status, 0, "stale bridge preflight should exit 1");
+	assert.match(
+		preflight.stdout,
+		/^nosedive-bridge-freshness: HEAD .+ has diverged from origin\/main .+ \(1 ahead, 1 behind\)$/m,
+	);
+	assert.match(
+		preflight.stdout,
+		/^nose: fix this\^ first, by rebasing the bridge onto FETCH_HEAD before trusting the backlog below$/m,
+	);
+	assert.doesNotMatch(
+		preflight.stdout,
+		/remote-dive/,
+		"stale local report should not pose as fresh",
+	);
+	assert.equal(runTool("git", ["branch", "--show-current"], bridge).stdout.trim(), "topic");
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
+		topicBefore,
+		"preflight must not rebase or otherwise move bridge HEAD",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "FETCH_HEAD"], bridge).stdout.trim(),
+		runTool("git", ["rev-parse", "origin/main"], bridge).stdout.trim(),
+		"preflight should leave fetched trunk in FETCH_HEAD for the suggested rebase",
+	);
+});
+
 test("preflight hard-fails on an unwired foreign hook", () => {
 	const bridge = freshGitBridge("foreign-hook-bridge");
+	setIdentity(bridge, "Foreign Hook Pilot", "foreign-hook-pilot@example.invalid");
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
 	const foreignHook = join(bridge, ".git", "hooks", "pre-push");
 	const foreignHookText = "#!/bin/sh\necho user-hook\n";
@@ -123,11 +192,13 @@ test("preflight hard-fails on an unwired foreign hook", () => {
 		foreignPreflight.stderr,
 		new RegExp(`${escapeRegExp(NOSEDIVE_INVOCATION)} _pre-push\\.hook "\\$@" \\|\\| exit 1`),
 	);
-	assert.equal(
+	assert.match(foreignPreflight.stdout, /^== bridge status ==$/m);
+	assert.match(foreignPreflight.stdout, /^nosedive-pre-push-hook: unwired$/m);
+	assert.match(
 		foreignPreflight.stdout,
-		"",
-		"no session report should print when the hook is unwired",
+		/^nose: fix this\^ first, by wiring _pre-push\.hook before pushing bridge changes$/m,
 	);
+	assert.match(foreignPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 
 test("preflight leaves a wired foreign hook untouched and reports", () => {
@@ -151,6 +222,7 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 
 test("preflight hard-fails when core.hooksPath names no wired hook", () => {
 	const bridge = freshGitBridge("hooks-path-bridge");
+	setIdentity(bridge, "Hooks Path Pilot", "hooks-path-pilot@example.invalid");
 	runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
 
@@ -167,7 +239,13 @@ test("preflight hard-fails when core.hooksPath names no wired hook", () => {
 	);
 	assert.match(hooksPathPreflight.stderr, /core\.hooksPath is set/);
 	assert.match(hooksPathPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.equal(hooksPathPreflight.stdout, "");
+	assert.match(hooksPathPreflight.stdout, /^== bridge status ==$/m);
+	assert.match(hooksPathPreflight.stdout, /^nosedive-pre-push-hook: unwired$/m);
+	assert.match(
+		hooksPathPreflight.stdout,
+		/^nose: fix this\^ first, by wiring _pre-push\.hook before pushing bridge changes$/m,
+	);
+	assert.match(hooksPathPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 
 test("preflight leaves a wired core.hooksPath hook untouched and reports", () => {

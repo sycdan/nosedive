@@ -18,26 +18,32 @@ import {
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 
 interface TestArgs {
-	gateRef?: string;
-	full: boolean;
+	gateRefs: string[];
+	land: boolean;
 }
 
+/**
+ * Arguments are what to test, not how to test it. `land` names a set the same
+ * way a uuid names a gate, which is why it is a bare word and not a flag: a
+ * flag spelled `--land` on a command that runs gates reads as an instruction to
+ * land afterwards. Gates resolve by uuid only, so the word can never be
+ * mistaken for one.
+ */
 function parseTestArgs(args: string[]): TestArgs {
-	let gateRef: string | undefined;
-	let full = false;
+	const gateRefs: string[] = [];
+	let land = false;
 	for (const arg of args) {
-		if (arg === "--full") {
-			full = true;
+		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
+		if (arg === "land") {
+			land = true;
 			continue;
 		}
-		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
-		if (gateRef !== undefined) throw new Error(`unexpected test argument: ${arg}`);
-		gateRef = arg;
+		gateRefs.push(arg);
 	}
-	if (gateRef !== undefined && full) {
-		throw new Error("--full runs the whole gate set, so it cannot name a single gate");
+	if (gateRefs.length > 0 && land) {
+		throw new Error("`land` already runs every gate a land would, so it cannot be listed with one");
 	}
-	return { gateRef, full };
+	return { gateRefs, land };
 }
 
 function gateLabel(gate: LandGate): string {
@@ -49,26 +55,28 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 }
 
 async function test(args: string[], io: CommandIo): Promise<void> {
-	const { gateRef, full } = parseTestArgs(args);
+	const { gateRefs, land } = parseTestArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("test requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 
 	/**
-	 * Every form needs a dive. Naming one gate is the exception that proves it:
-	 * the gate is already chosen, so the dive is only context for `ctx.diveId`,
-	 * and refusing there would make the one form that needs no selection the
-	 * hardest to run.
+	 * Every form needs a dive. Naming gates is the exception that proves it: they
+	 * are already chosen, so the dive is only context for `ctx.diveId`, and
+	 * refusing there would make the one form that needs no selection the hardest
+	 * to run.
 	 */
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
 	const dive =
 		marker.id !== undefined
 			? kbDocs.find((doc) => doc.id === marker.id && doc.kind === "dive")
 			: undefined;
-	if (gateRef === undefined && !dive) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
+	if (gateRefs.length === 0 && !dive) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
 
-	const gates = gateRef !== undefined ? [namedGate(gateRef, kbDocs, rc.bridgeDir)] : undefined;
-	const selected = gates ?? selectDiveGates(dive!, kbDocs, rc, full);
+	const selected =
+		gateRefs.length > 0
+			? gateRefs.map((ref) => namedGate(ref, kbDocs, rc.bridgeDir))
+			: selectDiveGates(dive!, kbDocs, rc, land);
 
 	if (selected.length === 0) {
 		/**
@@ -78,9 +86,9 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		 * its own slice; this is the honest interim.
 		 */
 		io.writeErr(
-			full
+			land
 				? "test: no gates are reachable from this dive, its feat, or its scoped repos.\n"
-				: `test: this dive links no gates. Add a rel: land.gate link to a runnable gate, or run with --full to widen the search.\n`,
+				: `test: this dive links no gates. Add a rel: land.gate link to a runnable gate, or run \`test land\` to widen the search.\n`,
 		);
 		io.setExitCode(1);
 		return;
@@ -148,17 +156,17 @@ function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
 }
 
 /**
- * `--full` selects exactly what `land` would, from the same three roots, so a
- * clean `test --full` is a truthful preview of a land rather than a similar
- * one. Without it, only the dive's own gates.
+ * `land` selects exactly what `land` would, from the same three roots, so a
+ * clean `test land` is a truthful preview of a land rather than a similar one.
+ * Without it, only the dive's own gates.
  */
 function selectDiveGates(
 	dive: KbDoc,
 	kbDocs: KbDoc[],
 	rc: ReturnType<typeof readNosediveRc>,
-	full: boolean,
+	land: boolean,
 ): LandGate[] {
-	if (!full) return collectDiveGates(dive, kbDocs, rc.bridgeDir);
+	if (!land) return collectDiveGates(dive, kbDocs, rc.bridgeDir);
 	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
 	const roots = [
 		dive,

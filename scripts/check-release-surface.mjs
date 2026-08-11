@@ -139,6 +139,13 @@ function isExplicitlyDeprecated(doc) {
 function validatePackageLinks(raw, filename) {
 	for (const { target } of linkEntries(raw.links)) {
 		const targetPath = String(target ?? "").split("#")[0];
+		/**
+		 * An https target is context, not content: a pull request, an issue, a
+		 * spec. Nothing in the package resolves it, so there is nothing to check
+		 * beyond the scheme -- and requiring it to be a kb path would mean the
+		 * package could never cite anything outside itself.
+		 */
+		if (targetPath.startsWith("https://")) continue;
 		if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetPath)) {
 			fail(`${filename} links must use repo-root file paths, not bare UUIDs: ${targetPath}`);
 			continue;

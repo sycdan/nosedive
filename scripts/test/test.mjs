@@ -72,7 +72,7 @@ function gateLink(id) {
 /**
  * A bridge whose dive claims one gate directly and whose feat claims another,
  * which is the only shape that can tell the two selections apart: with no
- * arguments only the dive's gate may run, and `--full` must reach both.
+ * arguments only the dive's gate may run, and `land` must reach both.
  */
 function setupDive(name, { diveGates = [passId], featGates = [featGateId] } = {}) {
 	const bridge = setup(name);
@@ -103,12 +103,25 @@ test("test with no arguments runs the dive's own gates and nothing else", () => 
 	assert.doesNotMatch(result.stdout, /feat gate ran/, "the feat's gate is not dive-resident");
 });
 
-test("test --full reaches gates the dive does not claim itself", () => {
-	const result = run(["test", "--full"], setupDive("full-walk"));
+test("test land reaches gates the dive does not claim itself", () => {
+	const result = run(["test", "land"], setupDive("land-walk"));
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /passed gate/);
 	assert.match(result.stdout, /feat gate ran/);
 	assert.match(result.stderr, /2 gate\(s\) in .*: 2 passed, 0 failed/);
+});
+
+test("test runs every gate it is given, and land cannot be one of them", () => {
+	const bridge = setupDive("many-gates");
+	const both = run(["test", passId, featGateId], bridge);
+	assert.equal(both.status, 0, both.stderr);
+	assert.match(both.stdout, /passed gate/);
+	assert.match(both.stdout, /feat gate ran/);
+	assert.match(both.stderr, /2 gate\(s\) in .*: 2 passed, 0 failed/);
+
+	const mixed = run(["test", "land", passId], bridge);
+	assert.equal(mixed.status, 1);
+	assert.match(mixed.stderr, /`land` already runs every gate a land would/);
 });
 
 test("test refuses without an active dive, and says so by name", () => {

@@ -204,7 +204,7 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "seed", "--headless", "--file", "AGENTS.md"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
   const hookPath = ctx.path.join(sandbox.root, ".git", "hooks", "pre-push");
-  const expectedHook = '#!/bin/sh\\n# nosedive-managed\\nexec npx nosedive _pre-push.hook "$@"\\n';
+  const expectedHook = ${JSON.stringify(`#!/bin/sh\n# nosedive-managed\nexec node ${cli.replaceAll("\\", "/")} _pre-push.hook "$@"\n`)};
   const hook = await ctx.fs.readText(hookPath);
   ctx.assert.equal(hook, expectedHook);
   ctx.log("direct cli preflight succeeded");

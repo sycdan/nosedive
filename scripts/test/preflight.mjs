@@ -18,7 +18,8 @@ import {
 
 const tmp = createTmp("preflight");
 
-const MANAGED_HOOK = '#!/bin/sh\n# nosedive-managed\nexec npx nosedive _pre-push.hook "$@"\n';
+const NOSEDIVE_INVOCATION = `node ${cli.replaceAll("\\", "/")}`;
+const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
 
 function freshGitBridge(name) {
 	const bridge = join(tmp, name);
@@ -103,7 +104,10 @@ test("preflight hard-fails on an unwired foreign hook", () => {
 	assert.equal(readFileSync(foreignHook, "utf8"), foreignHookText);
 	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
 	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.match(foreignPreflight.stderr, /npx nosedive _pre-push\.hook "\$@" \|\| exit 1/);
+	assert.match(
+		foreignPreflight.stderr,
+		new RegExp(`${escapeRegExp(NOSEDIVE_INVOCATION)} _pre-push\\.hook "\\$@" \\|\\| exit 1`),
+	);
 	assert.equal(
 		foreignPreflight.stdout,
 		"",

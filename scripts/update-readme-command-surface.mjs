@@ -218,6 +218,7 @@ function levelDocs() {
 			name,
 			level: Number.parseInt(match[1], 10),
 			gist: String(raw.gist ?? ""),
+			future: raw.meta?.future === true,
 			migrationDocId: migrationIds[0],
 		});
 	}
@@ -243,8 +244,11 @@ function migrationSection(level) {
 function renderLevels() {
 	const docs = levelDocs();
 	if (docs.length === 0) fail("no kind: level docs found in kb/");
-	const current = docs[docs.length - 1];
-	const earlier = docs.slice(0, -1).reverse();
+	const released = docs.filter((doc) => !doc.future);
+	if (released.length === 0) fail("no released kind: level docs found in kb/");
+	const current = released[released.length - 1];
+	const future = docs.filter((doc) => doc.future);
+	const earlier = released.slice(0, -1).reverse();
 
 	const lines = [
 		levelsBeginMarker,
@@ -258,6 +262,14 @@ function renderLevels() {
 		"",
 		current.migrationDocId ? migrationSection(current) : "**No migration necessary.**",
 		"",
+		"## Where we are going",
+		"",
+		...future.flatMap((doc) => [
+			`### ${markdownLink(`Level ${doc.level}`, doc.relPath)}`,
+			"",
+			doc.gist,
+			"",
+		]),
 		"## How we got here",
 		"",
 		"<details><summary>Earlier levels</summary>",

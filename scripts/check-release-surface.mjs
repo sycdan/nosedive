@@ -441,7 +441,7 @@ for (let level = 0; level <= currentLevel; level += 1) {
 	if (!levelsByLevel.has(level)) fail(`no kind: level doc declares level-${level}`);
 }
 for (const doc of levelDocs) {
-	if (doc.level > currentLevel) {
+	if (doc.level > currentLevel && doc.raw.meta?.future !== true) {
 		fail(`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel}`);
 	}
 	if (!doc.migrationId) continue;

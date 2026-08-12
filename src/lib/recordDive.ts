@@ -361,7 +361,10 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const workspaceDir = rc.workspaceDir;
 
 	if (!options.ref) {
-		if (active) throw new Error(`workspace already has active dive ${active.id}`);
+		// No guard on the active dive here: recording is writing work up, and a
+		// dive nobody claims never touches the workspace marker. Claiming is the
+		// part that cannot happen twice, and `ensureActivation` below is where
+		// that is refused.
 		const effort = resolveEffortDoc(kbDocs, rc, options.effort!);
 		const scopes = options.clearScopes
 			? []

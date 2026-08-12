@@ -5,15 +5,13 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
+import { bridgeBacklogMemoBody } from "../lib/backlogDives.js";
 import {
 	appendDiveSection,
-	bridgeBacklogMemoBody,
-	diveDocs,
-	diveTags,
+	collectPreflightDives,
 	ListedDive,
-	listedDive,
 	localOnlyKbDocIds,
-} from "../lib/backlogDives.js";
+} from "../lib/diveListing.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import {
 	CURRENT_COMPATIBILITY_LEVEL,
@@ -217,11 +215,6 @@ function printCurrentDiveAndEffort(
 	}
 }
 
-/**
- * Every `kind: dive` in the kb, split by whether it can be picked up. The split
- * is `needs-diver` rather than owner: a dive recorded with `--free` carries no
- * `meta.diver`, so filing by owner would put every unclaimed dive under nobody.
- */
 function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo): void {
 	io.log("== dives ==");
 	if (!kbDocs || !rc.kbDir) {
@@ -229,13 +222,11 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 		return;
 	}
 
-	const localOnly = localOnlyKbDocIds(rc.bridgeDir, rc.kbDir);
-	const available: ListedDive[] = [];
-	const held: ListedDive[] = [];
-	for (const doc of diveDocs(kbDocs)) {
-		const tags = diveTags(doc, localOnly);
-		(tags.includes("needs-diver") ? available : held).push(listedDive(doc, undefined, tags));
-	}
+	const { available, held } = collectPreflightDives(
+		rc,
+		kbDocs,
+		localOnlyKbDocIds(rc.bridgeDir, rc.kbDir),
+	);
 
 	if (available.length === 0 && held.length === 0) {
 		io.log(PREFLIGHT_NO_DIVE_LINE);

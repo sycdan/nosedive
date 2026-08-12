@@ -1,6 +1,7 @@
 export * from "./backlogDives.js";
 export * from "./bridgeSetupIo.js";
 export * from "./coreParsing.js";
+export * from "./diveListing.js";
 export * from "./gitState.js";
 export * from "./kbDocs.js";
 export * from "./nukeApply.js";

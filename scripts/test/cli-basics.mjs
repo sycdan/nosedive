@@ -74,7 +74,9 @@ test("cli-basics", () => {
 	assert.match(help.stdout, /render/);
 	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);
-	assert.doesNotMatch(help.stdout, /list-dives/);
+	// Un-deprecated: preflight lists only what the backlog reaches, so the manual
+	// full view has to stay on the surface.
+	assert.match(help.stdout, /list-dives/);
 	assert.match(help.stdout, /pitch/);
 	assert.match(help.stdout, /hydrate-repo\.workspace/);
 	assert.match(help.stdout, /dehydrate-repo\.workspace/);

@@ -2,7 +2,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { parseDocument } from "yaml";
 
-import { diveTags, localOnlyKbDocIds, titleFromSlug } from "./backlogDives.js";
+import { titleFromSlug } from "./backlogDives.js";
+import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import {

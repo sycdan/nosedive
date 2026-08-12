@@ -125,6 +125,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`hydrate-repo.workspace@1`](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md) | `npx nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]` | Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit. |
 | [`jump@2`](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md) | `npx nosedive jump` | Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top. |
 | [`land@2`](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md) | `npx nosedive land` | Canonicalize the active dive -- push every writable scoped repo to work-branch-prefix<slug>, close the dive as a memo with an outcome section, and leave each scoped worktree hydrated at the commit it pushed. |
+| [`list-dives@2`](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md) | `npx nosedive list-dives [<feat-or-deck>] [--include-historical] [--json]` | Print all outstanding dives and what they still need. |
 | [`mint@1`](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md) | `npx nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]` | Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond. |
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
 | [`pack@2`](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, and leave every scoped worktree hydrated where it stands. |
@@ -156,7 +157,6 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 | Command | Usage | Use instead |
 | --- | --- | --- |
 | [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `preflight`, which prints pilot identity, the backlog, and open work without requiring a piped agent. |
-| [`list-dives@2`](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md) | `npx nosedive list-dives <feat> [--include-historical] [--json]` | `preflight`, which shows the backlog and every free dive without naming a feat. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the

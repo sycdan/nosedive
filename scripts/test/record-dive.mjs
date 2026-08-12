@@ -235,6 +235,33 @@ test("record.dive activates only for the pilot diver", () => {
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
 
+test("record.dive records for others while a dive is active, and claims for nobody else", () => {
+	const { bridge } = setup("record-while-active");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const held = run(["record.dive", "--effort", effortId, "--diver", "pilot@example.test"], bridge);
+	assertOk(held, "record.dive create failed");
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	const activeId = /^id: (.+)$/m.exec(readFileSync(marker, "utf8"))[1];
+
+	// Writing up work for the backlog touches no marker, so the dive the
+	// workspace holds has no bearing on it.
+	for (const extra of [[], ["--diver", "other@example.test"]]) {
+		const recorded = run(["record.dive", "--effort", effortId, ...extra], bridge);
+		assertOk(recorded, `record.dive ${extra.join(" ")} refused while a dive was active`);
+		assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${activeId}\\n$`));
+	}
+
+	// Claiming is the part that cannot happen twice.
+	const claimed = run(
+		["record.dive", "--effort", effortId, "--diver", "pilot@example.test"],
+		bridge,
+		"",
+	);
+	assert.notEqual(claimed.status, 0);
+	assert.match(claimed.stderr, new RegExp(`pilot already has active dive ${activeId}`));
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${activeId}\\n$`));
+});
+
 test("record.dive requires --takeover to replace a held diver", () => {
 	const { bridge } = setup("ownership");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);

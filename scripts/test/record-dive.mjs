@@ -343,6 +343,89 @@ test("record.dive --free ignores the active dive", () => {
 	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
 });
 
+/** A feat doc with an optional scope list and an optional parent edge. */
+function writeFeat(bridge, id, name, { scopes = [], parent, parentRel = "parent" } = {}) {
+	const lines = ["---", "kind: feat", `id: ${id}`, `name: ${name}`, `gist: "${name}"`];
+	if (scopes.length > 0) lines.push("scopes:", ...scopes.map((scope) => `  - ${scope}`));
+	if (parent) lines.push("links:", `  - kb/${parent}.md:`, `      rel: ${parentRel}`);
+	lines.push("---", "", `# ${name}`, "");
+	write(join(bridge, "kb", `${id}.md`), lines.join("\n"));
+}
+
+const parentEffortId = "019fc623-0000-7000-8000-000000000006";
+const childEffortId = "019fc623-0000-7000-8000-000000000007";
+
+test("record.dive inherits scopes from the nearest scoped ancestor feat", () => {
+	const { bridge, repoCommit } = setup("inherit");
+	// `pitch` writes no scopes key at all, so the whole chain below the scoped
+	// grandparent looks exactly like a freshly pitched pair of feats.
+	writeFeat(bridge, parentEffortId, "middle.record-dive.nosedive", {
+		parent: effortId,
+		parentRel: "parent.feat",
+	});
+	writeFeat(bridge, childEffortId, "leaf.middle.record-dive.nosedive", {
+		parent: parentEffortId,
+	});
+	const result = run(["record.dive", "--effort", childEffortId], bridge);
+	assertOk(result, "record.dive create failed");
+	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.doesNotMatch(doc, /^scopes: \[\]$/m);
+});
+
+test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
+	const { bridge } = setup("inherit-nearest");
+	const nearer = join(bridge, "workspace", "nearer");
+	const nearerCommit = createRepo(nearer, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "nearer", "workspace/nearer");
+	writeFeat(bridge, parentEffortId, "middle.record-dive.nosedive", {
+		scopes: [unrelatedRepoId],
+		parent: effortId,
+	});
+	writeFeat(bridge, childEffortId, "leaf.middle.record-dive.nosedive", {
+		parent: parentEffortId,
+	});
+	const result = run(["record.dive", "--effort", childEffortId], bridge);
+	assertOk(result, "record.dive create failed");
+	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
+	assert.match(
+		doc,
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      mode: rw$`, "m"),
+	);
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
+});
+
+test("record.dive lets an explicit --scope override an inherited one", () => {
+	const { bridge } = setup("inherit-override");
+	const other = join(bridge, "workspace", "other");
+	const otherCommit = createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: effortId });
+	const result = run(
+		["record.dive", "--effort", childEffortId, "--scope", unrelatedRepoId],
+		bridge,
+	);
+	assertOk(result, "record.dive create failed");
+	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
+	assert.match(
+		doc,
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      mode: rw$`, "m"),
+	);
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
+});
+
+test("record.dive warns when no ancestor scopes a repo", () => {
+	const { bridge } = setup("inherit-empty");
+	// A parent cycle: the walk must end on its own rather than spin, and still
+	// report the empty result instead of writing `scopes: []` in silence.
+	writeFeat(bridge, parentEffortId, "middle.record-dive.nosedive", { parent: childEffortId });
+	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: parentEffortId });
+	const result = run(["record.dive", "--effort", childEffortId], bridge);
+	assertOk(result, "record.dive create failed");
+	assert.match(result.stderr, /and its ancestors scope no repos/);
+	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
+});
+
 test("record.dive reassigns its reciprocal effort link", () => {
 	const { bridge } = setup("patch-meta");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);

@@ -184,6 +184,33 @@ function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string): Scop
 	};
 }
 
+/** `parent`, plus the role-suffixed spellings a deck-rooted tree uses (`parent.feat`, `parent.deck`). */
+function isParentRel(rel: string | undefined): boolean {
+	return rel === "parent" || (rel?.startsWith("parent.") ?? false);
+}
+
+/**
+ * The scopes a dive under this effort should start from. `pitch` never writes a
+ * scopes key, so reading only the effort's own scopes records a dive with none,
+ * and a dive with no scope can be jumped with no repo attached and landed
+ * without pushing anything. The nearest scoped ancestor is the one the pitcher
+ * meant, so the walk stops there instead of unioning the whole chain.
+ */
+function inheritedScopes(effort: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
+	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const seen = new Set<string>();
+	let current: KbDoc | undefined = effort;
+	while (current && !seen.has(current.id)) {
+		if (current.scopes.length > 0) return current.scopes;
+		seen.add(current.id);
+		current = current.links
+			.filter((link) => isParentRel(link.rel))
+			.map((link) => byId.get(link.id))
+			.find((doc): doc is KbDoc => doc !== undefined);
+	}
+	return [];
+}
+
 function renderScopes(scopes: ScopeRef[]): string[] {
 	if (scopes.length === 0) return ["scopes: []"];
 	const lines = ["scopes:"];
@@ -342,7 +369,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 				? options.scopes.map((ref) =>
 						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
 					)
-				: effort.scopes.map((scope) =>
+				: inheritedScopes(effort, kbDocs).map((scope) =>
 						cachedScope(
 							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
 							rc.bridgeDir,
@@ -351,6 +378,13 @@ export function recordDive(args: string[], io: CommandIo): void {
 					);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
+		// `--clear-scopes` and `--scope` both say what the pilot wants; only the
+		// inherited path can come back empty without anyone having asked for it.
+		if (!options.clearScopes && options.scopes.length === 0 && scopes.length === 0) {
+			io.err(
+				`feat ${effort.name} and its ancestors scope no repos; recording a dive with no scopes`,
+			);
+		}
 		const id = uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, effort, options, scopes));

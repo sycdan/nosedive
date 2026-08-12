@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { basename, join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { basename, dirname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 
@@ -25,6 +25,47 @@ const { nosediveInvocationFor } = await import(libUrl);
 
 const NOSEDIVE_INVOCATION = nosediveInvocationFor(packageVersion, root);
 const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
+
+/** Hook bodies run under `sh`, so every path baked into one is posix. */
+const posix = (path) => path.replaceAll("\\", "/");
+
+const managedHooksDir = (bridge) => join(bridge, ".git", "nosedive-hooks");
+const managedHook = (bridge) => join(managedHooksDir(bridge), "pre-push");
+const originalRecord = (bridge) => join(managedHooksDir(bridge), "original-hooks-dir");
+
+/** Resolved and posix-normalized, so a relative config value still compares. */
+function configuredHooksPath(bridge) {
+	const value = runTool("git", ["config", "--get", "core.hooksPath"], bridge).stdout.trim();
+	return value ? posix(resolve(bridge, value)) : "";
+}
+
+/** What the managed hook looks like once it wraps a hook the pilot wrote. */
+function chainedHook(originalHookPath) {
+	return [
+		"#!/bin/sh",
+		"# nosedive-managed",
+		"refs=$(cat)",
+		`original_hook='${posix(originalHookPath)}'`,
+		'if [ -x "$original_hook" ]; then',
+		`  printf '%s\\n' "$refs" | "$original_hook" "$@" || exit $?`,
+		"fi",
+		`printf '%s\\n' "$refs" | ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"`,
+		"",
+	].join("\n");
+}
+
+/** Runs a hook body the way git does: argv from the remote, ref updates on stdin. */
+function runHook(hookPath, cwd, refUpdates) {
+	return spawnSync("sh", [posix(hookPath), "origin", "git@example.invalid:repo.git"], {
+		cwd,
+		encoding: "utf8",
+		input: refUpdates,
+	});
+}
+
+function shAvailable() {
+	return spawnSync("sh", ["-c", "exit 0"]).error === undefined;
+}
 
 test("nosedive invocation pins releases and shell-quotes local CLI paths", () => {
 	assert.equal(
@@ -175,7 +216,7 @@ test("preflight fetches trunk and blocks stale bridge knowledge without rebasing
 	);
 });
 
-test("preflight hard-fails on an unwired foreign hook", () => {
+test("preflight takes over an unwired foreign hook and chains it", () => {
 	const bridge = freshGitBridge("foreign-hook-bridge");
 	setIdentity(bridge, "Foreign Hook Pilot", "foreign-hook-pilot@example.invalid");
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
@@ -184,20 +225,13 @@ test("preflight hard-fails on an unwired foreign hook", () => {
 	write(foreignHook, foreignHookText);
 
 	const foreignPreflight = run(["preflight"], bridge);
-	assert.notEqual(foreignPreflight.status, 0, "preflight with an unwired foreign hook should fail");
+	assertOk(foreignPreflight, "preflight with an unwired foreign hook should take it over");
+	// The pilot's file is theirs; nosedive runs it, it does not rewrite it.
 	assert.equal(readFileSync(foreignHook, "utf8"), foreignHookText);
-	assert.match(foreignPreflight.stderr, /foreign pre-push hook exists/);
-	assert.match(foreignPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.match(
-		foreignPreflight.stderr,
-		new RegExp(`${escapeRegExp(NOSEDIVE_INVOCATION)} _pre-push\\.hook "\\$@" \\|\\| exit 1`),
-	);
-	assert.match(foreignPreflight.stdout, /^== bridge status ==$/m);
-	assert.match(foreignPreflight.stdout, /^nosedive-pre-push-hook: unwired$/m);
-	assert.match(
-		foreignPreflight.stdout,
-		/^nose: fix this\^ first, by wiring _pre-push\.hook before pushing bridge changes$/m,
-	);
+	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(foreignHook));
+	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
+	assert.equal(readFileSync(originalRecord(bridge), "utf8"), `${posix(dirname(foreignHook))}\n`);
+	assert.match(foreignPreflight.stdout, /^nosedive-pre-push-hook: wired$/m);
 	assert.match(foreignPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 
@@ -220,33 +254,144 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 	assert.match(preflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 
-test("preflight hard-fails when core.hooksPath names no wired hook", () => {
+test("preflight takes over a core.hooksPath that names no wired hook", () => {
 	const bridge = freshGitBridge("hooks-path-bridge");
 	setIdentity(bridge, "Hooks Path Pilot", "hooks-path-pilot@example.invalid");
 	runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	const pilotHook = join(bridge, ".githooks", "pre-push");
+	const pilotHookText = "#!/bin/sh\necho pilot-gate\n";
+	write(pilotHook, pilotHookText);
 
 	const hooksPathPreflight = run(["preflight"], bridge);
-	assert.notEqual(
-		hooksPathPreflight.status,
-		0,
-		"preflight with an unwired core.hooksPath should fail",
-	);
+	assertOk(hooksPathPreflight, "preflight should take over an unwired core.hooksPath");
+	assert.equal(readFileSync(pilotHook, "utf8"), pilotHookText);
+	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(pilotHook));
+	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
+	// Taking a hooks path over must not leave a second pre-push in .git/hooks:
+	// git reads exactly one hooks directory, and the loser rots unwatched.
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
-	assert.equal(
-		runTool("git", ["config", "--get", "core.hooksPath"], bridge).stdout.trim(),
-		".githooks",
-	);
-	assert.match(hooksPathPreflight.stderr, /core\.hooksPath is set/);
-	assert.match(hooksPathPreflight.stderr, /Add this line to your existing pre-push hook setup/);
-	assert.match(hooksPathPreflight.stdout, /^== bridge status ==$/m);
-	assert.match(hooksPathPreflight.stdout, /^nosedive-pre-push-hook: unwired$/m);
-	assert.match(
-		hooksPathPreflight.stdout,
-		/^nose: fix this\^ first, by wiring _pre-push\.hook before pushing bridge changes$/m,
-	);
+	assert.match(hooksPathPreflight.stdout, /^nosedive-pre-push-hook: wired$/m);
 	assert.match(hooksPathPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
+
+test("preflight reconciles the same hooks path again without re-chaining itself", () => {
+	const bridge = freshGitBridge("hooks-path-idempotent-bridge");
+	setIdentity(bridge, "Idempotent Pilot", "idempotent-pilot@example.invalid");
+	runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	const pilotHook = join(bridge, ".githooks", "pre-push");
+	write(pilotHook, "#!/bin/sh\necho pilot-gate\n");
+
+	assertOk(run(["preflight"], bridge), "first preflight failed");
+	const afterFirst = readFileSync(managedHook(bridge), "utf8");
+	assertOk(run(["preflight"], bridge), "second preflight failed");
+
+	// The managed hook is now what core.hooksPath points at, so a second run
+	// must chain the pilot's recorded hook again -- never the managed hook it
+	// wrote last time, which would recurse.
+	assert.equal(readFileSync(managedHook(bridge), "utf8"), afterFirst);
+	assert.equal(afterFirst, chainedHook(pilotHook));
+});
+
+test("preflight proxies the pilot's other hooks when it takes the hooks path over", () => {
+	const bridge = freshGitBridge("hooks-path-proxy-bridge");
+	setIdentity(bridge, "Proxy Pilot", "proxy-pilot@example.invalid");
+	runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	write(join(bridge, ".githooks", "pre-push"), "#!/bin/sh\necho pilot-gate\n");
+	const pilotCommitMsg = join(bridge, ".githooks", "commit-msg");
+	write(pilotCommitMsg, "#!/bin/sh\necho pilot-commit-msg\n");
+
+	assertOk(run(["preflight"], bridge), "preflight failed");
+
+	// Claiming core.hooksPath moves every hook name, not just pre-push, so the
+	// ones nosedive has no opinion about have to keep firing.
+	assert.equal(
+		readFileSync(join(managedHooksDir(bridge), "commit-msg"), "utf8"),
+		`#!/bin/sh\nexec '${posix(pilotCommitMsg)}' "$@"\n`,
+	);
+	assert.equal(existsSync(join(managedHooksDir(bridge), "pre-commit")), false);
+});
+
+test("preflight re-pins a stale managed hook rather than leaving it to rot", () => {
+	const bridge = freshGitBridge("stale-managed-bridge");
+	setIdentity(bridge, "Stale Pilot", "stale-pilot@example.invalid");
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	const hookPath = join(bridge, ".git", "hooks", "pre-push");
+	// What a managed hook written by an older nosedive looks like today: a
+	// command name that no longer exists, resolved off a moving dist-tag.
+	write(hookPath, '#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n');
+
+	assertOk(run(["preflight"], bridge), "preflight failed");
+	assert.equal(readFileSync(hookPath, "utf8"), MANAGED_HOOK);
+});
+
+test("preflight drops a managed hook that a wired hooks path has shadowed", () => {
+	const bridge = freshGitBridge("shadowed-managed-bridge");
+	setIdentity(bridge, "Shadowed Pilot", "shadowed-pilot@example.invalid");
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	const shadowed = join(bridge, ".git", "hooks", "pre-push");
+	write(shadowed, MANAGED_HOOK);
+	runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
+	write(
+		join(bridge, ".githooks", "pre-push"),
+		'#!/bin/sh\nexec npx -y nosedive@2026.1.1-0 _pre-push.hook "$@"\n',
+	);
+
+	assertOk(run(["preflight"], bridge), "preflight failed");
+	// git reads one hooks directory. A managed hook outside it cannot run and
+	// nothing refreshes it, which is exactly how one rotted to a dead command
+	// name while preflight kept reporting the shadowing file as wired.
+	assert.equal(existsSync(shadowed), false);
+	assert.equal(configuredHooksPath(bridge), posix(join(bridge, ".githooks")));
+});
+
+test(
+	"the reconciled hook runs the pilot's hook first, on the same ref updates",
+	{ skip: !shAvailable() },
+	() => {
+		const bridge = freshGitBridge("chained-run-bridge");
+		setIdentity(bridge, "Chained Pilot", "chained-pilot@example.invalid");
+		runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
+		writeBridgeConfig(bridge, { backlog: "./backlog" });
+		const seen = posix(join(bridge, "pilot-saw.txt"));
+		write(join(bridge, ".githooks", "pre-push"), `#!/bin/sh\ncat > '${seen}'\n`);
+
+		assertOk(run(["preflight"], bridge), "preflight failed");
+
+		// A deleted ref: nosedive's own gate reads it and has nothing to walk, so
+		// what this asserts is the wrapper, not the gate.
+		const zero = "0".repeat(40);
+		const refs = `(delete) ${zero} refs/heads/gone ${zero}\n`;
+		const hookRun = runHook(managedHook(bridge), bridge, refs);
+		assert.equal(hookRun.status, 0, `chained hook failed:\n${hookRun.stderr}`);
+		// pre-push reads its ref updates from stdin, and a stream is consumed once.
+		// Both hooks have to see the same list, so the wrapper replays it.
+		assert.equal(readFileSync(seen, "utf8").trim(), refs.trim());
+	},
+);
+
+test(
+	"a pilot hook that rejects the push stops nosedive's gate from running",
+	{ skip: !shAvailable() },
+	() => {
+		const bridge = freshGitBridge("chained-reject-bridge");
+		setIdentity(bridge, "Rejecting Pilot", "rejecting-pilot@example.invalid");
+		runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
+		writeBridgeConfig(bridge, { backlog: "./backlog" });
+		write(
+			join(bridge, ".githooks", "pre-push"),
+			"#!/bin/sh\ncat > /dev/null\necho nope >&2\nexit 3\n",
+		);
+
+		assertOk(run(["preflight"], bridge), "preflight failed");
+
+		const hookRun = runHook(managedHook(bridge), bridge, "refs/heads/main a refs/heads/main b\n");
+		assert.equal(hookRun.status, 3, "the pilot's exit status is the push's answer");
+		assert.match(hookRun.stderr, /nope/);
+	},
+);
 
 test("preflight leaves a wired core.hooksPath hook untouched and reports", () => {
 	const bridge = freshGitBridge("hooks-path-wired-bridge");

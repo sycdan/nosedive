@@ -65,9 +65,8 @@ function writeHook(hookPath: string, body: string): void {
 	chmodSync(hookPath, 0o755);
 }
 
-function installHook(hookPath: string, originalHookPath: string | undefined, io: CommandIo): void {
+function installHook(hookPath: string, originalHookPath: string | undefined): void {
 	writeHook(hookPath, prePushHook(nosediveInvocation(), originalHookPath));
-	io.log(`Installed nosedive pre-push hook: ${formatPath(hookPath)}`);
 }
 
 /**
@@ -150,19 +149,20 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): void {
 		return;
 	}
 
-	installHook(
-		join(managedHooksDir, "pre-push"),
-		pilotWroteIt ? toPosixPath(pilotHookPath) : undefined,
-		io,
-	);
+	const managedHookPath = join(managedHooksDir, "pre-push");
+	installHook(managedHookPath, pilotWroteIt ? toPosixPath(pilotHookPath) : undefined);
 	proxyPilotHooks(managedHooksDir, pilotHooksDir);
 	writeFileAtomic(recordPath, `${toPosixPath(pilotHooksDir)}\n`);
+	// Re-pinning an already-claimed hooks path is housekeeping every run does;
+	// saying so every session would train the pilot to skim past the line. Only
+	// the takeover -- which moves where git looks for every hook -- is news.
 	if (!managedConfigured) {
 		gitRun(
 			rc.bridgeDir,
 			["config", "core.hooksPath", toPosixPath(managedHooksDir)],
 			"failed to point core.hooksPath at the nosedive hooks directory",
 		);
+		io.log(`Installed nosedive pre-push hook: ${formatPath(managedHookPath)}`);
 	}
 	dropShadowedManagedHook(defaultHooksDir, managedHooksDir, io);
 }
@@ -346,7 +346,6 @@ function printSessionReport(
 	io.log("== bridge status ==");
 	io.log(`nosedive-workspace: ${toPosixPath(rc.workspaceDir)}`);
 	io.log(levelLine);
-	io.log("nosedive-pre-push-hook: wired");
 	const freshnessLine = bridgeFreshnessLine(freshness);
 	if (freshnessLine) io.log(freshnessLine);
 	if (freshness.behind > 0) io.log(STALE_BRIDGE_NOSE);

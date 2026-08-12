@@ -126,6 +126,9 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 	const preflightAgain = run(["preflight"], bridge);
 	assertOk(preflightAgain, "preflight idempotent refresh failed");
 	assert.equal(readFileSync(installedHook, "utf8"), MANAGED_HOOK);
+	// The hooks path is already nosedive's, so the re-pin is housekeeping and
+	// says nothing. Only the run that moved the hooks path announced itself.
+	assert.doesNotMatch(preflightAgain.stdout, /Installed nosedive pre-push hook:/);
 });
 
 test("preflight streams its first line before the CLI exits", async () => {
@@ -232,7 +235,6 @@ test("preflight takes over an unwired foreign hook and chains it", () => {
 	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(foreignHook));
 	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
 	assert.equal(readFileSync(originalRecord(bridge), "utf8"), `${posix(dirname(foreignHook))}\n`);
-	assert.match(foreignPreflight.stdout, /^nosedive-pre-push-hook: wired$/m);
 	assert.match(foreignPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 
@@ -272,7 +274,7 @@ test("preflight takes over a core.hooksPath that names no wired hook", () => {
 	// Taking a hooks path over must not leave a second pre-push in .git/hooks:
 	// git reads exactly one hooks directory, and the loser rots unwatched.
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
-	assert.match(hooksPathPreflight.stdout, /^nosedive-pre-push-hook: wired$/m);
+	assert.match(hooksPathPreflight.stdout, /^Installed nosedive pre-push hook:/m);
 	assert.match(hooksPathPreflight.stdout, /^== open work: current effort backlog ==$/m);
 });
 

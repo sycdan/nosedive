@@ -1,3 +1,4 @@
+import { shellQuote } from "./constants.js";
 import { nosedivePackageVersion } from "./packageBacklog.js";
 
 /** Formats commits authored by nosedive with machine-readable provenance. */
@@ -40,10 +41,6 @@ export const GIT_HOOK_NAMES = [
 	"sendemail-validate",
 	"update",
 ] as const;
-
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
 
 export function proxyHook(originalHookPath: string): string {
 	return `#!/bin/sh\nexec ${shellQuote(originalHookPath)} "$@"\n`;

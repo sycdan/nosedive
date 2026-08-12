@@ -37,14 +37,39 @@ export const PREFLIGHT_GUIDANCE = [
 	"its gist, name, brief and scopes together. Run `jump` only when the pilot asks for it.",
 ].join("\n");
 
-/** Render a hook with the invocation that installed it, never an ambient CLI. */
-export function prePushHook(nosediveInvocation: string): string {
-	return `#!/bin/sh\n# nosedive-managed\nexec ${nosediveInvocation} _pre-push.hook "$@"\n`;
+/** Quotes a value for a `/bin/sh` hook body. */
+export function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-export function manualPrePushLine(nosediveInvocation: string): string {
-	return `${nosediveInvocation} _pre-push.hook "$@" || exit 1`;
+/**
+ * Render a hook with the invocation that installed it, never an ambient CLI.
+ *
+ * `originalHookPath` is the pre-push the pilot already had. Wrapping it rather
+ * than replacing it is what lets nosedive own the hooks path without switching
+ * anyone's own gate off; it must be posix, because the body runs under `sh`.
+ *
+ * The ref updates arrive on stdin and a stream is consumed once, so the wrapper
+ * reads them and replays them into both hooks. The pilot's exit status is the
+ * push's answer: a gate that says no is not worth a second opinion.
+ */
+export function prePushHook(nosediveInvocation: string, originalHookPath?: string): string {
+	if (!originalHookPath) {
+		return `#!/bin/sh\n# nosedive-managed\nexec ${nosediveInvocation} _pre-push.hook "$@"\n`;
+	}
+	return [
+		"#!/bin/sh",
+		"# nosedive-managed",
+		"refs=$(cat)",
+		`original_hook=${shellQuote(originalHookPath)}`,
+		'if [ -x "$original_hook" ]; then',
+		`  printf '%s\\n' "$refs" | "$original_hook" "$@" || exit $?`,
+		"fi",
+		`printf '%s\\n' "$refs" | ${nosediveInvocation} _pre-push.hook "$@"`,
+		"",
+	].join("\n");
 }
+
 export const PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID = "019fce99-1d6e-7fa4-aa0c-a548d7049643";
 export const HANDOFF_RUNBOOK_ID = "019f9f95-750a-7b26-a53e-6c277e8f148f";
 export const HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID = "019fcb35-d660-7318-ac4c-3d5aeed3a81e";

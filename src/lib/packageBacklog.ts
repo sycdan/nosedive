@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { pascalFromSlug, titleFromSlug } from "./backlogDives.js";
 import { CommandIo, Migration } from "./bridgeSetupIo.js";
-import { BRIDGE_STATE_DIRNAME, MIGRATION_BACKUP_DIRNAME } from "./constants.js";
+import { BRIDGE_STATE_DIRNAME, MIGRATION_BACKUP_DIRNAME, shellQuote } from "./constants.js";
 import {
 	configCompatibilityLevel,
 	findBridgeConfig,
@@ -27,10 +27,6 @@ const LOCAL_DEV_VERSION = "0.0.0-dev";
 
 export function packageRoot(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
-}
-
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 /** Renders the reproducible invocation for one package version and root. */

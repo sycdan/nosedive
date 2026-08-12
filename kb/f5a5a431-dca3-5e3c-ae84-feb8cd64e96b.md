@@ -19,8 +19,7 @@ links:
 Regenerates the bridge KB memo configured as `backlog:` in
 `.nosedive/config.yaml`.
 
-At L1, `backlog:` is the UUID of the memo that indexes current work. This
-command scans bridge `kind: feat` docs, rebuilds `rel: main-feat`
+This command scans bridge `kind: feat` docs, rebuilds `rel: main-feat`
 frontmatter links with bridge-root POSIX paths such as `kb/<id>.md`, and
 rewrites the memo body with normal relative markdown links such as `<id>.md`.
 

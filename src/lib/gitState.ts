@@ -10,7 +10,6 @@ import {
 	HANDOFF_RUNBOOK_ID,
 	MANAGED_EXCLUDE_BEGIN,
 	MANAGED_EXCLUDE_END,
-	manualPrePushLine,
 	REPO_MARKER_EXCLUDE_BEGIN,
 	REPO_MARKER_EXCLUDE_END,
 } from "./constants.js";
@@ -23,7 +22,7 @@ import {
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
 import { rewriteMarkdownLinks } from "./markdownLinks.js";
-import { nosediveInvocation, packageRoot } from "./packageBacklog.js";
+import { packageRoot } from "./packageBacklog.js";
 import { executableForSpawn, gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
 import { ensureSafeTargetPath, maybeResolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -75,12 +74,6 @@ export function renderPackageKbGist(id: string): string {
 	const gist = loadPackageKbDoc(id).gist;
 	if (!gist) throw new Error(`package kb doc has no gist: ${id}`);
 	return gist;
-}
-
-export function printManualHookAdvice(reason: string, io: CommandIo): void {
-	io.err(`WARNING: ${reason}`);
-	io.err("Add this line to your existing pre-push hook setup:");
-	io.err(`  ${manualPrePushLine(nosediveInvocation())}`);
 }
 
 /**

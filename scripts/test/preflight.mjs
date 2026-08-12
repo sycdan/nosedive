@@ -454,7 +454,8 @@ test("preflight reports level drift, and exits 1 when a migration is in the gap"
 	assertOk(atLevel, "preflight on a current bridge failed");
 	assert.match(atLevel.stdout, /^nosedive-compatibility-level: 2$/m);
 
-	// One level behind with nothing to run: a note in the report, exit 0.
+	// One level behind with a live migration in the gap: the report blocks
+	// before printing backlog state.
 	const behind = freshGitBridge("level-behind-bridge");
 	setIdentity(behind, "Behind Pilot", "behind-pilot@example.invalid");
 	write(
@@ -463,10 +464,12 @@ test("preflight reports level drift, and exits 1 when a migration is in the gap"
 			"\n",
 		),
 	);
-	const noMigration = run(["preflight"], behind);
-	assertOk(noMigration, "preflight refused a bridge with no migration in the gap");
-	assert.match(noMigration.stdout, /^nosedive-compatibility-level: 1 \(this nosedive is at 2;/m);
-	assert.match(noMigration.stdout, /nothing to migrate/);
+	const blockedL1 = run(["preflight"], behind);
+	assert.notEqual(blockedL1.status, 0, "preflight on an L1 bridge unexpectedly succeeded");
+	assert.match(blockedL1.stderr, /bridge is at compatibility level 1 and this nosedive is at 2/);
+	assert.match(blockedL1.stderr, /run `nosedive seed --headless` before working/);
+	assert.match(blockedL1.stderr, /^ {2}level-2 \(migration\):/m);
+	assert.doesNotMatch(blockedL1.stdout, /== bridge status ==/);
 
 	// A live migration in the gap: the level docs, the fix, and exit 1.
 	const legacy = freshGitBridge("level-legacy-bridge");
@@ -479,7 +482,7 @@ test("preflight reports level drift, and exits 1 when a migration is in the gap"
 	// following this advice would stall on a question nobody is there to answer.
 	assert.match(blocked.stderr, /run `nosedive seed --headless` before working/);
 	assert.match(blocked.stderr, /^ {2}level-1 \(migration\):/m);
-	assert.match(blocked.stderr, /^ {2}level-2:/m);
+	assert.match(blocked.stderr, /^ {2}level-2 \(migration\):/m);
 	assert.doesNotMatch(blocked.stdout, /== bridge status ==/);
 
 	// And every other contracted command still refuses, naming the same levels.

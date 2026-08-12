@@ -321,42 +321,84 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 	assert.match(preflight.stdout, /Report the dive\./);
 });
 
-const BARE_DIVE_ID = "019fe500-0000-7000-8000-00000000dead";
-const FRAMED_DIVE_ID = "019fe500-0000-7000-8000-00000000beef";
+const TOP_FEAT_ID = "019fe500-0000-7000-8000-000000000001";
+const CHILD_FEAT_ID = "019fe500-0000-7000-8000-000000000002";
+const OFF_BACKLOG_FEAT_ID = "019fe500-0000-7000-8000-000000000003";
+const PLANNED_DIVE_ID = "019fe500-0000-7000-8000-00000000dead";
+const PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000beef";
+const WORKING_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000cafe";
+const JUMPED_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000fade";
+const HELD_WORKING_DIVE_ID = "019fe500-0000-7000-8000-00000000feed";
+const HELD_PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000c0de";
+const LANDED_DIVE_ID = "019fe500-0000-7000-8000-00000000abba";
+const BAILED_DIVE_ID = "019fe500-0000-7000-8000-00000000ba11";
+const UNLINKED_DIVE_ID = "019fe500-0000-7000-8000-00000000babe";
+const OFF_BACKLOG_DIVE_ID = "019fe500-0000-7000-8000-00000000f00d";
 
-test("preflight lists every dive with computed tags, split by pickup-ability", () => {
-	const bridge = createBridge(tmp, "dives-bridge");
-	setIdentity(bridge, "Dive Pilot", "dive-pilot@example.invalid");
-	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+function backlogId(bridge) {
+	const match = /^backlog: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	);
+	assert.ok(match, "seed should configure a backlog memo");
+	return match[1];
+}
 
-	// Shaped like `record.dive --free` leaves one: named by its own id, no gist,
-	// no brief, and `diver: null` rather than an absent key.
+function writeBacklogMemo(bridge, id, links) {
 	write(
-		join(bridge, "kb", `${BARE_DIVE_ID}.md`),
+		join(bridge, "kb", `${id}.md`),
 		[
 			"---",
-			"kind: dive",
-			`id: ${BARE_DIVE_ID}`,
-			`name: ${BARE_DIVE_ID}`,
-			"meta:",
-			"  diver: null",
+			"kind: memo",
+			`id: ${id}`,
+			"name: backlog.fixture",
+			'gist: "Backlog fixture."',
+			"links:",
+			...links,
 			"---",
+			"",
+			"# Backlog",
 			"",
 		].join("\n"),
 	);
+}
+
+function writeFeatDoc(bridge, id, name, links = []) {
 	write(
-		join(bridge, "kb", `${FRAMED_DIVE_ID}.md`),
+		join(bridge, "kb", `${id}.md`),
+		[
+			"---",
+			"kind: feat",
+			`id: ${id}`,
+			`name: ${name}`,
+			`gist: "Fixture ${name}."`,
+			...(links.length > 0 ? ["links:", ...links] : []),
+			"---",
+			"",
+			`# ${name}`,
+			"",
+		].join("\n"),
+	);
+}
+
+function link(id, rel) {
+	return [`  - kb/${id}.md:`, `      rel: ${rel}`];
+}
+
+function writeDiveDoc(bridge, id, name, { diver = null, effort = TOP_FEAT_ID, log = false } = {}) {
+	write(
+		join(bridge, "kb", `${id}.md`),
 		[
 			"---",
 			"kind: dive",
-			`id: ${FRAMED_DIVE_ID}`,
-			"name: framed-dive",
-			'gist: "A dive with everything filled in."',
+			`id: ${id}`,
+			`name: ${name}`,
+			`gist: "Fixture ${name}."`,
 			"scopes:",
 			"  - 019f514e-d8d5-7bc1-bf3f-d8e5092c6596:",
 			"      mode: rw",
 			"meta:",
-			"  diver: dive-pilot@example.invalid",
+			`  effort: ${effort}`,
+			`  diver: ${diver ?? "null"}`,
 			"---",
 			"",
 			"# Dive Record",
@@ -364,42 +406,114 @@ test("preflight lists every dive with computed tags, split by pickup-ability", (
 			"## Brief",
 			"",
 			"Do the thing.",
-			"",
-			"## 2026-08-09T05:02:49.670Z",
-			"",
-			"- repo=nosedive path=workspace/nosedive mode=rw ref=deadbee",
+			...(log
+				? [
+						"",
+						"## 2026-08-09T05:02:49.670Z",
+						"",
+						"- repo=nosedive path=workspace/nosedive mode=rw ref=deadbee",
+					]
+				: []),
 			"",
 		].join("\n"),
 	);
-	// Only the framed one is committed, so `local-only` separates them.
-	runTool("git", ["add", "--", `kb/${FRAMED_DIVE_ID}.md`], bridge);
-	runTool("git", ["commit", "-m", "commit the framed dive"], bridge);
+}
+
+test("preflight lists only backlog-reachable planned/pending and packed dives", () => {
+	const bridge = createBridge(tmp, "dives-bridge");
+	setIdentity(bridge, "Dive Pilot", "dive-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const backlog = backlogId(bridge);
+
+	writeBacklogMemo(bridge, backlog, link(TOP_FEAT_ID, "release-effort"));
+	writeFeatDoc(bridge, TOP_FEAT_ID, "top-fixture", [
+		...link(CHILD_FEAT_ID, "slice-effort"),
+		...link(PLANNED_DIVE_ID, "planned.dive"),
+		...link(HELD_WORKING_DIVE_ID, "working.dive"),
+		...link(LANDED_DIVE_ID, "landed.dive"),
+		...link(BAILED_DIVE_ID, "bailed.dive"),
+	]);
+	writeFeatDoc(bridge, CHILD_FEAT_ID, "child-fixture", [
+		...link(PENDING_DIVE_ID, "pending.dive"),
+		...link(WORKING_PACKED_DIVE_ID, "working.dive"),
+		...link(JUMPED_PACKED_DIVE_ID, "jumped.dive"),
+		// Bare, unsuffixed: what `record.dive` still writes, so the legacy rel has
+		// to keep reading as the same edge.
+		...link(HELD_PENDING_DIVE_ID, "pending"),
+	]);
+	writeFeatDoc(bridge, OFF_BACKLOG_FEAT_ID, "off-backlog-fixture", [
+		...link(OFF_BACKLOG_DIVE_ID, "pending"),
+	]);
+
+	writeDiveDoc(bridge, PLANNED_DIVE_ID, "planned-dive");
+	writeDiveDoc(bridge, PENDING_DIVE_ID, "pending-dive");
+	writeDiveDoc(bridge, WORKING_PACKED_DIVE_ID, "working-packed-dive", { log: true });
+	writeDiveDoc(bridge, JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", { log: true });
+	writeDiveDoc(bridge, HELD_WORKING_DIVE_ID, "held-working-dive", {
+		diver: "dive-pilot@example.invalid",
+		log: true,
+	});
+	writeDiveDoc(bridge, HELD_PENDING_DIVE_ID, "held-pending-dive", {
+		diver: "other-pilot@example.invalid",
+		effort: CHILD_FEAT_ID,
+	});
+	writeDiveDoc(bridge, LANDED_DIVE_ID, "landed-dive");
+	writeDiveDoc(bridge, BAILED_DIVE_ID, "bailed-dive");
+	writeDiveDoc(bridge, UNLINKED_DIVE_ID, "unlinked-dive");
+	writeDiveDoc(bridge, OFF_BACKLOG_DIVE_ID, "off-backlog-dive", {
+		effort: OFF_BACKLOG_FEAT_ID,
+	});
+
+	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
+	gitCommit(bridge, "commit backlog dive graph");
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight with dives failed");
 	assert.match(preflight.stdout, /^== dives ==$/m);
 
-	const bare = new RegExp(
-		`^ {2}- \\[${escapeRegExp(BARE_DIVE_ID)}\\]\\(${escapeRegExp(`kb/${BARE_DIVE_ID}.md`)}\\) needs=name,gist,brief,scopes,diver never-jumped local-only$`,
-		"m",
-	);
-	assert.match(preflight.stdout, bare);
-	const framed = new RegExp(
-		`^ {2}- \\[framed-dive\\]\\(${escapeRegExp(`kb/${FRAMED_DIVE_ID}.md`)}\\) diver=dive-pilot@example\\.invalid - A dive with everything filled in\\.$`,
-		"m",
-	);
-	assert.match(preflight.stdout, framed);
+	for (const [id, name, rel] of [
+		[PLANNED_DIVE_ID, "planned-dive", "planned.dive"],
+		[PENDING_DIVE_ID, "pending-dive", "pending.dive"],
+		[WORKING_PACKED_DIVE_ID, "working-packed-dive", "working.dive"],
+		[JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", "jumped.dive"],
+	]) {
+		assert.match(
+			preflight.stdout,
+			new RegExp(
+				`^ {2}- \\[${name}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\) rel=${rel} needs=diver`,
+				"m",
+			),
+		);
+	}
 
-	// Grouping: the unclaimed one is offered, the claimed one is context.
 	const available = preflight.stdout.indexOf("Available:");
 	const held = preflight.stdout.indexOf("Held:");
 	assert.ok(available !== -1 && held !== -1 && available < held, "expected Available above Held");
 	assert.ok(
-		preflight.stdout.indexOf(BARE_DIVE_ID) > available &&
-			preflight.stdout.indexOf(BARE_DIVE_ID) < held,
-		"an unclaimed dive belongs under Available",
+		preflight.stdout.indexOf("working-packed-dive") > available &&
+			preflight.stdout.indexOf("working-packed-dive") < held,
+		"a packed working dive belongs under Available",
 	);
-	assert.ok(preflight.stdout.indexOf("framed-dive") > held, "a claimed dive belongs under Held");
+	// A claimed planned/pending dive is the only way into Held: a claimed
+	// working/jumped dive is somebody's live work and drops out of the list.
+	const heldLine = new RegExp(
+		`^ {2}- \\[held-pending-dive\\]\\(${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}\\) rel=pending diver=other-pilot@example\\.invalid`,
+		"m",
+	);
+	assert.match(preflight.stdout, heldLine);
+	assert.ok(
+		preflight.stdout.indexOf("held-pending-dive") > held,
+		"a claimed pending dive belongs under Held",
+	);
+	for (const hidden of [
+		"held-working-dive",
+		"landed-dive",
+		"bailed-dive",
+		"unlinked-dive",
+		"off-backlog-dive",
+	]) {
+		assert.doesNotMatch(preflight.stdout, new RegExp(hidden));
+	}
 
 	// Dives outrank the backlog: what the pilot is in the middle of comes first.
 	assert.ok(
@@ -421,6 +535,29 @@ test("preflight names record.dive --free when there is no dive to pick up", () =
 	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
 	assert.doesNotMatch(preflight.stdout, /^Available:$/m);
 	assert.doesNotMatch(preflight.stdout, /^Held:$/m);
+});
+
+/**
+ * The dive list is only as good as the backlog it walks from, so a bridge whose
+ * backlog memo cannot be resolved has no reachable dives -- including dives that
+ * a kb-wide scan would have found. The empty list is not silent: the backlog
+ * section names the missing memo on stderr.
+ */
+test("preflight lists no dives when the backlog memo cannot be resolved", () => {
+	const bridge = createBridge(tmp, "no-backlog-bridge");
+	setIdentity(bridge, "Lost Pilot", "lost-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	const missing = "019fe500-0000-7000-8000-0000000000ff";
+	writeBridgeConfig(bridge, { backlog: missing });
+	writeFeatDoc(bridge, TOP_FEAT_ID, "orphan-fixture", [...link(PENDING_DIVE_ID, "pending.dive")]);
+	writeDiveDoc(bridge, PENDING_DIVE_ID, "unreachable-dive");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with an unresolvable backlog failed");
+	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
+	assert.doesNotMatch(preflight.stdout, /unreachable-dive/);
+	assert.match(preflight.stderr, new RegExp(`bridge backlog memo not found: ${missing}`));
 });
 
 test("preflight fails like whoami when git identity is incomplete", () => {

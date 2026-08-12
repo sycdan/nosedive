@@ -103,10 +103,10 @@ test("contract help", () => {
 			`${docName} meta.usage should be a one-line scalar`,
 		);
 	}
-	const deprecatedListDivesHelp = run(["list-dives", "--help"], noBridge);
-	assertOk(deprecatedListDivesHelp, "list-dives --help failed");
-	assert.match(deprecatedListDivesHelp.stdout, /Usage: nosedive list-dives <feat>/);
-	assert.match(deprecatedListDivesHelp.stdout, /Use `preflight` instead/);
+	const listDivesHelp = run(["list-dives", "--help"], noBridge);
+	assertOk(listDivesHelp, "list-dives --help failed");
+	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-deck>\]/);
+	assert.match(listDivesHelp.stdout, /The manual, complete view/);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
@@ -117,12 +117,12 @@ gist: "Legacy command fixture."
 ---
 `,
 	);
-	const deprecatedListDives = run(
+	const featScopedListDives = run(
 		["list-dives", "019f8584-453f-79ea-9d53-5f1b20b4cda9"],
 		whoamiContractBridge,
 	);
-	assertOk(deprecatedListDives, "list-dives failed");
-	assert.match(deprecatedListDives.stderr, /list-dives is deprecated; use preflight/);
+	assertOk(featScopedListDives, "list-dives failed");
+	assert.match(featScopedListDives.stdout, /^Scope: feat deprecated-list-dives$/m);
 	const contractHelpLinks = {
 		preflight: [
 			/\[`_pre-push\.hook`\]\(9e3a676a-6d2f-5b93-93af-f4608ed28843\.md\)/,

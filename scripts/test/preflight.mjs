@@ -97,8 +97,9 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight install failed");
-	const installedHook = join(bridge, ".git", "hooks", "pre-push");
+	const installedHook = managedHook(bridge);
 	assert.equal(readFileSync(installedHook, "utf8"), MANAGED_HOOK);
+	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
 	assert.equal(readFileSync(installedHook).includes(Buffer.from("\r\n")), false);
 	if (process.platform !== "win32") {
 		assert.notEqual(statSync(installedHook).mode & 0o111, 0, "installed hook should be executable");
@@ -318,13 +319,16 @@ test("preflight re-pins a stale managed hook rather than leaving it to rot", () 
 	const bridge = freshGitBridge("stale-managed-bridge");
 	setIdentity(bridge, "Stale Pilot", "stale-pilot@example.invalid");
 	writeBridgeConfig(bridge, { backlog: "./backlog" });
-	const hookPath = join(bridge, ".git", "hooks", "pre-push");
+	const stale = join(bridge, ".git", "hooks", "pre-push");
 	// What a managed hook written by an older nosedive looks like today: a
 	// command name that no longer exists, resolved off a moving dist-tag.
-	write(hookPath, '#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n');
+	write(stale, '#!/bin/sh\n# nosedive-managed\nexec npx nosedive pre-push.hook "$@"\n');
 
 	assertOk(run(["preflight"], bridge), "preflight failed");
-	assert.equal(readFileSync(hookPath, "utf8"), MANAGED_HOOK);
+	// Re-pinned into the one directory nosedive maintains. A managed hook is
+	// never chained to, so nothing carries the dead command name forward.
+	assert.equal(readFileSync(managedHook(bridge), "utf8"), MANAGED_HOOK);
+	assert.equal(existsSync(stale), false);
 });
 
 test("preflight drops a managed hook that a wired hooks path has shadowed", () => {
@@ -720,7 +724,7 @@ test("preflight fails like whoami when git identity is incomplete", () => {
 	);
 	assert.match(preflight.stderr, /missing git config: user\.email/);
 	// The hook still installs -- identity is a session-report concern, not a hook-wiring one.
-	assert.equal(readFileSync(join(bridge, ".git", "hooks", "pre-push"), "utf8"), MANAGED_HOOK);
+	assert.equal(readFileSync(managedHook(bridge), "utf8"), MANAGED_HOOK);
 });
 
 /**

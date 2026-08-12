@@ -115,10 +115,13 @@ function dropShadowedManagedHook(
  * A configured `core.hooksPath` used to be a reason to refuse, which left the
  * hook nosedive had written with no maintainer -- frozen at the version that
  * wrote it, unreachable, and invisible, because the check reported the *other*
- * file as wired. There is one path now and it always re-pins. Taking the hooks
- * path over is only safe because the managed hook runs the pilot's own pre-push
- * first and proxies every other hook name they have, so nothing they wrote
- * stops firing.
+ * file as wired.
+ *
+ * Nosedive owns one hooks directory now and always re-pins what is in it, so
+ * there is no second location to fall out of date. Taking `core.hooksPath` over
+ * is only safe because the managed hook runs the bridge's own pre-push first
+ * and proxies every other hook name beside it, so nothing the pilot wrote stops
+ * firing.
  */
 function ensurePrePushHook(rc: NosediveRc, io: CommandIo): void {
 	const commonDir = gitCommonDir(rc.bridgeDir);
@@ -147,14 +150,6 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): void {
 		return;
 	}
 
-	// Nothing of the pilot's to preserve and nobody else holding the hooks
-	// path: the default directory is the one git reads, so manage the hook
-	// there rather than claiming a config that did not need claiming.
-	if (!pilotWroteIt && !configuredDir) {
-		installHook(join(defaultHooksDir, "pre-push"), undefined, io);
-		return;
-	}
-
 	installHook(
 		join(managedHooksDir, "pre-push"),
 		pilotWroteIt ? toPosixPath(pilotHookPath) : undefined,
@@ -170,7 +165,6 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): void {
 		);
 	}
 	dropShadowedManagedHook(defaultHooksDir, managedHooksDir, io);
-	return;
 }
 
 function preferredBridgeRemote(bridgeDir: string): string | undefined {

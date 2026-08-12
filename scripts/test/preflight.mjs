@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -52,6 +52,16 @@ function chainedHook(originalHookPath) {
 		`printf '%s\\n' "$refs" | ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"`,
 		"",
 	].join("\n");
+}
+
+/**
+ * Writes a hook the way a pilot would have one: executable. The wrapper only
+ * chains an executable file, because git only runs an executable hook, and on
+ * a POSIX filesystem a plain `write` leaves the bit off.
+ */
+function writeExecutableHook(path, body) {
+	write(path, body);
+	chmodSync(path, 0o755);
 }
 
 /** Runs a hook body the way git does: argv from the remote, ref updates on stdin. */
@@ -362,7 +372,7 @@ test(
 		runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
 		writeBridgeConfig(bridge, { backlog: "./backlog" });
 		const seen = posix(join(bridge, "pilot-saw.txt"));
-		write(join(bridge, ".githooks", "pre-push"), `#!/bin/sh\ncat > '${seen}'\n`);
+		writeExecutableHook(join(bridge, ".githooks", "pre-push"), `#!/bin/sh\ncat > '${seen}'\n`);
 
 		assertOk(run(["preflight"], bridge), "preflight failed");
 
@@ -386,7 +396,7 @@ test(
 		setIdentity(bridge, "Rejecting Pilot", "rejecting-pilot@example.invalid");
 		runTool("git", ["config", "core.hooksPath", ".githooks"], bridge);
 		writeBridgeConfig(bridge, { backlog: "./backlog" });
-		write(
+		writeExecutableHook(
 			join(bridge, ".githooks", "pre-push"),
 			"#!/bin/sh\ncat > /dev/null\necho nope >&2\nexit 3\n",
 		);

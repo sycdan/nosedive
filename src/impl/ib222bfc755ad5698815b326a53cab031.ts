@@ -39,9 +39,12 @@ function pitch(args: string[], io: CommandIo): void {
 		path,
 		renderPitchedEffort({ id, name, gist: options.gist, parentId: parent?.id }),
 	);
-	if (parent) appendLinkToDoc(parent.path, id, "child");
+	if (parent) appendLinkToDoc(parent.path, id, "child.feat");
 
 	io.log(`Pitched ${formatPath(path)}`);
+	// The backlog renders from its own links, so an unparented feat is reachable
+	// from nothing until the memo names it.
+	if (!parent) io.log(`Add it to the backlog with: nosedive update-backlog --inject ${id}`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

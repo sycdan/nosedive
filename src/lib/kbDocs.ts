@@ -102,7 +102,7 @@ export function renderPitchedEffort(options: {
 		`gist: ${quoteYamlString(options.gist)}`,
 	];
 	if (options.parentId) {
-		lines.push("links:", `  - kb/${options.parentId}.md:`, "      rel: parent");
+		lines.push("links:", `  - kb/${options.parentId}.md:`, "      rel: parent.feat");
 	}
 	lines.push("---", "", `# ${titleFromSlug(leaf)}`, "");
 	return lines.join("\n");

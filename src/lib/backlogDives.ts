@@ -270,9 +270,7 @@ export function renderUpdatedBacklogMemo(
 	const fm = parseYamlBlock(yamlLines.join("\n"), `frontmatter in ${label}`);
 
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
-	const roots = parseLinkRefs(fm.raw.links, memoPath).filter((link) =>
-		isBacklogRootRel(link.rel),
-	);
+	const roots = parseLinkRefs(fm.raw.links, memoPath).filter((link) => isBacklogRootRel(link.rel));
 
 	const sections = new Map<string, KbDoc[]>();
 	for (const link of roots) {

@@ -195,8 +195,11 @@ Child body.
 	assert.match(backlogMemo, /^kind: memo$/m);
 	assert.match(backlogMemo, /^name: backlog\.backlog-bridge$/m);
 	assert.doesNotMatch(backlogMemo, /^scopes:/m);
-	assert.match(backlogMemo, new RegExp(`kb/${goggleboxEffortId}\\.md:\\n      rel: main-effort`));
-	assert.match(backlogMemo, new RegExp(`kb/${topEffortId}\\.md:\\n      rel: main-effort`));
+	assert.match(
+		backlogMemo,
+		new RegExp(`kb/${goggleboxEffortId}\\.md:\\n      rel: current\\.feat`),
+	);
+	assert.match(backlogMemo, new RegExp(`kb/${topEffortId}\\.md:\\n      rel: current\\.feat`));
 	assert.match(backlogMemo, /### Gogglebox/);
 	assert.match(
 		backlogMemo,
@@ -244,26 +247,35 @@ gist: Beta gist
 Beta body.
 `,
 	);
+	// Only the body is stale; the memo's own links stay, because they are the
+	// render's input.
 	write(
 		join(backlogBridge, "kb", `${backlogMemoId}.md`),
-		`---
-kind: memo
-id: ${backlogMemoId}
-name: backlog.backlog-bridge
-gist: Current backlog for backlog-bridge.
----
-
-# Stale
-`,
+		readFileSync(join(backlogBridge, "kb", `${backlogMemoId}.md`), "utf8").replace(
+			/\n---\n[\s\S]*$/,
+			"\n---\n\n# Backlog\n\n- [Ghost](00000000-0000-7000-8000-0000000000ff.md): stale\n",
+		),
 	);
-	const updateBacklog = run(["update-backlog"], backlogBridge);
+	const updateBacklog = run(["update-backlog", "--inject", betaEffortId], backlogBridge);
 	assertOk(updateBacklog, "update-backlog failed");
 	assert.match(updateBacklog.stdout, new RegExp(`Updated backlog memo: kb/${backlogMemoId}\\.md`));
 	const updatedBacklogMemo = readFileSync(join(backlogBridge, "kb", `${backlogMemoId}.md`), "utf8");
-	assert.match(updatedBacklogMemo, new RegExp(`kb/${betaEffortId}\\.md:\\n      rel: main-effort`));
+	assert.match(
+		updatedBacklogMemo,
+		new RegExp(`kb/${betaEffortId}\\.md:\\n      rel: injected\\.feat`),
+	);
+	assert.match(updatedBacklogMemo, /^## Injected$/m);
 	assert.match(updatedBacklogMemo, new RegExp(`- \\[Beta\\]\\(${betaEffortId}\\.md\\): Beta gist`));
-	assert.match(updatedBacklogMemo, /### Gogglebox/);
-	assert.doesNotMatch(updatedBacklogMemo, /# Stale/);
+	assert.match(updatedBacklogMemo, /^## Current$/m);
+	assert.match(
+		updatedBacklogMemo,
+		new RegExp(`- \\[Project Title\\]\\(${topEffortId}\\.md\\): Main gist`),
+	);
+	assert.match(
+		updatedBacklogMemo,
+		new RegExp(`  - \\[Main Effort Title\\]\\(${childEffortId}\\.md\\): Child gist`),
+	);
+	assert.doesNotMatch(updatedBacklogMemo, /Ghost/);
 	const updatedDumpedBacklog = run(["dump-backlog"], backlogBridge);
 	assertOk(updatedDumpedBacklog, "dump-backlog after update-backlog failed");
 	assert.match(
@@ -543,9 +555,11 @@ test("seed migrates an L1 backlog body tree into L2 feat-role links", () => {
 	);
 
 	const backlogMemo = readFileSync(join(bridge, "kb", `${backlogId}.md`), "utf8");
-	assert.match(backlogMemo, new RegExp(`kb/${rootId}\\.md:\\n      rel: main-effort\\.feat`));
-	assert.match(backlogMemo, new RegExp(`kb/${groupedId}\\.md:\\n      rel: main-effort\\.feat`));
-	assert.doesNotMatch(backlogMemo, new RegExp(`kb/${childId}\\.md:\\n      rel: main-effort`));
+	// The L1 default rel becomes the section the pilot asked for, not `## Main Effort`.
+	assert.match(backlogMemo, new RegExp(`kb/${rootId}\\.md:\\n      rel: current\\.feat`));
+	assert.match(backlogMemo, new RegExp(`kb/${groupedId}\\.md:\\n      rel: current\\.feat`));
+	assert.doesNotMatch(backlogMemo, /^      rel: main-effort/m);
+	assert.doesNotMatch(backlogMemo, new RegExp(`kb/${childId}\\.md:\\n      rel: current`));
 	assert.match(backlogMemo, new RegExp(`kb/${noteId}\\.md:\\n      rel: release-notes`));
 	assert.equal(backlogMemo.endsWith(backlogBody), true, "backlog body changed");
 

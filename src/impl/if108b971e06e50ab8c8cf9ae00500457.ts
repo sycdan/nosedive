@@ -64,9 +64,7 @@ function updateBacklog(args: string[], io: CommandIo): void {
 	const memoText = readFileSync(memoPath, "utf8");
 	// Resolve every ref before writing anything, so a typo in the second
 	// --inject cannot leave the first one half-applied.
-	const targets: KbDoc[] = injectRefs.map((ref) =>
-		resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref),
-	);
+	const targets: KbDoc[] = injectRefs.map((ref) => resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref));
 	for (const target of targets) {
 		if (target.id === memoId) throw new Error("--inject cannot inject the backlog memo itself");
 		if (target.kind === "dive" || target.kind === "repo") {

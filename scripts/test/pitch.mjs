@@ -111,9 +111,12 @@ test("pitch rejects bad input", () => {
 test("a pitched effort reaches the backlog memo", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	assertOk(run(["pitch", "Indexed effort.", "--name", "indexed"], bridge), "pitch failed");
+	const pitched = run(["pitch", "Indexed effort.", "--name", "indexed"], bridge);
+	assertOk(pitched, "pitch failed");
+	const inject = /nosedive update-backlog --inject (\S+)$/m.exec(pitched.stdout);
+	assert.ok(inject, `pitch did not name the inject command:\n${pitched.stdout}`);
 
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	assertOk(run(["update-backlog", "--inject", inject[1]], bridge), "update-backlog failed");
 	const dumped = run(["dump-backlog"], bridge);
 	assertOk(dumped, "dump-backlog failed");
 	assert.match(dumped.stdout, /Indexed effort\./);
@@ -151,20 +154,41 @@ test("update-backlog rewrites the memo's scopes from its efforts", () => {
 		),
 	);
 
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	assertOk(
+		run(["update-backlog", "--inject", "019fc623-0000-7000-8000-0000000000b1"], bridge),
+		"update-backlog failed",
+	);
 	const memo = readFileSync(backlogPath, "utf8");
 	// Sorted by repo doc name, not by uuid.
 	assert.match(memo, new RegExp(`^scopes:\n  - ${appleRepo}\n  - ${zebraRepo}$`, "m"));
 	assert.doesNotMatch(memo, new RegExp(staleRepo));
 });
 
-test("update-backlog omits scopes when no effort scopes a repo", () => {
+test("update-backlog leaves scopes alone when the rendered tree scopes no repo", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-noscopes-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	assertOk(run(["pitch", "Unscoped effort."], bridge), "pitch failed");
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
 	const backlogId = /^backlog: (.+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 	)[1];
-	assert.doesNotMatch(readFileSync(join(bridge, "kb", `${backlogId}.md`), "utf8"), /^scopes:/m);
+	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+	const heldRepo = "019fc623-0000-7000-8000-0000000000c1";
+	// An empty derivation is no information, not a verdict: it must not clear
+	// what the pilot wrote.
+	write(
+		backlogPath,
+		readFileSync(backlogPath, "utf8").replace(
+			/^kind: memo$/m,
+			`kind: memo\nscopes:\n  - ${heldRepo}`,
+		),
+	);
+
+	const pitched = run(["pitch", "Unscoped effort."], bridge);
+	assertOk(pitched, "pitch failed");
+	const inject = /nosedive update-backlog --inject (\S+)$/m.exec(pitched.stdout);
+	assert.ok(inject, `pitch did not name the inject command:\n${pitched.stdout}`);
+	assertOk(run(["update-backlog", "--inject", inject[1]], bridge), "update-backlog failed");
+
+	const memo = readFileSync(backlogPath, "utf8");
+	assert.match(memo, new RegExp(`^scopes:\n  - ${heldRepo}$`, "m"));
+	assert.match(memo, /Unscoped effort\./);
 });

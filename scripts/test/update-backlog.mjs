@@ -335,7 +335,8 @@ test("--inject writes nothing when any ref fails to resolve", () => {
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
 	const before = readFileSync(path, "utf8");
 
-	const result = run(["update-backlog", "--inject", UNLINKED, "--inject", CHILD, "--inject", REPO],
+	const result = run(
+		["update-backlog", "--inject", UNLINKED, "--inject", CHILD, "--inject", REPO],
 		bridge,
 	);
 	assert.notEqual(result.status, 0, "an unresolvable --inject unexpectedly succeeded");
@@ -361,7 +362,10 @@ test("a pitch under a linked parent reaches the backlog with no further step", (
 		"pitch failed",
 	);
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
-	assert.match(readFileSync(path, "utf8"), /^ {2}- \[Pitched\]\(.*\.md\): Pitched under the root\.$/m);
+	assert.match(
+		readFileSync(path, "utf8"),
+		/^ {2}- \[Pitched\]\(.*\.md\): Pitched under the root\.$/m,
+	);
 });
 
 test("a pitch with no parent says how to reach the backlog", () => {

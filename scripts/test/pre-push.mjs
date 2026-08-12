@@ -63,3 +63,26 @@ test("pre-push rejects pushed commits touching the configured workspace", () => 
 
 	assertOk(run(["_pre-push.hook"], bridge, ""), "an empty ref update should pass");
 });
+
+test("pre-push ignores workspace commits a remote already holds", () => {
+	const bridge = join(tmp, "already-pushed");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	writeBridgeConfig(bridge, { workspace: "./work-area" });
+
+	commit(bridge, "kb/base.md", "base\n", "base");
+	const pushed = commit(bridge, "work-area/history.txt", "history\n", "history");
+	// The state every fetched clone is in. Without a remote sha to bound the range,
+	// a new branch reaches this commit and every other one before it.
+	runTool("git", ["update-ref", "refs/remotes/origin/main", pushed], bridge);
+
+	const clean = commit(bridge, "kb/topic.md", "topic\n", "topic");
+	assertOk(
+		run(["_pre-push.hook"], bridge, updateLine(clean, ZERO_SHA)),
+		"a new branch adding no workspace commit should pass",
+	);
+
+	const added = commit(bridge, "work-area/added.txt", "added\n", "added");
+	const rejection = run(["_pre-push.hook"], bridge, updateLine(added, ZERO_SHA));
+	assert.equal(rejection.status, 1, "a workspace commit no remote holds must still be rejected");
+});

@@ -23,7 +23,9 @@ function prePushHook(_args: string[], io: CommandIo, cwd: string): void {
 
 	const repoRoot = gitOutput(cwd, ["rev-parse", "--show-toplevel"], "cannot locate repository");
 	const workspacePath = relative(repoRoot, rc.workspaceDir);
-	if (isAbsolute(workspacePath) || workspacePath === ".." || workspacePath.startsWith(`..\\`)) {
+	// `relative` returns the platform separator, so the escape check has to accept both.
+	const escapesRepo = workspacePath === ".." || /^\.\.[\\/]/.test(workspacePath);
+	if (isAbsolute(workspacePath) || escapesRepo) {
 		return;
 	}
 	const pathspec = workspacePath === "" ? "." : toPosixPath(workspacePath);
@@ -37,10 +39,15 @@ function prePushHook(_args: string[], io: CommandIo, cwd: string): void {
 		const remoteSha = fields[3]!;
 		if (/^0+$/.test(localSha)) continue;
 
-		const range = /^0+$/.test(remoteSha) ? localSha : `${remoteSha}..${localSha}`;
+		// A new branch has no remote sha to bound the range, so bounding it with the
+		// refs every remote already holds is what keeps the walk off history that
+		// was pushed long ago. Only existence matters, so stop at the first hit.
+		const revListArgs = /^0+$/.test(remoteSha)
+			? ["rev-list", "--max-count=1", localSha, "--not", "--remotes"]
+			: ["rev-list", "--max-count=1", `${remoteSha}..${localSha}`];
 		const touchingCommits = gitOutput(
 			repoRoot,
-			["rev-list", range, "--", pathspec],
+			[...revListArgs, "--", pathspec],
 			"cannot inspect pushed commits",
 		);
 		if (!touchingCommits) continue;

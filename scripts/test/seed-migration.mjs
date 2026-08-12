@@ -382,46 +382,122 @@ gist: Solo gist
 	}
 });
 
-/**
- * L1 -> L2 declares no migration: the level is a release note, not a data
- * change. What has to be proven is that seed crosses it writing nothing but the
- * config line -- and the proof is git status on a fixture bridge, not the log.
- */
-test("seed bumps an L1 bridge to L2 with no kb writes at all", () => {
-	const bridge = join(tmp, "l2-bump-bridge");
+test("seed migrates an L1 backlog body tree into L2 feat-role links", () => {
+	const bridge = join(tmp, "l2-body-links-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
 	runTool("git", ["config", "user.name", "Bump Person"], bridge);
 	runTool("git", ["config", "user.email", "bump@example.invalid"], bridge);
 
-	const featId = "00000000-0000-7000-8000-0000000009a1";
+	const rootId = "00000000-0000-7000-8000-0000000009a1";
+	const groupedId = "00000000-0000-7000-8000-0000000009a2";
 	const backlogId = "00000000-0000-7000-8000-0000000009a3";
+	const childId = "00000000-0000-7000-8000-0000000009a4";
+	const grandchildId = "00000000-0000-7000-8000-0000000009a5";
+	const noteId = "00000000-0000-7000-8000-0000000009a6";
 	write(
 		join(bridge, ".nosedive", "config.yaml"),
-		[
-			"compatibility-level: 1",
-			"workspace: ./workspace",
-			"kb: ./kb",
-			`backlog: ${backlogId}`,
-			"",
-		].join("\n"),
+		["compatibility-level: 1", `backlog: ${backlogId}`, ""].join("\n"),
 	);
-	// Still says `kind: effort`, which is exactly what the retired migration
-	// used to rewrite. Nothing may touch it now.
 	write(
-		join(bridge, "kb", `${featId}.md`),
+		join(bridge, "kb", `${rootId}.md`),
 		[
 			"---",
 			"kind: effort",
-			`id: ${featId}`,
-			"name: left-alone",
-			'gist: "Left alone."',
+			`id: ${rootId}`,
+			"name: root-work",
+			'gist: "Root gist."',
+			"links:",
+			`  - kb/${childId}.md:`,
+			"      rel: child-effort",
+			`  - kb/${noteId}.md:`,
+			"      rel: needs",
 			"---",
 			"",
-			"# Left Alone",
+			"# Root Work",
+			"",
+			"Root body.",
 			"",
 		].join("\n"),
 	);
+	write(
+		join(bridge, "kb", `${childId}.md`),
+		[
+			"---",
+			"kind: idea",
+			`id: ${childId}`,
+			"name: child-work",
+			'gist: "Child gist."',
+			"links:",
+			`  - kb/${rootId}.md:`,
+			"      rel: parent",
+			`  - kb/${grandchildId}.md:`,
+			"      rel: child",
+			"---",
+			"",
+			"# Child Work",
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "kb", `${grandchildId}.md`),
+		[
+			"---",
+			"kind: effort",
+			`id: ${grandchildId}`,
+			"name: grandchild-work",
+			'gist: "Grandchild gist."',
+			"links:",
+			`  - kb/${childId}.md:`,
+			"      rel: parent-effort",
+			"---",
+			"",
+			"# Grandchild Work",
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "kb", `${groupedId}.md`),
+		[
+			"---",
+			"kind: effort",
+			`id: ${groupedId}`,
+			"name: grouped-work",
+			'gist: "Grouped gist."',
+			"---",
+			"",
+			"# Grouped Work",
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "kb", `${noteId}.md`),
+		[
+			"---",
+			"kind: memo",
+			`id: ${noteId}`,
+			"name: related-note",
+			'gist: "Related note."',
+			"---",
+			"",
+			"# Related Note",
+			"",
+		].join("\n"),
+	);
+	const backlogBody = [
+		"# Backlog",
+		"",
+		"## Current efforts",
+		"",
+		`- [Root Work](${rootId}.md): Root gist.`,
+		`  - [Child Work](${childId}.md): Child gist.`,
+		`    - [Grandchild Work](${grandchildId}.md): Grandchild gist.`,
+		"",
+		"### Domain",
+		"",
+		`- [Grouped Work](${groupedId}.md): Grouped gist.`,
+		"",
+	].join("\n");
 	write(
 		join(bridge, "kb", `${backlogId}.md`),
 		[
@@ -430,10 +506,16 @@ test("seed bumps an L1 bridge to L2 with no kb writes at all", () => {
 			`id: ${backlogId}`,
 			"name: backlog.l2-bump",
 			'gist: "Backlog."',
+			"links:",
+			`  - kb/${rootId}.md:`,
+			"      rel: main-effort",
+			`  - kb/${groupedId}.md:`,
+			"      rel: main-effort",
+			`  - kb/${noteId}.md:`,
+			"      rel: release-notes",
 			"---",
 			"",
-			"# Backlog",
-			"",
+			backlogBody,
 		].join("\n"),
 	);
 	write(
@@ -447,31 +529,51 @@ test("seed bumps an L1 bridge to L2 with no kb writes at all", () => {
 		].join("\n"),
 	);
 	runTool("git", ["add", "."], bridge);
-	runTool("git", ["commit", "-m", "l1 bridge"], bridge);
+	gitCommit(bridge, "l1 bridge");
 
 	const seeded = run(["seed", "--headless"], bridge);
 	assert.equal(seeded.status, 0, seeded.stderr);
-	assert.doesNotMatch(seeded.stdout, /Running migration/);
+	assert.match(seeded.stdout, /Running migration .*019fda4e-b14f-7bb9-b751-20b2106e3374\.md/);
+	assert.match(seeded.stdout, /Feats migrated: 4/);
+	assert.match(seeded.stdout, new RegExp(`Backlog memo: ${backlogId}`));
 
 	assert.match(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 		/^compatibility-level: 2$/m,
 	);
-	const dirty = runGit(["status", "--porcelain", "--", "kb"], bridge).stdout.trim();
-	assert.equal(dirty, "", `seed wrote to the kb crossing a migration-free level:\n${dirty}`);
-	assert.match(readFileSync(join(bridge, "kb", `${featId}.md`), "utf8"), /^kind: effort$/m);
+
+	const backlogMemo = readFileSync(join(bridge, "kb", `${backlogId}.md`), "utf8");
+	assert.match(backlogMemo, new RegExp(`kb/${rootId}\\.md:\\n      rel: main-effort\\.feat`));
+	assert.match(backlogMemo, new RegExp(`kb/${groupedId}\\.md:\\n      rel: main-effort\\.feat`));
+	assert.doesNotMatch(backlogMemo, new RegExp(`kb/${childId}\\.md:\\n      rel: main-effort`));
+	assert.match(backlogMemo, new RegExp(`kb/${noteId}\\.md:\\n      rel: release-notes`));
+	assert.equal(backlogMemo.endsWith(backlogBody), true, "backlog body changed");
+
+	const rootDoc = readFileSync(join(bridge, "kb", `${rootId}.md`), "utf8");
+	assert.match(rootDoc, /^kind: effort$/m);
+	assert.match(rootDoc, new RegExp(`kb/${childId}\\.md:\\n      rel: child\\.feat`));
+	assert.match(rootDoc, new RegExp(`kb/${noteId}\\.md:\\n      rel: needs`));
+	assert.doesNotMatch(rootDoc, /^      rel: child-effort$/m);
+	assert.match(rootDoc, /# Root Work\n\nRoot body\.\n$/);
+
+	const childDoc = readFileSync(join(bridge, "kb", `${childId}.md`), "utf8");
+	assert.match(childDoc, /^kind: idea$/m);
+	assert.match(childDoc, new RegExp(`kb/${rootId}\\.md:\\n      rel: parent\\.feat`));
+	assert.match(childDoc, new RegExp(`kb/${grandchildId}\\.md:\\n      rel: child\\.feat`));
+	assert.doesNotMatch(childDoc, /^      rel: parent$/m);
+	assert.doesNotMatch(childDoc, /^      rel: child$/m);
+
+	const grandchildDoc = readFileSync(join(bridge, "kb", `${grandchildId}.md`), "utf8");
+	assert.match(grandchildDoc, new RegExp(`kb/${childId}\\.md:\\n      rel: parent\\.feat`));
+	assert.doesNotMatch(grandchildDoc, /^      rel: parent-effort$/m);
 });
 
-/**
- * A bridge one level behind with no migration in the gap is not a data problem,
- * so every contracted command runs, and nothing warns about it. Only preflight
- * mentions drift, and only in its report.
- */
-test("a migration-free level gap refuses nothing and warns nowhere", () => {
-	const bridge = join(tmp, "l1-quiet-bridge");
+test("L2 backlog body migration refuses managed docs as work nodes", () => {
+	const bridge = join(tmp, "l2-managed-kind-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
 	const backlogId = "00000000-0000-7000-8000-0000000009b1";
+	const repoId = "00000000-0000-7000-8000-0000000009b2";
 	write(
 		join(bridge, ".nosedive", "config.yaml"),
 		[
@@ -483,24 +585,47 @@ test("a migration-free level gap refuses nothing and warns nowhere", () => {
 		].join("\n"),
 	);
 	write(
+		join(bridge, "kb", `${repoId}.md`),
+		[
+			"---",
+			"kind: repo",
+			`id: ${repoId}`,
+			"name: managed-repo",
+			'gist: "Managed repo."',
+			"---",
+			"",
+			"# Managed Repo",
+			"",
+		].join("\n"),
+	);
+	write(
 		join(bridge, "kb", `${backlogId}.md`),
 		[
 			"---",
 			"kind: memo",
 			`id: ${backlogId}`,
-			"name: backlog.l1-quiet",
+			"name: backlog.managed",
 			'gist: "Backlog."',
 			"---",
 			"",
-			"# Quiet Backlog",
+			"# Backlog",
+			"",
+			"## Current efforts",
+			"",
+			`- [Managed Repo](${repoId}.md): Should fail.`,
 			"",
 		].join("\n"),
 	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "l1 bridge");
 
-	const dumped = run(["dump-backlog"], bridge);
-	assertOk(dumped, "dump-backlog refused a bridge with no migration in the gap");
-	assert.match(dumped.stdout, /^# Quiet Backlog$/m);
-	assert.equal(dumped.stderr, "", `a migration-free gap must be silent, got: ${dumped.stderr}`);
+	const seeded = run(["seed", "--headless"], bridge);
+	assert.notEqual(seeded.status, 0, "seed unexpectedly migrated a managed repo doc");
+	assert.match(seeded.stderr, /backlog body link points at managed repo doc/);
+	assert.match(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+		/^compatibility-level: 1$/m,
+	);
 });
 
 /**

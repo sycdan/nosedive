@@ -189,9 +189,11 @@ test("explicit @N runs ahead of the bridge with a warning", () => {
 	);
 	write(join(staleBridge, "kb", `${backlogId}.md`), backlogMemo);
 
-	// L1 -> L2 has no migration, so the plain route is not refused at all.
+	// L1 -> L2 has a migration, so the plain route is refused until seed runs.
 	const plain = run(["dump-backlog"], staleBridge);
-	assertOk(plain, "plain route refused a bridge with no migration in the gap");
+	assert.notEqual(plain.status, 0, "plain route ran against an unmigrated bridge");
+	assert.match(plain.stderr, /bridge is at compatibility level 1/);
+	assert.match(plain.stderr, /run `nosedive seed --headless`/);
 
 	const ahead = run(["dump-backlog@2"], staleBridge);
 	assertOk(ahead, "explicit dump-backlog@2 failed against a level 1 bridge");

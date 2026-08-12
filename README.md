@@ -178,9 +178,11 @@ guide to keep in sync.
 
 ### [Level 2](kb/019fda55-7348-7568-825c-d039467180d6.md)
 
-The unit of work is `kind: feat`, not `kind: effort`, because effort had also come to mean how hard nosedive may try. Its migration is retired: level 1 now writes `feat` directly, so no bridge arrives at level 2 carrying the old kind and there is nothing left to rewrite.
+The backlog tree is carried by `.feat` role links rather than by `kind: feat` or name slug chains, so seed migrates an L1 backlog memo body into canonical links before L2 readers consume it.
 
-**No migration necessary.**
+### Migration
+
+Upgrading to level-2 requires running a migration: see [the migration doc](kb/019fda4e-b14f-7bb9-b751-20b2106e3374.md).
 
 ## How we got here
 

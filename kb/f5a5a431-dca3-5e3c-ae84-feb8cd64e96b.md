@@ -28,10 +28,18 @@ its target under `## Current` and `rel: future.feat` renders its target under
 title. The legacy `<predicate>-effort` spelling is read as the same edge and is
 never rewritten.
 
-Below the top level, a node's children are both spellings of one edge: the
-node's own `rel: child.feat` links, and any doc pointing back at it with
-`rel: parent.feat`. `pitch --parent` writes both, so a pitched feat renders
-under its parent with no further step.
+Below the top level, a node's children are its own `rel: child.feat` links and
+nothing else. `child.feat` is the only edge that means open work. Every other
+predicate on a `.feat` edge is reference -- it records a relation without
+claiming the target is open -- so `rel: closed.feat` takes finished work off the
+backlog while keeping the link that says where it belonged.
+
+Nothing is discovered by pointing back. A doc carrying `rel: parent.feat` says
+where it sits, not that it is open, and is never rendered on that account. This
+is what makes the backlog editable: the node holding the edge is the one that
+can close it, and a child cannot re-open itself by describing its own parent.
+`pitch --parent` writes both directions, so a pitched feat still renders under
+its parent with no further step.
 
 `--inject <ref>` appends a `rel: injected.feat` link for the named doc, which
 renders it under `## Injected`. This is how a feat pitched with no parent

@@ -228,7 +228,8 @@ export function gateRepoContext(
  * Spawned rather than imported, so a gate calling `process.exit` or crashing
  * takes down its own process and not the land.
  */
-const GATE_RUNNER = `import { pathToFileURL } from "node:url";
+const GATE_RUNNER = `import { writeSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const mod = await import(pathToFileURL(process.env.NOSEDIVE_GATE_MODULE).href);
 if (typeof mod.run !== "function") {
@@ -236,7 +237,38 @@ if (typeof mod.run !== "function") {
 	process.exit(1);
 }
 const outcome = await mod.run(JSON.parse(process.env.NOSEDIVE_GATE_CONTEXT));
-process.exit(outcome === false ? 1 : 0);
+if (outcome === false) process.exitCode = 1;
+
+// Draining instead of exiting here is what lets a node:test harness the gate
+// module registered report at all -- exiting on the spot passed such a gate in
+// silence however many of its tests failed. A gate that leaves a handle open
+// would then hang the land, so the drain is bounded by silence rather than by
+// elapsed time: a suite slower than any number we could pick is not a runaway,
+// and a wall-clock budget would make a gate's verdict depend on how fast the
+// machine is. Every byte the gate writes rearms the clock, so a gate still
+// talking is never cut off. A gate that goes quiet for longer than the limit
+// mid-run is the case this cannot tell from a hang; per-test timeouts are the
+// right tool there, and the forced exit says on stderr why it fired.
+const idleMs = Number(process.env.NOSEDIVE_GATE_IDLE_MS || 30000);
+let idle;
+const rearm = () => {
+	clearTimeout(idle);
+	// writeSync, not console.error: it bypasses the wrapper below so the notice
+	// cannot rearm the clock it is reporting on, and it survives process.exit.
+	idle = setTimeout(() => {
+		writeSync(2, "gate produced no output for " + idleMs + "ms; forcing exit\\n");
+		process.exit(1);
+	}, idleMs);
+	idle.unref();
+};
+for (const stream of [process.stdout, process.stderr]) {
+	const write = stream.write.bind(stream);
+	stream.write = (...args) => {
+		rearm();
+		return write(...args);
+	};
+}
+rearm();
 `;
 
 function writeGateRunner(): string {

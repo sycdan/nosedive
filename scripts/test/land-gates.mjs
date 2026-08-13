@@ -32,6 +32,15 @@ const GATE_FAIL =
 	'export function run() {\n\tconsole.error("gate says no");\n\tthrow new Error("gate says no");\n}\n';
 const GATE_FALSE =
 	'export function run() {\n\tconsole.error("returned false");\n\treturn false;\n}\n';
+const GATE_TEST_FAIL =
+	'import { test } from "node:test";\n\ntest("gate assertion", () => {\n\tthrow new Error("test says no");\n});\n\nexport function run() {}\n';
+const GATE_TEST_PASS =
+	'import { test } from "node:test";\n\ntest("gate assertion", () => {});\n\nexport function run() {}\n';
+/** Outlives any idle limit the test sets, but never goes quiet for one. */
+const GATE_TEST_TALKS_WHILE_SLOW =
+	'import { test } from "node:test";\n\ntest("slow but talking", async () => {\n\tfor (let i = 0; i < 6; i++) {\n\t\tconsole.error("tick " + i);\n\t\tawait new Promise((r) => setTimeout(r, 300));\n\t}\n});\n\nexport function run() {}\n';
+/** Returns cleanly, then holds the loop open saying nothing -- the hang case. */
+const GATE_HANGS_SILENTLY = "export function run() {\n\tsetTimeout(() => {}, 60000);\n}\n";
 const GATE_SLOW =
 	'export function run() {\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n\tconsole.error("slow gate finished");\n}\n';
 /** Speaks, then stalls: the only shape that can tell streaming from buffering. */
@@ -199,6 +208,16 @@ test("land runs a passing gate and publishes", () => {
 	assert.match(result.stdout, /builds .*: passed/);
 });
 
+test("a gate with passing node:test tests passes", () => {
+	const { bridge, worktree } = setup("node-test-passing", [
+		gate("019fd471-0000-7000-8000-000000000032", "node-tests", GATE_TEST_PASS),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assertOk(result, "passing node:test tests should pass the gate");
+	assert.match(result.stdout, /node-tests .*: passed/);
+});
+
 test("a failing gate refuses the land, pushes nothing, and reports into the dive", () => {
 	const { bridge, worktree, diveId } = setup("failing", [
 		gate("019fd471-0000-7000-8000-00000000000b", "builds", GATE_FAIL),
@@ -220,6 +239,60 @@ test("a failing gate refuses the land, pushes nothing, and reports into the dive
 		join(bridge, "workspace", "failing-repo"),
 	).stdout;
 	assert.doesNotMatch(branches, /work\/land-gates/, "nothing should have been pushed");
+});
+
+test("a gate with a failing node:test test fails", () => {
+	const { bridge, worktree } = setup("node-test-failing", [
+		gate("019fd471-0000-7000-8000-000000000033", "node-tests", GATE_TEST_FAIL),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "a failing node:test test must block the land");
+	assert.match(result.stdout, /node-tests .*: FAILED/);
+});
+
+/**
+ * The drain is bounded by silence, not elapsed time, so both directions have to
+ * be pinned: a gate that keeps talking must outlive the limit, and one that goes
+ * quiet must be cut. `NOSEDIVE_GATE_IDLE_MS` exists so these cost a second
+ * rather than a minute; the default the runner ships is 30s.
+ */
+function withIdleLimit(ms, body) {
+	const previous = process.env.NOSEDIVE_GATE_IDLE_MS;
+	process.env.NOSEDIVE_GATE_IDLE_MS = String(ms);
+	try {
+		return body();
+	} finally {
+		if (previous === undefined) delete process.env.NOSEDIVE_GATE_IDLE_MS;
+		else process.env.NOSEDIVE_GATE_IDLE_MS = previous;
+	}
+}
+
+test("a node:test gate slower than the idle limit is not cut off", () => {
+	const { bridge, worktree } = setup("node-test-slow", [
+		gate("019fd471-0000-7000-8000-000000000034", "node-tests", GATE_TEST_TALKS_WHILE_SLOW),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = withIdleLimit(800, () => run(["land"], bridge));
+	assertOk(result, "a suite that keeps talking must not be killed for being slow");
+	assert.match(result.stdout, /node-tests .*: passed/);
+});
+
+test("a gate that goes silent with the loop open is failed, not left to hang", () => {
+	const { bridge, worktree, diveId } = setup("hanging", [
+		gate("019fd471-0000-7000-8000-000000000035", "hangs", GATE_HANGS_SILENTLY),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = withIdleLimit(800, () => run(["land"], bridge));
+	assert.notEqual(result.status, 0, "a hung gate must fail the land");
+	assert.match(result.stdout, /hangs .*: FAILED/);
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(
+		diveText,
+		/gate produced no output for 800ms; forcing exit/,
+		"the report must say why the gate was cut, not just that it failed",
+	);
 });
 
 test("test-is-flaky downgrades a failing gate to a warning", () => {

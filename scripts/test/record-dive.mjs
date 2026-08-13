@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -172,6 +172,34 @@ scopes:
 	assert.match(doc, /^id: [0-9a-f-]+$/m);
 });
 
+test("record.dive accepts --feat as the canonical create flag", () => {
+	const { bridge, repoCommit } = setup("create-feat");
+	const result = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(result, "record.dive create with --feat failed");
+	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
+	assert.match(doc, /^kind: dive$/m);
+	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
+	assert.match(doc, new RegExp(`^  effort: ${effortId}$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+});
+
+test("record.dive accepts --effort as a compatibility alias", () => {
+	const { bridge } = setup("create-effort-alias");
+	const result = run(["record.dive", "--effort", effortId], bridge);
+	assertOk(result, "record.dive create with --effort alias failed");
+	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^kind: dive$/m);
+});
+
+test("record.dive accepts matching --feat and --effort refs", () => {
+	const { bridge } = setup("create-matching-feat-effort");
+	const result = run(["record.dive", "--feat", effortId, "--effort", effortId], bridge);
+	assertOk(result, "record.dive create with matching --feat and --effort failed");
+	assert.match(
+		readFileSync(recordedPath(bridge, result.stdout), "utf8"),
+		new RegExp(`^  effort: ${effortId}$`, "m"),
+	);
+});
+
 test("record.dive patches only provided fields and can resolve its marker", () => {
 	const { bridge } = setup("patch");
 	const created = run(
@@ -194,11 +222,58 @@ test("record.dive patches only provided fields and can resolve its marker", () =
 	assert.match(doc, /## Brief\n\nKeep this\./);
 });
 
+test("record.dive patches the owning feat with --feat", () => {
+	const { bridge } = setup("patch-feat");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const feat = "019fc623-0000-7000-8000-000000000008";
+	write(
+		join(bridge, "kb", `${feat}.md`),
+		`---
+kind: feat
+id: ${feat}
+name: updated-feat
+gist: "Updated feat"
+---
+
+# Updated Feat
+`,
+	);
+	const updated = run(["record.dive", "--ref", id, "--feat", feat], bridge);
+	assertOk(updated, "record.dive patch with --feat failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^name: updated-feat\\.[0-9a-f]{6}$`, "m"));
+	assert.match(doc, new RegExp(`^  effort: ${feat}$`, "m"));
+});
+
+test("record.dive refuses mismatched --feat and --effort without writing", () => {
+	const { bridge } = setup("conflicting-feat-effort");
+	const beforeDocs = readdirSync(join(bridge, "kb"))
+		.filter((name) => name.endsWith(".md"))
+		.sort();
+	const result = run(
+		["record.dive", "--feat", effortId, "--effort", "019fc623-0000-7000-8000-000000000099"],
+		bridge,
+		"",
+	);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /--feat/);
+	assert.match(result.stderr, /--effort/);
+	assert.deepEqual(
+		readdirSync(join(bridge, "kb"))
+			.filter((name) => name.endsWith(".md"))
+			.sort(),
+		beforeDocs,
+	);
+});
+
 test("record.dive validates mutation modes", () => {
 	const { bridge } = setup("validation");
 	const missingEffort = run(["record.dive"], bridge, "");
 	assert.notEqual(missingEffort.status, 0);
-	assert.match(missingEffort.stderr, /requires --effort/);
+	assert.match(missingEffort.stderr, /requires --feat or --effort/);
 	const conflictingScopes = run(
 		["record.dive", "--effort", effortId, "--scope", repoId, "--clear-scopes"],
 		bridge,

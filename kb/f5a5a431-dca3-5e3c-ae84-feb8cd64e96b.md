@@ -31,7 +31,10 @@ never rewritten.
 Below the top level, a node's children are both spellings of one edge: the
 node's own `rel: child.feat` links, and any doc pointing back at it with
 `rel: parent.feat`. `pitch --parent` writes both, so a pitched feat renders
-under its parent with no further step.
+under its parent with no further step. A forward link is the parent's own
+filing decision, whatever its rel: once the parent names a doc, reverse
+discovery cannot overrule that decision. Reverse discovery only catches docs
+the parent has not filed yet.
 
 `--inject <ref>` appends a `rel: injected.feat` link for the named doc, which
 renders it under `## Injected`. This is how a feat pitched with no parent

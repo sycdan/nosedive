@@ -99,12 +99,15 @@ function isManagedKind(kind: string): boolean {
  */
 function backlogChildren(node: KbDoc, kbDocs: KbDoc[], byId: Map<string, KbDoc>): KbDoc[] {
 	const children = new Map<string, KbDoc>();
+	const filed = new Set(node.links.map((link) => link.id));
 	for (const link of node.links) {
 		if (!isEdgeRel(link.rel, "child")) continue;
 		const child = backlogEdgeTarget(node.relPath, link, byId);
 		children.set(child.id, child);
 	}
 	for (const doc of kbDocs) {
+		// A forward link is the parent's filing decision; discovery only fills in docs it has not filed yet.
+		if (filed.has(doc.id)) continue;
 		if (isManagedKind(doc.kind)) continue;
 		const claimsNode = doc.links.some((link) => {
 			if (link.id !== node.id) return false;

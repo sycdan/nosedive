@@ -12,6 +12,9 @@ const CHILD = "019fc623-1000-7000-8000-000000000002";
 const GRANDCHILD = "019fc623-1000-7000-8000-000000000003";
 const FUTURE = "019fc623-1000-7000-8000-000000000004";
 const UNLINKED = "019fc623-1000-7000-8000-000000000005";
+const FILED = "019fc623-1000-7000-8000-000000000006";
+const DISCOVERED = "019fc623-1000-7000-8000-000000000007";
+const UNAFFECTED = "019fc623-1000-7000-8000-000000000008";
 const REPO = "019fc623-1000-7000-8000-0000000000a1";
 const OTHER_REPO = "019fc623-1000-7000-8000-0000000000a2";
 
@@ -218,6 +221,50 @@ test("a bare parent link is a backlog edge only from a feat", () => {
 	const memo = readFileSync(path, "utf8");
 	assert.match(memo, /A feat with a bare parent/);
 	assert.doesNotMatch(memo, /A memo with a bare parent/);
+});
+
+test("a parent's own links decide which named docs are children", () => {
+	const bridge = seeded("update-backlog-parent-filing");
+	doc(bridge, CURRENT, {
+		name: "current-root",
+		gist: "The root.",
+		links: [
+			[CHILD, "child.feat"],
+			[FILED, "landed.feat"],
+			[UNAFFECTED, "working"],
+		],
+		body: "Current Root",
+	});
+	doc(bridge, CHILD, { name: "forward-child", gist: "Forward child.", body: "Forward Child" });
+	doc(bridge, FILED, {
+		name: "filed-elsewhere",
+		gist: "Filed elsewhere.",
+		links: [[CURRENT, "parent.feat"]],
+		body: "Filed Elsewhere",
+	});
+	doc(bridge, DISCOVERED, {
+		name: "reverse-child",
+		gist: "Reverse child.",
+		links: [[CURRENT, "parent.feat"]],
+		body: "Reverse Child",
+	});
+	doc(bridge, UNAFFECTED, {
+		name: "unrelated-filing",
+		gist: "Unrelated filing.",
+		body: "Unrelated Filing",
+	});
+	const path = backlogLinks(bridge, [[CURRENT, "current.feat"]]);
+
+	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	const memo = readFileSync(path, "utf8");
+	assert.match(memo, /Forward child\./, "a forward child.feat link must still render");
+	assert.match(memo, /Reverse child\./, "an unnamed doc must still be reverse-discovered");
+	assert.doesNotMatch(memo, /Filed elsewhere\./, "the parent's non-child filing must win");
+	assert.doesNotMatch(
+		memo,
+		/Unrelated filing\./,
+		"a named doc without a parent claim stays absent",
+	);
 });
 
 test("a backlog link naming an unknown doc fails", () => {

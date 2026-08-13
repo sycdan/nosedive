@@ -236,7 +236,10 @@ if (typeof mod.run !== "function") {
 	process.exit(1);
 }
 const outcome = await mod.run(JSON.parse(process.env.NOSEDIVE_GATE_CONTEXT));
-process.exit(outcome === false ? 1 : 0);
+if (outcome === false) process.exitCode = 1;
+// Let node:test report and set its verdict, but fail closed if a gate leaves an
+// open handle behind. Unref keeps this backstop from delaying ordinary gates.
+setTimeout(() => process.exit(1), 30_000).unref();
 `;
 
 function writeGateRunner(): string {

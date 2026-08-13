@@ -32,6 +32,10 @@ const GATE_FAIL =
 	'export function run() {\n\tconsole.error("gate says no");\n\tthrow new Error("gate says no");\n}\n';
 const GATE_FALSE =
 	'export function run() {\n\tconsole.error("returned false");\n\treturn false;\n}\n';
+const GATE_TEST_FAIL =
+	'import { test } from "node:test";\n\ntest("gate assertion", () => {\n\tthrow new Error("test says no");\n});\n\nexport function run() {}\n';
+const GATE_TEST_PASS =
+	'import { test } from "node:test";\n\ntest("gate assertion", () => {});\n\nexport function run() {}\n';
 const GATE_SLOW =
 	'export function run() {\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n\tconsole.error("slow gate finished");\n}\n';
 /** Speaks, then stalls: the only shape that can tell streaming from buffering. */
@@ -199,6 +203,16 @@ test("land runs a passing gate and publishes", () => {
 	assert.match(result.stdout, /builds .*: passed/);
 });
 
+test("a gate with passing node:test tests passes", () => {
+	const { bridge, worktree } = setup("node-test-passing", [
+		gate("019fd471-0000-7000-8000-000000000032", "node-tests", GATE_TEST_PASS),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assertOk(result, "passing node:test tests should pass the gate");
+	assert.match(result.stdout, /node-tests .*: passed/);
+});
+
 test("a failing gate refuses the land, pushes nothing, and reports into the dive", () => {
 	const { bridge, worktree, diveId } = setup("failing", [
 		gate("019fd471-0000-7000-8000-00000000000b", "builds", GATE_FAIL),
@@ -220,6 +234,16 @@ test("a failing gate refuses the land, pushes nothing, and reports into the dive
 		join(bridge, "workspace", "failing-repo"),
 	).stdout;
 	assert.doesNotMatch(branches, /work\/land-gates/, "nothing should have been pushed");
+});
+
+test("a gate with a failing node:test test fails", () => {
+	const { bridge, worktree } = setup("node-test-failing", [
+		gate("019fd471-0000-7000-8000-000000000033", "node-tests", GATE_TEST_FAIL),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "a failing node:test test must block the land");
+	assert.match(result.stdout, /node-tests .*: FAILED/);
 });
 
 test("test-is-flaky downgrades a failing gate to a warning", () => {

@@ -138,18 +138,6 @@ export function writeNosediveDirGitignore(bridgeDir: string): void {
 	writeFileAtomic(join(bridgeDir, BRIDGE_STATE_DIRNAME, ".gitignore"), NOSEDIVE_DIR_GITIGNORE);
 }
 
-export interface BacklogKbEffort {
-	doc: KbDoc;
-	title: string;
-	segments: string[];
-}
-
-export interface BacklogKbDisplayNode {
-	slug: string;
-	effort?: BacklogKbEffort;
-	children: Map<string, BacklogKbDisplayNode>;
-}
-
 export function firstMarkdownHeading(body: string, fallback: string): string {
 	const match = /^#\s+(.+?)\s*$/m.exec(body);
 	return match?.[1]?.trim() || fallback;
@@ -164,51 +152,12 @@ export function effortDocTitle(doc: KbDoc, leafSlug: string): string {
 	return firstMarkdownHeading(body, titleFromSlug(leafSlug));
 }
 
-export function effortHasParentLink(doc: KbDoc): boolean {
-	return doc.links.some((link) => link.rel === "parent");
+/** The title a backlog entry renders under: its H1, or its name's leaf slug. */
+export function backlogDocTitle(doc: KbDoc): string {
+	return effortDocTitle(doc, doc.name.split(".").filter(Boolean)[0] ?? doc.id);
 }
 
-export function loadBacklogKbEfforts(kbDocs: KbDoc[]): BacklogKbEffort[] {
-	return kbDocs
-		.filter((doc) => doc.kind === "feat")
-		.map((doc) => {
-			if (!doc.id) throw new Error(`effort doc is missing id: ${formatPath(doc.path)}`);
-			if (!uuidLike(doc.id)) throw new Error(`effort doc id is not UUID-shaped: ${doc.id}`);
-			if (!doc.name) throw new Error(`effort doc is missing name: ${formatPath(doc.path)}`);
-			const leafFirst = doc.name.split(".").filter(Boolean);
-			if (leafFirst.length === 0) {
-				throw new Error(`effort doc name has no readable slug chain: ${formatPath(doc.path)}`);
-			}
-			const segments = [...leafFirst].reverse();
-			return { doc, title: effortDocTitle(doc, leafFirst[0]!), segments };
-		})
-		.sort((a, b) => a.segments.join("/").localeCompare(b.segments.join("/")));
-}
-
-export function insertBacklogKbEffort(root: BacklogKbDisplayNode, effort: BacklogKbEffort): void {
-	let node = root;
-	for (const slug of effort.segments) {
-		let child = node.children.get(slug);
-		if (!child) {
-			child = { slug, children: new Map() };
-			node.children.set(slug, child);
-		}
-		node = child;
-	}
-	if (node.effort) throw new Error(`duplicate effort name in kb: ${effort.doc.name}`);
-	node.effort = effort;
-}
-
-export function appendBacklogKbEffortLine(
-	lines: string[],
-	effort: BacklogKbEffort,
-	depth = 0,
-): void {
-	const indent = "  ".repeat(depth);
-	const gist = effort.doc.gist ? `: ${effort.doc.gist}` : "";
-	lines.push(`${indent}- [${effort.title}](${basename(effort.doc.path)})${gist}`);
-}
-
-export function sortedBacklogKbChildren(node: BacklogKbDisplayNode): BacklogKbDisplayNode[] {
-	return [...node.children.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+export function backlogEntryLine(doc: KbDoc, depth: number): string {
+	const gist = doc.gist ? `: ${doc.gist}` : "";
+	return `${"  ".repeat(depth)}- [${backlogDocTitle(doc)}](${basename(doc.path)})${gist}`;
 }

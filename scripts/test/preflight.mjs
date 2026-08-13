@@ -447,7 +447,7 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 	const diveGist = /^gist: "(.+)"$/m.exec(diveText)[1];
 	assert.equal(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), `id: ${diveId}\n`);
 
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	assertOk(run(["update-backlog", "--inject", effortId], bridge), "update-backlog failed");
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight report failed");

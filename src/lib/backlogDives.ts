@@ -1,57 +1,154 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
-import { formatPath, MarkdownDoc, NosediveRc, parseMarkdownDoc } from "./coreParsing.js";
-import { KbDoc } from "./kbDocs.js";
+import {
+	formatPath,
+	parseMarkdownDoc,
+	parseYamlBlock,
+	splitMarkdownFrontmatter,
+	type MarkdownFrontmatterBlock,
+	type NosediveRc,
+} from "./coreParsing.js";
+import { KbDoc, LinkRef } from "./kbDocs.js";
+import { parseLinkRefs } from "./kbRefs.js";
 import { uuidLike } from "./repoWorkspaceCore.js";
 import {
-	BacklogKbDisplayNode,
-	BacklogKbEffort,
-	appendBacklogKbEffortLine,
-	effortHasParentLink,
-	insertBacklogKbEffort,
-	loadBacklogKbEfforts,
+	backlogDocTitle,
+	backlogEntryLine,
+	firstMarkdownHeading,
 	posixRelPath,
-	sortedBacklogKbChildren,
 } from "./packageBacklog.js";
-import { quoteYamlString } from "./renderPlan.js";
 
-export function appendBacklogKbDisplayNode(
-	lines: string[],
-	node: BacklogKbDisplayNode,
-	depth = 0,
-): void {
-	if (!node.effort && depth === 0) {
-		if (lines.at(-1) !== "") lines.push("");
-		lines.push(`### ${titleFromSlug(node.slug)}`, "");
-		for (const child of sortedBacklogKbChildren(node)) appendBacklogKbDisplayNode(lines, child, 0);
-		if (lines.at(-1) !== "") lines.push("");
-		return;
-	}
+/**
+ * The roles a backlog edge may name to mean "this is work". `effort` is the
+ * pre-rename spelling of `feat` and is still written across live bridges, so
+ * both are read; neither is ever written over.
+ */
+const FEAT_ROLES = new Set(["feat", "effort"]);
 
-	if (!node.effort) {
-		lines.push(`${"  ".repeat(depth)}- **${titleFromSlug(node.slug)}**`);
-		for (const child of sortedBacklogKbChildren(node))
-			appendBacklogKbDisplayNode(lines, child, depth + 1);
-		return;
-	}
+/** The rel `--inject` appends. Its predicate is what names the section. */
+export const INJECT_REL = "injected.feat";
 
-	appendBacklogKbEffortLine(lines, node.effort, depth);
-	for (const child of sortedBacklogKbChildren(node))
-		appendBacklogKbDisplayNode(lines, child, depth + 1);
+interface RelParts {
+	predicate: string;
+	role?: string;
 }
 
 /**
- * Every repo the backlog covers, as the union of its efforts' own scopes. The
- * memo is rebuilt from scratch on each `update-backlog`, so this is recomputed
- * rather than carried forward: a scope written on the memo by hand would not
- * survive the next run, and one that outlives the effort that justified it
- * would leave `record.dive --free` hydrating a repo nothing is working on.
+ * `<predicate>.<role>`, plus the legacy `<predicate>-effort` spelling that
+ * predates the grammar. A rel with no recognisable role is all predicate.
  */
-function backlogScopeRepoIds(efforts: BacklogKbEffort[], kbDocs: KbDoc[]): string[] {
+function relParts(rel: string | undefined): RelParts | undefined {
+	if (!rel) return undefined;
+	const dot = rel.indexOf(".");
+	if (dot > 0) return { predicate: rel.slice(0, dot), role: rel.slice(dot + 1) };
+	const dash = rel.lastIndexOf("-");
+	if (dash > 0 && FEAT_ROLES.has(rel.slice(dash + 1))) {
+		return { predicate: rel.slice(0, dash), role: rel.slice(dash + 1) };
+	}
+	return { predicate: rel };
+}
+
+function isFeatRole(role: string | undefined): boolean {
+	return role !== undefined && FEAT_ROLES.has(role);
+}
+
+/** A backlog root: any link on the memo whose rel names a feat-like role. */
+function isBacklogRootRel(rel: string | undefined): boolean {
+	return isFeatRole(relParts(rel)?.role);
+}
+
+function isEdgeRel(rel: string | undefined, predicate: string): boolean {
+	const parts = relParts(rel);
+	return parts?.predicate === predicate && (parts.role === undefined || isFeatRole(parts.role));
+}
+
+/**
+ * A doc named by a backlog edge. `dive` and `repo` are managed kinds -- a
+ * backlog that renders one is describing something that is not work, so say
+ * which link did it rather than printing it as an item.
+ */
+function backlogEdgeTarget(source: string, link: LinkRef, byId: Map<string, KbDoc>): KbDoc {
+	const rel = link.rel ?? "(no rel)";
+	const doc = byId.get(link.id);
+	if (!doc) throw new Error(`backlog link in ${source} names an unknown doc: ${link.id} (${rel})`);
+	if (isManagedKind(doc.kind)) {
+		throw new Error(
+			`backlog link in ${source} names a kind: ${doc.kind} doc, which is not work: ${link.id} (${rel})`,
+		);
+	}
+	return doc;
+}
+
+/** `dive` and `repo` are managed kinds. Whatever they link, they are not work. */
+function isManagedKind(kind: string): boolean {
+	return kind === "dive" || kind === "repo";
+}
+
+/**
+ * The children of a node, as the union of both spellings of one edge: the
+ * node's own `child.feat` links, and the docs pointing back at it with
+ * `parent.feat`.
+ *
+ * The two directions are not read equally strictly. A forward link is an
+ * authoring decision, so one naming a managed kind is an error worth stopping
+ * on. A reverse link is discovered, and every dive files itself under its feat
+ * -- so a managed kind pointing up is skipped rather than reported. A bare
+ * `parent` narrows further, to `kind: feat` only, or every idea and memo filed
+ * under an effort would render as work.
+ */
+function backlogChildren(node: KbDoc, kbDocs: KbDoc[], byId: Map<string, KbDoc>): KbDoc[] {
+	const children = new Map<string, KbDoc>();
+	for (const link of node.links) {
+		if (!isEdgeRel(link.rel, "child")) continue;
+		const child = backlogEdgeTarget(node.relPath, link, byId);
+		children.set(child.id, child);
+	}
+	for (const doc of kbDocs) {
+		if (isManagedKind(doc.kind)) continue;
+		const claimsNode = doc.links.some((link) => {
+			if (link.id !== node.id) return false;
+			const parts = relParts(link.rel);
+			if (parts?.predicate !== "parent") return false;
+			return isFeatRole(parts.role) || (parts.role === undefined && doc.kind === "feat");
+		});
+		if (claimsNode) children.set(doc.id, doc);
+	}
+	return [...children.values()].sort((a, b) =>
+		backlogDocTitle(a).localeCompare(backlogDocTitle(b)),
+	);
+}
+
+function appendBacklogSubtree(
+	lines: string[],
+	doc: KbDoc,
+	depth: number,
+	kbDocs: KbDoc[],
+	byId: Map<string, KbDoc>,
+	rendered: Set<string>,
+	ancestors: string[],
+): void {
+	if (ancestors.includes(doc.id)) {
+		throw new Error(`backlog child links form a cycle: ${[...ancestors, doc.id].join(" -> ")}`);
+	}
+	if (rendered.has(doc.id)) return;
+	rendered.add(doc.id);
+	lines.push(backlogEntryLine(doc, depth));
+	for (const child of backlogChildren(doc, kbDocs, byId)) {
+		appendBacklogSubtree(lines, child, depth + 1, kbDocs, byId, rendered, [...ancestors, doc.id]);
+	}
+}
+
+/**
+ * Every repo the rendered backlog covers, as the union of the scopes of the
+ * docs it actually shows. Derived rather than hand-kept so `record.dive --free`
+ * never hydrates a repo the backlog stopped naming, but spliced rather than
+ * rewritten so a scope that survives keeps whatever was written on it.
+ */
+function backlogScopeRepoIds(docs: KbDoc[], kbDocs: KbDoc[]): string[] {
 	const repoIds = new Set<string>();
-	for (const effort of efforts) {
-		for (const scope of effort.doc.scopes) {
+	for (const doc of docs) {
+		for (const scope of doc.scopes) {
 			if (scope.repoId !== ".") repoIds.add(scope.repoId);
 		}
 	}
@@ -59,53 +156,153 @@ function backlogScopeRepoIds(efforts: BacklogKbEffort[], kbDocs: KbDoc[]): strin
 	return [...repoIds].sort((a, b) => (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b));
 }
 
-export function renderUpdatedBacklogMemo(
-	rc: NosediveRc,
-	memo: MarkdownDoc,
-	memoId: string,
-	kbDocs: KbDoc[],
-): string {
-	const efforts = loadBacklogKbEfforts(kbDocs);
-	const root: BacklogKbDisplayNode = { slug: "", children: new Map() };
-	for (const effort of efforts) insertBacklogKbEffort(root, effort);
-	const scopeRepoIds = backlogScopeRepoIds(efforts, kbDocs);
+/**
+ * The raw lines of each existing `scopes:` entry, by repo id. Read as text
+ * because a scope carries an open set of keys -- `note:` among them -- that no
+ * parsed shape keeps, and a rewrite that dropped them would lose the pilot's
+ * own words on every run.
+ */
+function rawScopeEntries(yamlLines: string[]): Map<string, string[]> {
+	const entries = new Map<string, string[]>();
+	const start = yamlLines.findIndex((line) => /^scopes:/.test(line));
+	if (start < 0) return entries;
 
-	const topEfforts = efforts.filter((effort) => !effortHasParentLink(effort.doc));
-	const links = topEfforts.map((effort) => ({
-		[posixRelPath(rc.bridgeDir, effort.doc.path)]: { rel: "main-effort" },
-	}));
-	const lines = ["# Backlog", "", "## Current efforts", ""];
-	if (efforts.length === 0) {
-		lines.push("No current efforts.");
-	} else {
-		for (const node of sortedBacklogKbChildren(root)) appendBacklogKbDisplayNode(lines, node);
-		while (lines.at(-1) === "") lines.pop();
+	let id: string | undefined;
+	let buffer: string[] = [];
+	const flush = (): void => {
+		if (id) entries.set(id, buffer);
+		id = undefined;
+		buffer = [];
+	};
+	for (const line of yamlLines.slice(start + 1)) {
+		if (/^\S/.test(line)) break;
+		const entry = /^\s*-\s+(.+?)\s*$/.exec(line);
+		if (entry) {
+			flush();
+			id = entry[1]!.replace(/:$/, "").trim();
+		}
+		if (id) buffer.push(line);
+	}
+	flush();
+	return entries;
+}
+
+/**
+ * Rewrite the `scopes:` block to the derived set, carrying each surviving
+ * entry's own lines across so keys nothing parses -- `note:` among them --
+ * outlive the run. A derivation of nothing is no information rather than a
+ * verdict: feats routinely carry no scopes at all, so an empty set leaves
+ * whatever the memo already said alone instead of deleting it.
+ */
+function spliceScopes(
+	yamlLines: string[],
+	repoIds: string[],
+	existing: Map<string, string[]>,
+): string[] {
+	if (repoIds.length === 0) return yamlLines;
+	const block = [
+		"scopes:",
+		...repoIds.flatMap((repoId) => existing.get(repoId) ?? [`  - ${repoId}`]),
+	];
+
+	const start = yamlLines.findIndex((line) => /^scopes:/.test(line));
+	if (start < 0) {
+		const links = yamlLines.findIndex((line) => /^links:/.test(line));
+		const at = links < 0 ? yamlLines.length : links;
+		return [...yamlLines.slice(0, at), ...block, ...yamlLines.slice(at)];
+	}
+	let end = start + 1;
+	while (end < yamlLines.length && !/^\S/.test(yamlLines[end]!)) end += 1;
+	return [...yamlLines.slice(0, start), ...block, ...yamlLines.slice(end)];
+}
+
+/**
+ * Append `rel: injected.feat` links for docs the memo does not already carry as
+ * work. Appending is the whole contract: an existing link's rel is the pilot's
+ * own filing and is never rewritten to match the flag.
+ */
+export function injectBacklogLinks(
+	yamlLines: string[],
+	bridgeDir: string,
+	docs: KbDoc[],
+	alreadyLinked: (doc: KbDoc) => boolean,
+): { lines: string[]; injected: KbDoc[]; skipped: KbDoc[] } {
+	const injected = docs.filter((doc) => !alreadyLinked(doc));
+	const skipped = docs.filter((doc) => alreadyLinked(doc));
+	if (injected.length === 0) return { lines: yamlLines, injected, skipped };
+
+	const added = injected.flatMap((doc) => [
+		`  - ${posixRelPath(bridgeDir, doc.path)}:`,
+		`      rel: ${INJECT_REL}`,
+	]);
+	const start = yamlLines.findIndex((line) => /^links:/.test(line));
+	if (start < 0) return { lines: [...yamlLines, "links:", ...added], injected, skipped };
+	let end = start + 1;
+	while (end < yamlLines.length && !/^\S/.test(yamlLines[end]!)) end += 1;
+	return {
+		lines: [...yamlLines.slice(0, end), ...added, ...yamlLines.slice(end)],
+		injected,
+		skipped,
+	};
+}
+
+export function backlogMemoHasWorkLink(yamlLinks: LinkRef[], doc: KbDoc): boolean {
+	return yamlLinks.some((link) => link.id === doc.id && isBacklogRootRel(link.rel));
+}
+
+export { isBacklogRootRel };
+
+/**
+ * The backlog body, rendered from the memo's own links and nothing else. The
+ * memo names its roots; each root's child edges name the rest. Nothing is
+ * discovered by scanning the kb for a kind, so a doc appears here because
+ * somebody linked it, not because of what it is called.
+ */
+export function renderUpdatedBacklogMemo(
+	memoText: string,
+	memoPath: string,
+	kbDocs: KbDoc[],
+	injectYamlLines?: string[],
+): string {
+	const label = formatPath(memoPath);
+	const block: MarkdownFrontmatterBlock = splitMarkdownFrontmatter(memoText, label);
+	const yamlLines = injectYamlLines ?? block.yaml.split(/\r?\n/);
+	const fm = parseYamlBlock(yamlLines.join("\n"), `frontmatter in ${label}`);
+
+	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const roots = parseLinkRefs(fm.raw.links, memoPath).filter((link) => isBacklogRootRel(link.rel));
+
+	const sections = new Map<string, KbDoc[]>();
+	for (const link of roots) {
+		const predicate = relParts(link.rel)!.predicate;
+		const doc = backlogEdgeTarget(label, link, byId);
+		sections.set(predicate, [...(sections.get(predicate) ?? []), doc]);
 	}
 
-	const name = memo.fm.scalars.name || `backlog.${basename(rc.bridgeDir)}`;
-	const gist = memo.fm.scalars.gist || `Current backlog for ${basename(rc.bridgeDir)}.`;
-	return [
-		"---",
-		"kind: memo",
-		`id: ${memoId}`,
-		`name: ${quoteYamlString(name)}`,
-		`gist: ${quoteYamlString(gist)}`,
-		...(scopeRepoIds.length > 0
-			? ["scopes:", ...scopeRepoIds.map((repoId) => `  - ${repoId}`)]
-			: []),
-		...(links.length > 0
-			? [
-					"links:",
-					...links.flatMap((link) => {
-						const [target, value] = Object.entries(link)[0]!;
-						return [`  - ${target}:`, `      rel: ${value.rel}`];
-					}),
-				]
-			: []),
-		"---",
-		"",
-		`${lines.join("\n")}\n`,
-	].join("\n");
+	const rendered = new Set<string>();
+	const shown: KbDoc[] = [];
+	const fallback = titleFromSlug((fm.scalars.name || "backlog").split(".")[0]!);
+	const lines = [`# ${firstMarkdownHeading(block.body, fallback)}`];
+	for (const predicate of [...sections.keys()].sort((a, b) => a.localeCompare(b))) {
+		const docs = [...sections.get(predicate)!].sort((a, b) =>
+			backlogDocTitle(a).localeCompare(backlogDocTitle(b)),
+		);
+		const section: string[] = [];
+		for (const doc of docs) {
+			appendBacklogSubtree(section, doc, 0, kbDocs, byId, rendered, []);
+		}
+		if (section.length === 0) continue;
+		lines.push("", `## ${titleFromSlug(predicate)}`, "", ...section);
+	}
+	if (rendered.size === 0) lines.push("", "The backlog links no work.");
+	for (const id of rendered) shown.push(byId.get(id)!);
+
+	const scoped = spliceScopes(
+		yamlLines,
+		backlogScopeRepoIds(shown, kbDocs),
+		rawScopeEntries(yamlLines),
+	);
+	return ["---", ...scoped, "---", "", `${lines.join("\n")}\n`].join("\n");
 }
 
 /** The rendered body of the bridge's configured backlog memo. Shared by `dump-backlog` and `preflight`. */

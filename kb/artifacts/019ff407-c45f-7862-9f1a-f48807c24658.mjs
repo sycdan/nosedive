@@ -141,7 +141,10 @@ function linkTargetId(link) {
 }
 
 function canonicalFeatRel(rel) {
-	if (!rel) return "main-effort.feat";
+	// `main-effort` is what the L0->L1 seed wrote for every root, so it is a
+	// machine default rather than the pilot's filing, and L2 renders it as
+	// `## Current`. Any other rel is the pilot's and only gains the role.
+	if (!rel || rel === "main-effort") return "current.feat";
 	return rel.endsWith(".feat") ? rel : `${rel}.feat`;
 }
 

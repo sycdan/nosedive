@@ -56,14 +56,19 @@ jobs:
             echo "version=$(node scripts/version.mjs)" >> "$GITHUB_OUTPUT"
             echo "tag=dev" >> "$GITHUB_OUTPUT"
           fi
-      - name: Stamp version
-        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
       - name: Typecheck
         run: npm run typecheck
       - name: Build
         run: npm run build
+      # Before the stamp, on purpose. nosedive renders its own reproducible
+      # invocation from the running package version, so a stamped-but-unpublished
+      # version makes every `npx -y nosedive@<version>` it writes unresolvable --
+      # including the managed pre-push hook the suite executes. At 0.0.0-dev the
+      # invocation is the local build, which is what every developer machine runs.
       - name: Smoke test
         run: npm test
+      - name: Stamp version
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
       - name: Package bin smoke test
         run: npm run test:pack-bin
       # npm rejects duplicate versions, which enforces the one-release-per-day rule.

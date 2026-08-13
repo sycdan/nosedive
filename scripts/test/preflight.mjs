@@ -126,11 +126,11 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 		`unexpected workspace line: ${workspaceLine}`,
 	);
 	assert.doesNotMatch(preflight.stdout, /nosedive-current-dive-id/);
-	assert.doesNotMatch(preflight.stdout, /nosedive-current-effort/);
+	assert.doesNotMatch(preflight.stdout, /nosedive-current-feat/);
 	assert.match(preflight.stdout, /^== pilot identification ==$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-name: Install Pilot$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-email: install-pilot@example\.invalid$/m);
-	assert.match(preflight.stdout, /^== open work: current effort backlog ==$/m);
+	assert.match(preflight.stdout, /^== open work: current feat backlog ==$/m);
 	assert.match(preflight.stderr, /dump-backlog requires a UUID-shaped backlog memo id/);
 
 	const preflightAgain = run(["preflight"], bridge);
@@ -245,7 +245,7 @@ test("preflight takes over an unwired foreign hook and chains it", () => {
 	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(foreignHook));
 	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
 	assert.equal(readFileSync(originalRecord(bridge), "utf8"), `${posix(dirname(foreignHook))}\n`);
-	assert.match(foreignPreflight.stdout, /^== open work: current effort backlog ==$/m);
+	assert.match(foreignPreflight.stdout, /^== open work: current feat backlog ==$/m);
 });
 
 test("preflight leaves a wired foreign hook untouched and reports", () => {
@@ -264,7 +264,7 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 	assert.equal(preflight.stderr, "", `unexpected stderr:\n${preflight.stderr}`);
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 	assert.match(preflight.stdout, /^== pilot identification ==$/m);
-	assert.match(preflight.stdout, /^== open work: current effort backlog ==$/m);
+	assert.match(preflight.stdout, /^== open work: current feat backlog ==$/m);
 });
 
 test("preflight takes over a core.hooksPath that names no wired hook", () => {
@@ -285,7 +285,7 @@ test("preflight takes over a core.hooksPath that names no wired hook", () => {
 	// git reads exactly one hooks directory, and the loser rots unwatched.
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
 	assert.match(hooksPathPreflight.stdout, /^Installed nosedive pre-push hook:/m);
-	assert.match(hooksPathPreflight.stdout, /^== open work: current effort backlog ==$/m);
+	assert.match(hooksPathPreflight.stdout, /^== open work: current feat backlog ==$/m);
 });
 
 test("preflight reconciles the same hooks path again without re-chaining itself", () => {
@@ -426,7 +426,7 @@ test("preflight leaves a wired core.hooksPath hook untouched and reports", () =>
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 });
 
-test("preflight reports bridge status, pilot identity, and the active dive/effort/backlog", () => {
+test("preflight reports bridge status, pilot identity, and the active dive/feat/backlog", () => {
 	const bridge = createBridge(tmp, "report-bridge");
 	setIdentity(bridge, "Report Pilot", "report-pilot@example.invalid");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
@@ -451,10 +451,11 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight report failed");
+	assert.doesNotMatch(preflight.stdout, /nosedive-current-effort|current effort backlog/);
 
 	const bridgeIdx = preflight.stdout.indexOf("== bridge status ==");
 	const pilotIdx = preflight.stdout.indexOf("== pilot identification ==");
-	const backlogIdx = preflight.stdout.indexOf("== open work: current effort backlog ==");
+	const backlogIdx = preflight.stdout.indexOf("== open work: current feat backlog ==");
 	assert.ok(
 		bridgeIdx !== -1 && bridgeIdx < pilotIdx && pilotIdx < backlogIdx,
 		`sections missing or out of order:\n${preflight.stdout}`,
@@ -475,7 +476,7 @@ test("preflight reports bridge status, pilot identity, and the active dive/effor
 	);
 	assert.match(
 		preflight.stdout,
-		new RegExp(`^nosedive-current-effort: ${escapeRegExp(effortId)}$`, "m"),
+		new RegExp(`^nosedive-current-feat: ${escapeRegExp(effortId)}$`, "m"),
 	);
 	assert.match(preflight.stdout, /^nosedive-pilot-name: Report Pilot$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-email: report-pilot@example\.invalid$/m);
@@ -679,7 +680,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	// Dives outrank the backlog: what the pilot is in the middle of comes first.
 	assert.ok(
 		preflight.stdout.indexOf("== dives ==") <
-			preflight.stdout.indexOf("== open work: current effort backlog =="),
+			preflight.stdout.indexOf("== open work: current feat backlog =="),
 		"the dive section should print above the backlog",
 	);
 	assert.match(preflight.stdout, /Run `jump` only when the pilot asks for it\./);

@@ -247,7 +247,7 @@ function loadBridgeKbDocs(rc: NosediveRc, io: CommandIo): KbDoc[] | undefined {
 }
 
 /**
- * Prints `nosedive-current-dive-id`/`-gist`/`nosedive-current-effort`. No
+ * Prints `nosedive-current-dive-id`/`-gist`/`nosedive-current-feat`. No
  * active dive means no lines and no noise; a marker that fails to resolve
  * past that point prints whatever did resolve and puts the reason on stderr.
  */
@@ -276,7 +276,7 @@ function printCurrentDiveAndEffort(
 	if (!activeDive.effortRef) return;
 	try {
 		const effort = resolveEffortDoc(kbDocs, rc, activeDive.effortRef);
-		io.log(`nosedive-current-effort: ${effort.id}`);
+		io.log(`nosedive-current-feat: ${effort.id}`);
 	} catch (err) {
 		io.err(err instanceof Error ? err.message : String(err));
 	}
@@ -362,7 +362,7 @@ function printSessionReport(
 	printDives(rc, kbDocs, io);
 	io.log("");
 
-	io.log("== open work: current effort backlog ==");
+	io.log("== open work: current feat backlog ==");
 	try {
 		io.writeOut(bridgeBacklogMemoBody(rc));
 	} catch (err) {

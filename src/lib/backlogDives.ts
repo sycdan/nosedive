@@ -86,36 +86,29 @@ function isManagedKind(kind: string): boolean {
 }
 
 /**
- * The children of a node, as the union of both spellings of one edge: the
- * node's own `child.feat` links, and the docs pointing back at it with
- * `parent.feat`.
+ * The children of a node: its own `child.feat` links, and nothing else.
  *
- * The two directions are not read equally strictly. A forward link is an
- * authoring decision, so one naming a managed kind is an error worth stopping
- * on. A reverse link is discovered, and every dive files itself under its feat
- * -- so a managed kind pointing up is skipped rather than reported. A bare
- * `parent` narrows further, to `kind: feat` only, or every idea and memo filed
- * under an effort would render as work.
+ * `child.feat` is the only edge that means open work. Every other predicate on
+ * a `.feat` edge is reference -- it records a relation without claiming the
+ * target is open -- so a node's own links are the whole statement about what
+ * hangs below it.
+ *
+ * Discovery in the other direction is deliberately absent. A doc pointing back
+ * with `parent.feat` was once picked up here too, which meant a parent could
+ * never take finished work off the backlog: whatever it wrote, the child's own
+ * link put the child back. Openness is a claim the pointing node makes, so the
+ * node that can no longer see the work as open has to be the one holding the
+ * edge.
+ *
+ * The cost is that filing is two writes rather than one. `pitch --parent`
+ * already does both, so nothing that files work through nosedive notices.
  */
-function backlogChildren(node: KbDoc, kbDocs: KbDoc[], byId: Map<string, KbDoc>): KbDoc[] {
+function backlogChildren(node: KbDoc, byId: Map<string, KbDoc>): KbDoc[] {
 	const children = new Map<string, KbDoc>();
-	const filed = new Set(node.links.map((link) => link.id));
 	for (const link of node.links) {
 		if (!isEdgeRel(link.rel, "child")) continue;
 		const child = backlogEdgeTarget(node.relPath, link, byId);
 		children.set(child.id, child);
-	}
-	for (const doc of kbDocs) {
-		// A forward link is the parent's filing decision; discovery only fills in docs it has not filed yet.
-		if (filed.has(doc.id)) continue;
-		if (isManagedKind(doc.kind)) continue;
-		const claimsNode = doc.links.some((link) => {
-			if (link.id !== node.id) return false;
-			const parts = relParts(link.rel);
-			if (parts?.predicate !== "parent") return false;
-			return isFeatRole(parts.role) || (parts.role === undefined && doc.kind === "feat");
-		});
-		if (claimsNode) children.set(doc.id, doc);
 	}
 	return [...children.values()].sort((a, b) =>
 		backlogDocTitle(a).localeCompare(backlogDocTitle(b)),
@@ -126,7 +119,6 @@ function appendBacklogSubtree(
 	lines: string[],
 	doc: KbDoc,
 	depth: number,
-	kbDocs: KbDoc[],
 	byId: Map<string, KbDoc>,
 	rendered: Set<string>,
 	ancestors: string[],
@@ -137,8 +129,8 @@ function appendBacklogSubtree(
 	if (rendered.has(doc.id)) return;
 	rendered.add(doc.id);
 	lines.push(backlogEntryLine(doc, depth));
-	for (const child of backlogChildren(doc, kbDocs, byId)) {
-		appendBacklogSubtree(lines, child, depth + 1, kbDocs, byId, rendered, [...ancestors, doc.id]);
+	for (const child of backlogChildren(doc, byId)) {
+		appendBacklogSubtree(lines, child, depth + 1, byId, rendered, [...ancestors, doc.id]);
 	}
 }
 
@@ -292,7 +284,7 @@ export function renderUpdatedBacklogMemo(
 		);
 		const section: string[] = [];
 		for (const doc of docs) {
-			appendBacklogSubtree(section, doc, 0, kbDocs, byId, rendered, []);
+			appendBacklogSubtree(section, doc, 0, byId, rendered, []);
 		}
 		if (section.length === 0) continue;
 		lines.push("", `## ${titleFromSlug(predicate)}`, "", ...section);

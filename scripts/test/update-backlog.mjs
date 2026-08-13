@@ -81,7 +81,14 @@ function standardTree(bridge) {
 		links: [[CHILD, "child.feat"]],
 		body: "Current Root",
 	});
-	doc(bridge, CHILD, { name: "child-feat", gist: "A child.", body: "Child Feat" });
+	doc(bridge, CHILD, {
+		name: "child-feat",
+		gist: "A child.",
+		links: [[GRANDCHILD, "child.feat"]],
+		body: "Child Feat",
+	});
+	// The grandchild still points back, to prove it renders because the child
+	// names it and not because it claims the child.
 	doc(bridge, GRANDCHILD, {
 		name: "grandchild-feat",
 		gist: "A grandchild.",
@@ -183,10 +190,22 @@ test("a backlog link naming a managed kind fails", () => {
 	}
 });
 
-test("a managed kind pointing back at a feat is skipped, not reported", () => {
-	const bridge = seeded("update-backlog-reverse-managed");
+test("a doc pointing back at a feat is never a child of it", () => {
+	const bridge = seeded("update-backlog-no-reverse");
 	doc(bridge, CURRENT, { name: "current-root", gist: "The root.", body: "Current Root" });
 	doc(bridge, CHILD, {
+		name: "feat-child",
+		gist: "A feat claiming a parent.",
+		links: [[CURRENT, "parent.feat"]],
+		body: "Feat Child",
+	});
+	doc(bridge, GRANDCHILD, {
+		name: "bare-parent-child",
+		gist: "A feat with a bare parent.",
+		links: [[CURRENT, "parent"]],
+		body: "Bare Parent Child",
+	});
+	doc(bridge, DISCOVERED, {
 		kind: "dive",
 		name: "a-dive.current-root",
 		gist: "A dive filed under its feat.",
@@ -195,76 +214,35 @@ test("a managed kind pointing back at a feat is skipped, not reported", () => {
 	});
 	const path = backlogLinks(bridge, [[CURRENT, "current.feat"]]);
 
-	assertOk(run(["update-backlog"], bridge), "a dive pointing up must not fail the render");
-	assert.doesNotMatch(readFileSync(path, "utf8"), /A dive filed under its feat/);
-});
-
-test("a bare parent link is a backlog edge only from a feat", () => {
-	const bridge = seeded("update-backlog-bare-parent");
-	doc(bridge, CURRENT, { name: "current-root", gist: "The root.", body: "Current Root" });
-	doc(bridge, CHILD, {
-		name: "feat-child",
-		gist: "A feat with a bare parent.",
-		links: [[CURRENT, "parent"]],
-		body: "Feat Child",
-	});
-	doc(bridge, GRANDCHILD, {
-		kind: "memo",
-		name: "memo-child",
-		gist: "A memo with a bare parent.",
-		links: [[CURRENT, "parent"]],
-		body: "Memo Child",
-	});
-	const path = backlogLinks(bridge, [[CURRENT, "current.feat"]]);
-
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	assertOk(run(["update-backlog"], bridge), "a doc pointing up must not fail the render");
 	const memo = readFileSync(path, "utf8");
-	assert.match(memo, /A feat with a bare parent/);
-	assert.doesNotMatch(memo, /A memo with a bare parent/);
+	assert.doesNotMatch(memo, /A feat claiming a parent/, "parent.feat must not open work");
+	assert.doesNotMatch(memo, /A feat with a bare parent/, "a bare parent must not open work");
+	assert.doesNotMatch(memo, /A dive filed under its feat/, "every dive points at its feat");
 });
 
-test("a parent's own links decide which named docs are children", () => {
-	const bridge = seeded("update-backlog-parent-filing");
+test("child.feat is the only predicate that opens work", () => {
+	const bridge = seeded("update-backlog-child-only");
 	doc(bridge, CURRENT, {
 		name: "current-root",
 		gist: "The root.",
 		links: [
 			[CHILD, "child.feat"],
-			[FILED, "landed.feat"],
-			[UNAFFECTED, "working"],
+			[FILED, "closed.feat"],
+			[UNAFFECTED, "related.feat"],
 		],
 		body: "Current Root",
 	});
-	doc(bridge, CHILD, { name: "forward-child", gist: "Forward child.", body: "Forward Child" });
-	doc(bridge, FILED, {
-		name: "filed-elsewhere",
-		gist: "Filed elsewhere.",
-		links: [[CURRENT, "parent.feat"]],
-		body: "Filed Elsewhere",
-	});
-	doc(bridge, DISCOVERED, {
-		name: "reverse-child",
-		gist: "Reverse child.",
-		links: [[CURRENT, "parent.feat"]],
-		body: "Reverse Child",
-	});
-	doc(bridge, UNAFFECTED, {
-		name: "unrelated-filing",
-		gist: "Unrelated filing.",
-		body: "Unrelated Filing",
-	});
+	doc(bridge, CHILD, { name: "open-child", gist: "Open child.", body: "Open Child" });
+	doc(bridge, FILED, { name: "closed-work", gist: "Closed work.", body: "Closed Work" });
+	doc(bridge, UNAFFECTED, { name: "reference", gist: "Reference only.", body: "Reference" });
 	const path = backlogLinks(bridge, [[CURRENT, "current.feat"]]);
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
 	const memo = readFileSync(path, "utf8");
-	assert.match(memo, /Forward child\./, "a forward child.feat link must still render");
-	assert.match(memo, /Reverse child\./, "an unnamed doc must still be reverse-discovered");
-	assert.doesNotMatch(memo, /Filed elsewhere\./, "the parent's non-child filing must win");
-	assert.doesNotMatch(
-		memo,
-		/Unrelated filing\./,
-		"a named doc without a parent claim stays absent",
-	);
+	assert.match(memo, /Open child\./, "a child.feat link opens work");
+	assert.doesNotMatch(memo, /Closed work\./, "closed.feat is reference, not open work");
+	assert.doesNotMatch(memo, /Reference only\./, "any other predicate is reference too");
 });
 
 test("a backlog link naming an unknown doc fails", () => {

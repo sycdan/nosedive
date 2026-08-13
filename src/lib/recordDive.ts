@@ -52,6 +52,8 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		scopes: [],
 		clearScopes: false,
 	};
+	let featValue: string | undefined;
+	let effortValue: string | undefined;
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === "--clear-scopes") {
@@ -66,9 +68,16 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 			options.takeover = true;
 			continue;
 		}
-		const flag = ["--ref", "--effort", "--gist", "--title", "--brief", "--diver", "--scope"].find(
-			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
-		);
+		const flag = [
+			"--ref",
+			"--feat",
+			"--effort",
+			"--gist",
+			"--title",
+			"--brief",
+			"--diver",
+			"--scope",
+		].find((candidate) => arg === candidate || arg.startsWith(`${candidate}=`));
 		if (!flag) {
 			if (arg.startsWith("--")) throw new Error(`unknown record.dive option: ${arg}`);
 			throw new Error(`unexpected record.dive argument: ${arg}`);
@@ -78,12 +87,17 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		if (arg === flag) i += 1;
 		if (flag === "--scope") options.scopes.push(value);
 		else if (flag === "--ref") options.ref = value;
-		else if (flag === "--effort") options.effort = value;
+		else if (flag === "--feat") featValue = value;
+		else if (flag === "--effort") effortValue = value;
 		else if (flag === "--gist") options.gist = value;
 		else if (flag === "--title") options.title = value;
 		else if (flag === "--brief") options.brief = value;
 		else options.diver = value;
 	}
+	if (featValue !== undefined && effortValue !== undefined && featValue !== effortValue) {
+		throw new Error("--feat and --effort name different refs");
+	}
+	options.effort = featValue ?? effortValue;
 	// A free dive takes its every field from the bridge, so any other option can
 	// only describe a dive this is not: it is checked first, and returns before
 	// the rules that assume an effort-owned dive.
@@ -95,7 +109,7 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		throw new Error("--clear-scopes cannot be combined with --scope");
 	}
 	if (!options.ref && !options.effort)
-		throw new Error("record.dive requires --effort when creating a dive");
+		throw new Error("record.dive requires --feat or --effort when creating a dive");
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
 		throw new Error("gist cannot be empty");
 	}

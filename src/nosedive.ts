@@ -30,8 +30,8 @@ import {
 	type KbDoc,
 } from "./lib/commands.js";
 import { lib, namespacedUuid, type CommandLibRegistry } from "./lib/index.js";
-export { collectDiveGates, collectLandGates } from "./lib/landGates.js";
 import { executePrompt } from "./lib/promptExecution.js";
+export { collectDiveGates, collectLandGates } from "./lib/landGates.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

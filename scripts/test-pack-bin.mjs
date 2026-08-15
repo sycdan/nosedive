@@ -6,8 +6,34 @@ import { spawnSync } from "node:child_process";
 
 const npmExecPath = process.env.npm_execpath;
 
+/**
+ * Mirrors `GIT_LOCAL_ENV_KEYS` in src/lib/constants.ts.
+ *
+ * This script runs `git init` in a temporary directory and then runs the packed
+ * CLI there. Git sets these when it invokes a hook, so inheriting them makes
+ * every child resolve the *outer* repository instead of the temporary one --
+ * which surfaces as the packed `seed` refusing with "must be run inside a git
+ * repository", from inside a directory that plainly is one. That made this
+ * script pass when run by hand and fail when run from `.githooks/pre-push`.
+ */
+const GIT_LOCAL_ENV_KEYS = [
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_COMMON_DIR",
+	"GIT_DIR",
+	"GIT_INDEX_FILE",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_PREFIX",
+	"GIT_WORK_TREE",
+];
+
+function cleanEnv() {
+	const env = { ...process.env };
+	for (const key of GIT_LOCAL_ENV_KEYS) delete env[key];
+	return env;
+}
+
 function run(command, args, cwd) {
-	const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+	const result = spawnSync(command, args, { cwd, encoding: "utf8", env: cleanEnv() });
 	assert.equal(
 		result.status,
 		0,

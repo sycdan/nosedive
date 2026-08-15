@@ -15,12 +15,33 @@ interface HydratedRepo {
 	path: string;
 }
 
+export interface GateRepoSurvey {
+	hydrated: HydratedRepo[];
+	/** Repo docs with no worktree on disk, so no entry in `ctx.repos`. */
+	skipped: KbDoc[];
+}
+
+/**
+ * Collects the repos already on disk. It hydrates nothing despite the name --
+ * no clone, no fetch, no checkout -- and never consults a dive's scope pins, so
+ * gates see the workspace exactly as it currently stands.
+ *
+ * A repo with no worktree is skipped rather than refused: a bridge legitimately
+ * carries repo docs it has never hydrated, and the backlog sweep runs against
+ * whatever is present. But the skip is returned rather than swallowed, because
+ * a gate looping over `ctx.repos` reports success when it checked nothing, and
+ * silence is what makes that vacuous pass invisible.
+ *
+ * A path that exists but is unusable is still a hard failure -- that is a broken
+ * workspace, not an absent one.
+ */
 export function hydrateGateRepos(
 	kbDocs: KbDoc[],
 	bridgeDir: string,
 	workspaceDir: string | undefined,
-): HydratedRepo[] {
+): GateRepoSurvey {
 	const hydrated: HydratedRepo[] = [];
+	const skipped: KbDoc[] = [];
 	if (workspaceDir) {
 		for (const repo of kbDocs.filter((candidate) => candidate.kind === "repo")) {
 			const resolved = hydratedScopedRepoPath(
@@ -31,9 +52,10 @@ export function hydrateGateRepos(
 			);
 			if (resolved.failure) throw new Error(`test refuses: ${resolved.failure.reasons.join("; ")}`);
 			if (resolved.path) hydrated.push({ repoId: repo.id, path: resolved.path });
+			else skipped.push(repo);
 		}
 	}
-	return hydrated;
+	return { hydrated, skipped };
 }
 
 export async function runGateSession(

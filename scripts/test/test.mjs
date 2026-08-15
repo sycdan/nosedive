@@ -384,3 +384,24 @@ test("a dive that links no gates is reported rather than called green", () => {
 	assert.match(result.stderr, /selects no test\.gate gates/);
 	assert.match(result.stderr, /test --full/);
 });
+
+/**
+ * The skip has to be visible, because a gate that loops over `ctx.repos` and
+ * asserts something per repo reports success having checked nothing when the
+ * workspace is empty. Naming it is not an error and must not change the exit
+ * code -- a bridge legitimately carries repo docs it has never hydrated.
+ */
+test("an unhydrated repo doc is named on stderr without failing the run", () => {
+	const bridge = setupDive("unhydrated-repo");
+	const repoId = "019fe510-0000-7000-8000-0000000000f1";
+	write(
+		join(bridge, "kb", `${repoId}.md`),
+		`---\nkind: repo\nid: ${repoId}\nname: never-hydrated\ngist: "Repo fixture."\n` +
+			`meta:\n  path: workspace/never-hydrated\n  trunk: main\n---\n`,
+	);
+
+	const result = run(["test"], bridge);
+	assert.equal(result.status, 0, `the passing gate still decides the exit: ${result.stderr}`);
+	assert.match(result.stderr, /repo never-hydrated is not hydrated/);
+	assert.match(result.stderr, /absent from ctx\.repos/);
+});

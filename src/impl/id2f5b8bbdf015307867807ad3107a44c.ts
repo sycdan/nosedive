@@ -202,7 +202,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	const gates = collectLandGates(gateRoots, kbDocs, rc.bridgeDir);
+	const gates = collectLandGates("land", gateRoots, kbDocs, rc.bridgeDir);
 	if (gates.length > 0) {
 		const outcome = await runLandGates(gates, {
 			// Live gate output goes to stderr, where a gate's own progress already

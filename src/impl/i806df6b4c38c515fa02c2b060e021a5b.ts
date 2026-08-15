@@ -166,7 +166,7 @@ function selectDiveGates(
 	rc: ReturnType<typeof readNosediveRc>,
 	land: boolean,
 ): LandGate[] {
-	if (!land) return collectDiveGates(dive, kbDocs, rc.bridgeDir);
+	if (!land) return collectDiveGates("land", dive, kbDocs, rc.bridgeDir);
 	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
 	const roots = [
 		dive,
@@ -175,5 +175,5 @@ function selectDiveGates(
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	return collectLandGates(roots, kbDocs, rc.bridgeDir);
+	return collectLandGates("land", roots, kbDocs, rc.bridgeDir);
 }

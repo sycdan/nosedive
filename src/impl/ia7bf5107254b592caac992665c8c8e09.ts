@@ -38,7 +38,7 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 		...readiness.repos.map((repo) => repo.doc),
 		...(bridgeRepo ? [bridgeRepo] : []),
 	];
-	const gates = collectLandGates(roots, kbDocs, rc.bridgeDir);
+	const gates = collectLandGates("land", roots, kbDocs, rc.bridgeDir);
 	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
 	return {
 		stdout: renderDropPrompt(readPromptBody(promptDoc), {

@@ -490,6 +490,7 @@ const PLANNED_DIVE_ID = "019fe500-0000-7000-8000-00000000dead";
 const PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000beef";
 const WORKING_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000cafe";
 const JUMPED_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000fade";
+const PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000f00e";
 const HELD_WORKING_DIVE_ID = "019fe500-0000-7000-8000-00000000feed";
 const HELD_PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000c0de";
 const LANDED_DIVE_ID = "019fe500-0000-7000-8000-00000000abba";
@@ -599,6 +600,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		...link(PENDING_DIVE_ID, "pending.dive"),
 		...link(WORKING_PACKED_DIVE_ID, "working.dive"),
 		...link(JUMPED_PACKED_DIVE_ID, "jumped.dive"),
+		...link(PACKED_DIVE_ID, "packed.dive"),
 		// Bare, unsuffixed: what `record.dive` still writes, so the legacy rel has
 		// to keep reading as the same edge.
 		...link(HELD_PENDING_DIVE_ID, "pending"),
@@ -611,6 +613,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	writeDiveDoc(bridge, PENDING_DIVE_ID, "pending-dive");
 	writeDiveDoc(bridge, WORKING_PACKED_DIVE_ID, "working-packed-dive", { log: true });
 	writeDiveDoc(bridge, JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", { log: true });
+	writeDiveDoc(bridge, PACKED_DIVE_ID, "packed-dive", { log: true });
 	writeDiveDoc(bridge, HELD_WORKING_DIVE_ID, "held-working-dive", {
 		diver: "dive-pilot@example.invalid",
 		log: true,
@@ -638,6 +641,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		[PENDING_DIVE_ID, "pending-dive", "pending.dive"],
 		[WORKING_PACKED_DIVE_ID, "working-packed-dive", "working.dive"],
 		[JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", "jumped.dive"],
+		[PACKED_DIVE_ID, "packed-dive", "packed.dive"],
 	]) {
 		assert.match(
 			preflight.stdout,
@@ -654,7 +658,12 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	assert.ok(
 		preflight.stdout.indexOf("working-packed-dive") > available &&
 			preflight.stdout.indexOf("working-packed-dive") < held,
-		"a packed working dive belongs under Available",
+		"a legacy working dive belongs under Available",
+	);
+	assert.ok(
+		preflight.stdout.indexOf("packed-dive") > available &&
+			preflight.stdout.indexOf("packed-dive") < held,
+		"a packed dive belongs under Available",
 	);
 	// A claimed planned/pending dive is the only way into Held: a claimed
 	// working/jumped dive is somebody's live work and drops out of the list.

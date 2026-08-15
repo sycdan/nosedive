@@ -122,7 +122,7 @@ export function collectDropReadiness(
 				role === "landed" || (DIVE_WORKING_RELS.has(role ?? "") && doc.kind === "memo"),
 		)
 	) {
-		blockers.push(`no landed dive: ${effort.name} has no landed dive`);
+		blockers.push(`no landed dive: ${effort.name}`);
 	}
 	for (const { doc: dive, role } of diveLinks) {
 		if (dive.kind !== "dive" || !DIVE_WORKING_RELS.has(role ?? "")) continue;

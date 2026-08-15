@@ -111,13 +111,15 @@ meta:
 	runTool("git", ["add", "packed.txt"], worktree);
 	gitCommit(worktree, "add packed work");
 	assertOk(run(["pack"], bridge), "pack failed");
-	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
+	assertFeatDiveRel(featPath, firstId, "packed\\.dive");
 
 	const firstPath = join(bridge, "kb", `${firstId}.md`);
 	const packed = readFileSync(firstPath, "utf8");
 	assert.doesNotMatch(packed, /^  diver: (?!null$).+$/m, "packed dive should be claimable");
 	assert.match(packed, /rel: patch/, "packed dive should carry a patch chain");
 	assertOk(run(["record.dive", "--ref", firstId, "--diver", diver], bridge), "reclaim failed");
+	assertOk(run(["jump"], bridge), "re-jump failed");
+	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
 	write(
 		join(bridge, "kb", `${diveGateId}.md`),
 		`---
@@ -153,8 +155,8 @@ meta:
 	write(
 		firstPath,
 		readFileSync(firstPath, "utf8").replace(
-			/^links:\n/m,
-			`links:\n  - kb/${diveGateId}.md:\n      rel: test.gate\n`,
+			/^---\n\n/m,
+			`links:\n  - kb/${diveGateId}.md:\n      rel: test.gate\n---\n\n`,
 		),
 	);
 	write(

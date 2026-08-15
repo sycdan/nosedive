@@ -195,6 +195,24 @@ test("drop still recognizes legacy working dive rels", () => {
 	assert.doesNotMatch(dropped.stderr, /no landed dive/);
 });
 
+test("drop blocks a packed dive", () => {
+	const bridge = createDroppableBridge("packed-dive");
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeLinkedDoc(bridge, diveId, "dive", "packed-slice");
+	writeEffort(bridge, {
+		links: [
+			{ id: memoId, rel: "landed.dive" },
+			{ id: diveId, rel: "packed.dive" },
+		],
+	});
+
+	const dropped = run(["drop", "ship-it.development"], bridge);
+	assert.equal(dropped.status, 1);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, /open dive: packed-slice/);
+	assert.doesNotMatch(dropped.stderr, /no landed dive/);
+});
+
 test("drop blocks a feat with no landed dive", () => {
 	const bridge = createDroppableBridge("no-landed-dive");
 	writeEffort(bridge);

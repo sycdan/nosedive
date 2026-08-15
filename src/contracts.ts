@@ -135,6 +135,7 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 			!Array.isArray(parsed.fm.raw.meta)
 				? (parsed.fm.raw.meta as Record<string, unknown>)
 				: {},
+		hasScopes: Object.hasOwn(parsed.fm.raw, "scopes"),
 		scopes: parseScopeRefs(parsed.fm.raw.scopes, path),
 		links: parseLinkRefs(parsed.fm.raw.links, path),
 		body: parsed.body,

@@ -40,14 +40,10 @@ import {
 import {
 	ensureDetachedAtCommit,
 	ensureRepoMarkerExcluded,
-	ensureReusableExistingTarget,
-	expectedWorktreePath,
-	isDirEmpty,
-	pruneStaleWorktrees,
-	resolveRefCommit,
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
 import { reconcilePrepareCommitMsgHook, reconcilePushIsolation } from "../lib/repoHardening.js";
+import { hydrateScopeAtPin as hydrateScopeCore } from "../lib/scopeHydration.js";
 
 /** One patch memo in reapply order, walked from a dive's `rel: patch` head via `rel: next`. */
 interface PatchStep {
@@ -65,34 +61,9 @@ function hydrateScopeAtPin(
 	workspaceDir: string,
 	effortId: string,
 ): string {
-	const repoDoc = maybeResolveRepoDoc(kbDocs, scope.repoId);
-	if (!repoDoc) {
-		throw new Error(`active dive scope names a repo with no kb repo doc: ${scope.repoId}`);
-	}
-	if (!scope.ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to hydrate at`);
-
-	const sourcePath = ensureManagedRepoCache(repoDoc, bridgeDir);
-	const targetPath = expectedWorktreePath(repoDoc, bridgeDir);
-	ensureSafeTargetPath(scope.repoId, targetPath, workspaceDir);
-	const commit = resolveRefCommit(sourcePath, scope.repoId, scope.ref);
-
-	const targetExists = existsSync(targetPath);
-	if (targetExists && !statSync(targetPath).isDirectory()) {
-		throw new Error(
-			`unsafe target path for repo ${scope.repoId}: target exists but is not a directory: ${formatPath(targetPath)}`,
-		);
-	}
-
-	if (!targetExists || isDirEmpty(targetPath)) {
-		mkdirSync(dirname(targetPath), { recursive: true });
-		pruneStaleWorktrees(sourcePath, scope.repoId);
-		gitRun(
-			sourcePath,
-			["worktree", "add", "--detach", targetPath, commit],
-			`failed to create worktree for repo ${scope.repoId} at ${formatPath(targetPath)}`,
-		);
-	} else {
-		ensureReusableExistingTarget(scope.repoId, targetPath, sourcePath);
+	const result = hydrateScopeCore(scope, kbDocs, bridgeDir, workspaceDir);
+	const { repoDoc, sourcePath, targetPath, commit } = result;
+	if (!result.created) {
 		/**
 		 * Only force back to the pin when the target isn't already sitting on
 		 * top of it. A prior jump run may have already reapplied (and then

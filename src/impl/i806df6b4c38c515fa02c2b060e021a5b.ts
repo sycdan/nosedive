@@ -90,7 +90,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	// Superseded by test@2, which also reports the skipped repos this discards.
-	const { hydrated } = hydrateGateRepos(kbDocs, rc.bridgeDir, rc.workspaceDir);
+	const { hydrated } = hydrateGateRepos(selected, kbDocs, rc.bridgeDir, rc.workspaceDir);
 	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", hydrated, io);
 }
 

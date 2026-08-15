@@ -47,6 +47,47 @@ function lineCount(text) {
 	return text.split(/\r?\n/).length;
 }
 
+/**
+ * Lines that are neither blank nor comment-only.
+ *
+ * The cap counts these rather than every line because a total-line cap measures
+ * the wrong thing twice: it taxes the files whose authors explained themselves,
+ * and it makes deleting a blank line the cheapest way past the gate. Both were
+ * observed. See kb/01a00393-d830-7922-922b-7e8216370c85.md.
+ *
+ * A `/*` inside a string literal is read as opening a block comment, which
+ * undercounts. Accepted: the alternative is tokenizing TypeScript to enforce a
+ * file size limit, and a limit does not need to be exact to do its job.
+ */
+function codeLineCount(text) {
+	let count = 0;
+	let inBlock = false;
+	for (const raw of text.split(/\r?\n/)) {
+		const line = raw.trim();
+		if (inBlock) {
+			const end = line.indexOf("*/");
+			if (end === -1) continue;
+			inBlock = false;
+			if (line.slice(end + 2).trim() === "") continue;
+			count += 1;
+			continue;
+		}
+		if (line === "" || line.startsWith("//")) continue;
+		if (line.startsWith("/*")) {
+			const end = line.indexOf("*/");
+			if (end === -1) {
+				inBlock = true;
+				continue;
+			}
+			if (line.slice(end + 2).trim() === "") continue;
+		}
+		count += 1;
+		const opened = line.lastIndexOf("/*");
+		if (opened !== -1 && line.indexOf("*/", opened) === -1) inBlock = true;
+	}
+	return count;
+}
+
 function frontmatterish(text) {
 	const values = {};
 	for (const line of text.split(/\r?\n/)) {
@@ -522,11 +563,18 @@ for (const [command, docs] of docsByCommand) {
 	}
 }
 
+const MAX_CODE_LINES = 450;
+
 for (const path of tsSourceFiles(join(root, "src"))) {
-	const lines = lineCount(readFileSync(path, "utf8"));
-	if (lines > 500) {
+	const text = readFileSync(path, "utf8");
+	const code = codeLineCount(text);
+	if (code > MAX_CODE_LINES) {
 		fail(
-			`${path.slice(root.length + 1)} has ${lines} lines; source files must stay at 500 or fewer`,
+			`${path.slice(root.length + 1)} has ${code} code lines (${lineCount(text)} total); ` +
+				`source files must stay at ${MAX_CODE_LINES} code lines or fewer. ` +
+				`Blank and comment lines do not count, so removing them will not help -- ` +
+				`extract a subsystem or move a shared helper down a layer. ` +
+				`See kb/01a00393-d830-7922-922b-7e8216370c85.md.`,
 		);
 	}
 }

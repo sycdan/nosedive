@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -150,6 +151,44 @@ test("list-dives on a feat lists that feat only, and warns about drift", () => {
 	assert.match(
 		listed.stdout,
 		/Warnings:\n {2}- held dive 019fe510-0000-7000-8000-0000000000b1 points at top-fixture but is not linked/,
+	);
+});
+
+test("list-dives buckets legacy and lifecycle dive rels identically", () => {
+	const legacy = bridgeWithDives("legacy-dive-rels-bridge");
+	const lifecycle = bridgeWithDives("lifecycle-dive-rels-bridge");
+	const lifecycleFeatPath = join(lifecycle, "kb", `${TOP_FEAT_ID}.md`);
+	const lifecycleChildPath = join(lifecycle, "kb", `${CHILD_FEAT_ID}.md`);
+	write(
+		lifecycleFeatPath,
+		readFileSync(lifecycleFeatPath, "utf8")
+			.replace("rel: pending.dive", "rel: planned.dive")
+			.replace("rel: working", "rel: jumped.dive"),
+	);
+	write(
+		lifecycleChildPath,
+		readFileSync(lifecycleChildPath, "utf8").replace("rel: pending", "rel: planned.dive"),
+	);
+	const lifecycleWorkingPath = join(lifecycle, "kb", `${WORKING_DIVE_ID}.md`);
+	const legacyWorkingPath = join(legacy, "kb", `${WORKING_DIVE_ID}.md`);
+	write(
+		legacyWorkingPath,
+		readFileSync(legacyWorkingPath, "utf8").replace(/^  diver: .+$/m, "  diver: null"),
+	);
+	write(
+		lifecycleWorkingPath,
+		readFileSync(lifecycleWorkingPath, "utf8").replace(/^  diver: .+$/m, "  diver: null"),
+	);
+
+	const legacyResult = JSON.parse(run(["list-dives", "main.deck", "--json"], legacy).stdout);
+	const lifecycleResult = JSON.parse(run(["list-dives", "main.deck", "--json"], lifecycle).stdout);
+	assert.deepEqual(
+		lifecycleResult.pending.map((dive) => dive.id),
+		legacyResult.pending.map((dive) => dive.id),
+	);
+	assert.deepEqual(
+		lifecycleResult.working.map((dive) => dive.id),
+		legacyResult.working.map((dive) => dive.id),
 	);
 });
 

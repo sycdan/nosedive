@@ -152,7 +152,9 @@ export function listedDive(doc: KbDoc, rel?: string, tags: string[] = []): Liste
 
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
 
-const PREFLIGHT_PACKED_DIVE_RELS = new Set(["working", "jumped"]);
+// `packed` is the written phase. `working` and `jumped` remain readable for
+// dives created before packing had its own rel.
+const PREFLIGHT_PACKED_DIVE_RELS = new Set(["packed", "working", "jumped"]);
 
 function isBacklogFeatRel(rel: string | undefined): boolean {
 	return Boolean(
@@ -241,13 +243,13 @@ export function sameEffortRef(effortRef: string | undefined, effort: KbDoc): boo
 }
 
 export const DIVE_PENDING_RELS = new Set(["planned", "pending"]);
-export const DIVE_WORKING_RELS = new Set(["working", "reviewing", "jumped"]);
+export const DIVE_WORKING_RELS = new Set(["working", "reviewing", "jumped", "packed"]);
 
 /**
  * A dive edge may carry its role as a suffix -- `planned.dive` -- or not, which
- * is what `record.dive` still writes. Both name the same edge.
+ * is what older `record.dive` versions wrote. Both name the same edge.
  */
-function diveRole(rel: string | undefined): string | undefined {
+export function diveRole(rel: string | undefined): string | undefined {
 	if (!rel) return undefined;
 	return rel.endsWith(".dive") ? rel.slice(0, -".dive".length) : rel;
 }

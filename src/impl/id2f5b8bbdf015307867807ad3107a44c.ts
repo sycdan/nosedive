@@ -33,7 +33,7 @@ import {
 } from "../lib/landGates.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
 function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
@@ -88,9 +88,14 @@ function commitAndPushLand(
 	divePath: string,
 	diveName: string,
 	effortId?: string,
+	effortPath?: string,
 ): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
-	gitRun(bridgeDir, ["add", "--", relPath], "failed to stage landed dive");
+	gitRun(
+		bridgeDir,
+		["add", "--", relPath, ...(effortPath ? [toPosixPath(relative(bridgeDir, effortPath))] : [])],
+		"failed to stage landed dive",
+	);
 
 	const stashed = stashExceptStaged(bridgeDir);
 	try {
@@ -257,8 +262,9 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			: "- (no scoped repos to push)";
 	const body = `${parsed.body.trimEnd()}\n\n## Outcome\n\n${dive.gist}\n\n${outcome}\n`;
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
+	if (effort) reconcileDiveEffortLinks(effort, effort, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id, effort?.path);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

@@ -292,8 +292,8 @@ function commitAndPushPack(
 	diveName: string,
 	effort: KbDoc | undefined,
 ): void {
-	// The effort doc carries the reciprocal link pack just reconciled, so it is
-	// staged with the dive rather than left behind as bridge WIP.
+	// Pack records its phase on the effort's reciprocal link. Stage that edit
+	// with the dive so it cannot linger as bridge WIP for the next pack to capture.
 	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(effort ? [effort.path] : [])].map(
 		(path) => toPosixPath(relative(bridgeDir, path)),
 	);
@@ -387,7 +387,8 @@ export function packDive(args: string[], io: CommandIo): void {
 	if (bridgeWip) groups.push([bridgeWip]);
 	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
 	const released = clearDiveDiver(dive.path);
-	if (released && effort) reconcileDiveEffortLinks(effort, effort, dive.id, undefined);
+	const committing = groups.length > 0 || released;
+	if (committing && effort) reconcileDiveEffortLinks(effort, effort, dive.id, "packed.dive");
 	const headRelPaths: string[] = [];
 	const newFileAbsPaths: string[] = [];
 	for (const patches of groups) {
@@ -400,8 +401,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	if (headRelPaths.length > 0) appendDivePatchLinks(dive.path, headRelPaths);
 	// Releasing the dive is bookkeeping worth pushing on its own: a dive freed
 	// with nothing to pack has to reach the shared kb before anyone can pick it up.
-	if (groups.length > 0 || released)
-		commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, effort);
+	if (committing) commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, effort);
 	io.log(
 		capturedCount > 0
 			? `packed dive ${dive.id}: ${capturedCount} artifact(s)`

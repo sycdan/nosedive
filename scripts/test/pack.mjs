@@ -33,7 +33,7 @@ function sourceRepo(name) {
 	return path;
 }
 
-function setup(name) {
+function setup(name, diver = "pack@example.test") {
 	const origin = bareRemote(`${name}-origin.git`);
 	const source = sourceRepo(`${name}-source`);
 	const bridge = join(tmp, name);
@@ -81,7 +81,7 @@ scopes:
 
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
 	const diveResult = run(
-		["record.dive", "--effort", effortId, "--diver", "pack@example.test"],
+		["record.dive", "--effort", effortId, ...(diver ? ["--diver", diver] : [])],
 		bridge,
 	);
 	assertOk(diveResult, "record.dive failed");
@@ -91,6 +91,7 @@ scopes:
 	// commits both, so start from that state rather than pre-loading bridge WIP.
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "record dive");
+	if (!diver) write(join(bridge, "workspace", ".nosedive-ref"), `id: ${diveId}\n`);
 
 	return { bridge, origin, source, repoId, effortId, diveId };
 }
@@ -140,6 +141,11 @@ test("pack requires an active dive marker", () => {
 test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets", () => {
 	const { bridge, origin, repoId, effortId, diveId } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
+	assertOk(
+		run(["record.dive", "--ref", diveId, "--brief", "Exercise pack after jump."], bridge),
+		"record.dive brief failed",
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
 
 	write(join(worktree, "feature-a.txt"), "a\n");
 	runTool("git", ["add", "feature-a.txt"], worktree);
@@ -177,7 +183,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.match(diveText, /^  diver: null$/m, "pack should release the dive");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8"),
-		new RegExp(`- kb/${diveId}\\.md:\\n      rel: pending`),
+		new RegExp(`- kb/${diveId}\\.md:\\n      rel: packed\\.dive`),
 	);
 	const patchHeads = patchHeadsByRel(diveText, "patch");
 	assert.equal(patchHeads.length, 2, `expected 2 patch chain heads:\n${diveText}`);
@@ -191,7 +197,11 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(commitA.kind, "memo");
 	assert.match(commitA.name, /^[0-9a-f]{12}\.full-repo$/);
 	assert.equal(commitA.gist, "add feature a");
-	assert.equal(commitA.body, "");
+	assert.match(commitA.body, new RegExp(`Effort: ${effortId}`));
+	assert.match(
+		commitA.body,
+		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
+	);
 	assert.ok(commitA.next, "commit A memo should link the next memo");
 
 	const commitB = readMemo(bridge, commitA.next);
@@ -241,6 +251,11 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	const bridgeHead = runTool("git", ["rev-parse", "main"], bridge).stdout.trim();
 	const originHead = runTool("git", ["rev-parse", "main"], origin).stdout.trim();
 	assert.equal(bridgeHead, originHead, "pack should push the bridge to its remote");
+	assert.equal(
+		runTool("git", ["status", "--porcelain", "--", `kb/${effortId}.md`], bridge).stdout,
+		"",
+		"pack should stage its effort rel rewrite",
+	);
 
 	const strayStatus = runTool("git", ["status", "--porcelain", "--", "stray.txt"], bridge).stdout;
 	assert.match(
@@ -318,6 +333,21 @@ test("pack with nothing to capture still resets and reports no-op", () => {
 		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
 		beforeHead,
 		"releasing a held dive should create a bridge commit",
+	);
+});
+
+test("pack without work or a diver leaves its phase alone", () => {
+	const { bridge, effortId, diveId } = setup("unclaimed-clean", null);
+	runTool("git", ["add", "--", "workspace/.nosedive-ref"], bridge);
+	gitCommit(bridge, "activate unclaimed dive");
+	runTool("git", ["push"], bridge);
+
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack failed on an unclaimed clean dive");
+	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: nothing to pack`));
+	assert.match(
+		readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8"),
+		new RegExp(`- kb/${diveId}\\.md:\\n      rel: planned\\.dive`),
 	);
 });
 

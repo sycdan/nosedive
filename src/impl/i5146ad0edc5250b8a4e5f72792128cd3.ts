@@ -27,7 +27,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { ensureManagedRepoCache, gitRun } from "../lib/repoWorkspaceCore.js";
 import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
@@ -52,9 +52,14 @@ function commitAndPushBail(
 	diveName: string,
 	reason: string,
 	effortId?: string,
+	effortPath?: string,
 ): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
-	gitRun(bridgeDir, ["add", "--", relPath], "failed to stage bailed dive");
+	gitRun(
+		bridgeDir,
+		["add", "--", relPath, ...(effortPath ? [toPosixPath(relative(bridgeDir, effortPath))] : [])],
+		"failed to stage bailed dive",
+	);
 
 	const stashed = stashExceptStaged(bridgeDir);
 	try {
@@ -292,14 +297,10 @@ function bail(args: string[], io: CommandIo): void {
 	doc.set("gist", `${dive.gist} -- bailed: ${reason}`);
 
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
+	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	if (effort) reconcileDiveEffortLinks(effort, effort, dive.id, "bailed.dive");
 
-	commitAndPushBail(
-		rc.bridgeDir,
-		dive.path,
-		dive.name,
-		reason,
-		dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef).id : undefined,
-	);
+	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason, effort?.id, effort?.path);
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 	removeDiveScratch(rc.workspaceDir!, dive.id);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);

@@ -28,7 +28,7 @@ import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratc
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import {
@@ -431,10 +431,11 @@ export function jump(args: string[], io: CommandIo): void {
 	}
 
 	appendTimestampedSection(dive.path, renderHydratedSection(hydratedEntries, kbDocs));
+	reconcileDiveEffortLinks(effort, effort, dive.id, "jumped.dive");
 
-	// The effort carries the reciprocal `rel` link `record.dive` wrote, so it is
-	// part of the same bookkeeping -- left unstaged it lingers as bridge WIP that
-	// the next pack captures as though it were work.
+	// The effort's reciprocal link records that this command jumped the dive, so
+	// it is part of the same bookkeeping -- left unstaged it lingers as bridge
+	// WIP that the next pack captures as though it were work.
 	commitAndPushJump(
 		rc.bridgeDir,
 		dive.path,

@@ -38,7 +38,8 @@ import { bridgeCompatibilityLevel, nosediveInvocation } from "../lib/packageBack
 import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
-import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { gitOutput } from "../lib/gitProcess.js";
+import { writeFileAtomic } from "../lib/renderPlan.js";
 
 const STALE_BRIDGE_NOSE =
 	"nose: fix this^ first, by rebasing the bridge onto FETCH_HEAD before trusting the backlog below";

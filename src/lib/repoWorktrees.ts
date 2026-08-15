@@ -1,17 +1,16 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import { isInsideDir } from "./backlogDives.js";
-import { formatPath, resolveFrom } from "./coreParsing.js";
-import { REPO_MARKER_EXCLUDE_SPEC, replaceManagedExcludeBlock } from "./gitState.js";
+import { formatPath, isInsideDir, resolveFrom } from "./coreParsing.js";
 import { KbDoc, repoDocs } from "./kbDocs.js";
-import { gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { gitOutput, runGit } from "./gitProcess.js";
+import { REPO_MARKER_EXCLUDE_SPEC, replaceManagedExcludeBlock } from "./managedExcludes.js";
+import { writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureSafeTargetPath,
 	gitRun,
 	parseRepoMarkerStrict,
 	realpathStable,
-	runGit,
 } from "./repoWorkspaceCore.js";
 
 export function expectedWorktreePath(repoDoc: KbDoc, bridgeDir: string): string {

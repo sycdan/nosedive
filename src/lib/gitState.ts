@@ -1,30 +1,22 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import {
-	CONFIG_EXCLUDE_BEGIN,
-	CONFIG_EXCLUDE_END,
-	FOUNDATION_EXCLUDE_BEGIN,
-	FOUNDATION_EXCLUDE_END,
-	HANDOFF_RUNBOOK_ID,
-	MANAGED_EXCLUDE_BEGIN,
-	MANAGED_EXCLUDE_END,
-	REPO_MARKER_EXCLUDE_BEGIN,
-	REPO_MARKER_EXCLUDE_END,
-} from "./constants.js";
+import { HANDOFF_RUNBOOK_ID } from "./constants.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
 	parseYamlBlock,
 	readNosediveRc,
 	resolveFrom,
+	uuidLike,
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
+import { gitOutput } from "./gitProcess.js";
 import { rewriteMarkdownLinks } from "./markdownLinks.js";
 import { packageRoot } from "./packageBacklog.js";
-import { executableForSpawn, gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
-import { ensureSafeTargetPath, maybeResolveRepoDoc, uuidLike } from "./repoWorkspaceCore.js";
+import { executableForSpawn } from "./renderPlan.js";
+import { ensureSafeTargetPath, maybeResolveRepoDoc } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
 export function commandForSpawn(
@@ -299,152 +291,4 @@ export function printDiveWipFailure(failures: DiveWipFailure[], io: CommandIo): 
 	io.err(`Handoff runbook: ${HANDOFF_RUNBOOK_ID}`);
 	io.err("HINT: To learn more, run:");
 	io.err(`  npx nosedive render ${HANDOFF_RUNBOOK_ID}`);
-}
-
-export function gitRelPath(repoRoot: string, path: string): string {
-	return relative(repoRoot, path).replaceAll("\\", "/");
-}
-
-export interface ManagedExcludeSpec {
-	begin: string;
-	end: string;
-	header: string[];
-}
-
-export const AGENT_EXCLUDE_SPEC: ManagedExcludeSpec = {
-	begin: MANAGED_EXCLUDE_BEGIN,
-	end: MANAGED_EXCLUDE_END,
-	header: [
-		"# kb: 019f5651-5539-76f5-b6bd-351d300194eb",
-		"# name: nosedive-managed-local-git-state",
-		"# owner: nosedive apply",
-		"# reason: generated bridge agent instruction files are local artifacts",
-	],
-};
-
-export const FOUNDATION_EXCLUDE_SPEC: ManagedExcludeSpec = {
-	begin: FOUNDATION_EXCLUDE_BEGIN,
-	end: FOUNDATION_EXCLUDE_END,
-	header: [
-		"# owner: nosedive seed",
-		"# reason: package foundation docs are local bootstrap artifacts",
-	],
-};
-
-export const CONFIG_EXCLUDE_SPEC: ManagedExcludeSpec = {
-	begin: CONFIG_EXCLUDE_BEGIN,
-	end: CONFIG_EXCLUDE_END,
-	header: ["# owner: nosedive seed", "# reason: legacy personal bridge config"],
-};
-
-export const REPO_MARKER_EXCLUDE_SPEC: ManagedExcludeSpec = {
-	begin: REPO_MARKER_EXCLUDE_BEGIN,
-	end: REPO_MARKER_EXCLUDE_END,
-	header: [
-		"# owner: nosedive hydrate-repo.workspace",
-		"# reason: repo ownership marker is local workspace state",
-	],
-};
-
-export function removeManagedExcludeBlocks(text: string, spec: ManagedExcludeSpec): string {
-	const lines = text.split(/\r?\n/);
-	const out: string[] = [];
-	for (let i = 0; i < lines.length; i += 1) {
-		if (lines[i] !== spec.begin) {
-			out.push(lines[i]);
-			continue;
-		}
-
-		const end = lines.indexOf(spec.end, i + 1);
-		if (end === -1) {
-			out.push(lines[i]);
-			continue;
-		}
-		i = end;
-	}
-	return out.join("\n").replace(/\n*$/, "\n");
-}
-
-export function renderManagedExcludeBlock(filenames: string[], spec: ManagedExcludeSpec): string {
-	return [spec.begin, ...spec.header, ...filenames, spec.end].join("\n");
-}
-
-export function replaceManagedExcludeBlock(
-	text: string,
-	filenames: string[],
-	spec: ManagedExcludeSpec,
-): string {
-	const withoutManaged = removeManagedExcludeBlocks(text, spec);
-	const prefix = withoutManaged.trim() ? `${withoutManaged.replace(/\n*$/, "\n")}\n` : "";
-	return `${prefix}${renderManagedExcludeBlock(filenames, spec)}\n`;
-}
-
-export function updateManagedExclude(
-	repoRoot: string,
-	filenames: string[],
-	warnings: string[],
-	spec: ManagedExcludeSpec,
-): void {
-	const rawExcludePath = gitOutput(repoRoot, ["rev-parse", "--git-path", "info/exclude"]);
-	if (!rawExcludePath) {
-		warnings.push(`could not resolve git exclude path for ${formatPath(repoRoot)}`);
-		return;
-	}
-
-	const excludePath = isAbsolute(rawExcludePath)
-		? rawExcludePath
-		: resolve(repoRoot, rawExcludePath);
-	const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
-	const withoutLegacyConfigBlock =
-		spec.begin === CONFIG_EXCLUDE_SPEC.begin
-			? removeManagedExcludeBlocks(existing, FOUNDATION_EXCLUDE_SPEC)
-			: existing;
-	writeFileAtomic(
-		excludePath,
-		replaceManagedExcludeBlock(withoutLegacyConfigBlock, filenames, spec),
-	);
-}
-
-export function manageGitState(paths: string[], spec: ManagedExcludeSpec): string[] {
-	const warnings: string[] = [];
-	const byRepo = new Map<string, string[]>();
-
-	for (const path of paths) {
-		const repoRoot = gitOutput(dirname(path), ["rev-parse", "--show-toplevel"]);
-		if (!repoRoot) {
-			warnings.push(
-				`generated file is not inside a git worktree; cannot manage excludes: ${formatPath(path)}`,
-			);
-			continue;
-		}
-		const list = byRepo.get(repoRoot) ?? [];
-		list.push(path);
-		byRepo.set(repoRoot, list);
-	}
-
-	for (const [repoRoot, files] of byRepo) {
-		const filenames = [...new Set(files.map((file) => gitRelPath(repoRoot, file)))];
-		updateManagedExclude(repoRoot, filenames, warnings, spec);
-
-		for (const file of files) {
-			const rel = gitRelPath(repoRoot, file);
-			if (!gitOk(repoRoot, ["ls-files", "--error-unmatch", "--", rel])) continue;
-
-			if (gitOk(repoRoot, ["update-index", "--skip-worktree", "--", rel])) {
-				warnings.push(`tracked generated file marked skip-worktree: ${formatPath(file)}`);
-			} else {
-				warnings.push(`could not mark tracked generated file skip-worktree: ${formatPath(file)}`);
-			}
-		}
-	}
-
-	return warnings;
-}
-
-export function manageGeneratedGitState(paths: string[]): string[] {
-	return manageGitState(paths, AGENT_EXCLUDE_SPEC);
-}
-
-export function manageFoundationGitState(paths: string[]): string[] {
-	return manageGitState(paths, FOUNDATION_EXCLUDE_SPEC);
 }

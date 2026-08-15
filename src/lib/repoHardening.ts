@@ -4,7 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { GIT_HOOK_NAMES, prepareCommitMsgHook, proxyHook } from "./commitProvenance.js";
 import { formatPath, resolveFrom } from "./coreParsing.js";
 import { KbDoc } from "./kbDocs.js";
-import { gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { gitOutput } from "./gitProcess.js";
+import { gitOk, writeFileAtomic } from "./renderPlan.js";
 import { gitRun } from "./repoWorkspaceCore.js";
 
 export function worktreeConfigEnabled(targetPath: string): boolean {

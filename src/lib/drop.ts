@@ -1,9 +1,9 @@
 import { relative, resolve } from "node:path";
 
 import { toPosixPath, type NosediveRc } from "./coreParsing.js";
-import { gitOutput } from "./renderPlan.js";
+import { gitOutput, runGit } from "./gitProcess.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
-import { resolveRemoteForGit, runGit } from "./repoWorkspaceCore.js";
+import { resolveRemoteForGit } from "./repoWorkspaceCore.js";
 import { KbDoc } from "./kbDocs.js";
 import { effortDocs } from "./repoEffortScopes.js";
 

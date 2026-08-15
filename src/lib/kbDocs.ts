@@ -2,11 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import { assertSlug, titleFromSlug } from "./backlogDives.js";
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { TIMESTAMPED_SECTION_HEADING_PATTERN } from "./kbSections.js";
 import {
 	formatPath,
+	gitRelPath,
 	NosediveRc,
 	parseMarkdownDoc,
 	parseMarkdownFrontmatter,
@@ -16,10 +16,13 @@ import {
 	splitMarkdownFrontmatter,
 	toPosixPath,
 } from "./coreParsing.js";
-import { gitRelPath } from "./gitState.js";
-import { parseLinkRefs, parseScopeRefs } from "./kbRefs.js";
-import { gitOutput, quoteYamlString } from "./renderPlan.js";
+import { gitOutput } from "./gitProcess.js";
+import { LinkRef, parseLinkRefs, parseScopeRefs, ScopeRef } from "./kbRefs.js";
+import { quoteYamlString } from "./renderPlan.js";
+import { assertSlug, titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
+
+export type { LinkRef, ScopeRef } from "./kbRefs.js";
 
 // --- pitch -----------------------------------------------------------------
 
@@ -152,24 +155,6 @@ export interface KbDoc {
 	metaRaw: Record<string, unknown>;
 	scopes: ScopeRef[];
 	links: LinkRef[];
-}
-
-export interface ScopeRef {
-	repoId: string;
-	path: string;
-	ref?: string;
-	readOnly: boolean;
-	flags: string[];
-	render?: "body" | "gist";
-}
-
-export interface LinkRef {
-	id: string;
-	target: string;
-	rel?: string;
-	anchor?: string;
-	/** Every scalar key written on the link, `rel`/`anchor` included. Open set: the reading command validates what it needs. */
-	attrs: Record<string, string>;
 }
 
 export interface TargetDoc {

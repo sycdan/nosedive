@@ -1,7 +1,8 @@
 import { join } from "node:path";
 
-import { gitOutput, writeFileAtomic } from "./renderPlan.js";
-import { gitRun, runGit } from "./repoWorkspaceCore.js";
+import { gitOutput, runGit } from "./gitProcess.js";
+import { writeFileAtomic } from "./renderPlan.js";
+import { gitRun } from "./repoWorkspaceCore.js";
 
 /** A captured patch file, not yet wrapped in its `kind: memo` doc. */
 export interface CapturedPatch {

@@ -30,7 +30,8 @@ import {
 	renderGateReport,
 	runLandGates,
 } from "../lib/landGates.js";
-import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { gitOutput } from "../lib/gitProcess.js";
+import { writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 

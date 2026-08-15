@@ -3,10 +3,17 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { parseDocument } from "yaml";
 
-import { isInsideDir } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
-import { formatPath, resolveFrom, splitMarkdownFrontmatter, stringifyYaml } from "./coreParsing.js";
-import { gitRelPath } from "./gitState.js";
+import {
+	formatPath,
+	gitRelPath,
+	isInsideDir,
+	resolveFrom,
+	splitMarkdownFrontmatter,
+	stringifyYaml,
+	uuidLike,
+} from "./coreParsing.js";
+import { gitOutput, runGit } from "./gitProcess.js";
 import { KbDoc, LinkRef, ScopeRef } from "./kbDocs.js";
 import {
 	DriftedScope,
@@ -14,14 +21,12 @@ import {
 	rehydrateScopedRepoAtPin,
 	validateExistingProverRepo,
 } from "./provePins.js";
-import { gitOk, gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { gitOk, writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
 	gitRun,
 	resolveRepoDoc,
-	runGit,
-	uuidLike,
 } from "./repoWorkspaceCore.js";
 import {
 	ensureReusableExistingTarget,

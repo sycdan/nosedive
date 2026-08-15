@@ -22,7 +22,7 @@ import {
 } from "./coreParsing.js";
 import { nosediveInvocation, packageMigrationDocs, packageRoot } from "./packageBacklog.js";
 import { levelMigration, levelsInGap } from "./packageLevels.js";
-import { gitOutput } from "./renderPlan.js";
+import { gitOutput } from "./gitProcess.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
 	const options: SeedOptions = { help: false, headless: false, files: [] };

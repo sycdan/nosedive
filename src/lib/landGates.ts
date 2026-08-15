@@ -7,7 +7,7 @@ import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
 import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
-import { cleanGitEnv } from "./renderPlan.js";
+import { cleanGitEnv } from "./gitProcess.js";
 
 const GATE_VERBS = new Set(["land", "test", "drop", "lift"]);
 /**

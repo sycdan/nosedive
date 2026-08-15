@@ -8,10 +8,24 @@ import {
 	createNoBridge,
 	createTmp,
 	run,
+	runTool,
 	writeBridgeConfig,
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("bridge-resolution");
+
+/**
+ * `preflight` reads the pilot through `git config user.name`, which the author
+ * and committer variables `run` exports do not satisfy. A developer's global
+ * config supplies one and hides that; a CI runner has none, so a bridge these
+ * tests drive preflight against has to carry its own.
+ */
+function identifiedBridge(parent, name, options) {
+	const bridge = createBridge(parent, name, options);
+	runTool("git", ["config", "user.name", "Resolution Test"], bridge);
+	runTool("git", ["config", "user.email", "resolution@example.invalid"], bridge);
+	return bridge;
+}
 
 function assertWorkspace(result, workspace) {
 	assertOk(result, "preflight failed");
@@ -22,7 +36,7 @@ function assertWorkspace(result, workspace) {
 }
 
 test("a seeded repo inside a bridge workspace resolves the outer bridge", () => {
-	const outer = createBridge(tmp, "outer");
+	const outer = identifiedBridge(tmp, "outer");
 	const inner = join(outer, "workspace", "inner");
 	writeBridgeConfig(inner);
 
@@ -31,7 +45,7 @@ test("a seeded repo inside a bridge workspace resolves the outer bridge", () => 
 
 test("a nested bridge outside the outer workspace resolves itself", () => {
 	const outer = createBridge(tmp, "outer2");
-	const nested = createBridge(outer, join("vendor", "their-bridge"));
+	const nested = identifiedBridge(outer, join("vendor", "their-bridge"));
 
 	assertWorkspace(run(["preflight"], nested), join(nested, "workspace"));
 });

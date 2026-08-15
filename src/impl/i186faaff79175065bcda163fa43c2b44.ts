@@ -96,19 +96,9 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		return;
 	}
 
-	const { hydrated, skipped } = hydrateGateRepos(kbDocs, rc.bridgeDir, rc.workspaceDir);
-	/**
-	 * Named before the gates stream, because this is what the run could not see
-	 * rather than something that went wrong in it. A gate looping over
-	 * `ctx.repos` passes having checked nothing when a repo is missing, so the
-	 * absence has to be on screen even though it is not an error and leaves the
-	 * exit code alone.
-	 */
-	for (const repo of skipped) {
-		io.writeErr(
-			`test: repo ${repo.name || repo.id} is not hydrated, so it is absent from ctx.repos.\n`,
-		);
-	}
+	const { hydrated, reports } = hydrateGateRepos(selected, kbDocs, rc.bridgeDir, rc.workspaceDir);
+	/** The resolved workspace is named before gates stream, including empty sets and pins that existing worktrees do not hold. */
+	for (const report of reports) io.writeErr(report);
 	const outcome = await runGateSession(
 		selected,
 		kbDocs,

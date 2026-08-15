@@ -1,6 +1,6 @@
 import type { CommandIo } from "./bridgeSetupIo.js";
-import { hydratedScopedRepoPath } from "./gitState.js";
 import type { KbDoc } from "./kbDocs.js";
+import { gitOutput } from "./gitProcess.js";
 import {
 	gateRepoContext,
 	type GateOutcome,
@@ -9,6 +9,9 @@ import {
 	runLandGates,
 } from "./landGates.js";
 import { appendLinkToDoc } from "./repoEffortScopes.js";
+import { reconcilePushIsolation } from "./repoHardening.js";
+import { ensureRepoMarkerExcluded, writeRepoMarker } from "./repoWorktrees.js";
+import { hydrateScopeAtPin } from "./scopeHydration.js";
 
 interface HydratedRepo {
 	repoId: string;
@@ -17,45 +20,59 @@ interface HydratedRepo {
 
 export interface GateRepoSurvey {
 	hydrated: HydratedRepo[];
-	/** Repo docs with no worktree on disk, so no entry in `ctx.repos`. */
-	skipped: KbDoc[];
+	reports: string[];
 }
 
 /**
- * Collects the repos already on disk. It hydrates nothing despite the name --
- * no clone, no fetch, no checkout -- and never consults a dive's scope pins, so
- * gates see the workspace exactly as it currently stands.
- *
- * A repo with no worktree is skipped rather than refused: a bridge legitimately
- * carries repo docs it has never hydrated, and the backlog sweep runs against
- * whatever is present. But the skip is returned rather than swallowed, because
- * a gate looping over `ctx.repos` reports success when it checked nothing, and
- * silence is what makes that vacuous pass invisible.
- *
- * A path that exists but is unusable is still a hard failure -- that is a broken
- * workspace, not an absent one.
+ * Resolves the selected gates' own scopes, or their declaring docs' scopes when
+ * a gate leaves `scopes:` absent. An explicit empty list deliberately overrides
+ * the declaring doc. Missing worktrees are created read-only at their resolved
+ * commit; existing worktrees are never moved.
  */
 export function hydrateGateRepos(
+	selected: LandGate[],
 	kbDocs: KbDoc[],
 	bridgeDir: string,
 	workspaceDir: string | undefined,
 ): GateRepoSurvey {
 	const hydrated: HydratedRepo[] = [];
-	const skipped: KbDoc[] = [];
+	const reports: string[] = [];
 	if (workspaceDir) {
-		for (const repo of kbDocs.filter((candidate) => candidate.kind === "repo")) {
-			const resolved = hydratedScopedRepoPath(
-				kbDocs,
-				{ repoId: repo.id, readOnly: false },
-				bridgeDir,
-				workspaceDir,
-			);
-			if (resolved.failure) throw new Error(`test refuses: ${resolved.failure.reasons.join("; ")}`);
-			if (resolved.path) hydrated.push({ repoId: repo.id, path: resolved.path });
-			else skipped.push(repo);
+		const scopes = new Map<
+			string,
+			{ repoId: string; path: string; ref?: string; readOnly: boolean; flags: string[] }
+		>();
+		for (const gate of selected) {
+			const resolved = gate.doc.hasScopes ? gate.doc.scopes : gate.introducedBy.scopes;
+			if (resolved.length === 0)
+				reports.push(
+					`test: gate ${gate.doc.name || gate.doc.id} resolves no repo scopes; ctx.repos is empty for it.\n`,
+				);
+			for (const scope of resolved) scopes.set(scope.repoId, { ...scope, readOnly: true });
+		}
+		for (const scope of scopes.values()) {
+			const result = hydrateScopeAtPin(scope, kbDocs, bridgeDir, workspaceDir, true);
+			if (result.created) {
+				// Gates never commit in scoped repos, so newly-created worktrees receive
+				// read-only push isolation. Existing worktrees are left entirely alone.
+				writeRepoMarker(result.targetPath, result.repoDoc.id);
+				ensureRepoMarkerExcluded(result.targetPath, result.repoDoc.id);
+				reconcilePushIsolation(result.sourcePath, result.targetPath, true, result.repoDoc.id);
+				reports.push(
+					`test: hydrated repo ${result.repoDoc.name || result.repoDoc.id} at ${result.commit}.\n`,
+				);
+			} else {
+				const head = gitOutput(result.targetPath, ["rev-parse", "HEAD"]);
+				if (head !== result.commit) {
+					reports.push(
+						`test: repo ${result.repoDoc.name || result.repoDoc.id} is at ${head || "an unknown commit"}, not declared commit ${result.commit}; leaving it unchanged.\n`,
+					);
+				}
+			}
+			hydrated.push({ repoId: result.repoDoc.id, path: result.targetPath });
 		}
 	}
-	return { hydrated, skipped };
+	return { hydrated, reports };
 }
 
 export async function runGateSession(

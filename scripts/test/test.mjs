@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createBridge, createTmp, run, write } from "../test-helpers.mjs";
+import { createBridge, createTmp, gitCommit, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("test");
 const passId = "019fe100-0000-7000-8000-000000000001";
@@ -47,7 +47,7 @@ test("test runs a passing gate", () => {
 test("test returns a failing gate status", () => {
 	const result = run(["test", failId], setup("failing"));
 	assert.notEqual(result.status, 0);
-	assert.equal(result.stderr, "failed gate\n");
+	assert.match(result.stderr, /failed gate/);
 });
 
 test("test clearly rejects an unknown id", () => {
@@ -391,17 +391,127 @@ test("a dive that links no gates is reported rather than called green", () => {
  * workspace is empty. Naming it is not an error and must not change the exit
  * code -- a bridge legitimately carries repo docs it has never hydrated.
  */
-test("an unhydrated repo doc is named on stderr without failing the run", () => {
-	const bridge = setupDive("unhydrated-repo");
-	const repoId = "019fe510-0000-7000-8000-0000000000f1";
-	write(
-		join(bridge, "kb", `${repoId}.md`),
-		`---\nkind: repo\nid: ${repoId}\nname: never-hydrated\ngist: "Repo fixture."\n` +
-			`meta:\n  path: workspace/never-hydrated\n  trunk: main\n---\n`,
-	);
+const scopedRepoId = "019fe510-0000-7000-8000-0000000000f1";
+const unscopedRepoId = "019fe510-0000-7000-8000-0000000000f2";
 
-	const result = run(["test"], bridge);
-	assert.equal(result.status, 0, `the passing gate still decides the exit: ${result.stderr}`);
-	assert.match(result.stderr, /repo never-hydrated is not hydrated/);
-	assert.match(result.stderr, /absent from ctx\.repos/);
+function addRepo(bridge, id, name) {
+	const source = join(tmp, `${name}-source`);
+	mkdirSync(source, { recursive: true });
+	runTool("git", ["init", "-b", "main"], source);
+	write(join(source, "README.md"), "base\n");
+	runTool("git", ["add", "README.md"], source);
+	gitCommit(source, "base");
+	write(
+		join(bridge, "kb", `${id}.md`),
+		`---\nkind: repo\nid: ${id}\nname: ${name}\ngist: "Repo fixture."\n` +
+			`meta:\n  path: workspace/${name}\n  trunk: main\n  remotes:\n    local: ${source.replaceAll("\\", "/")}\n---\n`,
+	);
+	return { source, worktree: join(bridge, "workspace", name) };
+}
+
+function setGateScript(bridge, id, message) {
+	write(
+		join(bridge, "kb", "artifacts", `${id}.mjs`),
+		`export function run(ctx) { console.log(${JSON.stringify(message)} + JSON.stringify(ctx.repos)); }\n`,
+	);
+}
+
+test("a gate inherits its declaring feat scopes and hydrates the named repo", () => {
+	const bridge = setupDive("inherited-scope", { diveGates: [], featGates: [featGateId] });
+	addRepo(bridge, scopedRepoId, "inherited-repo");
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}\nlinks:\n`,
+		),
+	);
+	setGateScript(bridge, featGateId, "inherited ");
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /inherited .*inherited-repo/);
+	assert.match(result.stderr, /hydrated repo inherited-repo at [0-9a-f]{40}/);
+});
+
+test("a gate's own scopes override the declaring feat scopes", () => {
+	const bridge = setupDive("gate-scope", { diveGates: [], featGates: [featGateId] });
+	addRepo(bridge, scopedRepoId, "feat-repo");
+	addRepo(bridge, unscopedRepoId, "gate-repo");
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}\nlinks:\n`,
+		),
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		gateDoc(featGateId).replace("gist:", `scopes:\n  - ${unscopedRepoId}\ngist:`),
+	);
+	setGateScript(bridge, featGateId, "override ");
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /gate-repo/);
+	assert.doesNotMatch(result.stdout, /feat-repo/);
+	assert.equal(existsSync(join(bridge, "workspace", "feat-repo")), false);
+});
+
+test("an explicit empty declaring scope set leaves ctx.repos empty and says so", () => {
+	const bridge = setupDive("empty-scope", { diveGates: [], featGates: [featGateId] });
+	addRepo(bridge, scopedRepoId, "empty-feat-repo");
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}\nlinks:\n`,
+		),
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		gateDoc(featGateId).replace("gist:", "scopes: []\ngist:"),
+	);
+	setGateScript(bridge, featGateId, "empty ");
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /empty \{\}/);
+	assert.match(result.stderr, /resolves no repo scopes; ctx\.repos is empty/);
+});
+
+test("a repo no selected gate scopes is not hydrated", () => {
+	const bridge = setupDive("unscoped-repo", { diveGates: [], featGates: [featGateId] });
+	addRepo(bridge, unscopedRepoId, "unscoped-repo");
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(existsSync(join(bridge, "workspace", "unscoped-repo")), false);
+});
+
+test("an existing scoped worktree at another commit is reported and never moved", () => {
+	const bridge = setupDive("existing-other-commit", { diveGates: [], featGates: [featGateId] });
+	const repo = addRepo(bridge, scopedRepoId, "existing-repo");
+	const pinned = runTool("git", ["rev-parse", "HEAD"], repo.source).stdout.trim();
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}:\n      ref: ${pinned}\nlinks:\n`,
+		),
+	);
+	setGateScript(bridge, featGateId, "existing ");
+
+	assert.equal(run(["test", "--full"], bridge).status, 0);
+	write(join(repo.worktree, "README.md"), "ahead\n");
+	runTool("git", ["add", "README.md"], repo.worktree);
+	gitCommit(repo.worktree, "ahead");
+	const ahead = runTool("git", ["rev-parse", "HEAD"], repo.worktree).stdout.trim();
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(
+		result.stderr,
+		new RegExp(`is at ${ahead}, not declared commit ${pinned}; leaving it unchanged`),
+	);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], repo.worktree).stdout.trim(), ahead);
 });

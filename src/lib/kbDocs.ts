@@ -153,6 +153,8 @@ export interface KbDoc {
 	metaScalars: Record<string, string>;
 	metaLists: Record<string, string[]>;
 	metaRaw: Record<string, unknown>;
+	/** Distinguishes an inherited scope set from an explicit `scopes: []`. */
+	hasScopes: boolean;
 	scopes: ScopeRef[];
 	links: LinkRef[];
 }
@@ -274,6 +276,7 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 			raw.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta)
 				? (raw.meta as Record<string, unknown>)
 				: {},
+		hasScopes: Object.hasOwn(raw, "scopes"),
 		scopes: parseScopeRefs(raw.scopes, path),
 		links: parseLinkRefs(raw.links, path),
 	};

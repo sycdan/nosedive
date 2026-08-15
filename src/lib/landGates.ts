@@ -9,7 +9,7 @@ import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./renderPlan.js";
 
-const GATE_REL = "land.gate";
+const GATE_VERBS = new Set(["land", "test", "drop", "lift"]);
 /**
  * The pre-`land.gate` spelling. Named in full, deliberately: a bridge being
  * migrated is searched for this string, and the refusal below is the one place
@@ -17,6 +17,11 @@ const GATE_REL = "land.gate";
  * contains the old rel" check would make the migration path ungreppable.
  */
 const LEGACY_GATE_REL = "land-gated-by";
+
+function gateRel(verb: string): string {
+	if (!GATE_VERBS.has(verb)) throw new Error(`unknown gate verb: ${verb}`);
+	return `${verb}.gate`;
+}
 
 export interface LandGate {
 	doc: KbDoc;
@@ -93,7 +98,13 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
  * frontmatter rather than links. Later edges are kept only so the report can
  * name them.
  */
-export function collectLandGates(roots: KbDoc[], kbDocs: KbDoc[], bridgeDir: string): LandGate[] {
+export function collectLandGates(
+	verb: string,
+	roots: KbDoc[],
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): LandGate[] {
+	const GATE_REL = gateRel(verb);
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const claimed = new Map<string, LandGate>();
 	const visited = new Set<string>();
@@ -161,7 +172,13 @@ export function collectLandGates(roots: KbDoc[], kbDocs: KbDoc[], bridgeDir: str
  * `depends-on.gate` exists -- it does not yet, so there is nothing transitive
  * to collect. See gate-ordering.
  */
-export function collectDiveGates(root: KbDoc, kbDocs: KbDoc[], bridgeDir: string): LandGate[] {
+export function collectDiveGates(
+	verb: string,
+	root: KbDoc,
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): LandGate[] {
+	const GATE_REL = gateRel(verb);
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const gates: LandGate[] = [];
 	const seen = new Set<string>();

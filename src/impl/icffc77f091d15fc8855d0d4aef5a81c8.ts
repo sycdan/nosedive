@@ -14,7 +14,13 @@ import {
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
 import { CURRENT_COMPATIBILITY_LEVEL } from "../lib/constants.js";
-import { baseConfigPath, formatPath, resolveFrom, uuidLike } from "../lib/coreParsing.js";
+import {
+	assertWorkspaceInsideBridge,
+	baseConfigPath,
+	formatPath,
+	resolveFrom,
+	uuidLike,
+} from "../lib/coreParsing.js";
 import {
 	nosediveInvocation,
 	printCommandHelp,
@@ -197,6 +203,11 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 			io.close();
 		}
 	}
+
+	// After prompting, so a typed workspace is checked too, and before anything
+	// is minted or written -- a bridge that cannot be resolved from inside its
+	// own workspace is not worth half-creating.
+	assertWorkspaceInsideBridge(bridgeDir, settings.workspace);
 
 	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
 	// L0 already carries the memo its migration minted; a fresh one does not,

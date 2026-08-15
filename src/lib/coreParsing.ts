@@ -261,18 +261,64 @@ export type ResolvedBridgeConfig =
  * (`.nosedive/config.yaml`) takes priority over legacy (`.nosediverc`) at
  * each directory, so a bridge mid-migration can't be shadowed by a stale
  * legacy file left one level up.
+ *
+ * The walk collects every candidate rather than stopping at the first, because
+ * **a repo hydrated into a workspace is never a bridge from that location**. A
+ * repo that is legitimately its own bridge elsewhere still carries its config
+ * once hydrated here, and stopping early meant a command run from that worktree
+ * answered out of the repo's knowledge base with nothing on screen to say so.
+ * A candidate is disqualified when some other candidate's declared `workspace:`
+ * contains it; the nearest survivor wins.
+ *
+ * This is deliberately not "take the topmost candidate", which the two agree on
+ * for an ordinary hydrated repo and disagree on for a bridge cloned into a
+ * `vendor/` directory outside the outer bridge's workspace -- that one is still
+ * a bridge. Containment overrides a candidate only where it can prove the
+ * candidate sits in another bridge's declared workspace.
+ *
+ * `seed` refuses a `workspace:` resolving outside its bridge, which is what
+ * makes the rule hold unconditionally: an out-of-tree workspace would put the
+ * disqualifying bridge nowhere on the path walked up from a repo inside it.
+ *
+ * A candidate whose config cannot be read or parsed disqualifies nobody rather
+ * than throwing. Resolution is not the place to report a malformed config --
+ * `readNosediveRc` parses the survivor and reports it with its own path.
  */
 export function findBridgeConfig(start: string): ResolvedBridgeConfig | undefined {
+	const candidates: ResolvedBridgeConfig[] = [];
 	let dir = resolve(start);
 	for (;;) {
 		const basePath = baseConfigPath(dir);
-		if (existsSync(basePath)) return { shape: "split", bridgeDir: dir, basePath };
-		const legacyPath = legacyConfigPath(dir);
-		if (existsSync(legacyPath)) return { shape: "legacy", bridgeDir: dir, legacyPath };
+		if (existsSync(basePath)) {
+			candidates.push({ shape: "split", bridgeDir: dir, basePath });
+		} else {
+			const legacyPath = legacyConfigPath(dir);
+			if (existsSync(legacyPath)) candidates.push({ shape: "legacy", bridgeDir: dir, legacyPath });
+		}
 		const parent = dirname(dir);
-		if (parent === dir) return undefined;
+		if (parent === dir) break;
 		dir = parent;
 	}
+
+	const workspaces = candidates.map((candidate) => {
+		const path = candidate.shape === "split" ? candidate.basePath : candidate.legacyPath;
+		try {
+			const workspace = parseYamlBlock(readFileSync(path, "utf8"), formatPath(path)).scalars
+				.workspace;
+			return workspace ? resolveFrom(candidate.bridgeDir, workspace) : undefined;
+		} catch {
+			return undefined;
+		}
+	});
+
+	return candidates.find((candidate, candidateIndex) =>
+		workspaces.every(
+			(workspace, workspaceIndex) =>
+				workspaceIndex === candidateIndex ||
+				!workspace ||
+				!isInsideDir(workspace, candidate.bridgeDir),
+		),
+	);
 }
 
 export function noBridgeConfigError(): Error {
@@ -322,6 +368,24 @@ export function readNosediveRc(start: string): NosediveRc {
 }
 
 // --- seed --------------------------------------------------------------
+
+/**
+ * `workspace:` must resolve inside the bridge that declares it.
+ *
+ * `findBridgeConfig` disqualifies a repo by proving some other candidate's
+ * workspace contains it, and it can only see candidates on the path walked up
+ * from the current directory. An out-of-tree workspace puts the declaring
+ * bridge nowhere on that path, so a seeded repo hydrated there would win by
+ * default and there would be nothing to disqualify it with -- the information
+ * simply isn't reachable. Refusing at seed keeps the rule unconditional.
+ */
+export function assertWorkspaceInsideBridge(bridgeDir: string, workspace: string): void {
+	const resolved = resolveFrom(bridgeDir, workspace);
+	if (isInsideDir(bridgeDir, resolved)) return;
+	throw new Error(
+		`workspace must be inside the bridge: ${toPosixPath(workspace)} resolves to ${formatPath(resolved)}`,
+	);
+}
 
 export interface RcSettings {
 	workspace: string;

@@ -27,7 +27,8 @@ export interface GateRepoSurvey {
  * Resolves the selected gates' own scopes, or their declaring docs' scopes when
  * a gate leaves `scopes:` absent. An explicit empty list deliberately overrides
  * the declaring doc. Missing worktrees are created read-only at their resolved
- * commit; existing worktrees are never moved.
+ * commit; existing worktrees are never moved. Two gates naming one repo at
+ * different refs are reported, and the first claim in run order decides.
  */
 export function hydrateGateRepos(
 	selected: LandGate[],
@@ -42,16 +43,44 @@ export function hydrateGateRepos(
 			string,
 			{ repoId: string; path: string; ref?: string; readOnly: boolean; flags: string[] }
 		>();
+		const claimedBy = new Map<string, string>();
+		const disagreements: { repoId: string; first: string; other: string }[] = [];
 		for (const gate of selected) {
 			const resolved = gate.doc.hasScopes ? gate.doc.scopes : gate.introducedBy.scopes;
 			if (resolved.length === 0)
 				reports.push(
-					`test: gate ${gate.doc.name || gate.doc.id} resolves no repo scopes; ctx.repos is empty for it.\n`,
+					`test: gate ${gateName(gate)} resolves no repo scopes; ctx.repos is empty for it.\n`,
 				);
-			for (const scope of resolved) scopes.set(scope.repoId, { ...scope, readOnly: true });
+			for (const scope of resolved) {
+				const claimed = scopes.get(scope.repoId);
+				if (!claimed) {
+					scopes.set(scope.repoId, { ...scope, readOnly: true });
+					claimedBy.set(scope.repoId, gateName(gate));
+					continue;
+				}
+				if (claimed.ref === scope.ref) continue;
+				/**
+				 * One repo is hydrated once, so two gates naming it at different refs
+				 * cannot both be honoured. The first claim in run order wins, and the
+				 * disagreement is reported rather than settled silently: the loser runs
+				 * against a tree it did not declare, which is the stale-pass class this
+				 * command exists to make visible.
+				 */
+				disagreements.push({
+					repoId: scope.repoId,
+					first: `${claimedBy.get(scope.repoId)} names ${refLabel(claimed.ref)}`,
+					other: `${gateName(gate)} names ${refLabel(scope.ref)}`,
+				});
+			}
 		}
 		for (const scope of scopes.values()) {
 			const result = hydrateScopeAtPin(scope, kbDocs, bridgeDir, workspaceDir, true);
+			for (const clash of disagreements.filter((entry) => entry.repoId === scope.repoId)) {
+				reports.push(
+					`test: gates disagree on repo ${result.repoDoc.name || result.repoDoc.id}: ` +
+						`${clash.first}, ${clash.other}; the first claim decides and an existing worktree is left alone.\n`,
+				);
+			}
 			if (result.created) {
 				// Gates never commit in scoped repos, so newly-created worktrees receive
 				// read-only push isolation. Existing worktrees are left entirely alone.
@@ -73,6 +102,15 @@ export function hydrateGateRepos(
 		}
 	}
 	return { hydrated, reports };
+}
+
+function gateName(gate: LandGate): string {
+	return gate.doc.name || gate.doc.id;
+}
+
+/** A bare repo quid pins nothing, so its report has to say that rather than nothing. */
+function refLabel(ref: string | undefined): string {
+	return ref ?? "no ref";
 }
 
 export async function runGateSession(

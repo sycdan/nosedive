@@ -489,6 +489,41 @@ test("a repo no selected gate scopes is not hydrated", () => {
 	assert.equal(existsSync(join(bridge, "workspace", "unscoped-repo")), false);
 });
 
+/**
+ * Named gates run in the order given, so the fixture can say which claim is
+ * first without depending on how a walk happens to order its finds.
+ */
+test("gates naming one repo at different refs are reported and the first claim decides", () => {
+	const bridge = setupDive("scope-clash", { diveGates: [], featGates: [] });
+	const repo = addRepo(bridge, scopedRepoId, "clash-repo");
+	const base = runTool("git", ["rev-parse", "HEAD"], repo.source).stdout.trim();
+	write(join(repo.source, "README.md"), "second\n");
+	runTool("git", ["add", "README.md"], repo.source);
+	gitCommit(repo.source, "second");
+	const later = runTool("git", ["rev-parse", "HEAD"], repo.source).stdout.trim();
+	write(
+		join(bridge, "kb", `${passId}.md`),
+		gateDoc(passId).replace("gist:", `scopes:\n  - ${scopedRepoId}:\n      ref: ${base}\ngist:`),
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		gateDoc(featGateId).replace(
+			"gist:",
+			`scopes:\n  - ${scopedRepoId}:\n      ref: ${later}\ngist:`,
+		),
+	);
+
+	const result = run(["test", passId, featGateId], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(
+		result.stderr,
+		new RegExp(
+			`gates disagree on repo clash-repo: ${passId} names ${base}, ${featGateId} names ${later}`,
+		),
+	);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], repo.worktree).stdout.trim(), base);
+});
+
 test("an existing scoped worktree at another commit is reported and never moved", () => {
 	const bridge = setupDive("existing-other-commit", { diveGates: [], featGates: [featGateId] });
 	const repo = addRepo(bridge, scopedRepoId, "existing-repo");

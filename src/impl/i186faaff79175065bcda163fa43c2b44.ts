@@ -1,16 +1,20 @@
+import { join } from "node:path";
+
 import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
-import { hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
+import { attachFailedGatesToDive, hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
 import { readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { appendTimestampedSection } from "../lib/kbSections.js";
 import {
 	collectDiveGates,
 	collectLandGates,
 	LandGate,
+	renderGateReport,
 	resolveGateScript,
 } from "../lib/landGates.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
@@ -92,7 +96,19 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	const hydrated = hydrateGateRepos(kbDocs, rc.bridgeDir, rc.workspaceDir);
-	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", hydrated, io);
+	const outcome = await runGateSession(
+		selected,
+		kbDocs,
+		rc.bridgeDir,
+		dive?.id ?? "",
+		hydrated,
+		io,
+	);
+	if (dive && outcome.failed) {
+		const divePath = join(rc.bridgeDir, dive.relPath);
+		appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
+		attachFailedGatesToDive(divePath, dive.links, outcome.runs);
+	}
 }
 
 function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {

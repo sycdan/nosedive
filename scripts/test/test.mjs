@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -76,6 +76,13 @@ function linkCount(text, id) {
 
 function reportCount(text) {
 	return text.split("## Test report ").length - 1;
+}
+
+function mintedDives(bridge) {
+	return readdirSync(join(bridge, "kb"))
+		.filter((name) => name.endsWith(".md") && name !== `${diveId}.md`)
+		.map((name) => ({ name, text: readFileSync(join(bridge, "kb", name), "utf8") }))
+		.filter(({ text }) => /^kind: dive$/m.test(text));
 }
 
 /**
@@ -239,12 +246,94 @@ test("test without an active dive sweeps test.gate links from the backlog memo",
 	assert.doesNotMatch(result.stdout, /passed gate/, "the dive is not reachable from the backlog");
 });
 
+test("a blocking backlog failure mints one unclaimed linked dive and backlog still renders", () => {
+	const bridge = setupDive("mint-failure", { featGates: [failId] });
+	const markerPath = join(bridge, "workspace", ".nosedive-ref");
+	rmSync(markerPath, { force: true });
+
+	assert.equal(run(["test"], bridge).status, 1);
+	assert.equal(run(["test"], bridge).status, 1);
+	const dives = mintedDives(bridge);
+	assert.equal(dives.length, 1, "the second sweep must deduplicate the failure");
+	assert.match(dives[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
+	assert.match(dives[0].text, /^  diver: null$/m);
+	assert.match(dives[0].text, /^## Brief$/m);
+	assert.match(dives[0].text, new RegExp(`kb/${failId}\\.md:\n      rel: test\\.gate`));
+	assert.match(dives[0].text, /failed gate/);
+	assert.equal(existsSync(markerPath), false, "minting must not activate the dive");
+	const featText = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");
+	assert.match(
+		featText,
+		new RegExp(`kb/${dives[0].name.replace(".md", "")}\\.md:\n      rel: planned\\.dive`),
+	);
+	assert.equal(run(["update-backlog"], bridge).status, 0);
+});
+
+test("a bailed minted dive no longer blocks a fresh mint", () => {
+	const bridge = setupDive("mint-after-bail", { featGates: [failId] });
+	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+	assert.equal(run(["test"], bridge).status, 1);
+	const first = mintedDives(bridge)[0];
+	write(join(bridge, "kb", first.name), first.text.replace("kind: dive", "kind: memo"));
+
+	assert.equal(run(["test"], bridge).status, 1);
+	assert.equal(mintedDives(bridge).length, 1, "the finished memo must permit one fresh dive");
+});
+
+test("gate ownership reads meta.feat first and still supports meta.effort", () => {
+	for (const field of ["feat", "effort"]) {
+		const bridge = setupDive(`mint-${field}`, { featGates: [] });
+		const ownerId = field === "feat" ? passId : wrongKindId;
+		write(
+			join(bridge, "kb", `${ownerId}.md`),
+			`---\nkind: memo\nid: ${ownerId}\nname: ${field}-owner\ngist: "Owner fixture"\nmeta:\n  ${field}: ${featId}\nlinks:\n${gateLink(failId)}---\n`,
+		);
+		const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+		write(
+			backlogPath,
+			readFileSync(backlogPath, "utf8").replace(
+				"links:\n",
+				`links:\n  - kb/${ownerId}.md:\n      rel: related\n`,
+			),
+		);
+		rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+
+		assert.equal(run(["test"], bridge).status, 1);
+		assert.match(mintedDives(bridge)[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
+	}
+});
+
+test("a backlog gate with no resolvable feat reports why and mints nothing", () => {
+	const bridge = setupDive("mint-no-feat", { featGates: [] });
+	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+	write(
+		backlogPath,
+		readFileSync(backlogPath, "utf8").replace("links:\n", `links:\n${gateLink(failId)}`),
+	);
+	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+
+	const result = run(["test"], bridge);
+	assert.equal(result.status, 1);
+	assert.match(
+		result.stderr,
+		new RegExp(`${failId}.*${backlogId}\\.md.*test\\.gate needs a feat in context to mint against`),
+	);
+	assert.equal(mintedDives(bridge).length, 0);
+});
+
 test("test still runs a named gate without any dive on deck", () => {
 	const bridge = setupDive("named-without-dive");
 	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
 	const result = run(["test", passId], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "passed gate\n");
+});
+
+test("a named failing gate without a dive does not mint", () => {
+	const bridge = setupDive("named-failure-without-dive");
+	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+	assert.equal(run(["test", failId], bridge).status, 1);
+	assert.equal(mintedDives(bridge).length, 0);
 });
 
 test("every gate runs even after one fails, and all failures are reported once", () => {

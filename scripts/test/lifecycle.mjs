@@ -162,6 +162,15 @@ meta:
 	assertOk(fullTests, "full test failed");
 	assert.match(fullTests.stdout, /lifecycle dive gate ran/);
 	assert.match(fullTests.stdout, /lifecycle feat gate ran/);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
+		'export function run() { console.error("lifecycle dive gate failed"); return false; }\n',
+	);
+	const failedTests = run(["test"], bridge);
+	assert.equal(failedTests.status, 1, "the failing dive gate must fail test");
+	const testedDive = readFileSync(firstPath, "utf8");
+	assert.match(testedDive, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
+	assert.match(testedDive, new RegExp(`kb/${diveGateId}\\.md:\\n      rel: test\\.gate`));
 	assertOk(run(["jump"], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	const bailed = readFileSync(firstPath, "utf8");

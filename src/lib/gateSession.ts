@@ -1,7 +1,14 @@
 import type { CommandIo } from "./bridgeSetupIo.js";
 import { hydratedScopedRepoPath } from "./gitState.js";
 import type { KbDoc } from "./kbDocs.js";
-import { gateRepoContext, type LandGate, runLandGates } from "./landGates.js";
+import {
+	gateRepoContext,
+	type GateOutcome,
+	type GateRun,
+	type LandGate,
+	runLandGates,
+} from "./landGates.js";
+import { appendLinkToDoc } from "./repoEffortScopes.js";
 
 interface HydratedRepo {
 	repoId: string;
@@ -36,7 +43,7 @@ export async function runGateSession(
 	diveId: string,
 	hydrated: HydratedRepo[],
 	io: CommandIo,
-): Promise<void> {
+): Promise<GateOutcome> {
 	const outcome = await runLandGates(selected, {
 		// The gates' own streams, as they write them. Nothing is replayed
 		// afterwards -- a pilot watching a gate run has already seen it.
@@ -68,6 +75,20 @@ export async function runGateSession(
 		}
 	}
 	io.setExitCode(failures.length > 0 ? 1 : 0);
+	return outcome;
+}
+
+export function attachFailedGatesToDive(
+	divePath: string,
+	diveLinks: KbDoc["links"],
+	failedGates: GateRun[],
+): void {
+	const linkedIds = new Set(diveLinks.map((link) => link.id));
+	for (const { gate } of failedGates) {
+		if (linkedIds.has(gate.doc.id)) continue;
+		appendLinkToDoc(divePath, gate.doc.id, "test.gate");
+		linkedIds.add(gate.doc.id);
+	}
 }
 
 function gateLabel(gate: LandGate): string {

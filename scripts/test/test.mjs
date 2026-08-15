@@ -70,6 +70,14 @@ function gateLink(id) {
 	return `  - kb/${id}.md:\n      rel: test.gate\n`;
 }
 
+function linkCount(text, id) {
+	return text.split(`- kb/${id}.md:`).length - 1;
+}
+
+function reportCount(text) {
+	return text.split("## Test report ").length - 1;
+}
+
 /**
  * A bridge whose dive claims one gate directly and whose feat claims another,
  * which is the only shape that can tell the two selections apart: with no
@@ -115,6 +123,70 @@ test("test --full reaches test gates the dive does not claim itself", () => {
 	assert.match(result.stdout, /passed gate/);
 	assert.match(result.stdout, /feat gate ran/);
 	assert.match(result.stderr, /2 gate\(s\) in .*: 2 passed, 0 failed/);
+});
+
+test("a failing dive gate records a report and link without changing its declaration", () => {
+	const bridge = setupDive("failing-dive-gate");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const gatePath = join(bridge, "kb", `${failId}.md`);
+	const gateBefore = readFileSync(gatePath, "utf8");
+	const result = run(["test", failId], bridge);
+
+	assert.equal(result.status, 1);
+	const diveText = readFileSync(divePath, "utf8");
+	assert.match(diveText, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
+	assert.match(diveText, new RegExp(`kb/${failId}\\.md:\\n      rel: test\\.gate`));
+	assert.equal(readFileSync(gatePath, "utf8"), gateBefore, "the gate declaration must not move");
+});
+
+test("a linked failing gate is not linked twice while every failure records a report", () => {
+	const bridge = setupDive("repeat-failure", { diveGates: [failId] });
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	write(divePath, readFileSync(divePath, "utf8").replace("rel: test.gate", "rel: related"));
+
+	assert.equal(run(["test", failId], bridge).status, 1);
+	assert.equal(run(["test", failId], bridge).status, 1);
+	const diveText = readFileSync(divePath, "utf8");
+	assert.equal(linkCount(diveText, failId), 1);
+	assert.match(diveText, /rel: related/);
+	assert.equal(reportCount(diveText), 2);
+});
+
+test("a flaky failing gate leaves no link or report", () => {
+	const bridge = setupDive("flaky-failure", { diveGates: [], featGates: [failId] });
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	write(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			"rel: test.gate",
+			"rel: test.gate\n      test-is-flaky: true",
+		),
+	);
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const diveBefore = readFileSync(divePath, "utf8");
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(readFileSync(divePath, "utf8"), diveBefore);
+});
+
+test("a passing run leaves the dive byte-identical", () => {
+	const bridge = setupDive("passing-unchanged");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const before = readFileSync(divePath, "utf8");
+
+	assert.equal(run(["test"], bridge).status, 0);
+	assert.equal(readFileSync(divePath, "utf8"), before);
+});
+
+test("a --full failure on the feat gate attaches it to the dive", () => {
+	const bridge = setupDive("full-failure", { featGates: [failId] });
+	const result = run(["test", "--full"], bridge);
+
+	assert.equal(result.status, 1);
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.equal(linkCount(diveText, failId), 1);
+	assert.equal(reportCount(diveText), 1);
 });
 
 test("test runs every named gate in order and rejects the removed land argument", () => {

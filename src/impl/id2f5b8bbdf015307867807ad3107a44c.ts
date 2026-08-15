@@ -9,6 +9,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
+import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
 	formatPath,
 	parseMarkdownDoc,
@@ -228,6 +229,11 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			 * failure; the dive keeps the copy the next agent will read.
 			 */
 			appendGateReportToDive(dive.path, report);
+			attachFailedGatesToDive(
+				dive.path,
+				dive.links,
+				outcome.runs.filter((run) => run.status !== 0 && !run.gate.flaky),
+			);
 			io.err(
 				`land refuses: gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,
 			);

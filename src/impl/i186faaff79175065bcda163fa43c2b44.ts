@@ -107,11 +107,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	if (dive && outcome.failed) {
 		const divePath = join(rc.bridgeDir, dive.relPath);
 		appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
-		attachFailedGatesToDive(
-			divePath,
-			dive.links,
-			outcome.runs.filter((run) => run.status !== 0 && !run.gate.flaky),
-		);
+		attachFailedGatesToDive(divePath, dive.links, outcome.runs);
 	}
 }
 

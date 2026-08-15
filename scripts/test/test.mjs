@@ -170,6 +170,35 @@ test("a flaky failing gate leaves no link or report", () => {
 	assert.equal(readFileSync(divePath, "utf8"), diveBefore);
 });
 
+/**
+ * The case that makes the flaky rule load-bearing. A flaky failure on its own
+ * never reaches the attachment at all -- `outcome.failed` already excludes it,
+ * so both callers skip the whole branch. Only a run carrying a blocking failure
+ * *and* a flaky one gets there with both in hand, and the flaky gate must not
+ * come along.
+ */
+test("a flaky failure alongside a blocking one attaches only the blocking gate", () => {
+	const bridge = setupDive("mixed-failure", { diveGates: [failId] });
+	write(
+		join(bridge, "kb", "artifacts", `${featGateId}.mjs`),
+		'export function run() { console.error("flaky feat gate failed"); return false; }\n',
+	);
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	write(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			"rel: test.gate",
+			"rel: test.gate\n      test-is-flaky: true",
+		),
+	);
+
+	const result = run(["test", "--full"], bridge);
+	assert.equal(result.status, 1, "the blocking failure must still fail the run");
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.equal(linkCount(diveText, failId), 1);
+	assert.equal(linkCount(diveText, featGateId), 0, "a flaky failure is not the dive's to fix");
+});
+
 test("a passing run leaves the dive byte-identical", () => {
 	const bridge = setupDive("passing-unchanged");
 	const divePath = join(bridge, "kb", `${diveId}.md`);

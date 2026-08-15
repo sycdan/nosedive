@@ -162,15 +162,22 @@ meta:
 	assertOk(fullTests, "full test failed");
 	assert.match(fullTests.stdout, /lifecycle dive gate ran/);
 	assert.match(fullTests.stdout, /lifecycle feat gate ran/);
+	/**
+	 * The feat's gate is broken here rather than the dive's, because the dive
+	 * already links its own gate as `test.gate` -- asserting that link would
+	 * pass whether or not anything attached it. The feat's gate is one this dive
+	 * has never named, so the link can only be there because the failure put it
+	 * there.
+	 */
 	write(
-		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
-		'export function run() { console.error("lifecycle dive gate failed"); return false; }\n',
+		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+		'export function run() { console.error("lifecycle feat gate failed"); return false; }\n',
 	);
-	const failedTests = run(["test"], bridge);
-	assert.equal(failedTests.status, 1, "the failing dive gate must fail test");
+	const failedTests = run(["test", "--full"], bridge);
+	assert.equal(failedTests.status, 1, "the failing feat gate must fail test --full");
 	const testedDive = readFileSync(firstPath, "utf8");
 	assert.match(testedDive, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
-	assert.match(testedDive, new RegExp(`kb/${diveGateId}\\.md:\\n      rel: test\\.gate`));
+	assert.match(testedDive, new RegExp(`kb/${featGateId}\\.md:\\n      rel: test\\.gate`));
 	assertOk(run(["jump"], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	const bailed = readFileSync(firstPath, "utf8");

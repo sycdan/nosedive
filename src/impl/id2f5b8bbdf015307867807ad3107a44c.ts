@@ -229,11 +229,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			 * failure; the dive keeps the copy the next agent will read.
 			 */
 			appendGateReportToDive(dive.path, report);
-			attachFailedGatesToDive(
-				dive.path,
-				dive.links,
-				outcome.runs.filter((run) => run.status !== 0 && !run.gate.flaky),
-			);
+			attachFailedGatesToDive(dive.path, dive.links, outcome.runs);
 			io.err(
 				`land refuses: gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,
 			);

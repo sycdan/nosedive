@@ -78,13 +78,30 @@ export async function runGateSession(
 	return outcome;
 }
 
+/**
+ * Attaches every gate that blocked a run to the dive being worked, so the fix
+ * loop is `nosedive test` whichever command found the failure. The gate's own
+ * declaration is left where it is -- a `land.gate` on a repo doc stays a
+ * `land.gate` there and is rerun from its original home in its own phase.
+ *
+ * Takes the whole run set rather than a pre-filtered one, so the rule about
+ * which failures count lives here and not at each call site. Flaky gates are
+ * excluded: a flaky gate reports non-zero as a warning and did not block, so
+ * pulling it into the fix loop would ask a diver to chase something that let
+ * the run through.
+ *
+ * Dedup is on the doc being linked, not on the qualifier. A gate the dive
+ * already names under any rel is somebody's business already, so a gate failing
+ * on three consecutive runs leaves one link and three reports.
+ */
 export function attachFailedGatesToDive(
 	divePath: string,
 	diveLinks: KbDoc["links"],
-	failedGates: GateRun[],
+	runs: GateRun[],
 ): void {
 	const linkedIds = new Set(diveLinks.map((link) => link.id));
-	for (const { gate } of failedGates) {
+	for (const { gate, status } of runs) {
+		if (status === 0 || gate.flaky) continue;
 		if (linkedIds.has(gate.doc.id)) continue;
 		appendLinkToDoc(divePath, gate.doc.id, "test.gate");
 		linkedIds.add(gate.doc.id);

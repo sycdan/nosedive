@@ -143,13 +143,7 @@ export function reconcileDiveEffortLinks(
 ): void {
 	if (previousEffort && previousEffort.id !== effort.id)
 		reconcileDiveLink(previousEffort.path, diveId, undefined);
-	// A newly planned dive uses the command-qualified rel. Existing dives being
-	// released retain the older `pending` spelling until that migration is done.
-	reconcileDiveLink(
-		effort.path,
-		diveId,
-		diver ? "working" : previousEffort ? "pending" : "planned.dive",
-	);
+	reconcileDiveLink(effort.path, diveId, diver ? "working" : "pending");
 }
 
 /** Release a dive while retaining its marker and any captured patch chains. */

@@ -262,9 +262,18 @@ test("a blocking backlog failure mints one unclaimed linked dive and backlog sti
 	assert.match(dives[0].text, /failed gate/);
 	assert.equal(existsSync(markerPath), false, "minting must not activate the dive");
 	const featText = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");
+	/**
+	 * Either spelling. `record.dive` writes `pending` for an unclaimed dive
+	 * today, and `planned.dive` is where the dive rel lifecycle
+	 * (kb/01a003fb-2f63-...) takes it. The claim here is that the feat gained an
+	 * edge to the minted dive, which holds under both -- pinning the qualifier
+	 * would make this test fail on a change it has no opinion about.
+	 */
 	assert.match(
 		featText,
-		new RegExp(`kb/${dives[0].name.replace(".md", "")}\\.md:\n      rel: planned\\.dive`),
+		new RegExp(
+			`kb/${dives[0].name.replace(".md", "")}\\.md:\n      rel: (?:pending|planned\\.dive)`,
+		),
 	);
 	assert.equal(run(["update-backlog"], bridge).status, 0);
 });
@@ -299,7 +308,9 @@ test("gate ownership reads meta.feat first and still supports meta.effort", () =
 		rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
 
 		assert.equal(run(["test"], bridge).status, 1);
-		assert.match(mintedDives(bridge)[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
+		const minted = mintedDives(bridge);
+		assert.equal(minted.length, 1, `meta.${field} did not resolve a feat to mint against`);
+		assert.match(minted[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
 	}
 });
 

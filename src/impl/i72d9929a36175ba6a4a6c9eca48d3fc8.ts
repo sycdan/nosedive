@@ -347,8 +347,11 @@ export function jump(args: string[], io: CommandIo): void {
 	if (failures.length > 0) {
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
 	}
-	const effortRef = dive.metaScalars.effort;
-	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
+	// The parsed field, not the raw key: it accepts `meta.feat` and the older
+	// `meta.effort` alike, and reading past it made a dive written the canonical
+	// way impossible to jump at all.
+	const effortRef = dive.effortRef;
+	if (!effortRef) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
 	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
 	recreateDiveScratch(rc.workspaceDir, dive.id);
 

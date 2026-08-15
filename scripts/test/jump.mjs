@@ -337,13 +337,35 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	);
 });
 
+/**
+ * Every dive recorded before `record.dive` wrote `meta.feat` carries the older
+ * spelling, and the parser's fallback is a live promise to all of them. Nothing
+ * else in this file can see it any more: the fixture dives come from
+ * `record.dive`, so they all carry the canonical key now.
+ */
+test("jump reads a dive that names its feat in meta.effort", () => {
+	const { bridge, effortId, diveId } = setup("legacy-feat-key");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8").replace(`  feat: ${effortId}`, `  effort: ${effortId}`),
+	);
+	runTool("git", ["add", "-A"], bridge);
+	gitCommit(bridge, "put the dive back on the superseded feat key");
+	runTool("git", ["push"], bridge);
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a dive naming its feat in meta.effort");
+	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}`));
+});
+
 test("jump with no patch links still hydrates the scoped repo", () => {
 	const { bridge, repoId, effortId, diveId, pinnedRef } = setup("noop");
 	const worktree = repoWorktree(bridge, "noop");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	writeFileSync(
 		divePath,
-		readFileSync(divePath, "utf8").replace(`effort: ${effortId}`, "effort: jump-test.nosedive"),
+		readFileSync(divePath, "utf8").replace(`feat: ${effortId}`, "feat: jump-test.nosedive"),
 	);
 	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 	runTool("git", ["add", "-A"], bridge);

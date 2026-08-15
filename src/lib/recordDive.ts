@@ -263,7 +263,7 @@ function renderNewDive(
 		`gist: ${quoteYamlString(gist)}`,
 		...renderScopes(scopes),
 		"meta:",
-		`  effort: ${effort.id}`,
+		`  feat: ${effort.id}`,
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -426,7 +426,11 @@ export function recordDive(args: string[], io: CommandIo): void {
 	if (options.effort) {
 		if (!effort) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
 		doc.set("name", managedName(effort, dive.id));
-		doc.setIn(["meta", "effort"], effort.id);
+		doc.setIn(["meta", "feat"], effort.id);
+		// Not a migration -- the one case where leaving the old key would make the
+		// document name two different feats, with the parser silently preferring
+		// one of them.
+		doc.deleteIn(["meta", "effort"]);
 	}
 	if (options.gist !== undefined) doc.set("gist", options.gist.trim());
 	const heldBy = dive.metaScalars.diver;

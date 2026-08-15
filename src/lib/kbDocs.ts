@@ -266,7 +266,8 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 			fm.nested.meta?.trunk ??
 			fm.nested.meta?.["base-branch"] ??
 			fm.nested.meta?.["default-branch"],
-		effortRef: fm.scalars.effort ?? fm.nested.meta?.effort,
+		effortRef:
+			fm.scalars.feat ?? fm.scalars.effort ?? fm.nested.meta?.feat ?? fm.nested.meta?.effort,
 		metaScalars: fm.nested.meta ?? {},
 		metaLists: fm.nestedLists.meta ?? {},
 		metaRaw:

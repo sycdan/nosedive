@@ -17,6 +17,7 @@ import {
 	renderGateReport,
 	resolveGateScript,
 } from "../lib/landGates.js";
+import { recordDive } from "../lib/recordDive.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 
 interface TestArgs {
@@ -108,6 +109,78 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		const divePath = join(rc.bridgeDir, dive.relPath);
 		appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
 		attachFailedGatesToDive(divePath, dive.links, outcome.runs);
+	} else if (!dive && gateRefs.length === 0 && outcome.failed) {
+		mintFailedBacklogGates(outcome.runs, kbDocs, rc, io);
+	}
+}
+
+/**
+ * A backlog sweep has no active dive to receive a blocking failure, so each
+ * unowned failure becomes claimable work. Reload after recording because
+ * `recordDive` writes both docs and the next failure must deduplicate against
+ * those writes too.
+ */
+function mintFailedBacklogGates(
+	runs: Awaited<ReturnType<typeof runGateSession>>["runs"],
+	initialDocs: KbDoc[],
+	rc: ReturnType<typeof readNosediveRc>,
+	io: CommandIo,
+): void {
+	let kbDocs = initialDocs;
+	for (const run of runs) {
+		if (run.status === 0 || run.gate.flaky) continue;
+		if (
+			kbDocs.some(
+				(doc) => doc.kind === "dive" && doc.links.some((link) => link.id === run.gate.doc.id),
+			)
+		) {
+			continue;
+		}
+
+		const declaredBy = run.gate.introducedBy;
+		let feat = declaredBy.kind === "feat" ? declaredBy : undefined;
+		if (!feat && declaredBy.effortRef) {
+			try {
+				const resolved = resolveEffortDoc(kbDocs, rc, declaredBy.effortRef);
+				if (resolved.kind === "feat") feat = resolved;
+			} catch {
+				// The failed run already owns the exit status; the message below explains why no work was minted.
+			}
+		}
+		if (!feat) {
+			io.writeErr(
+				`test: gate ${run.gate.doc.name || run.gate.doc.id} (${run.gate.doc.id}), declared by ${declaredBy.relPath}: a test.gate needs a feat in context to mint against.\n`,
+			);
+			continue;
+		}
+
+		const before = new Set(kbDocs.filter((doc) => doc.kind === "dive").map((doc) => doc.id));
+		const brief = [
+			`Gate: ${run.gate.doc.id}`,
+			`Declared by: ${declaredBy.relPath}`,
+			"",
+			"stderr:",
+			run.stderr || "(none)",
+			"",
+			"stdout:",
+			run.stdout || "(none)",
+		].join("\n");
+		recordDive(
+			[
+				"--feat",
+				feat.id,
+				"--gist",
+				`triage ${run.gate.doc.name || run.gate.doc.id} failure`,
+				"--brief",
+				brief,
+			],
+			io,
+		);
+		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
+		const minted = kbDocs.find((doc) => doc.kind === "dive" && !before.has(doc.id));
+		if (!minted) throw new Error(`test failed to find the dive minted for gate ${run.gate.doc.id}`);
+		attachFailedGatesToDive(join(rc.bridgeDir, minted.relPath), [], [run]);
+		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 	}
 }
 

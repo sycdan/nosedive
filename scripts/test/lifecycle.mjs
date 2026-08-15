@@ -183,6 +183,29 @@ meta:
 	const bailed = readFileSync(firstPath, "utf8");
 	assert.match(bailed, /^kind: memo$/m);
 	assert.match(bailed, /^## Bail report\b/m);
+	assertOk(run(["update-backlog", "--inject", featId], bridge), "backlog injection failed");
+	const featBeforeSweep = readFileSync(featPath, "utf8");
+	const backlogSweep = run(["test"], bridge);
+	assert.equal(backlogSweep.status, 1, "the broken feat gate must fail the backlog sweep");
+	const featAfterSweep = readFileSync(featPath, "utf8");
+	/**
+	 * Either spelling. `record.dive` writes `pending` for an unclaimed dive
+	 * today; `planned.dive` is where the dive rel lifecycle
+	 * (kb/01a003fb-2f63-...) is taking it. What this asserts is that the feat
+	 * gained an edge to a dive that did not exist before the sweep, which is
+	 * true under both.
+	 */
+	const plannedPattern = /kb\/([0-9a-f-]{36})\.md:\n      rel: (?:pending|planned\.dive)/g;
+	const beforePlanned = new Set(
+		[...featBeforeSweep.matchAll(plannedPattern)].map((match) => match[1]),
+	);
+	const mintedId = [...featAfterSweep.matchAll(plannedPattern)]
+		.map((match) => match[1])
+		.find((id) => !beforePlanned.has(id));
+	assert.ok(mintedId, "the feat must gain a dive link naming the minted dive");
+	const sweptPreflight = run(["preflight"], bridge);
+	assertOk(sweptPreflight, "preflight after backlog mint failed");
+	assert.match(sweptPreflight.stdout, new RegExp(mintedId));
 
 	const second = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
 	assertOk(second, "second record.dive failed");

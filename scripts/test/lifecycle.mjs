@@ -16,6 +16,8 @@ import {
 const tmp = createTmp("lifecycle");
 const diver = "lifecycle@example.test";
 const repoId = "019fd590-0000-7000-8000-000000000001";
+const diveGateId = "019fd590-0000-7000-8000-000000000002";
+const featGateId = "019fd590-0000-7000-8000-000000000003";
 
 function bareRepo(name) {
 	const path = join(tmp, name);
@@ -106,6 +108,60 @@ meta:
 	assert.doesNotMatch(packed, /^  diver: (?!null$).+$/m, "packed dive should be claimable");
 	assert.match(packed, /rel: patch/, "packed dive should carry a patch chain");
 	assertOk(run(["record.dive", "--ref", firstId, "--diver", diver], bridge), "reclaim failed");
+	write(
+		join(bridge, "kb", `${diveGateId}.md`),
+		`---
+kind: assertion
+id: ${diveGateId}
+name: lifecycle-dive-gate
+gist: "Run the lifecycle dive gate"
+meta:
+  test-script: kb/artifacts/lifecycle-dive-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
+		'export function run() { console.log("lifecycle dive gate ran"); }\n',
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		`---
+kind: assertion
+id: ${featGateId}
+name: lifecycle-feat-gate
+gist: "Run the lifecycle feat gate"
+meta:
+  test-script: kb/artifacts/lifecycle-feat-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+		'export function run() { console.log("lifecycle feat gate ran"); }\n',
+	);
+	write(
+		firstPath,
+		readFileSync(firstPath, "utf8").replace(
+			/^links:\n/m,
+			`links:\n  - kb/${diveGateId}.md:\n      rel: test.gate\n`,
+		),
+	);
+	write(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			/^links:\n/m,
+			`links:\n  - kb/${featGateId}.md:\n      rel: test.gate\n`,
+		),
+	);
+	const diveTests = run(["test"], bridge);
+	assertOk(diveTests, "dive-scoped test failed");
+	assert.match(diveTests.stdout, /lifecycle dive gate ran/);
+	assert.doesNotMatch(diveTests.stdout, /lifecycle feat gate ran/);
+	const fullTests = run(["test", "--full"], bridge);
+	assertOk(fullTests, "full test failed");
+	assert.match(fullTests.stdout, /lifecycle dive gate ran/);
+	assert.match(fullTests.stdout, /lifecycle feat gate ran/);
 	assertOk(run(["jump"], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	const bailed = readFileSync(firstPath, "utf8");
@@ -115,6 +171,9 @@ meta:
 	const second = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
 	assertOk(second, "second record.dive failed");
 	const secondId = recordedId(second.stdout);
+	const noDiveGates = run(["test"], bridge);
+	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
+	assert.match(noDiveGates.stderr, /--full/);
 	assertOk(
 		run(["record.dive", "--ref", secondId, "--brief", "Test landing and publication."], bridge),
 		"second brief failed",

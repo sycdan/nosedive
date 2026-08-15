@@ -75,16 +75,9 @@ jobs:
       - name: Publish to npm
         run: npm publish --tag "${{ steps.version.outputs.tag }}" --access public
       # Derived from the package's own level, never chosen: the day
-      # CURRENT_COMPATIBILITY_LEVEL becomes 3, nothing computes `level-2` any
-      # more and it freezes on the last release that claimed 2 -- which is the
-      # pin the upgrade-path regression gate seeds from. A hand-moved tag stops
-      # moving only if somebody remembers, and the failure is silent.
-      #
-      # Releases only. A regression fixture seeds from a real release, not from
-      # whatever dev build landed last.
-      #
-      # `level-<n>` and never `<n>`: npm rejects a dist-tag name that is a valid
-      # semver range, and both `2` and `v2` parse as one.
+      # CURRENT_COMPATIBILITY_LEVEL goes N -> N+1, nothing computes `level-N` any
+      # more and it freezes on the last release that claimed N.
+      # `level-<n>`, never `<n>`: npm rejects a dist-tag name that is a valid semver.
       - name: Tag the compatibility level
         if: github.event_name == 'workflow_dispatch'
         run: |

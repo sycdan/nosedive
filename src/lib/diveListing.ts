@@ -245,9 +245,9 @@ export const DIVE_WORKING_RELS = new Set(["working", "reviewing", "jumped"]);
 
 /**
  * A dive edge may carry its role as a suffix -- `planned.dive` -- or not, which
- * is what `record.dive` still writes. Both name the same edge.
+ * is what older `record.dive` versions wrote. Both name the same edge.
  */
-function diveRole(rel: string | undefined): string | undefined {
+export function diveRole(rel: string | undefined): string | undefined {
 	if (!rel) return undefined;
 	return rel.endsWith(".dive") ? rel.slice(0, -".dive".length) : rel;
 }

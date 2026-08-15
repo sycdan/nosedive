@@ -134,16 +134,20 @@ function reconcileDiveLink(path: string, diveId: string, rel: string | undefined
 	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));
 }
 
-/** Keep an effort's dive index aligned with the dive's current assignment. */
+/**
+ * Keep an effort's dive index aligned with the dive's current phase. The edge
+ * records phase while claimed-ness is derived from `meta.diver`, so callers
+ * must supply the rel instead of conflating the two states.
+ */
 export function reconcileDiveEffortLinks(
 	previousEffort: KbDoc | undefined,
 	effort: KbDoc,
 	diveId: string,
-	diver: string | undefined,
+	rel: string,
 ): void {
 	if (previousEffort && previousEffort.id !== effort.id)
 		reconcileDiveLink(previousEffort.path, diveId, undefined);
-	reconcileDiveLink(effort.path, diveId, diver ? "working" : "pending");
+	reconcileDiveLink(effort.path, diveId, rel);
 }
 
 /** Release a dive while retaining its marker and any captured patch chains. */

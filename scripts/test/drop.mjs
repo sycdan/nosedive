@@ -165,6 +165,24 @@ test("drop reports an open dive only on stderr", () => {
 	writeLinkedDoc(bridge, diveId, "dive", "unfinished-slice");
 	writeEffort(bridge, {
 		links: [
+			{ id: memoId, rel: "landed.dive" },
+			{ id: diveId, rel: "jumped.dive" },
+		],
+	});
+
+	const dropped = run(["drop", "ship-it.development"], bridge);
+	assert.equal(dropped.status, 1);
+	assert.equal(dropped.stdout, "");
+	assert.match(dropped.stderr, /open dive: unfinished-slice/);
+	assert.doesNotMatch(dropped.stderr, /no landed dive/);
+});
+
+test("drop still recognizes legacy working dive rels", () => {
+	const bridge = createDroppableBridge("legacy-open-dive");
+	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
+	writeLinkedDoc(bridge, diveId, "dive", "unfinished-slice");
+	writeEffort(bridge, {
+		links: [
 			{ id: memoId, rel: "working" },
 			{ id: diveId, rel: "working" },
 		],
@@ -174,6 +192,7 @@ test("drop reports an open dive only on stderr", () => {
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /open dive: unfinished-slice/);
+	assert.doesNotMatch(dropped.stderr, /no landed dive/);
 });
 
 test("drop blocks a feat with no landed dive", () => {

@@ -1,6 +1,7 @@
 import { relative, resolve } from "node:path";
 
 import { toPosixPath, type NosediveRc } from "./coreParsing.js";
+import { DIVE_WORKING_RELS, diveRole } from "./diveListing.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 import { resolveRemoteForGit } from "./repoWorkspaceCore.js";
@@ -111,11 +112,20 @@ export function collectDropReadiness(
 	rc: NosediveRc,
 ): DropReadiness {
 	const blockers: string[] = [];
-	const working = linkedDocs(effort, kbDocs, "working");
-	if (!working.some((doc) => doc.kind === "memo")) {
-		blockers.push(`no landed dive: ${effort.name} has no rel: working link to a memo`);
+	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const diveLinks = effort.links
+		.map((link) => ({ doc: byId.get(link.id), role: diveRole(link.rel) }))
+		.filter((entry): entry is { doc: KbDoc; role: string | undefined } => entry.doc !== undefined);
+	if (
+		!diveLinks.some(
+			({ doc, role }) =>
+				role === "landed" || (DIVE_WORKING_RELS.has(role ?? "") && doc.kind === "memo"),
+		)
+	) {
+		blockers.push(`no landed dive: ${effort.name} has no landed dive`);
 	}
-	for (const dive of working.filter((doc) => doc.kind === "dive")) {
+	for (const { doc: dive, role } of diveLinks) {
+		if (dive.kind !== "dive" || !DIVE_WORKING_RELS.has(role ?? "")) continue;
 		blockers.push(`open dive: ${dive.name}`);
 	}
 	/**

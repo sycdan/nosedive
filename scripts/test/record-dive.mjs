@@ -368,7 +368,7 @@ test("record.dive refuses --takeover on a dive nobody holds", () => {
 	assert.match(taken.stderr, /not held/);
 });
 
-test("record.dive links a claimed dive as working", () => {
+test("record.dive links a claimed dive as planned while retaining its diver", () => {
 	const { bridge } = setup("working-link");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
 	const created = run(
@@ -376,9 +376,11 @@ test("record.dive links a claimed dive as working", () => {
 		bridge,
 	);
 	assertOk(created, "record.dive create failed");
-	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const dive = readFileSync(recordedPath(bridge, created.stdout), "utf8");
+	const id = /^id: (.+)$/m.exec(dive)[1];
 	const effort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
-	assert.match(effort, new RegExp(`- kb/${id}\\.md:\n      rel: working`));
+	assert.match(dive, /^  diver: "?pilot@example\.test"?$/m);
+	assert.match(effort, new RegExp(`- kb/${id}\\.md:\n      rel: planned\\.dive`));
 });
 
 test("record.dive --free records an empty dive scoping the backlog read-only", () => {
@@ -563,5 +565,5 @@ gist: "Updated effort"
 	const newEffort = readFileSync(join(bridge, "kb", `${effort}.md`), "utf8");
 	assert.doesNotMatch(oldEffort, new RegExp(`kb/${id}\\.md`));
 	assert.equal((newEffort.match(new RegExp(`kb/${id}\\.md`, "g")) ?? []).length, 1);
-	assert.match(newEffort, new RegExp(`- kb/${id}\\.md:\n      rel: working`));
+	assert.match(newEffort, new RegExp(`- kb/${id}\\.md:\n      rel: planned\\.dive`));
 });

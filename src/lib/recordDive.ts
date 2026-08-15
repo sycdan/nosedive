@@ -406,7 +406,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		const id = uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, effort, options, scopes));
-		reconcileDiveEffortLinks(undefined, effort, id, options.diver);
+		reconcileDiveEffortLinks(undefined, effort, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
@@ -474,7 +474,10 @@ export function recordDive(args: string[], io: CommandIo): void {
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	const claimed = options.takeover ? pilotEmail : options.diver;
 	if (effort) {
-		reconcileDiveEffortLinks(previousEffort, effort, dive.id, claimed ?? heldBy);
+		// Re-homing changes the effort, not the phase. Read before reconciliation
+		// removes the old effort's reciprocal link.
+		const existingRel = previousEffort?.links.find((link) => link.id === dive.id)?.rel;
+		reconcileDiveEffortLinks(previousEffort, effort, dive.id, existingRel ?? "planned.dive");
 	}
 	if (ensureActivation(dive, claimed, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);

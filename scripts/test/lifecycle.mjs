@@ -32,6 +32,13 @@ function recordedId(stdout) {
 	return id;
 }
 
+function assertFeatDiveRel(featPath, diveId, rel) {
+	assert.match(
+		readFileSync(featPath, "utf8"),
+		new RegExp(`kb/${diveId}\\.md:\\n      rel: ${rel}`),
+	);
+}
+
 test("a feat composes through packed, bailed, and landed dives", () => {
 	const local = bareRepo("implementation-local.git");
 	const cloud = bareRepo("implementation-cloud.git");
@@ -92,16 +99,19 @@ meta:
 	const first = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
 	assertOk(first, "first record.dive failed");
 	const firstId = recordedId(first.stdout);
+	assertFeatDiveRel(featPath, firstId, "planned\\.dive");
 	assertOk(
 		run(["record.dive", "--ref", firstId, "--brief", "Test packing and reclaiming."], bridge),
 		"first brief failed",
 	);
 	assertOk(run(["jump"], bridge), "first jump failed");
+	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
 	const worktree = join(bridge, "workspace", "lifecycle-repo");
 	write(join(worktree, "packed.txt"), "packed work\n");
 	runTool("git", ["add", "packed.txt"], worktree);
 	gitCommit(worktree, "add packed work");
 	assertOk(run(["pack"], bridge), "pack failed");
+	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
 
 	const firstPath = join(bridge, "kb", `${firstId}.md`);
 	const packed = readFileSync(firstPath, "utf8");
@@ -180,6 +190,7 @@ meta:
 	assert.match(testedDive, new RegExp(`kb/${featGateId}\\.md:\\n      rel: test\\.gate`));
 	assertOk(run(["jump"], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
+	assertFeatDiveRel(featPath, firstId, "bailed\\.dive");
 	const bailed = readFileSync(firstPath, "utf8");
 	assert.match(bailed, /^kind: memo$/m);
 	assert.match(bailed, /^## Bail report\b/m);
@@ -188,14 +199,7 @@ meta:
 	const backlogSweep = run(["test"], bridge);
 	assert.equal(backlogSweep.status, 1, "the broken feat gate must fail the backlog sweep");
 	const featAfterSweep = readFileSync(featPath, "utf8");
-	/**
-	 * Either spelling. `record.dive` writes `pending` for an unclaimed dive
-	 * today; `planned.dive` is where the dive rel lifecycle
-	 * (kb/01a003fb-2f63-...) is taking it. What this asserts is that the feat
-	 * gained an edge to a dive that did not exist before the sweep, which is
-	 * true under both.
-	 */
-	const plannedPattern = /kb\/([0-9a-f-]{36})\.md:\n      rel: (?:pending|planned\.dive)/g;
+	const plannedPattern = /kb\/([0-9a-f-]{36})\.md:\n      rel: planned\.dive/g;
 	const beforePlanned = new Set(
 		[...featBeforeSweep.matchAll(plannedPattern)].map((match) => match[1]),
 	);
@@ -210,6 +214,7 @@ meta:
 	const second = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
 	assertOk(second, "second record.dive failed");
 	const secondId = recordedId(second.stdout);
+	assertFeatDiveRel(featPath, secondId, "planned\\.dive");
 	const noDiveGates = run(["test"], bridge);
 	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
 	assert.match(noDiveGates.stderr, /--full/);
@@ -218,6 +223,7 @@ meta:
 		"second brief failed",
 	);
 	assertOk(run(["jump"], bridge), "second jump failed");
+	assertFeatDiveRel(featPath, secondId, "jumped\\.dive");
 	write(join(worktree, "landed.txt"), "landed work\n");
 	runTool("git", ["add", "landed.txt"], worktree);
 	gitCommit(worktree, "add landed work");
@@ -226,6 +232,7 @@ meta:
 	const landed = readFileSync(join(bridge, "kb", `${secondId}.md`), "utf8");
 	assert.match(landed, /^kind: memo$/m);
 	assert.match(landed, /^## Outcome$/m);
+	assertFeatDiveRel(featPath, secondId, "landed\\.dive");
 	const published = runTool(
 		"git",
 		["show-ref", "--verify", "--hash", "refs/heads/work/lifecycle"],

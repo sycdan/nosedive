@@ -140,6 +140,11 @@ test("pack requires an active dive marker", () => {
 test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets", () => {
 	const { bridge, origin, repoId, effortId, diveId } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
+	assertOk(
+		run(["record.dive", "--ref", diveId, "--brief", "Exercise pack after jump."], bridge),
+		"record.dive brief failed",
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
 
 	write(join(worktree, "feature-a.txt"), "a\n");
 	runTool("git", ["add", "feature-a.txt"], worktree);
@@ -177,7 +182,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.match(diveText, /^  diver: null$/m, "pack should release the dive");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8"),
-		new RegExp(`- kb/${diveId}\\.md:\\n      rel: pending`),
+		new RegExp(`- kb/${diveId}\\.md:\\n      rel: jumped\\.dive`),
 	);
 	const patchHeads = patchHeadsByRel(diveText, "patch");
 	assert.equal(patchHeads.length, 2, `expected 2 patch chain heads:\n${diveText}`);
@@ -191,7 +196,11 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(commitA.kind, "memo");
 	assert.match(commitA.name, /^[0-9a-f]{12}\.full-repo$/);
 	assert.equal(commitA.gist, "add feature a");
-	assert.equal(commitA.body, "");
+	assert.match(commitA.body, new RegExp(`Effort: ${effortId}`));
+	assert.match(
+		commitA.body,
+		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
+	);
 	assert.ok(commitA.next, "commit A memo should link the next memo");
 
 	const commitB = readMemo(bridge, commitA.next);

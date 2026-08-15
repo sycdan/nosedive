@@ -5,15 +5,14 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
-import { hydratedScopedRepoPath, readWorkspaceDiveMarker } from "../lib/gitState.js";
+import { hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
+import { readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectDiveGates,
 	collectLandGates,
-	gateRepoContext,
 	LandGate,
 	resolveGateScript,
-	runLandGates,
 } from "../lib/landGates.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 
@@ -44,10 +43,6 @@ function parseTestArgs(args: string[]): TestArgs {
 		throw new Error("`land` already runs every gate a land would, so it cannot be listed with one");
 	}
 	return { gateRefs, land };
-}
-
-function gateLabel(gate: LandGate): string {
-	return `${gate.doc.name || gate.doc.id} (${gate.doc.id})`;
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
@@ -94,51 +89,8 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		return;
 	}
 
-	const hydrated: { repoId: string; path: string }[] = [];
-	if (rc.workspaceDir) {
-		for (const repo of kbDocs.filter((candidate) => candidate.kind === "repo")) {
-			const resolved = hydratedScopedRepoPath(
-				kbDocs,
-				{ repoId: repo.id, readOnly: false },
-				rc.bridgeDir,
-				rc.workspaceDir,
-			);
-			if (resolved.failure) throw new Error(`test refuses: ${resolved.failure.reasons.join("; ")}`);
-			if (resolved.path) hydrated.push({ repoId: repo.id, path: resolved.path });
-		}
-	}
-
-	const outcome = await runLandGates(selected, {
-		// The gates' own streams, as they write them. Nothing is replayed
-		// afterwards -- a pilot watching a gate run has already seen it.
-		sink: { out: (text) => io.writeOut(text), err: (text) => io.writeErr(text) },
-		context: {
-			bridgeRoot: rc.bridgeDir,
-			diveId: dive?.id ?? "",
-			repos: gateRepoContext(hydrated, kbDocs, rc.bridgeDir),
-		},
-	});
-
-	/**
-	 * Every gate runs even after one fails, so the summary is the point of the
-	 * command: "these three are broken" is actionable where "something is
-	 * broken" sends a pilot back to run it again.
-	 */
-	const failures = outcome.runs.filter((run) => run.status !== 0 && !run.gate.flaky);
-	const flaky = outcome.runs.filter((run) => run.status !== 0 && run.gate.flaky);
-	// Only worth summarising a set. One gate has already said everything it has
-	// to say, and its exit code carries the verdict.
-	if (selected.length > 1) {
-		io.writeErr(
-			`\n${outcome.runs.length} gate(s) in ${(outcome.elapsedMs / 1000).toFixed(1)}s: ` +
-				`${outcome.runs.length - failures.length - flaky.length} passed, ${failures.length} failed` +
-				`${flaky.length > 0 ? `, ${flaky.length} flaky (not blocking)` : ""}\n`,
-		);
-		for (const run of failures) {
-			io.writeErr(`  FAILED  ${gateLabel(run.gate)} -- exit ${run.status}\n`);
-		}
-	}
-	io.setExitCode(failures.length > 0 ? 1 : 0);
+	const hydrated = hydrateGateRepos(kbDocs, rc.bridgeDir, rc.workspaceDir);
+	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", hydrated, io);
 }
 
 /** A gate named by uuid, run whatever it is attached to. */

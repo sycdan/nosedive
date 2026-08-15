@@ -8,7 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID } from "../lib/constants.js";
 import { readNosediveRc, toPosixPath } from "../lib/coreParsing.js";
-import { runGit } from "../lib/repoWorkspaceCore.js";
+import { runGit } from "../lib/gitProcess.js";
 
 function gitOutput(cwd: string, args: string[], label: string): string {
 	const result = runGit(cwd, args);

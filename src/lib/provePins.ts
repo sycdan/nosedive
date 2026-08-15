@@ -1,7 +1,7 @@
 import { formatPath } from "./coreParsing.js";
 import { ScopeRef } from "./kbDocs.js";
-import { gitOutput } from "./renderPlan.js";
-import { gitRun, runGit } from "./repoWorkspaceCore.js";
+import { gitOutput, runGit } from "./gitProcess.js";
+import { gitRun } from "./repoWorkspaceCore.js";
 import { ensureDetachedAtCommit } from "./repoWorktrees.js";
 
 /** A pinned scope whose worktree HEAD is not the pin, after any requested rehydration. */

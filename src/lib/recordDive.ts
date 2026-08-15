@@ -2,7 +2,6 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { parseDocument } from "yaml";
 
-import { titleFromSlug } from "./backlogDives.js";
 import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
@@ -12,18 +11,20 @@ import {
 	parseMarkdownDoc,
 	readNosediveRc,
 	stringifyYaml,
+	uuidLike,
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
-import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
+import { gitOutput } from "./gitProcess.js";
+import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
 	parseRepoMarkerStrict,
-	uuidLike,
 } from "./repoWorkspaceCore.js";
 import { isReadOnlyPushUrl } from "./repoHardening.js";
 import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
+import { titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 export interface RecordDiveOptions {

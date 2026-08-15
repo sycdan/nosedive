@@ -1,17 +1,18 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
 
 import {
 	formatPath,
 	parseMarkdownDoc,
 	parseYamlBlock,
 	splitMarkdownFrontmatter,
+	uuidLike,
 	type MarkdownFrontmatterBlock,
 	type NosediveRc,
 } from "./coreParsing.js";
 import { KbDoc, LinkRef } from "./kbDocs.js";
 import { parseLinkRefs } from "./kbRefs.js";
-import { uuidLike } from "./repoWorkspaceCore.js";
+import { titleFromSlug } from "./slugs.js";
 import {
 	backlogDocTitle,
 	backlogEntryLine,
@@ -311,30 +312,4 @@ export function bridgeBacklogMemoBody(rc: NosediveRc): string {
 	if (!existsSync(docPath)) throw new Error(`bridge backlog memo not found: ${id}`);
 	if (!statSync(docPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${id}`);
 	return parseMarkdownDoc(readFileSync(docPath, "utf8"), formatPath(docPath)).body;
-}
-
-export function pascalFromSlug(slug: string): string {
-	return slug
-		.split("-")
-		.map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-		.join("");
-}
-
-export function titleFromSlug(slug: string): string {
-	return slug
-		.split("-")
-		.map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-		.join(" ");
-}
-
-export function assertSlug(slug: string, label: string): string {
-	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-		throw new Error(`${label} must be kebab-case: ${slug}`);
-	}
-	return slug;
-}
-
-export function isInsideDir(parent: string, child: string): boolean {
-	const rel = relative(resolve(parent), resolve(child));
-	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }

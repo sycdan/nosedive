@@ -231,6 +231,19 @@ export function toPosixPath(path: string): string {
 	return path.replaceAll("\\", "/");
 }
 
+export function gitRelPath(repoRoot: string, path: string): string {
+	return relative(repoRoot, path).replaceAll("\\", "/");
+}
+
+export function isInsideDir(parent: string, child: string): boolean {
+	const rel = relative(resolve(parent), resolve(child));
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+export function uuidLike(value: string): boolean {
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function baseConfigPath(bridgeDir: string): string {
 	return join(bridgeDir, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME);
 }

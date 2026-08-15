@@ -1,11 +1,10 @@
 import { basename, relative } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { NosediveRc, toPosixPath } from "./coreParsing.js";
+import { NosediveRc, toPosixPath, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
-import { gitOutput } from "./renderPlan.js";
-import { uuidLike } from "./repoWorkspaceCore.js";
+import { gitOutput } from "./gitProcess.js";
 
 export interface ListDivesOptions {
 	/** A feat or a deck to constrain the listing to. Absent means the whole kb. */

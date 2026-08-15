@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { runCli } from "./nosedive.js";
+import { uuidLike } from "./lib/coreParsing.js";
 import { renderPackageKbGist } from "./lib/gitState.js";
 import { nosediveInvocation } from "./lib/packageBacklog.js";
-import { uuidLike } from "./lib/repoWorkspaceCore.js";
 
 runCli().catch((err: unknown) => {
 	const message = err instanceof Error ? err.message : String(err);

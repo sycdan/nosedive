@@ -22,7 +22,8 @@ import {
 	repoContextForRoot,
 } from "./proveCore.js";
 import { DriftedScope } from "./provePins.js";
-import { cleanGitEnv, writeFileAtomic } from "./renderPlan.js";
+import { cleanGitEnv } from "./gitProcess.js";
+import { writeFileAtomic } from "./renderPlan.js";
 import { maybeResolveRepoDoc, resolveRepoDoc } from "./repoWorkspaceCore.js";
 
 export function createProverContext(request: ProverHostRequest, io: CommandIo) {

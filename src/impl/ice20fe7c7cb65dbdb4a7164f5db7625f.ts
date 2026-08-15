@@ -20,7 +20,8 @@ import {
 	recordProofResult,
 	resolveProverArtifact,
 } from "../lib/proveCore.js";
-import { cleanGitEnv, writeFileAtomic } from "../lib/renderPlan.js";
+import { cleanGitEnv } from "../lib/gitProcess.js";
+import { writeFileAtomic } from "../lib/renderPlan.js";
 
 async function prove(args: string[], io: CommandIo): Promise<void> {
 	const options = parseProveArgs(args);

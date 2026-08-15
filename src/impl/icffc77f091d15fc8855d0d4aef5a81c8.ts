@@ -14,15 +14,15 @@ import {
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
 import { CURRENT_COMPATIBILITY_LEVEL } from "../lib/constants.js";
-import { baseConfigPath, formatPath, resolveFrom } from "../lib/coreParsing.js";
+import { baseConfigPath, formatPath, resolveFrom, uuidLike } from "../lib/coreParsing.js";
 import {
 	nosediveInvocation,
 	printCommandHelp,
 	renderTopLevelHelp,
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
-import { gitOutput, quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
-import { uuidLike } from "../lib/repoWorkspaceCore.js";
+import { gitOutput } from "../lib/gitProcess.js";
+import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
 
 const MANAGED_BEGIN = "<!-- BEGIN nosedive managed instructions -->";

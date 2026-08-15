@@ -25,7 +25,8 @@ import {
 import { removeDiveScratch } from "../lib/diveScratch.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
-import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { gitOutput } from "../lib/gitProcess.js";
+import { writeFileAtomic } from "../lib/renderPlan.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 import { ensureManagedRepoCache, gitRun } from "../lib/repoWorkspaceCore.js";
 import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";

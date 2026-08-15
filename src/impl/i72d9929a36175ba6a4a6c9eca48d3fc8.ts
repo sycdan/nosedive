@@ -15,6 +15,7 @@ import {
 } from "../lib/constants.js";
 import {
 	formatPath,
+	isInsideDir,
 	parseMarkdownDoc,
 	readNosediveRc,
 	resolveFrom,
@@ -26,16 +27,15 @@ import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../l
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
-import { isInsideDir } from "../lib/backlogDives.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
-import { gitOutput, writeFileAtomic } from "../lib/renderPlan.js";
+import { gitOutput, runGit } from "../lib/gitProcess.js";
+import { writeFileAtomic } from "../lib/renderPlan.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
 	gitRun,
 	maybeResolveRepoDoc,
-	runGit,
 } from "../lib/repoWorkspaceCore.js";
 import {
 	ensureDetachedAtCommit,

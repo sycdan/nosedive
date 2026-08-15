@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, type Dirent } from "n
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { pascalFromSlug, titleFromSlug } from "./backlogDives.js";
 import { CommandIo, Migration } from "./bridgeSetupIo.js";
 import { BRIDGE_STATE_DIRNAME, MIGRATION_BACKUP_DIRNAME, shellQuote } from "./constants.js";
 import {
@@ -17,11 +16,12 @@ import {
 	resolveFrom,
 	toPosixPath,
 	truncate,
+	uuidLike,
 } from "./coreParsing.js";
 import { KbDoc } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { writeFileAtomic } from "./renderPlan.js";
-import { uuidLike } from "./repoWorkspaceCore.js";
+import { pascalFromSlug, titleFromSlug } from "./slugs.js";
 
 const LOCAL_DEV_VERSION = "0.0.0-dev";
 

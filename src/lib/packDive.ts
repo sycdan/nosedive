@@ -28,8 +28,9 @@ import {
 	writeArtifact,
 } from "./packArtifacts.js";
 import { clearDiveDiver, reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
-import { gitOutput, quoteYamlString, writeFileAtomic } from "./renderPlan.js";
-import { gitRun, runGit } from "./repoWorkspaceCore.js";
+import { gitOutput, runGit } from "./gitProcess.js";
+import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
+import { gitRun } from "./repoWorkspaceCore.js";
 import { resetHydratedWorktree } from "./repoWorktrees.js";
 
 function packRepoScope(

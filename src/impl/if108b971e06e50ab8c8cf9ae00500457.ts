@@ -16,13 +16,13 @@ import {
 	parseMarkdownDoc,
 	readNosediveRc,
 	splitMarkdownFrontmatter,
+	uuidLike,
 } from "../lib/coreParsing.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { parseLinkRefs } from "../lib/kbRefs.js";
 import { posixRelPath } from "../lib/packageBacklog.js";
 import { resolveBridgeDocRef } from "../lib/recordDive.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { uuidLike } from "../lib/repoWorkspaceCore.js";
 
 function parseInjectRefs(args: string[]): string[] {
 	const refs: string[] = [];

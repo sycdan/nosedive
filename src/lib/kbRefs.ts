@@ -1,6 +1,22 @@
-import { formatPath, scalarToString } from "./coreParsing.js";
-import { uuidLike } from "./repoWorkspaceCore.js";
-import { LinkRef, ScopeRef } from "./kbDocs.js";
+import { formatPath, scalarToString, uuidLike } from "./coreParsing.js";
+
+export interface ScopeRef {
+	repoId: string;
+	path: string;
+	ref?: string;
+	readOnly: boolean;
+	flags: string[];
+	render?: "body" | "gist";
+}
+
+export interface LinkRef {
+	id: string;
+	target: string;
+	rel?: string;
+	anchor?: string;
+	/** Every scalar key written on the link, `rel`/`anchor` included. Open set: the reading command validates what it needs. */
+	attrs: Record<string, string>;
+}
 
 export function optionalScopeString(
 	value: Record<string, unknown>,

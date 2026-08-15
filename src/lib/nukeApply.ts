@@ -19,7 +19,7 @@ import {
 	ManagedExcludeSpec,
 	manageGeneratedGitState,
 	removeManagedExcludeBlocks,
-} from "./gitState.js";
+} from "./managedExcludes.js";
 import {
 	BridgeConfig,
 	GeneratedFrontmatter,
@@ -29,7 +29,8 @@ import {
 	repoDocs,
 } from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
-import { gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { gitOutput } from "./gitProcess.js";
+import { writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureSafeTargetPath,
 	gitRun,

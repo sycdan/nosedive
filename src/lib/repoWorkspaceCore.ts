@@ -1,19 +1,20 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { isSeq, parseDocument, parse as parseYaml } from "yaml";
 
-import { isInsideDir } from "./backlogDives.js";
 import {
 	NosediveRc,
 	formatPath,
+	isInsideDir,
 	resolveFrom,
 	scalarToString,
 	splitMarkdownFrontmatter,
 	stringifyYaml,
+	uuidLike,
 } from "./coreParsing.js";
 import { EffortRepo, KbDoc, parseEffortRepos, repoDocs } from "./kbDocs.js";
-import { cleanGitEnv, gitOutput, writeFileAtomic } from "./renderPlan.js";
+import { gitOutput, runGit } from "./gitProcess.js";
+import { writeFileAtomic } from "./renderPlan.js";
 
 export function resolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc {
 	const repo = maybeResolveRepoDoc(kbDocs, repoRef);
@@ -149,38 +150,13 @@ export function parseDehydrateRepoWorkspaceArgs(args: string[]): DehydrateRepoWo
 	return { repoRef, force };
 }
 
-export interface GitCommandResult {
-	status: number | null;
-	stdout: string;
-	stderr: string;
-}
-
-export const GIT_SAFE_BARE_CONFIG_ARGS = ["-c", "safe.bareRepository=all"] as const;
-
 export const MANAGED_CACHE_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*";
-
-export function runGit(cwd: string, args: string[]): GitCommandResult {
-	const result = spawnSync("git", [...GIT_SAFE_BARE_CONFIG_ARGS, ...args], {
-		cwd: resolve(cwd),
-		encoding: "utf8",
-		env: cleanGitEnv(),
-	});
-	return {
-		status: result.status,
-		stdout: result.stdout,
-		stderr: result.stderr,
-	};
-}
 
 export function gitRun(cwd: string, args: string[], label: string): string {
 	const result = runGit(cwd, args);
 	if (result.status === 0) return result.stdout.trim();
 	const detail = result.stderr.trim() || result.stdout.trim() || "unknown git error";
 	throw new Error(`${label}: ${detail}`);
-}
-
-export function uuidLike(value: string): boolean {
-	return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 export function parseRepoMarkerStrict(markerPath: string): { id: string } {

@@ -3,7 +3,6 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
 import { hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
 import { readWorkspaceDiveMarker } from "../lib/gitState.js";
@@ -18,31 +17,34 @@ import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
 
 interface TestArgs {
 	gateRefs: string[];
-	land: boolean;
+	full: boolean;
 }
 
 /**
- * Arguments are what to test, not how to test it. `land` names a set the same
- * way a uuid names a gate, which is why it is a bare word and not a flag: a
- * flag spelled `--land` on a command that runs gates reads as an instruction to
- * land afterwards. Gates resolve by uuid only, so the word can never be
- * mistaken for one.
+ * `--full` is a flag where `test@1` spelled the same idea as the bare word
+ * `land`. That word had to go: a gate rel qualifier names the command that runs
+ * it, so `test` runs `test.gate` and there is no verb to pass. Once nothing
+ * widens by naming another command, the widening is an option like any other.
+ *
+ * A positional argument is therefore a gate uuid or a mistake, and `land` now
+ * lands in the mistake branch by the same rule that catches any other stray
+ * word.
  */
 function parseTestArgs(args: string[]): TestArgs {
 	const gateRefs: string[] = [];
-	let land = false;
+	let full = false;
 	for (const arg of args) {
-		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
-		if (arg === "land") {
-			land = true;
+		if (arg === "--full") {
+			full = true;
 			continue;
+		}
+		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
+		if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(arg)) {
+			throw new Error(`unrecognised test argument: ${arg}`);
 		}
 		gateRefs.push(arg);
 	}
-	if (gateRefs.length > 0 && land) {
-		throw new Error("`land` already runs every gate a land would, so it cannot be listed with one");
-	}
-	return { gateRefs, land };
+	return { gateRefs, full };
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
@@ -50,40 +52,40 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 }
 
 async function test(args: string[], io: CommandIo): Promise<void> {
-	const { gateRefs, land } = parseTestArgs(args);
+	const { gateRefs, full } = parseTestArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("test requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-
-	/**
-	 * Every form needs a dive. Naming gates is the exception that proves it: they
-	 * are already chosen, so the dive is only context for `ctx.diveId`, and
-	 * refusing there would make the one form that needs no selection the hardest
-	 * to run.
-	 */
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
 	const dive =
 		marker.id !== undefined
 			? kbDocs.find((doc) => doc.id === marker.id && doc.kind === "dive")
 			: undefined;
-	if (gateRefs.length === 0 && !dive) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
 
+	/**
+	 * No dive is a regression pass, not an error. `test@1` refused here because
+	 * its selection roots were the dive and nothing else; sweeping the backlog
+	 * gives the no-dive form something honest to mean, which is what a pilot
+	 * wants between dives.
+	 */
 	const selected =
 		gateRefs.length > 0
 			? gateRefs.map((ref) => namedGate(ref, kbDocs, rc.bridgeDir))
-			: selectDiveGates(dive!, kbDocs, rc, land);
+			: dive
+				? selectDiveGates(dive, kbDocs, rc, full)
+				: selectBacklogGates(kbDocs, rc);
 
 	if (selected.length === 0) {
 		/**
 		 * Zero gates is the one verdict a test command must never report as
 		 * success: it would teach a pilot that green means checked when it means
-		 * unchecked. The minted error doc that explains this properly belongs to
-		 * its own slice; this is the honest interim.
+		 * unchecked. The friction fix is naming what to try next, not calling it
+		 * green.
 		 */
 		io.writeErr(
-			land
-				? "test: no gates are reachable from this dive, its feat, or its scoped repos.\n"
-				: `test: this dive links no gates. Add a rel: land.gate link to a runnable gate, or run \`test land\` to widen the search.\n`,
+			dive
+				? `test: this dive selects no test.gate gates. Add one, or run \`test --full\` to widen the search.\n`
+				: `test: the backlog selects no test.gate gates. Add one before treating this regression pass as checked.\n`,
 		);
 		io.setExitCode(1);
 		return;
@@ -93,7 +95,6 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", hydrated, io);
 }
 
-/** A gate named by uuid, run whatever it is attached to. */
 function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
 	const doc = kbDocs.find((candidate) => candidate.id === id);
 	if (!doc) throw new Error(`gate not found: ${id}`);
@@ -108,17 +109,18 @@ function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
 }
 
 /**
- * `land` selects exactly what `land` would, from the same three roots, so a
- * clean `test land` is a truthful preview of a land rather than a similar one.
- * Without it, only the dive's own gates.
+ * `--full` selects from the same three roots `land` walks, but for `test.gate`
+ * rather than `land.gate`. Repos declare only `land.gate` -- a repo cannot
+ * regress without a feat in context -- so in practice they contribute nothing
+ * here, and the widening is out through the feat.
  */
 function selectDiveGates(
 	dive: KbDoc,
 	kbDocs: KbDoc[],
 	rc: ReturnType<typeof readNosediveRc>,
-	land: boolean,
+	full: boolean,
 ): LandGate[] {
-	if (!land) return collectDiveGates("land", dive, kbDocs, rc.bridgeDir);
+	if (!full) return collectDiveGates("test", dive, kbDocs, rc.bridgeDir);
 	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
 	const roots = [
 		dive,
@@ -127,5 +129,17 @@ function selectDiveGates(
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	return collectLandGates("land", roots, kbDocs, rc.bridgeDir);
+	return collectLandGates("test", roots, kbDocs, rc.bridgeDir);
+}
+
+/**
+ * The backlog memo is the widest root a level 2 bridge has, so walking it
+ * reaches every feat and therefore every `test.gate` anyone declared. At level 3
+ * this becomes the active ship's decks.
+ */
+function selectBacklogGates(kbDocs: KbDoc[], rc: ReturnType<typeof readNosediveRc>): LandGate[] {
+	if (!rc.backlog) throw new Error("test requires a configured backlog memo id");
+	const backlog = kbDocs.find((doc) => doc.id === rc.backlog);
+	if (!backlog) throw new Error(`bridge backlog memo not found: ${rc.backlog}`);
+	return collectLandGates("test", [backlog], kbDocs, rc.bridgeDir);
 }

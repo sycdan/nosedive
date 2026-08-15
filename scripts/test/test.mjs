@@ -9,6 +9,7 @@ const tmp = createTmp("test");
 const passId = "019fe100-0000-7000-8000-000000000001";
 const failId = "019fe100-0000-7000-8000-000000000002";
 const wrongKindId = "019fe100-0000-7000-8000-000000000003";
+const backlogId = "019fe100-0000-7000-8000-000000000004";
 
 function gateDoc(id, kind = "assertion", { script = `kb/artifacts/${id}.mjs` } = {}) {
 	const meta = script === null ? "meta:\n" : `meta:\n  test-script: ${script}\n`;
@@ -21,8 +22,8 @@ ${meta}---
 `;
 }
 
-function setup(name) {
-	const bridge = createBridge(tmp, name);
+function setup(name, options) {
+	const bridge = createBridge(tmp, name, options);
 	write(join(bridge, "kb", `${passId}.md`), gateDoc(passId));
 	write(
 		join(bridge, "kb", "artifacts", `${passId}.mjs`),
@@ -66,16 +67,16 @@ const featId = "019fe100-0000-7000-8000-000000000011";
 const featGateId = "019fe100-0000-7000-8000-000000000012";
 
 function gateLink(id) {
-	return `  - kb/${id}.md:\n      rel: land.gate\n`;
+	return `  - kb/${id}.md:\n      rel: test.gate\n`;
 }
 
 /**
  * A bridge whose dive claims one gate directly and whose feat claims another,
  * which is the only shape that can tell the two selections apart: with no
- * arguments only the dive's gate may run, and `land` must reach both.
+ * arguments only the dive's gate may run, and `--full` must reach both.
  */
 function setupDive(name, { diveGates = [passId], featGates = [featGateId] } = {}) {
-	const bridge = setup(name);
+	const bridge = setup(name, { backlog: backlogId });
 	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
 	write(
 		join(bridge, "kb", "artifacts", `${featGateId}.mjs`),
@@ -85,6 +86,11 @@ function setupDive(name, { diveGates = [passId], featGates = [featGateId] } = {}
 		join(bridge, "kb", `${featId}.md`),
 		`---\nkind: feat\nid: ${featId}\nname: test-selection.nosedive\ngist: "Selection fixture"\n` +
 			`links:\n${featGates.map(gateLink).join("")}---\n`,
+	);
+	write(
+		join(bridge, "kb", `${backlogId}.md`),
+		`---\nkind: memo\nid: ${backlogId}\nname: backlog.test\ngist: "Backlog fixture"\n` +
+			`links:\n  - kb/${featId}.md:\n      rel: feat\n---\n`,
 	);
 	write(
 		join(bridge, "kb", `${diveId}.md`),
@@ -103,35 +109,33 @@ test("test with no arguments runs the dive's own gates and nothing else", () => 
 	assert.doesNotMatch(result.stdout, /feat gate ran/, "the feat's gate is not dive-resident");
 });
 
-test("test land reaches gates the dive does not claim itself", () => {
-	const result = run(["test", "land"], setupDive("land-walk"));
+test("test --full reaches test gates the dive does not claim itself", () => {
+	const result = run(["test", "--full"], setupDive("full-walk"));
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /passed gate/);
 	assert.match(result.stdout, /feat gate ran/);
 	assert.match(result.stderr, /2 gate\(s\) in .*: 2 passed, 0 failed/);
 });
 
-test("test runs every gate it is given, and land cannot be one of them", () => {
+test("test runs every named gate in order and rejects the removed land argument", () => {
 	const bridge = setupDive("many-gates");
-	const both = run(["test", passId, featGateId], bridge);
+	const both = run(["test", featGateId, passId], bridge);
 	assert.equal(both.status, 0, both.stderr);
-	assert.match(both.stdout, /passed gate/);
-	assert.match(both.stdout, /feat gate ran/);
+	assert.ok(both.stdout.indexOf("feat gate ran") < both.stdout.indexOf("passed gate"));
 	assert.match(both.stderr, /2 gate\(s\) in .*: 2 passed, 0 failed/);
 
-	const mixed = run(["test", "land", passId], bridge);
-	assert.equal(mixed.status, 1);
-	assert.match(mixed.stderr, /`land` already runs every gate a land would/);
+	const removed = run(["test", "land"], bridge);
+	assert.equal(removed.status, 1);
+	assert.match(removed.stderr, /unrecognised test argument: land/);
 });
 
-test("test refuses without an active dive, and says so by name", () => {
+test("test without an active dive sweeps test.gate links from the backlog memo", () => {
 	const bridge = setupDive("no-dive");
 	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
 	const result = run(["test"], bridge);
-	assert.notEqual(result.status, 0);
-	// The id, not the prose: this asserts which error was raised, not how it reads.
-	assert.match(result.stderr, /019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
-	assert.match(result.stderr, /active dive, and there isn't one/);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /feat gate ran/);
+	assert.doesNotMatch(result.stdout, /passed gate/, "the dive is not reachable from the backlog");
 });
 
 test("test still runs a named gate without any dive on deck", () => {
@@ -176,5 +180,6 @@ test("a dive gate needs no gate-height", () => {
 test("a dive that links no gates is reported rather than called green", () => {
 	const result = run(["test"], setupDive("no-gates", { diveGates: [] }));
 	assert.notEqual(result.status, 0, "zero gates must never be success");
-	assert.match(result.stderr, /links no gates/);
+	assert.match(result.stderr, /selects no test\.gate gates/);
+	assert.match(result.stderr, /test --full/);
 });

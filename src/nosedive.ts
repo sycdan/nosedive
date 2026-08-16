@@ -14,6 +14,10 @@ import {
 	renderTopLevelHelpText,
 } from "./contracts.js";
 export { collectDiveGates, collectLandGates } from "./lib/landGates.js";
+// Exported for the gate runner, which imports this entry by absolute path to
+// build `ctx.resolve`. It is public surface because a spawned child has no
+// other way in, not because callers outside nosedive are expected to use it.
+export { createGateResolver } from "./lib/gateResolve.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

@@ -50,6 +50,28 @@ const orderGate = (logPath, name) =>
 	`import { appendFileSync } from "node:fs";\n\nexport function run() {\n\tappendFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(`${name}\n`)});\n}\n`;
 const contextGate = (logPath) =>
 	`import { writeFileSync } from "node:fs";\n\nexport function run(ctx) {\n\twriteFileSync(${JSON.stringify(logPath)}, JSON.stringify(ctx));\n}\n`;
+/**
+ * The navigation the branch-convention gate will do: from its own repo, through
+ * the dive, to the scope entry that says where that repo's work goes.
+ */
+const scopeReadingGate = (logPath) => `import { writeFileSync } from "node:fs";
+
+export async function run(ctx) {
+	const repo = ctx.repos[Object.keys(ctx.repos)[0]];
+	const dive = await ctx.resolve(ctx.diveId);
+	const scope = dive.scopes.find((entry) => entry.repoId === repo.id);
+	if (!scope) throw new Error("the dive does not scope " + repo.id);
+	writeFileSync(
+		${JSON.stringify(logPath)},
+		JSON.stringify({ kind: dive.kind, repoId: repo.id, workBranch: scope.workBranch }),
+	);
+}
+`;
+/** A gate that asks for a document nobody wrote must fail, never pass quietly. */
+const GATE_RESOLVES_NOTHING = `export async function run(ctx) {
+	await ctx.resolve("00000000-0000-7000-8000-00000000dead");
+}
+`;
 /** Resolves its repo through ctx, from the bridge, the way every gate must. */
 const GATE_ECHO_HEAD = `import { execFileSync } from "node:child_process";
 
@@ -463,6 +485,36 @@ test("each gate receives its repo, feat, gate, and declaring doc ids", () => {
 	assert.equal(repoContext.gateId, repoGateId);
 	assert.equal(repoContext.introducedById, repoId);
 	assert.notEqual(repoContext.introducedById, repoContext.gateId);
+});
+
+test("a gate resolves the dive and reads its own repo's scope entry", () => {
+	const logPath = join(tmp, "scope-reading-gate.json");
+	const { bridge, worktree } = setup("gate-resolve", [
+		gate("019fd471-0000-7000-8000-000000000038", "reads-scope", scopeReadingGate(logPath)),
+	]);
+	gitCommitEmpty(worktree, "work");
+	assertOk(run(["land"], bridge), "land with a resolving gate failed");
+
+	// The whole point of handing a gate quids instead of documents: it walked
+	// from its own repo id to the branch that repo's work goes to, reading the
+	// kb live rather than being told in advance what it would want.
+	assert.deepEqual(JSON.parse(readFileSync(logPath, "utf8")), {
+		kind: "dive",
+		repoId,
+		workBranch: "work/land-gates.nosedive",
+	});
+});
+
+test("ctx.resolve refuses a quid no document has", () => {
+	const { bridge, worktree } = setup("gate-resolve-missing", [
+		gate("019fd471-0000-7000-8000-000000000039", "resolves-nothing", GATE_RESOLVES_NOTHING),
+	]);
+	gitCommitEmpty(worktree, "work");
+	const result = run(["land"], bridge);
+	// Returning undefined would let the gate go on to pass, which is a gate
+	// reporting "checked" about a document it never saw.
+	assert.notEqual(result.status, 0, "a gate resolving nothing must not pass");
+	assert.match(result.stdout + result.stderr, /ctx\.resolve found no kb document/);
 });
 
 test("a gate returning false fails the land", () => {

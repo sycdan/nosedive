@@ -163,10 +163,19 @@ scopes:
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
 	assert.doesNotMatch(doc, /^  effort: /m, "the dead spelling is never written");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`, "m"));
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      work-branch: work/record-dive.nosedive$`, "m"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${unrelatedRepoId}:`, "m"));
 	assert.match(doc, /^# Dive Record$/m);
@@ -181,7 +190,13 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`, "m"));
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
 });
 
 test("record.dive accepts --effort as a compatibility alias", () => {
@@ -474,7 +489,13 @@ test("record.dive inherits scopes from the nearest scoped ancestor feat", () => 
 	const result = run(["record.dive", "--effort", childEffortId], bridge);
 	assertOk(result, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`, "m"));
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`,
+			"m",
+		),
+	);
 	assert.doesNotMatch(doc, /^scopes: \[\]$/m);
 });
 
@@ -495,7 +516,10 @@ test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`, "m"),
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`,
+			"m",
+		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
 });
@@ -514,7 +538,10 @@ test("record.dive lets an explicit --scope override an inherited one", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`, "m"),
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`,
+			"m",
+		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
 });
@@ -576,3 +603,23 @@ gist: "Updated effort"
 	assert.equal((newEffort.match(new RegExp(`kb/${id}\\.md`, "g")) ?? []).length, 1);
 	assert.match(newEffort, new RegExp(`- kb/${id}\\.md:\n      rel: planned\\.dive`));
 });
+
+test("a scope naming a work branch and a read-only mode is refused", () => {
+	const { bridge } = setup("scope-conflict");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	// Naming a branch and declaring the scope unpushable answer one question two
+	// ways, so the document has to be fixed rather than guessed at.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(
+			/^      work-branch: (.+)$/m,
+			"      mode: ro\n      work-branch: $1",
+		),
+	);
+	const result = run(["record.dive", "--ref", path, "--gist", "Conflicted."], bridge);
+	assert.notEqual(result.status, 0, "a contradictory scope must not be accepted");
+	assert.match(result.stderr, /work-branch conflicts with a read-only mode or flag/);
+});
+

@@ -264,3 +264,95 @@ export function createBridge(tmp, name, options) {
 	writeBridgeConfig(bridgeDir, options);
 	return bridgeDir;
 }
+
+// --- end-to-end fixtures ----------------------------------------------------
+//
+// A test that walks a whole workflow needs the same three things every time: a
+// bare remote to publish to, an implementation repo with history, and a seeded
+// bridge that can push. Written once here so a test reads as the workflow it is
+// exercising rather than as its own setup.
+
+/** An empty bare repository, for use as a remote. */
+export function bareRepo(tmp, name) {
+	const path = join(tmp, name);
+	mkdirSync(path, { recursive: true });
+	runTool("git", ["init", "--bare", "-b", "main"], path);
+	return path;
+}
+
+/**
+ * An implementation repo with one commit, published to a cloud and a local bare
+ * remote. Returns the paths a repo doc needs plus the source checkout, which is
+ * where a fixture simulates work arriving from outside the bridge.
+ */
+export function implRepo(tmp, name) {
+	const cloud = bareRepo(tmp, `${name}-cloud.git`);
+	const local = bareRepo(tmp, `${name}-local.git`);
+	const source = join(tmp, `${name}-source`);
+	mkdirSync(source, { recursive: true });
+	runTool("git", ["init", "-b", "main"], source);
+	write(join(source, "README.md"), `${name}\n`);
+	runTool("git", ["add", "README.md"], source);
+	gitCommit(source, `base ${name}`);
+	runTool("git", ["remote", "add", "cloud", cloud], source);
+	runTool("git", ["remote", "add", "local", local], source);
+	runTool("git", ["push", "cloud", "main"], source);
+	runTool("git", ["push", "local", "main"], source);
+	return { name, cloud, local, source };
+}
+
+/** The `kind: repo` doc for an `implRepo`, hydratable from its cloud remote. */
+export function writeImplRepoDoc(bridge, id, repo) {
+	const posix = (path) => path.replaceAll("\\", "/");
+	write(
+		join(bridge, "kb", `${id}.md`),
+		`---
+kind: repo
+id: ${id}
+name: ${repo.name}
+gist: "Implementation repo ${repo.name}"
+meta:
+  path: workspace/${repo.name}
+  trunk: main
+  remotes:
+    cloud: ${posix(repo.cloud)}
+    local: ${posix(repo.local)}
+---
+`,
+	);
+}
+
+/**
+ * A seeded bridge with an upstream, which `land` requires. Committed and pushed
+ * so the bridge is in the state a pilot's would be after `seed`.
+ */
+export function seededBridge(tmp, name, diver) {
+	const bridge = createBridge(tmp, name);
+	runTool("git", ["config", "user.name", "Nosedive Test"], bridge);
+	runTool("git", ["config", "user.email", diver], bridge);
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const origin = bareRepo(tmp, `${name}-origin.git`);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "seed bridge");
+	runTool("git", ["remote", "add", "origin", origin], bridge);
+	runTool("git", ["push", "-u", "origin", "main"], bridge);
+	return { bridge, origin };
+}
+
+/** Pitches a feat and returns where it landed, for fixtures that then edit it. */
+export function pitchFeat(bridge, gist, name) {
+	const pitched = run(["pitch", gist, "--name", name], bridge);
+	assertOk(pitched, "pitch failed");
+	const featPath = join(bridge, /^Pitched (.+)$/m.exec(pitched.stdout)?.[1] ?? "");
+	const text = readFileSync(featPath, "utf8");
+	const id = /^id: (\S+)$/m.exec(text)?.[1];
+	assert.ok(id, `pitched feat has no id:\n${text}`);
+	return { featPath, featId: id, featText: text };
+}
+
+/** The dive id `record.dive` just reported. */
+export function recordedDiveId(stdout) {
+	const id = /^Recorded kb[\/]([0-9a-f-]{36})\.md$/m.exec(stdout)?.[1];
+	assert.ok(id, `record.dive did not report a dive id:\n${stdout}`);
+	return id;
+}

@@ -92,9 +92,9 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 
 /**
  * Walks every link reachable from the roots, not just gate edges: a gate may be
- * declared by an effort, a repo, or anything else in the dive's ancestry.
+ * declared by a feat, a repo, or anything else in the dive's ancestry.
  * First-seen wins for a gate's attributes, so pass roots closest-first -- the
- * dive, then its effort, then its scoped repos, which reach the dive through
+ * dive, then its feat, then its scoped repos, which reach the dive through
  * frontmatter rather than links. Later edges are kept only so the report can
  * name them.
  */

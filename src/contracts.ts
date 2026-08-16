@@ -123,7 +123,7 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 		gist: parsed.fm.scalars.gist,
 		repoPath: undefined,
 		repoBaseBranch: undefined,
-		effortRef: undefined,
+		featRef: undefined,
 		// Body facts about dives; a command doc has neither.
 		hasBrief: false,
 		hasLog: false,

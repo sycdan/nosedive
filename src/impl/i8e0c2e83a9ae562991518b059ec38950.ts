@@ -37,7 +37,7 @@ import { KbDoc, loadKbDocs, readActiveDiveId } from "../lib/kbDocs.js";
 import { bridgeCompatibilityLevel, nosediveInvocation } from "../lib/packageBacklog.js";
 import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 
@@ -252,11 +252,7 @@ function loadBridgeKbDocs(rc: NosediveRc, io: CommandIo): KbDoc[] | undefined {
  * active dive means no lines and no noise; a marker that fails to resolve
  * past that point prints whatever did resolve and puts the reason on stderr.
  */
-function printCurrentDiveAndEffort(
-	rc: NosediveRc,
-	kbDocs: KbDoc[] | undefined,
-	io: CommandIo,
-): void {
+function printCurrentDiveAndFeat(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo): void {
 	const activeDiveId = readActiveDiveId(rc.workspaceDir);
 	if (!activeDiveId) return;
 	io.log(`nosedive-current-dive-id: ${activeDiveId}`);
@@ -274,10 +270,10 @@ function printCurrentDiveAndEffort(
 	}
 	io.log(`nosedive-current-dive-gist: ${activeDive.gist}`);
 
-	if (!activeDive.effortRef) return;
+	if (!activeDive.featRef) return;
 	try {
-		const effort = resolveEffortDoc(kbDocs, rc, activeDive.effortRef);
-		io.log(`nosedive-current-feat: ${effort.id}`);
+		const feat = resolveFeatDoc(kbDocs, rc, activeDive.featRef);
+		io.log(`nosedive-current-feat: ${feat.id}`);
 	} catch (err) {
 		io.err(err instanceof Error ? err.message : String(err));
 	}
@@ -350,7 +346,7 @@ function printSessionReport(
 	const freshnessLine = bridgeFreshnessLine(freshness);
 	if (freshnessLine) io.log(freshnessLine);
 	if (freshness.behind > 0) io.log(STALE_BRIDGE_NOSE);
-	printCurrentDiveAndEffort(rc, kbDocs, io);
+	printCurrentDiveAndFeat(rc, kbDocs, io);
 	io.log("");
 
 	io.log("== pilot identification ==");

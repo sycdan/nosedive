@@ -75,13 +75,15 @@ export function parsePitchArgs(args: string[]): PitchOptions {
 }
 
 /**
- * An unnamed effort still needs a stable slug, and the pitch time is the only
+ * An unnamed feat still needs a stable slug, and the pitch time is the only
  * thing that distinguishes it. Seconds resolution is enough: two pitches in
  * the same second would collide on name, and the duplicate check catches that.
  */
-export function defaultEffortName(now = new Date()): string {
+export function defaultFeatName(now = new Date()): string {
 	const pad = (value: number, width = 2) => String(value).padStart(width, "0");
 	return [
+		// The slug itself is written into the doc's `name`, so it keeps the old
+		// spelling: changing it would change what `pitch` writes.
 		"new-effort",
 		now.getFullYear(),
 		pad(now.getMonth() + 1),
@@ -90,7 +92,7 @@ export function defaultEffortName(now = new Date()): string {
 	].join("-");
 }
 
-export function renderPitchedEffort(options: {
+export function renderPitchedFeat(options: {
 	id: string;
 	name: string;
 	gist: string;
@@ -111,7 +113,7 @@ export function renderPitchedEffort(options: {
 	return lines.join("\n");
 }
 
-export function mintEffortId(): string {
+export function mintFeatId(): string {
 	return uuid7AtMs(Date.now());
 }
 
@@ -126,12 +128,12 @@ export interface BridgeConfig {
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
-	effortPath?: string;
-	effortRef?: string;
+	featPath?: string;
+	featRef?: string;
 	activeDiveId?: string;
 }
 
-export interface EffortRepo {
+export interface FeatRepo {
 	id: string;
 	ref?: string;
 	readOnly: boolean;
@@ -146,7 +148,7 @@ export interface KbDoc {
 	gist: string;
 	repoPath?: string;
 	repoBaseBranch?: string;
-	effortRef?: string;
+	featRef?: string;
 	/** Body facts, kept as booleans so the body itself never has to be carried. */
 	hasBrief: boolean;
 	hasLog: boolean;
@@ -168,68 +170,64 @@ export interface TargetDoc {
 }
 
 export interface GeneratedFrontmatter {
-	effort?: string;
+	feat?: string;
 	repoId?: string;
 	scopePath?: string;
 }
 
 export interface ApplyPlan {
 	bridge: BridgeConfig;
-	repos: Array<EffortRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }>;
+	repos: Array<FeatRepo & { repoPath?: string; repoBaseBranch: string; repoRef: string }>;
 	agentFiles: string[];
 	tags: Set<string>;
 	targets: Map<string, TargetDoc[]>;
 	warnings: string[];
 }
 
-export function parseEffortRepos(path: string): EffortRepo[] {
+export function parseFeatRepos(path: string): FeatRepo[] {
 	const label = formatPath(path);
 	const doc = parseMarkdownDoc(readFileSync(path, "utf8"), label);
 	return (doc.fm.lists.repos ?? []).map((rawEntry) => {
 		const entry = rawEntry.trim();
-		if (!entry) throw new Error(`invalid effort repo entry in ${label}: empty value`);
+		if (!entry) throw new Error(`invalid feat repo entry in ${label}: empty value`);
 
 		const firstColon = entry.indexOf(":");
 		const secondColon = firstColon === -1 ? -1 : entry.indexOf(":", firstColon + 1);
 		if (secondColon !== -1) {
 			throw new Error(
-				`invalid effort repo entry in ${label}: ${entry} (expected <repo-id>[@ref][:flags])`,
+				`invalid feat repo entry in ${label}: ${entry} (expected <repo-id>[@ref][:flags])`,
 			);
 		}
 
 		const base = firstColon === -1 ? entry : entry.slice(0, firstColon);
 		const flagText = firstColon === -1 ? "" : entry.slice(firstColon + 1);
-		if (!base) throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing repo id)`);
+		if (!base) throw new Error(`invalid feat repo entry in ${label}: ${entry} (missing repo id)`);
 
 		let readOnly = false;
 		if (firstColon !== -1) {
 			if (!flagText)
-				throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing flags after :)`);
+				throw new Error(`invalid feat repo entry in ${label}: ${entry} (missing flags after :)`);
 			for (const flag of flagText.split(",").map((item) => item.trim())) {
-				if (!flag) throw new Error(`invalid effort repo entry in ${label}: ${entry} (empty flag)`);
+				if (!flag) throw new Error(`invalid feat repo entry in ${label}: ${entry} (empty flag)`);
 				if (flag === "ro") {
 					readOnly = true;
 					continue;
 				}
-				throw new Error(
-					`invalid effort repo flag in ${label}: ${entry} (unsupported flag: ${flag})`,
-				);
+				throw new Error(`invalid feat repo flag in ${label}: ${entry} (unsupported flag: ${flag})`);
 			}
 		}
 
 		const at = base.indexOf("@");
 		const secondAt = at === -1 ? -1 : base.indexOf("@", at + 1);
 		if (secondAt !== -1) {
-			throw new Error(
-				`invalid effort repo entry in ${label}: ${entry} (expected at most one @ref)`,
-			);
+			throw new Error(`invalid feat repo entry in ${label}: ${entry} (expected at most one @ref)`);
 		}
 
 		const id = at === -1 ? base : base.slice(0, at);
 		const ref = at === -1 ? undefined : base.slice(at + 1);
-		if (!id) throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing repo id)`);
+		if (!id) throw new Error(`invalid feat repo entry in ${label}: ${entry} (missing repo id)`);
 		if (at !== -1 && !ref)
-			throw new Error(`invalid effort repo entry in ${label}: ${entry} (missing ref after @)`);
+			throw new Error(`invalid feat repo entry in ${label}: ${entry} (missing ref after @)`);
 
 		return { id, ref, readOnly };
 	});
@@ -268,8 +266,9 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 			fm.nested.meta?.trunk ??
 			fm.nested.meta?.["base-branch"] ??
 			fm.nested.meta?.["default-branch"],
-		effortRef:
-			fm.scalars.feat ?? fm.scalars.effort ?? fm.nested.meta?.feat ?? fm.nested.meta?.effort,
+		// `effort` is the old spelling of `feat`: accepted here on read because
+		// live bridges are full of it, and never written back out.
+		featRef: fm.scalars.feat ?? fm.scalars.effort ?? fm.nested.meta?.feat ?? fm.nested.meta?.effort,
 		metaScalars: fm.nested.meta ?? {},
 		metaLists: fm.nestedLists.meta ?? {},
 		metaRaw:
@@ -337,13 +336,13 @@ export function computeApplyTags(bridge: BridgeConfig): Set<string> {
 
 export interface AddRepoOptions {
 	repoRef: string;
-	effortRef?: string;
+	featRef?: string;
 	repoEntryRef?: string;
 	readOnly: boolean;
 	apply: boolean;
 }
 
-export interface AddRepoEffortScopeOptions {
+export interface AddRepoFeatScopeOptions {
 	repoRef: string;
 	repoEntryRef?: string;
 	readOnly: boolean;
@@ -351,24 +350,25 @@ export interface AddRepoEffortScopeOptions {
 
 export function parseAddRepoArgs(args: string[]): AddRepoOptions {
 	let repoRef: string | undefined;
-	let effortRef: string | undefined;
+	let featRef: string | undefined;
 	let repoEntryRef: string | undefined;
 	let readOnly = false;
 	let shouldApply = false;
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
+		// `--effort` is level-2 CLI surface on `add-repo` and keeps its spelling.
 		if (arg === "--effort" || arg === "--ref") {
 			const value = args[i + 1];
 			if (!value) throw new Error(`${arg} requires a value`);
-			if (arg === "--effort") effortRef = value;
+			if (arg === "--effort") featRef = value;
 			if (arg === "--ref") repoEntryRef = value;
 			i += 1;
 			continue;
 		}
 		if (arg.startsWith("--effort=")) {
-			effortRef = arg.slice("--effort=".length);
-			if (!effortRef) throw new Error("--effort requires a value");
+			featRef = arg.slice("--effort=".length);
+			if (!featRef) throw new Error("--effort requires a value");
 			continue;
 		}
 		if (arg.startsWith("--ref=")) {
@@ -391,10 +391,10 @@ export function parseAddRepoArgs(args: string[]): AddRepoOptions {
 
 	if (!repoRef) throw new Error("add-repo requires a repo id or name");
 	if (repoEntryRef?.includes(":")) throw new Error(`repo ref cannot contain ':': ${repoEntryRef}`);
-	return { repoRef, effortRef, repoEntryRef, readOnly, apply: shouldApply };
+	return { repoRef, featRef, repoEntryRef, readOnly, apply: shouldApply };
 }
 
-export function parseAddRepoEffortScopeArgs(args: string[]): AddRepoEffortScopeOptions {
+export function parseAddRepoFeatScopeArgs(args: string[]): AddRepoFeatScopeOptions {
 	let repoRef: string | undefined;
 	let repoEntryRef: string | undefined;
 	let readOnly = false;
@@ -417,6 +417,7 @@ export function parseAddRepoEffortScopeArgs(args: string[]): AddRepoEffortScopeO
 			readOnly = true;
 			continue;
 		}
+		// `add-repo.effort` is the command's own name and keeps its spelling.
 		if (arg.startsWith("--")) throw new Error(`unknown add-repo.effort option: ${arg}`);
 		if (repoRef) throw new Error(`unexpected add-repo.effort argument: ${arg}`);
 		repoRef = arg;

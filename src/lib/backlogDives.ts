@@ -22,8 +22,8 @@ import {
 
 /**
  * The roles a backlog edge may name to mean "this is work". `effort` is the
- * pre-rename spelling of `feat` and is still written across live bridges, so
- * both are read; neither is ever written over.
+ * old spelling of `feat`: it is accepted on read because it is still written
+ * across live bridges, and is never written by this tool.
  */
 const FEAT_ROLES = new Set(["feat", "effort"]);
 

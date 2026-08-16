@@ -150,7 +150,7 @@ meta:
 	assert.notEqual(duplicateEffortAdd.status, 0, "duplicate add-repo.effort unexpectedly succeeded");
 	assert.match(
 		duplicateEffortAdd.stderr,
-		new RegExp(`effort already includes scope ${betaScopeRepoId}`),
+		new RegExp(`feat already includes scope ${betaScopeRepoId}`),
 	);
 
 	const ambiguousEffortAdd = run(["add-repo.effort", "duplicate"], addRepoEffortBridge);

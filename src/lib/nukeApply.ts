@@ -272,9 +272,9 @@ export function repoFrontmatter(
 	docs: TargetDoc[],
 ): GeneratedFrontmatter | undefined {
 	const first = docs[0];
-	if (!bridge.effortRef || !first?.repoId) return undefined;
+	if (!bridge.featRef || !first?.repoId) return undefined;
 	return {
-		effort: bridge.effortRef,
+		feat: bridge.featRef,
 		repoId: first.repoId,
 		scopePath: first.scopePath || ".",
 	};

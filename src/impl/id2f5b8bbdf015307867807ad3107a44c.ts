@@ -33,11 +33,11 @@ import {
 } from "../lib/landGates.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
-function slugForBranch(dive: KbDoc, effort: KbDoc | undefined): string {
-	return effort?.name ?? dive.name;
+function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
+	return feat?.name ?? dive.name;
 }
 
 function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
@@ -87,13 +87,13 @@ function commitAndPushLand(
 	bridgeDir: string,
 	divePath: string,
 	diveName: string,
-	effortId?: string,
-	effortPath?: string,
+	featId?: string,
+	featPath?: string,
 ): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
 	gitRun(
 		bridgeDir,
-		["add", "--", relPath, ...(effortPath ? [toPosixPath(relative(bridgeDir, effortPath))] : [])],
+		["add", "--", relPath, ...(featPath ? [toPosixPath(relative(bridgeDir, featPath))] : [])],
 		"failed to stage landed dive",
 	);
 
@@ -116,7 +116,7 @@ function commitAndPushLand(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(`land(${diveName}): closed`, effortId)],
+			["commit", "-m", commitMessage(`land(${diveName}): closed`, featId)],
 			"failed to commit landed dive",
 		);
 		gitRun(
@@ -159,8 +159,8 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	const dive = kbDocs.find((doc) => doc.id === marker.id);
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
 
-	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
-	const slug = slugForBranch(dive, effort);
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
+	const slug = slugForBranch(dive, feat);
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -198,13 +198,13 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	 * every push, not just the failing repo's.
 	 */
 	/**
-	 * A dive reaches its feat through `effort:` and its repos through `scopes:`,
+	 * A dive reaches its feat through `feat:` and its repos through `scopes:`,
 	 * neither of which is a link, so all three are seeded as roots. Order is
 	 * closest-first, which is what first-seen-wins depends on.
 	 */
 	const gateRoots = [
 		dive,
-		...(effort ? [effort] : []),
+		...(feat ? [feat] : []),
 		...scopes
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
@@ -262,9 +262,9 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			: "- (no scoped repos to push)";
 	const body = `${parsed.body.trimEnd()}\n\n## Outcome\n\n${dive.gist}\n\n${outcome}\n`;
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
-	if (effort) reconcileDiveEffortLinks(effort, effort, dive.id, "landed.dive");
+	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, effort?.id, effort?.path);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, feat?.id, feat?.path);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

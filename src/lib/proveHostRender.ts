@@ -313,7 +313,7 @@ export function addScopedRepoTargets(options: {
 }
 
 export function shouldGenerateWorkspaceDocs(bridge: BridgeConfig): boolean {
-	return Boolean(bridge.workspaceDir && bridge.backlogDir && bridge.effortPath && bridge.effortRef);
+	return Boolean(bridge.workspaceDir && bridge.backlogDir && bridge.featPath && bridge.featRef);
 }
 
 export function bridgeRunbookTargets(kbDocs: KbDoc[]): TargetDoc[] {

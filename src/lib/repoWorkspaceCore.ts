@@ -12,7 +12,7 @@ import {
 	stringifyYaml,
 	uuidLike,
 } from "./coreParsing.js";
-import { EffortRepo, KbDoc, parseEffortRepos, repoDocs } from "./kbDocs.js";
+import { FeatRepo, KbDoc, parseFeatRepos, repoDocs } from "./kbDocs.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { writeFileAtomic } from "./renderPlan.js";
 
@@ -36,7 +36,7 @@ export function maybeResolveRepoDoc(kbDocs: KbDoc[], repoRef: string): KbDoc | u
 	return undefined;
 }
 
-export function formatEffortRepoEntry(
+export function formatFeatRepoEntry(
 	repoId: string,
 	ref: string | undefined,
 	readOnly: boolean,
@@ -44,15 +44,15 @@ export function formatEffortRepoEntry(
 	return `${repoId}${ref ? `@${ref}` : ""}${readOnly ? ":ro" : ""}`;
 }
 
-export function appendRepoToEffort(path: string, repo: EffortRepo): string {
-	const existing = parseEffortRepos(path);
+export function appendRepoToFeat(path: string, repo: FeatRepo): string {
+	const existing = parseFeatRepos(path);
 	if (existing.some((entry) => entry.id === repo.id))
-		throw new Error(`effort already includes repo ${repo.id}: ${formatPath(path)}`);
+		throw new Error(`feat already includes repo ${repo.id}: ${formatPath(path)}`);
 
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const frontmatter = splitMarkdownFrontmatter(text, label);
-	const entry = formatEffortRepoEntry(repo.id, repo.ref, repo.readOnly);
+	const entry = formatFeatRepoEntry(repo.id, repo.ref, repo.readOnly);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
@@ -65,7 +65,7 @@ export function appendRepoToEffort(path: string, repo: EffortRepo): string {
 	} else if (isSeq(repos)) {
 		repos.add(entry);
 	} else {
-		throw new Error(`invalid effort repos in ${label}: expected a YAML list`);
+		throw new Error(`invalid feat repos in ${label}: expected a YAML list`);
 	}
 
 	const yaml = stringifyYaml(doc);

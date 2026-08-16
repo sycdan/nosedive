@@ -3,7 +3,7 @@ import {
 	collectDropReadiness,
 	parseDropArgs,
 	resolveBridgeRepoDoc,
-	resolveDropEffort,
+	resolveDropFeat,
 	todayIsoDate,
 } from "../lib/drop.js";
 import {
@@ -22,8 +22,8 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 	if (!rc.kbDir) throw new Error("drop requires a configured kb directory");
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const effort = resolveDropEffort(kbDocs, options.name);
-	const readiness = collectDropReadiness(effort, kbDocs, rc);
+	const feat = resolveDropFeat(kbDocs, options.name);
+	const readiness = collectDropReadiness(feat, kbDocs, rc);
 	if (readiness.blockers.length > 0) {
 		return {
 			stdout: "",
@@ -34,7 +34,7 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 
 	const bridgeRepo = resolveBridgeRepoDoc(kbDocs, rc.bridgeDir);
 	const roots = [
-		effort,
+		feat,
 		...readiness.repos.map((repo) => repo.doc),
 		...(bridgeRepo ? [bridgeRepo] : []),
 	];
@@ -42,7 +42,7 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
 	return {
 		stdout: renderDropPrompt(readPromptBody(promptDoc), {
-			effort,
+			feat,
 			today: todayIsoDate(),
 			repos: readiness.repos,
 			gates,

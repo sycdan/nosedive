@@ -16,7 +16,7 @@ import {
 import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
 import { gitOutput } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
-import { reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
+import { reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
@@ -29,7 +29,7 @@ import { uuid7AtMs } from "./uuid7.js";
 
 export interface RecordDiveOptions {
 	ref?: string;
-	effort?: string;
+	feat?: string;
 	gist?: string;
 	title?: string;
 	brief?: string;
@@ -54,6 +54,7 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		clearScopes: false,
 	};
 	let featValue: string | undefined;
+	// Holds whatever the `--effort` alias was given; the flag keeps its spelling.
 	let effortValue: string | undefined;
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
@@ -98,10 +99,10 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	if (featValue !== undefined && effortValue !== undefined && featValue !== effortValue) {
 		throw new Error("--feat and --effort name different refs");
 	}
-	options.effort = featValue ?? effortValue;
+	options.feat = featValue ?? effortValue;
 	// A free dive takes its every field from the bridge, so any other option can
 	// only describe a dive this is not: it is checked first, and returns before
-	// the rules that assume an effort-owned dive.
+	// the rules that assume a feat-owned dive.
 	if (options.free) {
 		if (args.length !== 1) throw new Error("--free cannot be combined with any other option");
 		return options;
@@ -109,7 +110,7 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	if (options.clearScopes && options.scopes.length > 0) {
 		throw new Error("--clear-scopes cannot be combined with --scope");
 	}
-	if (!options.ref && !options.effort)
+	if (!options.ref && !options.feat)
 		throw new Error("record.dive requires --feat or --effort when creating a dive");
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
 		throw new Error("gist cannot be empty");
@@ -205,16 +206,16 @@ function isParentRel(rel: string | undefined): boolean {
 }
 
 /**
- * The scopes a dive under this effort should start from. `pitch` never writes a
- * scopes key, so reading only the effort's own scopes records a dive with none,
+ * The scopes a dive under this feat should start from. `pitch` never writes a
+ * scopes key, so reading only the feat's own scopes records a dive with none,
  * and a dive with no scope can be jumped with no repo attached and landed
  * without pushing anything. The nearest scoped ancestor is the one the pitcher
  * meant, so the walk stops there instead of unioning the whole chain.
  */
-function inheritedScopes(effort: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
+function inheritedScopes(feat: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const seen = new Set<string>();
-	let current: KbDoc | undefined = effort;
+	let current: KbDoc | undefined = feat;
 	while (current && !seen.has(current.id)) {
 		if (current.scopes.length > 0) return current.scopes;
 		seen.add(current.id);
@@ -239,31 +240,31 @@ function renderScopes(scopes: ScopeRef[]): string[] {
 	return lines;
 }
 
-function effortTitle(effort: KbDoc): string {
-	const body = readFileSync(effort.path, "utf8");
-	return /^#\s+(.+)$/m.exec(body)?.[1]?.trim() || titleFromSlug(effort.name.split(".")[0]!);
+function featTitle(feat: KbDoc): string {
+	const body = readFileSync(feat.path, "utf8");
+	return /^#\s+(.+)$/m.exec(body)?.[1]?.trim() || titleFromSlug(feat.name.split(".")[0]!);
 }
 
-function managedName(effort: KbDoc, id: string): string {
-	return `${effort.name}.${id.replaceAll("-", "").slice(-6)}`;
+function managedName(feat: KbDoc, id: string): string {
+	return `${feat.name}.${id.replaceAll("-", "").slice(-6)}`;
 }
 
 function renderNewDive(
 	id: string,
-	effort: KbDoc,
+	feat: KbDoc,
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
 ): string {
-	const gist = options.gist?.trim() || `Working on ${effortTitle(effort)}.`;
+	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
 		"---",
 		"kind: dive",
 		`id: ${id}`,
-		`name: ${managedName(effort, id)}`,
+		`name: ${managedName(feat, id)}`,
 		`gist: ${quoteYamlString(gist)}`,
 		...renderScopes(scopes),
 		"meta:",
-		`  feat: ${effort.id}`,
+		`  feat: ${feat.id}`,
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -275,9 +276,9 @@ function renderNewDive(
 }
 
 /**
- * A free dive carries only what the bridge can supply: no effort, so no managed
+ * A free dive carries only what the bridge can supply: no feat, so no managed
  * name, gist, title, brief, meta or links. Its own id stands in for the name it
- * has not been given yet. `jump` refuses it -- no `meta.effort`, no brief -- so
+ * has not been given yet. `jump` refuses it -- no `meta.feat`, no brief -- so
  * it is a record to hang work off, not a dive anything can pick up as-is.
  */
 function renderFreeDive(id: string, scopes: ScopeRef[]): string {
@@ -380,14 +381,14 @@ export function recordDive(args: string[], io: CommandIo): void {
 		// dive nobody claims never touches the workspace marker. Claiming is the
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
-		const effort = resolveEffortDoc(kbDocs, rc, options.effort!);
+		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
 		const scopes = options.clearScopes
 			? []
 			: options.scopes.length > 0
 				? options.scopes.map((ref) =>
 						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
 					)
-				: inheritedScopes(effort, kbDocs).map((scope) =>
+				: inheritedScopes(feat, kbDocs).map((scope) =>
 						cachedScope(
 							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
 							rc.bridgeDir,
@@ -399,14 +400,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 		// `--clear-scopes` and `--scope` both say what the pilot wants; only the
 		// inherited path can come back empty without anyone having asked for it.
 		if (!options.clearScopes && options.scopes.length === 0 && scopes.length === 0) {
-			io.err(
-				`feat ${effort.name} and its ancestors scope no repos; recording a dive with no scopes`,
-			);
+			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
 		const id = uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, effort, options, scopes));
-		reconcileDiveEffortLinks(undefined, effort, id, "planned.dive");
+		writeFileAtomic(path, renderNewDive(id, feat, options, scopes));
+		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
@@ -421,12 +420,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);
-	const previousEffort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
-	const effort = options.effort ? resolveEffortDoc(kbDocs, rc, options.effort) : previousEffort;
-	if (options.effort) {
-		if (!effort) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
-		doc.set("name", managedName(effort, dive.id));
-		doc.setIn(["meta", "feat"], effort.id);
+	const previousFeat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
+	const feat = options.feat ? resolveFeatDoc(kbDocs, rc, options.feat) : previousFeat;
+	if (options.feat) {
+		if (!feat) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
+		doc.set("name", managedName(feat, dive.id));
+		doc.setIn(["meta", "feat"], feat.id);
 		// Not a migration -- the one case where leaving the old key would make the
 		// document name two different feats, with the parser silently preferring
 		// one of them.
@@ -477,11 +476,11 @@ export function recordDive(args: string[], io: CommandIo): void {
 	}
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	const claimed = options.takeover ? pilotEmail : options.diver;
-	if (effort) {
-		// Re-homing changes the effort, not the phase. Read before reconciliation
-		// removes the old effort's reciprocal link.
-		const existingRel = previousEffort?.links.find((link) => link.id === dive.id)?.rel;
-		reconcileDiveEffortLinks(previousEffort, effort, dive.id, existingRel ?? "planned.dive");
+	if (feat) {
+		// Re-homing changes the feat, not the phase. Read before reconciliation
+		// removes the old feat's reciprocal link.
+		const existingRel = previousFeat?.links.find((link) => link.id === dive.id)?.rel;
+		reconcileDiveFeatLinks(previousFeat, feat, dive.id, existingRel ?? "planned.dive");
 	}
 	if (ensureActivation(dive, claimed, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);

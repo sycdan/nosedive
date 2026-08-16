@@ -16,6 +16,7 @@ function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: b
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	return {
+		// `commit-provenance.effort` keeps its name: it is repo config a pilot has set.
 		effort: options.effort !== false,
 		coAuthor: options["co-author"] !== false,
 	};
@@ -24,7 +25,7 @@ function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: b
 /** Installs the provenance hook while chaining the repo's own hook. */
 export function reconcilePrepareCommitMsgHook(
 	targetPath: string,
-	effortId: string,
+	featId: string,
 	repoDoc: KbDoc,
 ): void {
 	const repoId = repoDoc.id;
@@ -57,7 +58,7 @@ export function reconcilePrepareCommitMsgHook(
 			: undefined;
 	}
 
-	const hook = prepareCommitMsgHook(effortId, originalHookPath, commitProvenanceOptions(repoDoc));
+	const hook = prepareCommitMsgHook(featId, originalHookPath, commitProvenanceOptions(repoDoc));
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(managedHookPath, hook);

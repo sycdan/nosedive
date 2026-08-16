@@ -6,7 +6,7 @@ import { gitOutput, runGit } from "./gitProcess.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 import { resolveRemoteForGit } from "./repoWorkspaceCore.js";
 import { KbDoc } from "./kbDocs.js";
-import { effortDocs } from "./repoEffortScopes.js";
+import { featDocs } from "./repoFeatScopes.js";
 
 export interface DropOptions {
 	name: string;
@@ -36,20 +36,20 @@ export function dropSlug(name: string): string {
 		.replace(/^-+|-+$/g, "");
 }
 
-function leafSlug(effortName: string): string {
-	return effortName.split(".")[0] ?? "";
+function leafSlug(featName: string): string {
+	return featName.split(".")[0] ?? "";
 }
 
-export function resolveDropEffort(kbDocs: KbDoc[], name: string): KbDoc {
-	const efforts = effortDocs(kbDocs);
-	const byId = efforts.filter((doc) => doc.id === name);
+export function resolveDropFeat(kbDocs: KbDoc[], name: string): KbDoc {
+	const feats = featDocs(kbDocs);
+	const byId = feats.filter((doc) => doc.id === name);
 	if (byId.length === 1) return byId[0]!;
 
-	const byName = efforts.filter((doc) => doc.name === name);
+	const byName = feats.filter((doc) => doc.name === name);
 	if (byName.length === 1) return byName[0]!;
 
 	const slug = dropSlug(name);
-	const bySlug = efforts.filter((doc) => leafSlug(doc.name) === slug || doc.name === slug);
+	const bySlug = feats.filter((doc) => leafSlug(doc.name) === slug || doc.name === slug);
 	if (bySlug.length === 1) return bySlug[0]!;
 	if (bySlug.length > 1) {
 		const names = bySlug.map((doc) => doc.name).sort();
@@ -78,9 +78,9 @@ export interface DropReadiness {
 	repos: DropRepo[];
 }
 
-function linkedDocs(effort: KbDoc, kbDocs: KbDoc[], rel: string): KbDoc[] {
+function linkedDocs(feat: KbDoc, kbDocs: KbDoc[], rel: string): KbDoc[] {
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
-	return effort.links
+	return feat.links
 		.filter((link) => link.rel === rel)
 		.map((link) => byId.get(link.id))
 		.filter((doc): doc is KbDoc => doc !== undefined);
@@ -106,14 +106,10 @@ function remoteBranchSha(
 	return { sha: result.stdout.trim().split(/\s+/)[0] ?? "" };
 }
 
-export function collectDropReadiness(
-	effort: KbDoc,
-	kbDocs: KbDoc[],
-	rc: NosediveRc,
-): DropReadiness {
+export function collectDropReadiness(feat: KbDoc, kbDocs: KbDoc[], rc: NosediveRc): DropReadiness {
 	const blockers: string[] = [];
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
-	const diveLinks = effort.links
+	const diveLinks = feat.links
 		.map((link) => ({ doc: byId.get(link.id), role: diveRole(link.rel) }))
 		.filter((entry): entry is { doc: KbDoc; role: string | undefined } => entry.doc !== undefined);
 	if (
@@ -122,7 +118,7 @@ export function collectDropReadiness(
 				role === "landed" || (DIVE_WORKING_RELS.has(role ?? "") && doc.kind === "memo"),
 		)
 	) {
-		blockers.push(`no landed dive: ${effort.name}`);
+		blockers.push(`no landed dive: ${feat.name}`);
 	}
 	for (const { doc: dive, role } of diveLinks) {
 		if (dive.kind !== "dive" || !DIVE_WORKING_RELS.has(role ?? "")) continue;
@@ -134,16 +130,16 @@ export function collectDropReadiness(
 	 * edge in place, so an unfiltered walk would let a dropped child block its
 	 * parent forever. Delete both filters once closing removes the edge instead.
 	 */
-	for (const child of linkedDocs(effort, kbDocs, "child").filter((doc) => doc.kind !== "memo")) {
+	for (const child of linkedDocs(feat, kbDocs, "child").filter((doc) => doc.kind !== "memo")) {
 		blockers.push(`open child feat: ${child.name}`);
 	}
-	for (const needed of linkedDocs(effort, kbDocs, "needs").filter((doc) => doc.kind !== "memo")) {
+	for (const needed of linkedDocs(feat, kbDocs, "needs").filter((doc) => doc.kind !== "memo")) {
 		blockers.push(`open needed feat: ${needed.name}`);
 	}
 
 	const repos: DropRepo[] = [];
-	const branch = `${rc.workBranchPrefix ?? "work/"}${effort.name}`;
-	for (const scope of effort.scopes) {
+	const branch = `${rc.workBranchPrefix ?? "work/"}${feat.name}`;
+	for (const scope of feat.scopes) {
 		const repo = kbDocs.find((doc) => doc.id === scope.repoId && doc.kind === "repo");
 		if (!repo) throw new Error(`scoped repo not found: ${scope.repoId}`);
 		const merge = (repo.metaScalars.merge ?? "").trim();

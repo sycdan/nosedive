@@ -27,7 +27,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { ensureManagedRepoCache, gitRun } from "../lib/repoWorkspaceCore.js";
 import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
@@ -51,13 +51,13 @@ function commitAndPushBail(
 	divePath: string,
 	diveName: string,
 	reason: string,
-	effortId?: string,
-	effortPath?: string,
+	featId?: string,
+	featPath?: string,
 ): void {
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
 	gitRun(
 		bridgeDir,
-		["add", "--", relPath, ...(effortPath ? [toPosixPath(relative(bridgeDir, effortPath))] : [])],
+		["add", "--", relPath, ...(featPath ? [toPosixPath(relative(bridgeDir, featPath))] : [])],
 		"failed to stage bailed dive",
 	);
 
@@ -80,7 +80,7 @@ function commitAndPushBail(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(`bail(${diveName}): ${reason}`, effortId)],
+			["commit", "-m", commitMessage(`bail(${diveName}): ${reason}`, featId)],
 			"failed to commit bailed dive",
 		);
 		gitRun(
@@ -297,10 +297,10 @@ function bail(args: string[], io: CommandIo): void {
 	doc.set("gist", `${dive.gist} -- bailed: ${reason}`);
 
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
-	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
-	if (effort) reconcileDiveEffortLinks(effort, effort, dive.id, "bailed.dive");
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
+	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "bailed.dive");
 
-	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason, effort?.id, effort?.path);
+	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason, feat?.id, feat?.path);
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 	removeDiveScratch(rc.workspaceDir!, dive.id);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);

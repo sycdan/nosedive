@@ -126,7 +126,7 @@ function recordedPath(bridge, stdout) {
 	return join(bridge, match[1]);
 }
 
-test("record.dive defaults to the effort's cached default-branch repositories", () => {
+test("record.dive defaults to the feat's cached default-branch repositories", () => {
 	const { bridge, repoCommit } = setup("create");
 	const unhydratedSource = join(bridge, "sources", "unhydrated");
 	const unhydratedCommit = createRepo(unhydratedSource, unhydratedRepoId);
@@ -531,7 +531,7 @@ test("record.dive warns when no ancestor scopes a repo", () => {
 	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
 });
 
-test("record.dive reassigns its reciprocal effort link", () => {
+test("record.dive reassigns its reciprocal feat link", () => {
 	const { bridge } = setup("patch-meta");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
 	const created = run(["record.dive", "--effort", effortId], bridge);

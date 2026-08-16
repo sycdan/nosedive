@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
 import { KbDoc, LinkRef } from "./kbDocs.js";
+import { isFeatEdge } from "./relGrammar.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
 
@@ -92,46 +93,45 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 }
 
 /**
- * An edge a wide walk must not follow. A dive's gates are that dive's business:
- * reaching one through its feat would pull another diver's in-progress failures
- * into an unrelated sweep, and every gate a feat has ever landed into every
- * sweep after it.
- *
- * Both halves are load-bearing, for opposite cases, and neither can be dropped:
- *
- * - The **rel** catches a dive that is no longer `kind: dive`. `land` and `bail`
- *   close a dive by converting it to `kind: memo`, so a `landed.dive` edge
- *   points at a memo and the kind check cannot see it.
- * - The **kind** catches a dive whose edge is unsuffixed. Older `record.dive`
- *   versions wrote bare `planned`, `pending` and `working`, and live bridges
- *   still carry them -- `diveRole` (`diveListing.ts`) exists to read both
- *   spellings. Matching a hardcoded list of those words here instead would rot,
- *   and two of them are generic enough to mean something else on another edge.
- *
- * The gap that remains is a bare rel on an already-closed dive, which needs a
- * bridge old enough to have written unsuffixed edges and to have landed through
- * them. Not worth a third check until one turns up.
+ * An edge a wide walk must not follow, and the reason `collectReachableGates`
+ * is frozen: it names what to exclude, so a spelling nobody thought of walks
+ * straight past it. A closed dive is `kind: memo`, so a bare `pending` edge to
+ * one satisfies neither half, which is how a land came to run another feat's
+ * gate. `isFeatEdge` replaced this everywhere except `drop`.
  */
 function isDiveEdge(link: LinkRef, target: KbDoc): boolean {
 	return link.rel?.endsWith(".dive") === true || target.kind === "dive";
 }
 
 /**
- * Walks the links reachable from the roots, not just gate edges: a gate may be
- * declared by a feat, a repo, or anything else in the dive's ancestry. It stops
- * at dives -- see `isDiveEdge` -- so a root dive's own gates are read while
- * nobody else's are.
+ * A doc that is, or has ever been, a dive. Every dive carries `meta.diver` --
+ * an address, or `null` before one is claimed -- and closing a dive converts
+ * `kind` without removing it, so the key outlives the kind. No ordinary memo
+ * has it.
+ *
+ * Defence in depth, not the rule. What makes `collectFeatGates` correct is that
+ * it follows only `.feat` edges; this catches the one case that survives, an
+ * edge mislabelled `.feat` that names a dive.
+ */
+function wasEverADive(doc: KbDoc): boolean {
+	return doc.kind === "dive" || doc.metaScalars.diver !== undefined;
+}
+
+/**
+ * The shared walk. Roots are always walked, whatever they are, so a dive root's
+ * own gates are read; `followEdge` decides only where the walk goes next.
  *
  * First-seen wins for a gate's attributes, so pass roots closest-first -- the
  * dive, then its feat, then its scoped repos, which reach the dive through
  * frontmatter rather than links. Later edges are kept only so the report can
  * name them.
  */
-export function collectReachableGates(
+function walkGates(
 	verb: string,
 	roots: KbDoc[],
 	kbDocs: KbDoc[],
 	bridgeDir: string,
+	followEdge: (link: LinkRef, target: KbDoc) => boolean,
 ): LandGate[] {
 	const GATE_REL = gateRel(verb);
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
@@ -170,7 +170,7 @@ export function collectReachableGates(
 					order.push(target.id);
 				}
 			}
-			if (target && !isDiveEdge(link, target)) walk(target);
+			if (target && followEdge(link, target)) walk(target);
 		}
 	};
 
@@ -182,6 +182,49 @@ export function collectReachableGates(
 		.map((gate, index) => ({ gate, index }))
 		.sort((a, b) => b.gate.gateHeight - a.gate.gateHeight || a.index - b.index)
 		.map((entry) => entry.gate);
+}
+
+/**
+ * Every `<verb>.gate` on the roots and on the feats connected to them. A gate
+ * belongs to a feat or to a repo, and repos are seeded as roots by the caller,
+ * so feat to feat is the only traversal there is.
+ *
+ * An edge is followed only when its rel says `.feat` (`isFeatEdge`). Nothing
+ * about dives is tested for: a dive edge is not a feat edge, so no spelling of
+ * one -- `working`, `pending`, `landed.dive`, `landed-dive` -- can be walked,
+ * and a dive's gates stay that dive's business without anybody maintaining a
+ * list of the ways to name one.
+ */
+export function collectFeatGates(
+	verb: string,
+	roots: KbDoc[],
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): LandGate[] {
+	return walkGates(
+		verb,
+		roots,
+		kbDocs,
+		bridgeDir,
+		(link, target) => isFeatEdge(link.rel) && !wasEverADive(target),
+	);
+}
+
+/**
+ * The old wide walk: follows every link out from the roots and refuses only
+ * edges `isDiveEdge` recognises. **Frozen, and `drop`'s alone.**
+ *
+ * It is kept because `drop` is being rethought and should not have its gate
+ * selection change underneath that. Everything else uses `collectFeatGates`.
+ * When drop is redesigned, this goes with it.
+ */
+export function collectReachableGates(
+	verb: string,
+	roots: KbDoc[],
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+): LandGate[] {
+	return walkGates(verb, roots, kbDocs, bridgeDir, (link, target) => !isDiveEdge(link, target));
 }
 
 /**

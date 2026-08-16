@@ -12,6 +12,7 @@ import {
 } from "./coreParsing.js";
 import { KbDoc, LinkRef } from "./kbDocs.js";
 import { parseLinkRefs } from "./kbRefs.js";
+import { relParts } from "./relGrammar.js";
 import { titleFromSlug } from "./slugs.js";
 import {
 	backlogDocTitle,
@@ -29,26 +30,6 @@ const FEAT_ROLES = new Set(["feat", "effort"]);
 
 /** The rel `--inject` appends. Its predicate is what names the section. */
 export const INJECT_REL = "injected.feat";
-
-interface RelParts {
-	predicate: string;
-	role?: string;
-}
-
-/**
- * `<predicate>.<role>`, plus the legacy `<predicate>-effort` spelling that
- * predates the grammar. A rel with no recognisable role is all predicate.
- */
-function relParts(rel: string | undefined): RelParts | undefined {
-	if (!rel) return undefined;
-	const dot = rel.indexOf(".");
-	if (dot > 0) return { predicate: rel.slice(0, dot), role: rel.slice(dot + 1) };
-	const dash = rel.lastIndexOf("-");
-	if (dash > 0 && FEAT_ROLES.has(rel.slice(dash + 1))) {
-		return { predicate: rel.slice(0, dash), role: rel.slice(dash + 1) };
-	}
-	return { predicate: rel };
-}
 
 function isFeatRole(role: string | undefined): boolean {
 	return role !== undefined && FEAT_ROLES.has(role);

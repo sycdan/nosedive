@@ -281,6 +281,127 @@ links:
 	assert.equal(ranDuringLand, false, "land descended into a sibling dive");
 });
 
+/**
+ * The case the sibling-dive test above cannot reach: a dive that has already
+ * closed. `land` and `bail` convert a dive to `kind: memo`, so the kind check is
+ * blind to it, and the edge naming it is a bare `pending` with no `.dive` to
+ * match. A live land walked straight through both and ran another feat's gate.
+ *
+ * The sibling feat is linked `child.feat` on purpose: it stays reachable, so
+ * this fails for the edge into the closed dive and not for the feat being cut
+ * off.
+ */
+test("a closed dive behind a bare rel does not gate another feat's land", () => {
+	const gateId = "019fd471-0000-7000-8000-000000000050";
+	const siblingFeatId = "019fd471-0000-7000-8000-000000000051";
+	const closedDiveId = "019fd471-0000-7000-8000-000000000052";
+	const logPath = join(tmp, "closed-dive-gate.json");
+	const { bridge, worktree } = setup("closed-dive", [
+		gate(gateId, "closed-dive-only", contextGate(logPath), undefined, { link: false }),
+	]);
+	write(
+		join(bridge, "kb", `${closedDiveId}.md`),
+		`---
+kind: memo
+id: ${closedDiveId}
+name: sibling-feat.abcdef
+gist: "Landed work -- bailed: closed, so no longer kind: dive"
+scopes: []
+meta:
+  feat: ${siblingFeatId}
+  diver: "someone@example.invalid"
+links:
+  - kb/${gateId}.md:
+      rel: land.gate
+---
+`,
+	);
+	write(
+		join(bridge, "kb", `${siblingFeatId}.md`),
+		`---
+kind: feat
+id: ${siblingFeatId}
+name: sibling-feat
+gist: "Another feat under the same parent"
+links:
+  - kb/${closedDiveId}.md:
+      rel: pending
+---
+`,
+	);
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	write(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			/^links:\n/m,
+			`links:\n  - kb/${siblingFeatId}.md:\n      rel: child.feat\n`,
+		),
+	);
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "add sibling feat with a closed dive");
+
+	gitCommitEmpty(worktree, "work");
+	assertOk(run(["land"], bridge), "land failed");
+	assert.equal(
+		existsSync(logPath),
+		false,
+		"land ran a gate declared by another feat's closed dive",
+	);
+});
+
+/**
+ * The two halves of the allowlist in one land: an ancestor reached by
+ * `parent.feat` gates the work, and a feat reached only by the bare `child`
+ * spelling does not. The narrowing is the point -- a rel meant to be traversed
+ * says `.feat`, and a bridge still on the old spelling migrates rather than the
+ * walk guessing.
+ */
+test("the walk follows .feat edges and not their bare spellings", () => {
+	const ancestorGateId = "019fd471-0000-7000-8000-000000000060";
+	const bareGateId = "019fd471-0000-7000-8000-000000000061";
+	const ancestorId = "019fd471-0000-7000-8000-000000000062";
+	const bareChildId = "019fd471-0000-7000-8000-000000000063";
+	const ancestorLog = join(tmp, "ancestor-gate.json");
+	const bareLog = join(tmp, "bare-child-gate.json");
+	const { bridge, worktree } = setup("feat-edges", [
+		gate(ancestorGateId, "ancestor", contextGate(ancestorLog), undefined, { link: false }),
+		gate(bareGateId, "bare-child", contextGate(bareLog), undefined, { link: false }),
+	]);
+	for (const [id, name, gateId] of [
+		[ancestorId, "ancestor-feat", ancestorGateId],
+		[bareChildId, "bare-child-feat", bareGateId],
+	]) {
+		write(
+			join(bridge, "kb", `${id}.md`),
+			`---
+kind: feat
+id: ${id}
+name: ${name}
+gist: "Declares a gate"
+links:
+  - kb/${gateId}.md:
+      rel: land.gate
+---
+`,
+		);
+	}
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	write(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			/^links:\n/m,
+			`links:\n  - kb/${ancestorId}.md:\n      rel: parent.feat\n  - kb/${bareChildId}.md:\n      rel: child\n`,
+		),
+	);
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "add ancestor and bare-child feats");
+
+	gitCommitEmpty(worktree, "work");
+	assertOk(run(["land"], bridge), "land failed");
+	assert.equal(existsSync(ancestorLog), true, "a parent.feat ancestor's gate did not run");
+	assert.equal(existsSync(bareLog), false, "a feat reached by a bare child edge gated the land");
+});
+
 test("a legacy gate edge refuses rather than silently skipping the gate", () => {
 	const { bridge, worktree } = setup("legacy-edge", [
 		gate("019fd471-0000-7000-8000-000000000020", "builds", GATE_PASS),
@@ -439,7 +560,7 @@ test("a gate reached twice keeps its first-seen attributes and names the shadowe
 				{
 					id: relayId,
 					body: `---
-kind: memo
+kind: feat
 id: ${relayId}
 name: relay
 gist: "Links the same gate again, without the flaky marking"
@@ -458,7 +579,7 @@ links:
 		featPath,
 		readFileSync(featPath, "utf8").replace(
 			/---\n$/,
-			`  - kb/${relayId}.md:\n      rel: uses\n---\n`,
+			`  - kb/${relayId}.md:\n      rel: child.feat\n---\n`,
 		),
 	);
 	runTool("git", ["add", "--", "kb"], bridge);

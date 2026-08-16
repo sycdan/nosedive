@@ -18,7 +18,7 @@ import {
 
 const tmp = createTmp("land-gates");
 const repoId = "019fd471-0000-7000-8000-000000000001";
-const effortId = "019fd471-0000-7000-8000-000000000002";
+const featId = "019fd471-0000-7000-8000-000000000002";
 const legacyGateRel = "land-gated-by";
 
 /**
@@ -106,9 +106,9 @@ ${scopes}${meta}---
 /**
  * @param name unique per test; also names the workspace repo
  * @param gates array of { id, name, body, links } written into kb and linked
- * @param linkFrom "dive" | "effort" -- which doc carries the land.gate edges
+ * @param linkFrom "dive" | "feat" -- which doc carries the land.gate edges
  */
-function setup(name, gates = [], { linkFrom = "effort", extraDocs = [] } = {}) {
+function setup(name, gates = [], { linkFrom = "feat", extraDocs = [] } = {}) {
 	const source = join(tmp, `${name}-source`);
 	const bridge = join(tmp, name);
 	const origin = join(tmp, `${name}-origin.git`);
@@ -159,16 +159,16 @@ meta:
 		.join("\n");
 
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: land-gates.nosedive
-gist: "Gate test effort"
+gist: "Gate test feat"
 scopes:
   - ${repoId}:
       work-branch: work/land-gates.nosedive
-${linkFrom === "effort" && gateLinks ? `links:\n${gateLinks}\n` : ""}---
+${linkFrom === "feat" && gateLinks ? `links:\n${gateLinks}\n` : ""}---
 `,
 	);
 	runTool("git", ["add", "--", "kb", ".nosedive"], bridge);
@@ -180,7 +180,7 @@ ${linkFrom === "effort" && gateLinks ? `links:\n${gateLinks}\n` : ""}---
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate failed");
 
 	const dive = run(
-		["record.dive", "--effort", effortId, "--diver", "nosedive@example.invalid"],
+		["record.dive", "--feat", featId, "--diver", "nosedive@example.invalid"],
 		bridge,
 	);
 	assertOk(dive, "record.dive failed");
@@ -225,7 +225,7 @@ kind: dive
 id: ${siblingId}
 name: sibling-dive
 gist: "Work belonging to another dive"
-feat: ${effortId}
+feat: ${featId}
 scopes: []
 links:
   - kb/${gateId}.md:
@@ -235,10 +235,10 @@ links:
 ---
 `,
 	);
-	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	const featPath = join(bridge, "kb", `${featId}.md`);
 	write(
-		effortPath,
-		readFileSync(effortPath, "utf8").replace(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
 			/^links:\n/m,
 			`links:\n  - kb/${siblingId}.md:\n      rel: working.dive\n  - kb/${featGateId}.md:\n      rel: test.gate\n`,
 		),
@@ -252,7 +252,7 @@ name: backlog
 gist: "Regression roots"
 scopes: []
 links:
-  - kb/${effortId}.md:
+  - kb/${featId}.md:
       rel: active.feat
 ---
 `,
@@ -270,7 +270,7 @@ links:
 	rmSync(logPath, { force: true });
 
 	// Bare dive rels survive from older record.dive versions; kind is the backstop.
-	write(effortPath, readFileSync(effortPath, "utf8").replace("rel: working.dive", "rel: working"));
+	write(featPath, readFileSync(featPath, "utf8").replace("rel: working.dive", "rel: working"));
 	write(markerPath, `id: ${diveId}\n`);
 	gitCommitEmpty(worktree, "work");
 	const landed = run(["land"], bridge);
@@ -285,10 +285,10 @@ test("a legacy gate edge refuses rather than silently skipping the gate", () => 
 	const { bridge, worktree } = setup("legacy-edge", [
 		gate("019fd471-0000-7000-8000-000000000020", "builds", GATE_PASS),
 	]);
-	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	const featPath = join(bridge, "kb", `${featId}.md`);
 	write(
-		effortPath,
-		readFileSync(effortPath, "utf8").replace("rel: land.gate", `rel: ${legacyGateRel}`),
+		featPath,
+		readFileSync(featPath, "utf8").replace("rel: land.gate", `rel: ${legacyGateRel}`),
 	);
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
@@ -453,10 +453,10 @@ links:
 		},
 	);
 	// Link the relay after the gate so the gate's own (flaky) edge is seen first.
-	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	const featPath = join(bridge, "kb", `${featId}.md`);
 	write(
-		effortPath,
-		readFileSync(effortPath, "utf8").replace(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
 			/---\n$/,
 			`  - kb/${relayId}.md:\n      rel: uses\n---\n`,
 		),
@@ -550,10 +550,10 @@ test("each gate receives its repo, feat, gate, and declaring doc ids", () => {
 			id: repoId,
 			root: "workspace/gate-context-repo",
 		});
-		assert.equal(context.featId, effortId);
+		assert.equal(context.featId, featId);
 	}
 	assert.equal(featContext.gateId, featGateId);
-	assert.equal(featContext.introducedById, effortId);
+	assert.equal(featContext.introducedById, featId);
 	assert.notEqual(featContext.introducedById, featContext.gateId);
 	assert.equal(repoContext.gateId, repoGateId);
 	assert.equal(repoContext.introducedById, repoId);
@@ -695,10 +695,10 @@ test("unknown scalar link attributes are carried, non-scalar ones rejected", () 
 	const listValue = setup("list-attr", [gate(gateIdWithList, "builds", GATE_PASS)]);
 	// Added after setup: a non-scalar attribute is rejected everywhere kb docs
 	// are read, so writing it up front would fail hydration rather than land.
-	const effortPath = join(listValue.bridge, "kb", `${effortId}.md`);
+	const featPath = join(listValue.bridge, "kb", `${featId}.md`);
 	write(
-		effortPath,
-		readFileSync(effortPath, "utf8").replace(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
 			"      rel: land.gate\n",
 			"      rel: land.gate\n      tags:\n        - a\n        - b\n",
 		),

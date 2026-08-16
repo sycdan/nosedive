@@ -157,9 +157,13 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 			"",
 			"# Backlog",
 			"",
-			// Heading text written into a bridge's backlog memo, matched by the L1
-			// migration artifact that writes the same memo; not renamed here.
-			"## Current efforts",
+			// What `update-backlog` renders for a memo that links no work, so a
+			// fresh bridge starts holding the body the renderer would give it. The
+			// old `## Current efforts` stub was a section heading no render
+			// produces: sections are named for the rel predicate that links them,
+			// so a `current.feat` edge renders `## Current`, and until a bridge has
+			// one there is no section at all.
+			"The backlog links no work.",
 			"",
 		].join("\n"),
 	);

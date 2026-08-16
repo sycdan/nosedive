@@ -200,11 +200,15 @@ function renderContractHelpText(contract: ContractDoc): string {
 	return [bodyBlock, usageBlock].filter(Boolean).join("\n\n");
 }
 
+/**
+ * The latest doc per command, deprecated or not. A deprecated command is still
+ * a contracted command -- it runs, and it has to explain itself -- so the
+ * deprecation filter belongs to whoever is listing a surface, not here.
+ */
 function latestContractDocs(): ContractDoc[] {
 	const latestByCommand = new Map<string, ContractDoc>();
 	for (const contract of packageContractDocs()) {
 		if (contract.command.startsWith("_")) continue;
-		if (isDeprecatedContract(contract)) continue;
 		const existing = latestByCommand.get(contract.command);
 		if (!existing || contract.compatibilityLevel > existing.compatibilityLevel) {
 			latestByCommand.set(contract.command, contract);
@@ -222,10 +226,19 @@ function isDeprecatedContract(contract: ContractDoc): boolean {
  * for a block per command, so a command's `Use when:` trigger cannot be read
  * against the wrong command. A command with no `meta.agents-use-when` has no
  * agent-facing trigger to state, so it is left off the agent surface.
+ *
+ * Deprecation is judged on the latest doc per command, which is what
+ * `scripts/update-readme-command-surface.mjs` does and why the README has
+ * always been right about this. Filtering deprecated docs before reducing to
+ * the latest discards only the doc carrying `use-instead` and leaves the
+ * command listed under an older one that predates the decision --
+ * `add-repo.effort` advertised itself under its L1 gist, which still called a
+ * feat an effort.
  */
 export function renderTopLevelHelpText(options?: { agents?: boolean }): string {
 	const contracts = latestContractDocs().filter(
-		(contract) => !options?.agents || contract.agentsUseWhen.trim() !== "",
+		(contract) =>
+			!isDeprecatedContract(contract) && (!options?.agents || contract.agentsUseWhen.trim() !== ""),
 	);
 	const lines = [USAGE_HEADER, "", "Commands:"];
 	if (options?.agents) {

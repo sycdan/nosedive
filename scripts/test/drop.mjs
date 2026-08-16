@@ -41,7 +41,7 @@ drop-prompt: ${promptId}
 	return bridge;
 }
 
-function writeEffort(
+function writeFeat(
 	bridge,
 	{ kind = "feat", name = "ship-it.development", target, scopes = [], links = [] } = {},
 ) {
@@ -130,7 +130,7 @@ meta:
 `,
 	);
 	write(join(bridge, "kb", "app-tests.mjs"), "export function run() { return true; }\n");
-	writeEffort(bridge, {
+	writeFeat(bridge, {
 		scopes: [repoId],
 		links: [
 			{ id: memoId, rel: "working" },
@@ -163,7 +163,7 @@ test("drop reports an open dive only on stderr", () => {
 	const bridge = createDroppableBridge("open-dive");
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeLinkedDoc(bridge, diveId, "dive", "unfinished-slice");
-	writeEffort(bridge, {
+	writeFeat(bridge, {
 		links: [
 			{ id: memoId, rel: "landed.dive" },
 			{ id: diveId, rel: "jumped.dive" },
@@ -181,7 +181,7 @@ test("drop still recognizes legacy working dive rels", () => {
 	const bridge = createDroppableBridge("legacy-open-dive");
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeLinkedDoc(bridge, diveId, "dive", "unfinished-slice");
-	writeEffort(bridge, {
+	writeFeat(bridge, {
 		links: [
 			{ id: memoId, rel: "working" },
 			{ id: diveId, rel: "working" },
@@ -199,7 +199,7 @@ test("drop blocks a packed dive", () => {
 	const bridge = createDroppableBridge("packed-dive");
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeLinkedDoc(bridge, diveId, "dive", "packed-slice");
-	writeEffort(bridge, {
+	writeFeat(bridge, {
 		links: [
 			{ id: memoId, rel: "landed.dive" },
 			{ id: diveId, rel: "packed.dive" },
@@ -215,7 +215,7 @@ test("drop blocks a packed dive", () => {
 
 test("drop blocks a feat with no landed dive", () => {
 	const bridge = createDroppableBridge("no-landed-dive");
-	writeEffort(bridge);
+	writeFeat(bridge);
 
 	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
@@ -228,7 +228,7 @@ test("an open child blocks, and a closed one stops blocking", () => {
 	const bridge = createDroppableBridge("open-child");
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeLinkedDoc(bridge, childId, "feat", "unfinished-child");
-	writeEffort(bridge, {
+	writeFeat(bridge, {
 		links: [
 			{ id: memoId, rel: "working" },
 			{ id: childId, rel: "child" },
@@ -249,7 +249,7 @@ test("drop blocks a scoped repo with no merge policy", () => {
 	const { cloud } = createCloudBranch("no-merge", branch);
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeRepo(bridge, cloud, null);
-	writeEffort(bridge, { scopes: [repoId], links: [{ id: memoId, rel: "working" }] });
+	writeFeat(bridge, { scopes: [repoId], links: [{ id: memoId, rel: "working" }] });
 
 	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
@@ -260,7 +260,7 @@ test("drop blocks a scoped repo with no merge policy", () => {
 test("drop does not block a future target date", () => {
 	const bridge = createDroppableBridge("future-target");
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
-	writeEffort(bridge, { target: "2999-01-01", links: [{ id: memoId, rel: "working" }] });
+	writeFeat(bridge, { target: "2999-01-01", links: [{ id: memoId, rel: "working" }] });
 
 	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 0, dropped.stderr);
@@ -269,7 +269,7 @@ test("drop does not block a future target date", () => {
 
 test("drop treats an already closed feat as not found", () => {
 	const bridge = createDroppableBridge("closed");
-	writeEffort(bridge, { kind: "memo" });
+	writeFeat(bridge, { kind: "memo" });
 
 	const dropped = run(["drop", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
@@ -279,7 +279,7 @@ test("drop treats an already closed feat as not found", () => {
 
 test("drop reports every candidate for an ambiguous slug", () => {
 	const bridge = createDroppableBridge("ambiguous");
-	writeEffort(bridge, { name: "twin.release" });
+	writeFeat(bridge, { name: "twin.release" });
 	write(
 		join(bridge, "kb", "019fd96e-b1f1-7770-aa0b-45d95c3b30ab.md"),
 		`---

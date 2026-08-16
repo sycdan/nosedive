@@ -244,9 +244,9 @@ export function inheritedScopes(
 }
 
 /**
- * `mode: rw` is never written again -- the branch says it. `mode: ro` still is,
- * because absence of a branch has always meant a writable bare scope and cannot
- * be repurposed without stranding every scope written before this.
+ * The create-time spelling of `renderScopeEntry`, emitting lines rather than a
+ * value because a new dive's frontmatter is assembled as text. Neither writes
+ * `mode`: the branch says where work goes, and its absence says nowhere.
  */
 export function renderScopes(scopes: ScopeRef[]): string[] {
 	if (scopes.length === 0) return ["scopes: []"];

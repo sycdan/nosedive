@@ -316,7 +316,7 @@ meta:
 		featPath,
 		featText.replace(
 			/^---$/m,
-			`---\nscopes:\n  - ${workLoopRepoId}\n  - ${workLoopSecondRepoId}:\n      work-branch: work/work-loop\n  - ${workLoopThirdRepoId}:\n      work-branch: work/work-loop\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate`,
+			`---\nscopes:\n  - ${workLoopRepoId}\n  - ${workLoopSecondRepoId}\n  - ${workLoopThirdRepoId}\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate`,
 		),
 	);
 	runTool("git", ["add", "--", "kb"], bridge);
@@ -354,11 +354,7 @@ meta:
 	 * branch either -- and no `mode` key, which decides nothing and is no longer
 	 * written at all. Step 8 is where that costs something.
 	 */
-	assert.match(
-		mintedDoc,
-		new RegExp(`^  - ${workLoopRepoId}:\\n      ref: [0-9a-f]{40}$`, "m"),
-		"the gated repo must name no work branch",
-	);
+	assert.doesNotMatch(mintedDoc, /^      work-branch: /m);
 	assert.doesNotMatch(mintedDoc, /^      mode: /m);
 
 	// 3. Preflight offers it, so a pilot finds the work without being told it exists.

@@ -315,7 +315,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked work$/);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
 	assert.match(
 		commitBody,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
@@ -412,11 +412,11 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	runTool("git", ["add", "implementation.txt"], worktree);
 	gitCommit(
 		worktree,
-		`implementation\n\nEffort: ${effortId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
+		`implementation\n\nFeat: ${effortId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
 	);
 
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
-	assert.equal((message.match(new RegExp(`Effort: ${effortId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(new RegExp(`Feat: ${effortId}`, "g")) ?? []).length, 1);
 	assert.equal(
 		(message.match(new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`, "g")) ?? [])
 			.length,
@@ -478,7 +478,7 @@ test("jump survives tooling that rewrites core.hooksPath in shared config", () =
 	gitCommitEmpty(worktree, "commit after tooling ran");
 	assert.match(
 		runTool("git", ["log", "-1", "--format=%B"], worktree).stdout,
-		new RegExp(`Effort: ${effortId}`),
+		new RegExp(`Feat: ${effortId}`),
 		"managed hooks must still fire after the shared config was rewritten",
 	);
 
@@ -524,7 +524,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.match(message, /Repo-Hook: ran/);
-	assert.match(message, new RegExp(`Effort: ${effortId}`));
+	assert.match(message, new RegExp(`Feat: ${effortId}`));
 	assert.match(message, new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`));
 	const managedHooks = runTool(
 		"git",
@@ -556,6 +556,11 @@ test("jump preserves a failing repo prepare-commit-msg hook exit", () => {
 	assert.equal(runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim(), head);
 });
 
+/**
+ * Deliberately on the older `effort:` spelling of the opt-out. It is repo
+ * config a pilot may already have set, so the fallback is a live promise and is
+ * only proven while something exercises it. The canonical key is covered below.
+ */
 test("jump honors independent repo provenance opt-outs and still installs the wrapper", () => {
 	const { bridge, repoId } = setup("opt-outs");
 	const worktree = repoWorktree(bridge, "opt-outs");
@@ -570,12 +575,31 @@ test("jump honors independent repo provenance opt-outs and still installs the wr
 	assertOk(run(["jump"], bridge), "jump failed");
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
-	assert.doesNotMatch(message, /Effort:/);
+	assert.doesNotMatch(message, /Feat:/);
 	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);
 	assert.notEqual(
 		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
 		"",
 	);
+});
+
+test("jump honors the canonical commit-provenance opt-out key", () => {
+	const { bridge, repoId } = setup("feat-opt-out");
+	const worktree = repoWorktree(bridge, "feat-opt-out");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    feat: false\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.doesNotMatch(message, /Feat:/);
+	// Only the feat trailer is opted out, so the co-author one must survive.
+	assert.match(message, /Co-Authored-By: nosedive/);
 });
 
 test("jump leaves a corrupt chain for retry instead of aborting the whole run", () => {

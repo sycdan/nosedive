@@ -12,12 +12,14 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 	return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
 }
 
-function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: boolean } {
+function commitProvenanceOptions(repoDoc: KbDoc): { feat: boolean; coAuthor: boolean } {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+	// `commit-provenance.effort` is the older spelling of the same opt-out, still
+	// read so a repo doc a pilot already configured keeps working.
+	const feat = options.feat ?? options.effort;
 	return {
-		// `commit-provenance.effort` keeps its name: it is repo config a pilot has set.
-		effort: options.effort !== false,
+		feat: feat !== false,
 		coAuthor: options["co-author"] !== false,
 	};
 }

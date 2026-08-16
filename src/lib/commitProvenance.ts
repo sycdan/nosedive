@@ -3,20 +3,20 @@ import { nosedivePackageVersion } from "./packageBacklog.js";
 
 /** Formats commits authored by nosedive with machine-readable provenance. */
 export function commitMessage(subject: string, featId?: string): string {
-	// The trailer keeps the old `Effort:` spelling deliberately: it lands in
-	// implementation-repo history, and renaming it would split provenance across
-	// two spellings.
-	const trailers = featId ? [`Effort: ${featId}`] : [];
+	const trailers = featId ? [`Feat: ${featId}`] : [];
 	trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
 	// One block, single-spaced: git only parses the last paragraph as trailers, so
-	// a blank line between them would leave `Effort:` invisible to
+	// a blank line between them would leave `Feat:` invisible to
 	// `git interpret-trailers`.
 	return `${subject}\n\n${trailers.join("\n")}`;
 }
 
 export interface CommitProvenanceOptions {
-	/** Mirrors the `commit-provenance.effort` repo config key, which keeps its name. */
-	effort: boolean;
+	/**
+	 * Mirrors the `commit-provenance.feat` repo config key, whose older spelling
+	 * `commit-provenance.effort` is still read.
+	 */
+	feat: boolean;
 	coAuthor: boolean;
 }
 
@@ -56,7 +56,7 @@ export function prepareCommitMsgHook(
 	originalHookPath: string | undefined,
 	options: CommitProvenanceOptions,
 ): string {
-	const trailers = options.effort ? [`Effort: ${featId}`] : [];
+	const trailers = options.feat ? [`Feat: ${featId}`] : [];
 	if (options.coAuthor) {
 		trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
 	}

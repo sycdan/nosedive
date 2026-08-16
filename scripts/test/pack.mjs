@@ -197,7 +197,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(commitA.kind, "memo");
 	assert.match(commitA.name, /^[0-9a-f]{12}\.full-repo$/);
 	assert.equal(commitA.gist, "add feature a");
-	assert.match(commitA.body, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitA.body, new RegExp(`Feat: ${effortId}`));
 	assert.match(
 		commitA.body,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
@@ -241,7 +241,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.equal(log, `dive(${diveText.match(/^name: (.+)$/m)[1]}): packed wip`);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
 	assert.match(
 		commitBody,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),

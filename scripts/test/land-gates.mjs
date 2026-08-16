@@ -142,7 +142,8 @@ id: ${effortId}
 name: land-gates.nosedive
 gist: "Gate test effort"
 scopes:
-  - ${repoId}
+  - ${repoId}:
+      work-branch: work/land-gates.nosedive
 ${linkFrom === "effort" && gateLinks ? `links:\n${gateLinks}\n` : ""}---
 `,
 	);

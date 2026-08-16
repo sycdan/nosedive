@@ -48,7 +48,12 @@ test("a feat composes through packed, bailed, and landed dives", () => {
 		"Exercise a complete lifecycle.",
 		"lifecycle",
 	);
-	write(featPath, featText.replace(/^---$/m, `---\nscopes:\n  - ${repoId}`));
+	// The feat says where its repo lands, so the dives under it inherit somewhere
+	// to push. The work-loop test below covers the feat that has not said.
+	write(
+		featPath,
+		featText.replace(/^---$/m, `---\nscopes:\n  - ${repoId}:\n      work-branch: work/lifecycle`),
+	);
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "scope lifecycle feat");
 	runTool("git", ["push"], bridge);
@@ -175,17 +180,6 @@ meta:
 		run(["record.dive", "--ref", secondId, "--brief", "Test landing and publication."], bridge),
 		"second brief failed",
 	);
-	/**
-	 * Deliberately the superseded shape: `record.dive` writes `work-branch` now,
-	 * so putting this dive back on `mode: rw` is the suite's only proof that
-	 * every dive recorded before a scope could name a branch still lands -- on
-	 * the branch `land` computes for itself, asserted below.
-	 */
-	const secondPath = join(bridge, "kb", `${secondId}.md`);
-	write(
-		secondPath,
-		readFileSync(secondPath, "utf8").replace(/^      work-branch: .+$/m, "      mode: rw"),
-	);
 	assertOk(run(["jump"], bridge), "second jump failed");
 	assertFeatDiveRel(featPath, secondId, "jumped\\.dive");
 	write(join(worktree, "landed.txt"), "landed work\n");
@@ -303,12 +297,12 @@ meta:
 	assert.match(mintedDoc, new RegExp(`${marker} is missing`), "the brief must carry the failure");
 	assert.match(mintedDoc, new RegExp(`^  feat: ${featId}$`, "m"));
 	/**
-	 * The sweep hydrated the repo read-only a moment before minting, and
-	 * `record.dive` used to read a scope's mode back out of whatever worktree was
-	 * on disk. Minted work arrived unlandable because of it, so the branch on
-	 * this scope is the regression guard.
+	 * The feat never said where this repo lands, so the minted dive names no
+	 * branch either -- and no `mode` key, which decides nothing and is no longer
+	 * written at all. Step 8 is where that costs something.
 	 */
-	assert.match(mintedDoc, /^      work-branch: work\/work-loop$/m);
+	assert.doesNotMatch(mintedDoc, /^      work-branch: /m);
+	assert.doesNotMatch(mintedDoc, /^      mode: /m);
 
 	// 3. Preflight offers it, so a pilot finds the work without being told it exists.
 	const offered = run(["preflight"], bridge);
@@ -341,7 +335,22 @@ meta:
 	assertOk(fixed, "the gate must pass once the repo carries the marker");
 	assert.match(fixed.stdout, /work-loop gate passed/);
 
-	// 8. Land publishes the work branch the scope names, and closes the dive.
+	/**
+	 * 8. The feat never said where this repo lands, so neither does the dive it
+	 * minted. The commits exist and have nowhere to go, and land says so rather
+	 * than inventing a branch.
+	 */
+	const homeless = run(["land"], bridge);
+	assert.notEqual(homeless.status, 0, "work with nowhere to go must not land");
+	assert.match(homeless.stderr, /names no work branch/);
+	assert.match(homeless.stderr, new RegExp(`--upscope ${workLoopRepoId}`));
+
+	// 9. Upscoping is the pilot saying where it goes. Then it lands.
+	assertOk(
+		run(["record.dive", "--ref", mintedId, "--upscope", workLoopRepoId], bridge),
+		"--upscope failed",
+	);
+	assert.match(readFileSync(mintedPath, "utf8"), /^      work-branch: work\/work-loop$/m);
 	assertOk(run(["land"], bridge), "land failed");
 	assert.match(readFileSync(mintedPath, "utf8"), /^kind: memo$/m);
 	assertFeatDiveRel(featPath, mintedId, "landed\\.dive");
@@ -361,7 +370,7 @@ meta:
 	 */
 	runTool("git", ["update-ref", "refs/heads/main", published], repo.cloud);
 
-	// 9. The loop closes: the same sweep that minted the work now passes.
+	// 10. The loop closes: the same sweep that minted the work now passes.
 	const clean = run(["test"], bridge);
 	assertOk(clean, "the backlog sweep must pass once the fix is on trunk");
 	assert.match(clean.stdout, /work-loop gate passed/);

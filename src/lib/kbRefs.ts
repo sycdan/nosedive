@@ -5,24 +5,27 @@ export interface ScopeRef {
 	path: string;
 	ref?: string;
 	/**
-	 * The branch `land` publishes this scope's HEAD to. Naming one is what makes
-	 * a scope landable: work with nowhere to go is work `land` must refuse.
-	 *
-	 * Absent on every scope written before this existed, which is why `readOnly`
-	 * survives rather than being replaced outright -- see below.
+	 * The branch `land` publishes this scope's HEAD to. Naming one is the whole
+	 * of what makes a scope landable: work with nowhere to go is work `land`
+	 * must refuse, and a dive has to be explicit about where it will push.
 	 */
 	workBranch?: string;
 	/**
-	 * Not landable. Derived rather than declared once a `work-branch` is present,
-	 * because a branch to push to already says the scope is writable.
+	 * Not landable, which is exactly "names no work branch".
 	 *
-	 * Absence of a `work-branch` cannot mean read-only: a bare `- <repo-id>`
-	 * entry has never carried one and has always been writable, so reading
-	 * absence that way would silently strand every hand-written feat scope.
-	 * Read-only therefore stays explicit -- `mode: ro` or `flags: [ro]` -- and
-	 * only `mode: rw` is redundant.
+	 * Derived, never declared. `mode: ro`, `mode: rw` and `flags: [ro]` are all
+	 * still accepted so documents written before this parse, but none of them
+	 * decides anything: a scope carrying `mode: rw` and no branch is read-only,
+	 * and `land` says so and names `--upscope` as the fix.
 	 */
 	readOnly: boolean;
+	/**
+	 * The superseded `mode`, kept only so a feat scope written before branches
+	 * existed can still say "dives on me are meant to push here". A feat entry
+	 * carrying `mode: rw` and no branch hands a generated one to the dives that
+	 * inherit it; nothing else reads this.
+	 */
+	legacyMode?: "ro" | "rw";
 	flags: string[];
 	render?: "body" | "gist";
 }
@@ -67,7 +70,9 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	if (typeof scope === "string") {
 		const repoId = scope.trim();
 		if (uuidLike(repoId)) {
-			return { repoId, path: "", readOnly: false, flags: [] };
+			// A bare entry names a repo and nothing else, so it names no branch and
+			// is not landable until something upscopes it.
+			return { repoId, path: "", readOnly: true, flags: [] };
 		}
 		throw new Error(
 			`legacy scope shorthand is not supported in ${label}; use a bare UUID or '- <repo-id>: { ... }' object form`,
@@ -112,15 +117,6 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	if (mode === "rw" && flagReadOnly) {
 		throw new Error(`invalid scope entry in ${label}: mode=rw conflicts with flags containing ro`);
 	}
-	const declaredReadOnly = mode ? mode === "ro" : flagReadOnly;
-	// Naming a branch and declaring the scope unpushable are two ways of
-	// answering one question, so a document that does both has to be fixed rather
-	// than guessed at.
-	if (workBranch && declaredReadOnly) {
-		throw new Error(
-			`invalid scope entry in ${label}: work-branch conflicts with a read-only mode or flag`,
-		);
-	}
 
 	if (repoId === ".") {
 		if (ref) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set ref`);
@@ -135,7 +131,8 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 		path: pathValue,
 		ref,
 		workBranch,
-		readOnly: declaredReadOnly,
+		readOnly: !workBranch,
+		legacyMode: mode === "rw" || flags.includes("rw") ? "rw" : mode === "ro" ? "ro" : undefined,
 		flags,
 		render,
 	};

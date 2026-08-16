@@ -6,7 +6,6 @@ import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import {
-	defaultWorkBranch,
 	formatPath,
 	NosediveRc,
 	parseMarkdownDoc,
@@ -18,12 +17,12 @@ import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
 import {
 	cachedScope,
 	editScopes,
+	featWorkBranch,
 	inheritedScopes,
 	renderScopeEntry,
 	renderScopes,
 	resolveBridgeDocRef,
 	resolveScopeRepo,
-	stampWorkBranch,
 } from "./diveScopes.js";
 import { gitOutput } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
@@ -41,7 +40,6 @@ export interface RecordDiveOptions {
 	diver?: string;
 	takeover: boolean;
 	free: boolean;
-	scopes: string[];
 	clearScopes: boolean;
 	/** Repos to add or make writable, each landing on `workBranch`. */
 	upscopes: string[];
@@ -61,7 +59,6 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	const options: RecordDiveOptions = {
 		takeover: false,
 		free: false,
-		scopes: [],
 		clearScopes: false,
 		upscopes: [],
 		unscopes: [],
@@ -103,8 +100,9 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
 		if (!value) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
-		if (flag === "--scope") options.scopes.push(value);
-		else if (flag === "--upscope") options.upscopes.push(value);
+		// `--scope` is the old spelling. It used to replace the whole scope set;
+		// it adds one now, which is what every existing call already meant.
+		if (flag === "--scope" || flag === "--upscope") options.upscopes.push(value);
 		else if (flag === "--unscope") options.unscopes.push(value);
 		else if (flag === "--work-branch") options.workBranch = value;
 		else if (flag === "--ref") options.ref = value;
@@ -126,27 +124,12 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		if (args.length !== 1) throw new Error("--free cannot be combined with any other option");
 		return options;
 	}
-	if (options.clearScopes && options.scopes.length > 0) {
-		throw new Error("--clear-scopes cannot be combined with --scope");
-	}
-	/**
-	 * `--scope` and `--clear-scopes` declare the whole set; `--upscope` and
-	 * `--unscope` edit the one already recorded. Combining the two kinds means
-	 * the pilot has two ideas of what the dive scopes, and only one can win.
-	 */
-	const edits = options.upscopes.length + options.unscopes.length;
-	if (edits > 0 && (options.clearScopes || options.scopes.length > 0)) {
-		throw new Error("--upscope and --unscope cannot be combined with --scope or --clear-scopes");
-	}
 	const contested = options.upscopes.filter((ref) => options.unscopes.includes(ref));
 	if (contested.length > 0) {
 		throw new Error(`--upscope and --unscope name the same repo: ${contested.join(", ")}`);
 	}
 	if (options.workBranch !== undefined && options.upscopes.length === 0) {
 		throw new Error("--work-branch requires at least one --upscope");
-	}
-	if (edits > 0 && !options.ref) {
-		throw new Error("--upscope and --unscope edit a recorded dive; name one with --ref");
 	}
 	if (!options.ref && !options.feat)
 		throw new Error("record.dive requires --feat or --effort when creating a dive");
@@ -162,6 +145,17 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		if (!options.ref) throw new Error("--takeover requires --ref");
 	}
 	return options;
+}
+
+/** What a scope's branch fields become when a feat hands the repo down. */
+function inheritedBranch(
+	repoId: string,
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	feat: KbDoc | undefined,
+): { workBranch?: string; readOnly: boolean } {
+	const workBranch = featWorkBranch(repoId, rc, kbDocs, feat);
+	return { workBranch, readOnly: !workBranch };
 }
 
 function featTitle(feat: KbDoc): string {
@@ -306,26 +300,28 @@ export function recordDive(args: string[], io: CommandIo): void {
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
-		const scopes = (
-			options.clearScopes
-				? []
-				: options.scopes.length > 0
-					? options.scopes.map((ref) =>
-							cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-						)
-					: inheritedScopes(feat, kbDocs).map((scope) =>
-							cachedScope(
-								resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-								rc.bridgeDir,
-								workspaceDir,
-							),
-						)
-		).map((scope) => stampWorkBranch(scope, rc, feat));
+		/**
+		 * A new dive inherits its feat's repos, and inherits where they land only
+		 * where the feat has said. A feat that has not said hands down a pinned but
+		 * unpushable scope, so where the work goes stays a decision the pilot makes
+		 * with `--upscope` rather than a branch nobody chose.
+		 */
+		const inherited = options.clearScopes
+			? []
+			: inheritedScopes(feat, kbDocs).scopes.map((scope) => ({
+					...cachedScope(
+						resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+						rc.bridgeDir,
+						workspaceDir,
+					),
+					...inheritedBranch(scope.repoId, rc, kbDocs, feat),
+				}));
+		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
-		// `--clear-scopes` and `--scope` both say what the pilot wants; only the
+		// `--clear-scopes` and `--upscope` both say what the pilot wants; only the
 		// inherited path can come back empty without anyone having asked for it.
-		if (!options.clearScopes && options.scopes.length === 0 && scopes.length === 0) {
+		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
 			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
 		const id = uuid7AtMs(Date.now());
@@ -374,23 +370,29 @@ export function recordDive(args: string[], io: CommandIo): void {
 		}
 		doc.setIn(["meta", "diver"], options.diver);
 	}
-	if (options.clearScopes || options.scopes.length > 0) {
-		const scopes = (
-			options.clearScopes
-				? []
-				: options.scopes.map((ref) =>
-						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-					)
-		).map((scope) => stampWorkBranch(scope, rc, feat));
+	/**
+	 * Gaining a feat for the first time is when a dive learns where its repos
+	 * land, the same way a dive created under one does. Re-homing an already-owned
+	 * dive leaves its branches alone: they may have been chosen by hand, and the
+	 * new feat's opinion does not outrank the pilot's.
+	 */
+	const adopting = options.feat !== undefined && previousFeat === undefined;
+	const inheritedNow = adopting
+		? dive.scopes.map((scope) =>
+				scope.workBranch ? scope : { ...scope, ...inheritedBranch(scope.repoId, rc, kbDocs, feat) },
+			)
+		: dive.scopes;
+	if (
+		adopting ||
+		options.clearScopes ||
+		options.upscopes.length > 0 ||
+		options.unscopes.length > 0
+	) {
+		const base = options.clearScopes ? [] : inheritedNow;
+		const scopes = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		doc.set("scopes", scopes.map(renderScopeEntry));
-	}
-	if (options.upscopes.length > 0 || options.unscopes.length > 0) {
-		doc.set(
-			"scopes",
-			editScopes(dive.scopes, options, rc, kbDocs, workspaceDir, feat).map(renderScopeEntry),
-		);
 	}
 	let body = options.title?.trim() ? replaceTitle(parsed.body, options.title.trim()) : parsed.body;
 	if (options.brief?.trim()) {

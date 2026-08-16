@@ -107,38 +107,77 @@ function isParentRel(rel: string | undefined): boolean {
 }
 
 /**
- * Gives a writable scope the branch `land` will publish it to. Feat-derived, so
- * every dive on one feat shares a branch exactly as `land` computed it before
- * the name lived on the scope; a scope wanting its own is set afterwards.
+ * The branch an upscoped repo publishes to, most specific first: what the pilot
+ * typed, then what the feat already decided for that repo, then a generated
+ * name.
+ *
+ * The feat's own entry comes before generation because a feat that has declared
+ * where a repo lands has answered the question already, and every dive under it
+ * should agree rather than each inventing the default afresh.
  */
-export function stampWorkBranch(
-	scope: ScopeRef,
+export function upscopeBranch(
+	repoId: string,
+	requested: string | undefined,
 	rc: NosediveRc,
+	kbDocs: KbDoc[],
 	feat: KbDoc | undefined,
-): ScopeRef {
-	if (scope.readOnly || scope.workBranch) return scope;
-	if (!feat) return scope;
-	return { ...scope, workBranch: defaultWorkBranch(rc, feat.name) };
+): string | undefined {
+	if (requested) return requested;
+	return (
+		featWorkBranch(repoId, rc, kbDocs, feat) ??
+		(feat ? defaultWorkBranch(rc, feat.name) : undefined)
+	);
 }
 
+/**
+ * Where a feat says one of its repos lands, or undefined when it has not said.
+ *
+ * The answer comes from the same ancestor the scopes themselves come from -- a
+ * feat that declares no scopes has declared nothing about branches either, and
+ * looking only at the named feat would drop the branch its parent chose.
+ *
+ * An ancestor scope still carrying the superseded `mode: rw` counts as having
+ * said so: it was written to mean "dives on me push this repo", and the branch
+ * it meant is the one `land` used to compute for itself. A feat that says
+ * nothing hands down nothing, and the dive stays unpushable until somebody
+ * upscopes it.
+ */
+export function featWorkBranch(
+	repoId: string,
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	feat: KbDoc | undefined,
+): string | undefined {
+	if (!feat) return undefined;
+	const { scopes, source } = inheritedScopes(feat, kbDocs);
+	const declared = scopes.find((scope) => scope.repoId === repoId);
+	if (!declared || !source) return undefined;
+	if (declared.workBranch) return declared.workBranch;
+	return declared.legacyMode === "rw" ? defaultWorkBranch(rc, source.name) : undefined;
+}
+
+/**
+ * A read-only scope is written as the repo and its pin and nothing else: naming
+ * no branch is what read-only means, so there is no key that says so. `mode` is
+ * never written -- `mode: ro` said the same thing twice and `mode: rw` said
+ * something a branch says better.
+ */
 export function renderScopeEntry(scope: ScopeRef): Record<string, unknown> {
 	return {
-		[scope.repoId]: scope.readOnly
-			? { ref: scope.ref, mode: "ro" }
-			: { ref: scope.ref, "work-branch": scope.workBranch },
+		[scope.repoId]: scope.workBranch
+			? { ref: scope.ref, "work-branch": scope.workBranch }
+			: { ref: scope.ref },
 	};
 }
 
 /**
- * Applies `--upscope` and `--unscope` to the scope set a dive already records,
- * rather than replacing it the way `--scope` does.
+ * Applies `--upscope` and `--unscope` to a scope set: at create, the one
+ * inherited from the feat; on `--ref`, the one the dive already records.
  *
- * Both take repo refs and are resolved against the kb, so a name works wherever
- * a uuid does. An `--unscope` naming a repo the dive does not scope is a no-op
- * rather than an error: the pilot asked for it gone, and it is.
- *
- * One `--work-branch` covers every `--upscope` in the call, which is the point
- * of composing them -- several repos moving together belong on one branch.
+ * An `--unscope` naming a repo that is not scoped is a no-op rather than an
+ * error: the pilot asked for it gone, and it is. One `--work-branch` covers
+ * every `--upscope` in the call, which is the point of composing them --
+ * several repos moving together belong on one branch.
  */
 export interface ScopeEdits {
 	upscopes: string[];
@@ -164,19 +203,15 @@ export function editScopes(
 		// has: upscoping decides where work goes, never which commit it started at.
 		const existing = scopes.find((scope) => scope.repoId === repo.id);
 		const base = existing ?? cachedScope(repo, rc.bridgeDir, workspaceDir);
-		const upscoped: ScopeRef = {
-			...base,
-			readOnly: false,
-			workBranch: edits.workBranch,
-		};
-		const stamped = stampWorkBranch(upscoped, rc, feat);
-		if (!stamped.workBranch) {
+		const workBranch = upscopeBranch(repo.id, edits.workBranch, rc, kbDocs, feat);
+		if (!workBranch) {
 			throw new Error(
 				`--upscope ${ref} needs a branch: this dive names no feat, so pass --work-branch`,
 			);
 		}
-		if (existing) scopes[scopes.indexOf(existing)] = stamped;
-		else scopes.push(stamped);
+		const upscoped: ScopeRef = { ...base, readOnly: false, workBranch };
+		if (existing) scopes[scopes.indexOf(existing)] = upscoped;
+		else scopes.push(upscoped);
 	}
 	return scopes;
 }
@@ -188,19 +223,22 @@ export function editScopes(
  * without pushing anything. The nearest scoped ancestor is the one the pitcher
  * meant, so the walk stops there instead of unioning the whole chain.
  */
-export function inheritedScopes(feat: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
+export function inheritedScopes(
+	feat: KbDoc,
+	kbDocs: KbDoc[],
+): { scopes: ScopeRef[]; source?: KbDoc } {
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const seen = new Set<string>();
 	let current: KbDoc | undefined = feat;
 	while (current && !seen.has(current.id)) {
-		if (current.scopes.length > 0) return current.scopes;
+		if (current.scopes.length > 0) return { scopes: current.scopes, source: current };
 		seen.add(current.id);
 		current = current.links
 			.filter((link) => isParentRel(link.rel))
 			.map((link) => byId.get(link.id))
 			.find((doc): doc is KbDoc => doc !== undefined);
 	}
-	return [];
+	return { scopes: [] };
 }
 
 /**
@@ -213,13 +251,7 @@ export function renderScopes(scopes: ScopeRef[]): string[] {
 	const lines = ["scopes:"];
 	for (const scope of scopes) {
 		lines.push(`  - ${scope.repoId}:`, `      ref: ${scope.ref}`);
-		if (scope.readOnly) {
-			lines.push(`      mode: ro`);
-			continue;
-		}
-		if (!scope.workBranch)
-			throw new Error(`writable scope ${scope.repoId} has no work branch to record`);
-		lines.push(`      work-branch: ${scope.workBranch}`);
+		if (scope.workBranch) lines.push(`      work-branch: ${scope.workBranch}`);
 	}
 	return lines;
 }

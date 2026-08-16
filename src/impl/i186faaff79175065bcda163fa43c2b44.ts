@@ -12,7 +12,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import {
 	collectDiveGates,
-	collectReachableGates,
+	collectFeatGates,
 	LandGate,
 	renderGateReport,
 	resolveGateScript,
@@ -222,7 +222,7 @@ function selectDiveGates(
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	return collectReachableGates("test", roots, kbDocs, rc.bridgeDir);
+	return collectFeatGates("test", roots, kbDocs, rc.bridgeDir);
 }
 
 /**
@@ -234,5 +234,5 @@ function selectBacklogGates(kbDocs: KbDoc[], rc: ReturnType<typeof readNosediveR
 	if (!rc.backlog) throw new Error("test requires a configured backlog memo id");
 	const backlog = kbDocs.find((doc) => doc.id === rc.backlog);
 	if (!backlog) throw new Error(`bridge backlog memo not found: ${rc.backlog}`);
-	return collectReachableGates("test", [backlog], kbDocs, rc.bridgeDir);
+	return collectFeatGates("test", [backlog], kbDocs, rc.bridgeDir);
 }

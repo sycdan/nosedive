@@ -105,7 +105,7 @@ function setupDive(name, { diveGates = [passId], featGates = [featGateId] } = {}
 	write(
 		join(bridge, "kb", `${backlogId}.md`),
 		`---\nkind: memo\nid: ${backlogId}\nname: backlog.test\ngist: "Backlog fixture"\n` +
-			`links:\n  - kb/${featId}.md:\n      rel: feat\n---\n`,
+			`links:\n  - kb/${featId}.md:\n      rel: current.feat\n---\n`,
 	);
 	write(
 		join(bridge, "kb", `${diveId}.md`),
@@ -301,11 +301,15 @@ test("gate ownership reads meta.feat first and still supports meta.effort", () =
 			`---\nkind: memo\nid: ${ownerId}\nname: ${field}-owner\ngist: "Owner fixture"\nmeta:\n  ${field}: ${featId}\nlinks:\n${gateLink(failId)}---\n`,
 		);
 		const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+		// `related.feat` and not bare `related`: the sweep follows `.feat` edges,
+		// and this fixture is about how a reached gate's owning feat is resolved,
+		// not about which edges reach one. The owner stays a memo on purpose --
+		// a feat-like rel may name a doc whose kind is not feat.
 		write(
 			backlogPath,
 			readFileSync(backlogPath, "utf8").replace(
 				"links:\n",
-				`links:\n  - kb/${ownerId}.md:\n      rel: related\n`,
+				`links:\n  - kb/${ownerId}.md:\n      rel: related.feat\n`,
 			),
 		);
 		rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });

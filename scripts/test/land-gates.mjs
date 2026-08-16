@@ -48,6 +48,8 @@ const GATE_TALKS_THEN_STALLS =
 	'export function run() {\n\tconsole.error("gate speaking early");\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);\n}\n';
 const orderGate = (logPath, name) =>
 	`import { appendFileSync } from "node:fs";\n\nexport function run() {\n\tappendFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(`${name}\n`)});\n}\n`;
+const contextGate = (logPath) =>
+	`import { writeFileSync } from "node:fs";\n\nexport function run(ctx) {\n\twriteFileSync(${JSON.stringify(logPath)}, JSON.stringify(ctx));\n}\n`;
 /** Resolves its repo through ctx, from the bridge, the way every gate must. */
 const GATE_ECHO_HEAD = `import { execFileSync } from "node:child_process";
 
@@ -420,6 +422,47 @@ test("a gate runs from the bridge and reaches worktrees through ctx.repos", () =
 	assert.match(result.stdout, /cwd=.*live-head(?!-)/, "gates run from the bridge");
 	assert.match(result.stdout, /root=workspace\/live-head-repo/, "root is bridge-relative");
 	assert.match(result.stdout, new RegExp(head), "the gate should see the live worktree HEAD");
+});
+
+test("each gate receives its repo, feat, gate, and declaring doc ids", () => {
+	const featGateId = "019fd471-0000-7000-8000-000000000036";
+	const repoGateId = "019fd471-0000-7000-8000-000000000037";
+	const featContextPath = join(tmp, "feat-gate-context.json");
+	const repoContextPath = join(tmp, "repo-gate-context.json");
+	const { bridge, worktree } = setup("gate-context", [
+		gate(featGateId, "feat-context", contextGate(featContextPath)),
+		gate(repoGateId, "repo-context", contextGate(repoContextPath), undefined, { link: false }),
+	]);
+
+	// The second edge belongs to the repo doc, not the feat. This deliberately
+	// makes both per-gate principals differ in one run, which catches a context
+	// serialized once outside the gate loop.
+	const repoPath = join(bridge, "kb", `${repoId}.md`);
+	write(
+		repoPath,
+		readFileSync(repoPath, "utf8").replace(
+			"\n---\n",
+			`\nlinks:\n  - kb/${repoGateId}.md:\n      rel: land.gate\n---\n`,
+		),
+	);
+	gitCommitEmpty(worktree, "work");
+	assertOk(run(["land"], bridge), "land with context-recording gates failed");
+
+	const featContext = JSON.parse(readFileSync(featContextPath, "utf8"));
+	const repoContext = JSON.parse(readFileSync(repoContextPath, "utf8"));
+	for (const context of [featContext, repoContext]) {
+		assert.deepEqual(context.repos["gate-context-repo"], {
+			id: repoId,
+			root: "workspace/gate-context-repo",
+		});
+		assert.equal(context.featId, effortId);
+	}
+	assert.equal(featContext.gateId, featGateId);
+	assert.equal(featContext.introducedById, effortId);
+	assert.notEqual(featContext.introducedById, featContext.gateId);
+	assert.equal(repoContext.gateId, repoGateId);
+	assert.equal(repoContext.introducedById, repoId);
+	assert.notEqual(repoContext.introducedById, repoContext.gateId);
 });
 
 test("a gate returning false fails the land", () => {

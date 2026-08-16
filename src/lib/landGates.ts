@@ -210,6 +210,12 @@ export function collectDiveGates(
 }
 
 export interface GateRepoContext {
+	/**
+	 * Repos stay keyed by kb `name` because human-written gates read better that
+	 * way. The uuid lives beside that name, never in place of it, so a gate can
+	 * match the repo against ids while navigating the kb.
+	 */
+	id: string;
 	/** Bridge-relative path of the hydrated worktree, e.g. `workspace/nosedive`. */
 	root: string;
 }
@@ -218,8 +224,14 @@ export interface GateRepoContext {
 export interface GateContext {
 	bridgeRoot: string;
 	diveId: string;
+	featId?: string;
+	gateId: string;
+	introducedById: string;
 	repos: Record<string, GateRepoContext>;
 }
+
+/** Caller-owned fields; gate principals are added only when that gate runs. */
+export type GateCallerContext = Omit<GateContext, "gateId" | "introducedById">;
 
 /** Builds the stable, human-readable repo map passed to gate scripts. */
 export function gateRepoContext(
@@ -231,7 +243,7 @@ export function gateRepoContext(
 	for (const entry of hydrated) {
 		const doc = kbDocs.find((candidate) => candidate.id === entry.repoId);
 		if (!doc?.name) continue;
-		repos[doc.name] = { root: toPosixPath(relative(bridgeDir, entry.path)) };
+		repos[doc.name] = { id: doc.id, root: toPosixPath(relative(bridgeDir, entry.path)) };
 	}
 	return repos;
 }
@@ -316,7 +328,6 @@ function runGateChild(
 	runnerPath: string,
 	gate: LandGate,
 	context: GateContext,
-	serializedContext: string,
 	sink?: GateOutputSink,
 ): Promise<{ status: number; stdout: string; stderr: string }> {
 	return new Promise((resolve) => {
@@ -326,7 +337,7 @@ function runGateChild(
 			env: {
 				...cleanGitEnv(),
 				NOSEDIVE_GATE_MODULE: gate.scriptPath,
-				NOSEDIVE_GATE_CONTEXT: serializedContext,
+				NOSEDIVE_GATE_CONTEXT: JSON.stringify(context),
 			},
 		});
 		let stdout = "";
@@ -370,12 +381,11 @@ function runGateChild(
  */
 export async function runLandGates(
 	gates: LandGate[],
-	options: { context: GateContext; sink?: GateOutputSink },
+	options: { context: GateCallerContext; sink?: GateOutputSink },
 ): Promise<GateOutcome> {
 	const runs: GateRun[] = [];
 	const started = Date.now();
 	const runnerPath = gates.length > 0 ? writeGateRunner() : undefined;
-	const serializedContext = JSON.stringify(options.context);
 
 	// A header says which gate is talking. With one gate there is nothing to
 	// disambiguate, so `test <gate>` stays as quiet as the gate itself.
@@ -384,13 +394,12 @@ export async function runLandGates(
 	for (const gate of gates) {
 		const startedAt = new Date();
 		if (headers) options.sink?.err(`\n--- ${gateLabel(gate)} ---\n`);
-		const result = await runGateChild(
-			runnerPath!,
-			gate,
-			options.context,
-			serializedContext,
-			options.sink,
-		);
+		const context: GateContext = {
+			...options.context,
+			gateId: gate.doc.id,
+			introducedById: gate.introducedBy.id,
+		};
+		const result = await runGateChild(runnerPath!, gate, context, options.sink);
 		const endedAt = new Date();
 		runs.push({
 			gate,

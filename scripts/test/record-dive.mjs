@@ -86,7 +86,6 @@ gist: "Test repo"
 meta:
   path: workspace/repo
   trunk: main
-  default-mode: rw
   remotes:
     local: workspace/repo
 ---
@@ -412,7 +411,7 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	assert.match(doc, /^kind: dive$/m);
 	// The id stands in for the name a free dive has not been given yet.
 	assert.match(doc, new RegExp(`^name: ${id}$`, "m"));
-	// No branch despite the repo doc's default-mode: rw -- nothing about an
+	// No branch: nothing about an
 	// unbriefed, unclaimed dive justifies somewhere to push, and naming no branch
 	// is the whole of what read-only means.
 	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}$`, "m"));

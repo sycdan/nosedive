@@ -63,23 +63,16 @@ export function resolveScopeRepo(bridgeDir: string, kbDocs: KbDoc[], ref: string
 	return doc;
 }
 
-function defaultReadOnly(repo: KbDoc): boolean {
-	const mode = repo.metaScalars["default-mode"];
-	if (mode === undefined || mode === "rw") return false;
-	if (mode === "ro") return true;
-	throw new Error(`repo ${repo.id} has invalid meta.default-mode: ${mode}`);
-}
-
 /**
- * Whether a scope is writable is a declaration, and it is taken from the repo
- * doc alone.
+ * A repo resolved to a pinned scope, and nothing more: no branch, so read-only
+ * until a feat hands one down or `--upscope` names one.
  *
- * It used to be read back off `remote.origin.pushurl` in whatever worktree
- * happened to be on disk, which was survivable only while a hydrated worktree
- * meant a pilot had asked for one. Gate hydration ended that: a `nosedive test`
- * sweep leaves read-only worktrees behind, so every dive recorded afterwards
- * inherited `ro` and could never be landed. A worktree is the consequence of a
- * mode and was never evidence of one.
+ * Two earlier answers to "is this writable" are gone. It was read off
+ * `remote.origin.pushurl` in whatever worktree happened to be on disk, which
+ * gate hydration turned into a trap -- a `nosedive test` sweep left read-only
+ * worktrees behind and every dive recorded afterwards inherited `ro`. Then it
+ * came from `meta.default-mode` on the repo doc, which nothing rendered and
+ * `--upscope` ignored. Naming a branch is the only answer now.
  */
 export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string): ScopeRef {
 	const path = expectedWorktreePath(repo, bridgeDir);
@@ -89,14 +82,13 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 		if (marker.id !== repo.id)
 			throw new Error(`workspace marker does not match repo ${repo.id}: ${formatPath(path)}`);
 	}
-	const readOnly = defaultReadOnly(repo);
 	const cache = ensureManagedRepoCache(repo, bridgeDir);
 	const trunk = repo.repoBaseBranch ?? "main";
 	return {
 		repoId: repo.id,
 		path: "",
 		ref: resolveRefCommit(cache, repo.id, trunk),
-		readOnly,
+		readOnly: true,
 		flags: [],
 	};
 }

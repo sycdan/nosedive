@@ -295,7 +295,6 @@ gist: "Read-only pack test repo"
 meta:
   path: workspace/readonly-ro-repo
   trunk: main
-  default-mode: ro
   remotes:
     local: ${source.replaceAll("\\", "/")}
 ---

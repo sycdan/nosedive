@@ -61,7 +61,8 @@ id: ${effortId}
 name: record-dive.nosedive
 gist: "Record dives"
 scopes:
-  - ${repoId}
+  - ${repoId}:
+      work-branch: work/record-dive.nosedive
 ---
 
 # Record Dive
@@ -85,7 +86,6 @@ gist: "Test repo"
 meta:
   path: workspace/repo
   trunk: main
-  default-mode: rw
   remotes:
     local: workspace/repo
 ---
@@ -148,8 +148,10 @@ id: ${effortId}
 name: record-dive.nosedive
 gist: "Record dives"
 scopes:
-  - ${repoId}
-  - ${unhydratedRepoId}
+  - ${repoId}:
+      work-branch: work/record-dive.nosedive
+  - ${unhydratedRepoId}:
+      work-branch: work/record-dive.nosedive
 ---
 
 # Record Dive
@@ -163,10 +165,19 @@ scopes:
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
 	assert.doesNotMatch(doc, /^  effort: /m, "the dead spelling is never written");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      mode: rw$`, "m"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${unrelatedRepoId}:`, "m"));
 	assert.match(doc, /^# Dive Record$/m);
@@ -181,7 +192,13 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
 });
 
 test("record.dive accepts --effort as a compatibility alias", () => {
@@ -275,13 +292,13 @@ test("record.dive validates mutation modes", () => {
 	const missingEffort = run(["record.dive"], bridge, "");
 	assert.notEqual(missingEffort.status, 0);
 	assert.match(missingEffort.stderr, /requires --feat or --effort/);
-	const conflictingScopes = run(
+	// `--clear-scopes` with an upscope is how a dive replaces its scope set rather
+	// than adding to it, so the two are no longer in conflict.
+	const replaced = run(
 		["record.dive", "--effort", effortId, "--scope", repoId, "--clear-scopes"],
 		bridge,
-		"",
 	);
-	assert.notEqual(conflictingScopes.status, 0);
-	assert.match(conflictingScopes.stderr, /cannot be combined/);
+	assertOk(replaced, "clearing then scoping should be accepted");
 	const created = run(["record.dive", "--effort", effortId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
@@ -394,9 +411,12 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	assert.match(doc, /^kind: dive$/m);
 	// The id stands in for the name a free dive has not been given yet.
 	assert.match(doc, new RegExp(`^name: ${id}$`, "m"));
-	// ro despite the repo doc's default-mode: rw -- nothing about an unbriefed,
-	// unclaimed dive justifies a writable checkout.
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: ro$`, "m"));
+	// No branch: nothing about an
+	// unbriefed, unclaimed dive justifies somewhere to push, and naming no branch
+	// is the whole of what read-only means.
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}$`, "m"));
+	assert.doesNotMatch(doc, /^      work-branch: /m);
+	assert.doesNotMatch(doc, /^      mode: /m);
 	assert.doesNotMatch(doc, /^gist:/m);
 	assert.doesNotMatch(doc, /^meta:/m);
 	assert.doesNotMatch(doc, /^links:/m);
@@ -451,7 +471,13 @@ test("record.dive --free ignores the active dive", () => {
 /** A feat doc with an optional scope list and an optional parent edge. */
 function writeFeat(bridge, id, name, { scopes = [], parent, parentRel = "parent" } = {}) {
 	const lines = ["---", "kind: feat", `id: ${id}`, `name: ${name}`, `gist: "${name}"`];
-	if (scopes.length > 0) lines.push("scopes:", ...scopes.map((scope) => `  - ${scope}`));
+	// A feat that scopes a repo says where its dives land, or they inherit nothing
+	// pushable -- the branch is the fixture's way of saying "dives here publish".
+	if (scopes.length > 0)
+		lines.push(
+			"scopes:",
+			...scopes.flatMap((scope) => [`  - ${scope}:`, `      work-branch: work/${name}`]),
+		);
 	if (parent) lines.push("links:", `  - kb/${parent}.md:`, `      rel: ${parentRel}`);
 	lines.push("---", "", `# ${name}`, "");
 	write(join(bridge, "kb", `${id}.md`), lines.join("\n"));
@@ -474,7 +500,15 @@ test("record.dive inherits scopes from the nearest scoped ancestor feat", () => 
 	const result = run(["record.dive", "--effort", childEffortId], bridge);
 	assertOk(result, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(
+		doc,
+		// The branch comes from the feat that declared the scope, not the one the
+		// dive names: an unscoped feat has said nothing about where repos land.
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
 	assert.doesNotMatch(doc, /^scopes: \[\]$/m);
 });
 
@@ -495,28 +529,51 @@ test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      mode: rw$`, "m"),
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      work-branch: work/middle.record-dive.nosedive$`,
+			"m",
+		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
 });
 
-test("record.dive lets an explicit --scope override an inherited one", () => {
-	const { bridge } = setup("inherit-override");
+/**
+ * `--scope` used to replace the inherited set. It is the old spelling of
+ * `--upscope` now, so it adds a repo instead -- and `--clear-scopes` alongside
+ * it is how a dive says it wants only what it named.
+ */
+test("record.dive --scope adds to the inherited set rather than replacing it", () => {
+	const { bridge, repoCommit } = setup("inherit-override");
 	const other = join(bridge, "workspace", "other");
 	const otherCommit = createRepo(other, unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
 	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: effortId });
-	const result = run(
-		["record.dive", "--effort", childEffortId, "--scope", unrelatedRepoId],
-		bridge,
-	);
-	assertOk(result, "record.dive create failed");
-	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
+	const added = run(["record.dive", "--effort", childEffortId, "--scope", unrelatedRepoId], bridge);
+	assertOk(added, "record.dive create failed");
+	const doc = readFileSync(recordedPath(bridge, added.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      mode: rw$`, "m"),
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`,
+			"m",
+		),
 	);
-	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+		"the inherited repo keeps the branch its own feat declared",
+	);
+
+	const only = run(
+		["record.dive", "--effort", childEffortId, "--clear-scopes", "--scope", unrelatedRepoId],
+		bridge,
+	);
+	assertOk(only, "record.dive create failed");
+	const replaced = readFileSync(recordedPath(bridge, only.stdout), "utf8");
+	assert.doesNotMatch(replaced, new RegExp(`^  - ${repoId}:`, "m"));
 });
 
 test("record.dive warns when no ancestor scopes a repo", () => {
@@ -575,4 +632,155 @@ gist: "Updated effort"
 	assert.doesNotMatch(oldEffort, new RegExp(`kb/${id}\\.md`));
 	assert.equal((newEffort.match(new RegExp(`kb/${id}\\.md`, "g")) ?? []).length, 1);
 	assert.match(newEffort, new RegExp(`- kb/${id}\\.md:\n      rel: planned\\.dive`));
+});
+
+/**
+ * Every scope written before branches existed carries `mode`, and it decides
+ * nothing: a `mode: rw` scope on a *dive* names no branch, so it is read-only
+ * until somebody upscopes it. Only a feat's `mode: rw` still means anything, and
+ * only as the thing its dives inherit.
+ */
+test("a dive scope's superseded mode decides nothing", () => {
+	const { bridge } = setup("legacy-mode");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(/^      work-branch: .+$/m, "      mode: rw"),
+	);
+	const result = run(["record.dive", "--ref", id, "--gist", "Legacy."], bridge);
+	assertOk(result, "a dive on the superseded key must still parse and patch");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, /^      mode: rw$/m, "nothing rewrites what it did not touch");
+	assert.doesNotMatch(doc, /^      work-branch: /m);
+
+	// Upscoping is what gives it somewhere to go, and that is when mode stops
+	// being written at all.
+	assertOk(run(["record.dive", "--ref", id, "--upscope", repoId], bridge), "--upscope failed");
+	const upscoped = readFileSync(path, "utf8");
+	assert.match(upscoped, /^      work-branch: work\/record-dive\.nosedive$/m);
+	assert.doesNotMatch(upscoped, /^      mode: /m);
+});
+
+test("record.dive composes --upscope, --unscope and one --work-branch", () => {
+	const { bridge } = setup("upscope");
+	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);
+	writeRepoDoc(bridge, unhydratedRepoId, "second", "workspace/second");
+	const thirdCommit = createRepo(join(bridge, "workspace", "third"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "third", "workspace/third");
+
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^  - ${repoId}:`, "m"));
+
+	const edited = run(
+		[
+			"record.dive",
+			"--ref",
+			id,
+			"--upscope",
+			unhydratedRepoId,
+			"--upscope",
+			unrelatedRepoId,
+			"--unscope",
+			repoId,
+			"--work-branch",
+			"release/2026-08",
+		],
+		bridge,
+	);
+	assertOk(edited, "record.dive scope edit failed");
+	const doc = readFileSync(path, "utf8");
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"), "--unscope must drop the repo");
+	// One branch covers every repo the call upscoped, which is the point of
+	// composing them: repos moving together belong on one branch.
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: release/2026-08$`,
+			"m",
+		),
+	);
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${thirdCommit}\n      work-branch: release/2026-08$`,
+			"m",
+		),
+	);
+});
+
+test("record.dive resolves --upscope and --unscope repos by name", () => {
+	const { bridge } = setup("upscope-by-name");
+	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);
+	writeRepoDoc(bridge, unhydratedRepoId, "second", "workspace/second");
+
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+
+	// A repo doc's name is what a pilot has in their head, and it is shorter than
+	// a uuid and unambiguous within the bridge.
+	const edited = run(
+		["record.dive", "--ref", id, "--upscope", "second", "--unscope", "repo"],
+		bridge,
+	);
+	assertOk(edited, "record.dive scope edit by repo name failed");
+	const doc = readFileSync(path, "utf8");
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"), "--unscope by name must drop it");
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
+test("record.dive --upscope defaults to the feat's branch and keeps an existing pin", () => {
+	const { bridge, repoCommit } = setup("upscope-default");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Take the branch away, then put it back with --upscope: an already-scoped
+	// repo keeps the pin it has, because upscoping decides where work goes and
+	// never which commit it started from.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(/^      work-branch: .+$/m, "      mode: ro"),
+	);
+	const edited = run(["record.dive", "--ref", id, "--upscope", repoId], bridge);
+	assertOk(edited, "record.dive --upscope failed");
+	assert.match(
+		readFileSync(path, "utf8"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
+test("record.dive refuses contradictory or homeless scope edits", () => {
+	const { bridge } = setup("upscope-refusals");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+
+	const contested = run(
+		["record.dive", "--ref", id, "--upscope", repoId, "--unscope", repoId],
+		bridge,
+	);
+	assert.notEqual(contested.status, 0, "one repo cannot be both upscoped and unscoped");
+	assert.match(contested.stderr, /--upscope and --unscope name the same repo/);
+
+	const homeless = run(["record.dive", "--ref", id, "--work-branch", "release/x"], bridge);
+	assert.notEqual(homeless.status, 0, "a branch with nothing to apply it to is a mistake");
+	assert.match(homeless.stderr, /--work-branch requires at least one --upscope/);
 });

@@ -126,6 +126,7 @@ export function readWorkspaceDiveMarker(workspaceDir: string | undefined): Works
 export interface DiveWipScope {
 	repoId: string;
 	ref?: string;
+	workBranch?: string;
 	readOnly: boolean;
 }
 
@@ -150,6 +151,7 @@ export function uniqueDiveWipScopes(scopes: ScopeRef[]): {
 			byRepo.set(scope.repoId, {
 				repoId: scope.repoId,
 				ref: scope.ref,
+				workBranch: scope.workBranch,
 				readOnly: scope.readOnly,
 			});
 			continue;
@@ -161,6 +163,9 @@ export function uniqueDiveWipScopes(scopes: ScopeRef[]): {
 			});
 		}
 		if (!existing.ref) existing.ref = scope.ref;
+		// The writable entry decides where the repo lands, matching the rule below
+		// that one writable mention makes the merged scope writable.
+		if (!existing.workBranch) existing.workBranch = scope.workBranch;
 		existing.readOnly = existing.readOnly && scope.readOnly;
 	}
 

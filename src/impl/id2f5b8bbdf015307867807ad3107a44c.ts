@@ -11,6 +11,7 @@ import { commitMessage } from "../lib/commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
+	defaultWorkBranch,
 	formatPath,
 	parseMarkdownDoc,
 	readNosediveRc,
@@ -179,13 +180,21 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 		if (failure) throw new Error(`land refuses: ${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
 		hydratedWorktrees.push({ scope, path });
-		if (scope.readOnly) {
-			if (!scope.ref)
-				throw new Error(`land refuses: read-only scope ${scope.repoId} has no pinned ref`);
+		if (!scope.workBranch) {
+			if (!scope.ref) throw new Error(`land refuses: scope ${scope.repoId} has no pinned ref`);
 			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
+			/**
+			 * Work with nowhere to go. Naming the fix matters more than naming the
+			 * rule here: the pilot is looking at commits they have already made, and
+			 * the only question left is which branch they belong on.
+			 */
 			if (commits.length > 0)
 				throw new Error(
-					`land refuses: read-only scope ${scope.repoId} is ahead of pinned ref ${scope.ref}: ${commits.join(", ")}`,
+					`land refuses: scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
+						`(${commits.join(", ")}) and names no work branch. ` +
+						`Run \`nosedive record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
+						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
+						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
 				);
 			continue;
 		}
@@ -244,7 +253,8 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	for (const { scope, path } of writableScopes) {
-		const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
+		// Only scopes naming a branch reach here, so there is nothing to fall back to.
+		const branch = scope.workBranch!;
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}

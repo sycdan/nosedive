@@ -4,7 +4,28 @@ export interface ScopeRef {
 	repoId: string;
 	path: string;
 	ref?: string;
+	/**
+	 * The branch `land` publishes this scope's HEAD to. Naming one is the whole
+	 * of what makes a scope landable: work with nowhere to go is work `land`
+	 * must refuse, and a dive has to be explicit about where it will push.
+	 */
+	workBranch?: string;
+	/**
+	 * Not landable, which is exactly "names no work branch".
+	 *
+	 * Derived, never declared. `mode: ro`, `mode: rw` and `flags: [ro]` are all
+	 * still accepted so documents written before this parse, but none of them
+	 * decides anything: a scope carrying `mode: rw` and no branch is read-only,
+	 * and `land` says so and names `--upscope` as the fix.
+	 */
 	readOnly: boolean;
+	/**
+	 * The superseded `mode`, kept only so a feat scope written before branches
+	 * existed can still say "dives on me are meant to push here". A feat entry
+	 * carrying `mode: rw` and no branch hands a generated one to the dives that
+	 * inherit it; nothing else reads this.
+	 */
+	legacyMode?: "ro" | "rw";
 	flags: string[];
 	render?: "body" | "gist";
 }
@@ -49,7 +70,9 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	if (typeof scope === "string") {
 		const repoId = scope.trim();
 		if (uuidLike(repoId)) {
-			return { repoId, path: "", readOnly: false, flags: [] };
+			// A bare entry names a repo and nothing else, so it names no branch and
+			// is not landable until something upscopes it.
+			return { repoId, path: "", readOnly: true, flags: [] };
 		}
 		throw new Error(
 			`legacy scope shorthand is not supported in ${label}; use a bare UUID or '- <repo-id>: { ... }' object form`,
@@ -76,6 +99,7 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	const ref = optionalScopeString(value, "ref", label);
 	const pathValue = optionalScopeString(value, "path", label) ?? "";
 	const mode = optionalScopeString(value, "mode", label);
+	const workBranch = optionalScopeString(value, "work-branch", label);
 	const render = optionalScopeString(value, "render", label) as "body" | "gist" | undefined;
 	const flags = optionalScopeFlags(value, label);
 
@@ -98,13 +122,17 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 		if (ref) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set ref`);
 		if (pathValue) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set path`);
 		if (mode) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set mode`);
+		if (workBranch)
+			throw new Error(`invalid scope entry in ${label}: '.' scope cannot set work-branch`);
 	}
 
 	return {
 		repoId,
 		path: pathValue,
 		ref,
-		readOnly: mode ? mode === "ro" : flagReadOnly,
+		workBranch,
+		readOnly: !workBranch,
+		legacyMode: mode === "rw" || flags.includes("rw") ? "rw" : mode === "ro" ? "ro" : undefined,
 		flags,
 		render,
 	};

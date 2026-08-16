@@ -367,6 +367,15 @@ export function readNosediveRc(start: string): NosediveRc {
 	};
 }
 
+/**
+ * The branch a scope gets when nobody names one. Shared so that `record.dive`
+ * writes exactly what `land` used to compute for itself: every dive on a feat
+ * publishes to one branch, and a scope that wants its own says so.
+ */
+export function defaultWorkBranch(rc: Pick<NosediveRc, "workBranchPrefix">, slug: string): string {
+	return `${rc.workBranchPrefix ?? DEFAULT_RC["work-branch-prefix"]}${slug}`;
+}
+
 // --- seed --------------------------------------------------------------
 
 /**

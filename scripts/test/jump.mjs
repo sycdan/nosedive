@@ -79,7 +79,8 @@ id: ${effortId}
 name: jump-test.nosedive
 gist: "Jump test effort"
 scopes:
-  - ${repoId}
+  - ${repoId}:
+      work-branch: work/jump-test.nosedive
 ---
 
 # Jump Test

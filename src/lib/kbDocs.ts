@@ -345,7 +345,7 @@ export interface AddRepoOptions {
 export interface AddRepoFeatScopeOptions {
 	repoRef: string;
 	repoEntryRef?: string;
-	readOnly: boolean;
+	workBranch?: string;
 }
 
 export function parseAddRepoArgs(args: string[]): AddRepoOptions {
@@ -397,14 +397,16 @@ export function parseAddRepoArgs(args: string[]): AddRepoOptions {
 export function parseAddRepoFeatScopeArgs(args: string[]): AddRepoFeatScopeOptions {
 	let repoRef: string | undefined;
 	let repoEntryRef: string | undefined;
+	let workBranch: string | undefined;
 	let readOnly = false;
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
-		if (arg === "--ref") {
+		if (arg === "--ref" || arg === "--work-branch") {
 			const value = args[i + 1];
-			if (!value) throw new Error("--ref requires a value");
-			repoEntryRef = value;
+			if (!value) throw new Error(`${arg} requires a value`);
+			if (arg === "--ref") repoEntryRef = value;
+			else workBranch = value;
 			i += 1;
 			continue;
 		}
@@ -413,19 +415,29 @@ export function parseAddRepoFeatScopeArgs(args: string[]): AddRepoFeatScopeOptio
 			if (!repoEntryRef) throw new Error("--ref requires a value");
 			continue;
 		}
+		if (arg.startsWith("--work-branch=")) {
+			workBranch = arg.slice("--work-branch=".length);
+			if (!workBranch) throw new Error("--work-branch requires a value");
+			continue;
+		}
+		// The superseded spelling of "no work branch", which is now the default.
+		// Kept so calls written against `add-repo.effort` still run, and refused
+		// beside `--work-branch` because together they ask for both answers.
 		if (arg === "--read-only" || arg === "--ro") {
 			readOnly = true;
 			continue;
 		}
-		// `add-repo.effort` is the command's own name and keeps its spelling.
-		if (arg.startsWith("--")) throw new Error(`unknown add-repo.effort option: ${arg}`);
-		if (repoRef) throw new Error(`unexpected add-repo.effort argument: ${arg}`);
+		if (arg.startsWith("--")) throw new Error(`unknown add-repo.feat option: ${arg}`);
+		if (repoRef) throw new Error(`unexpected add-repo.feat argument: ${arg}`);
 		repoRef = arg;
 	}
 
-	if (!repoRef) throw new Error("add-repo.effort requires a repo id or name");
+	if (!repoRef) throw new Error("add-repo.feat requires a repo id or name");
 	if (repoEntryRef?.includes(":")) throw new Error(`repo ref cannot contain ':': ${repoEntryRef}`);
-	return { repoRef, repoEntryRef, readOnly };
+	if (readOnly && workBranch !== undefined) {
+		throw new Error("--read-only cannot be combined with --work-branch");
+	}
+	return { repoRef, repoEntryRef, workBranch };
 }
 
 export function repoDocs(kbDocs: KbDoc[]): KbDoc[] {

@@ -58,7 +58,8 @@ id: ${effortId}
 name: land-test.nosedive
 gist: "Land test effort"
 scopes:
-  - ${repoId}
+  - ${repoId}:
+      work-branch: work/land-test.nosedive
 ---
 `,
 	);
@@ -186,14 +187,31 @@ test("land publishes without ever lifting push isolation", () => {
 	);
 });
 
-test("land refuses a read-only scope that has commits past its pin", () => {
+/**
+ * Work with nowhere to go. The refusal has to leave the pilot able to act: they
+ * are looking at commits they already made, so it names the fix, the branch the
+ * fix would use, and the reason to look at that branch before accepting it.
+ */
+test("land refuses a scope that is ahead of its pin and names no work branch", () => {
 	const { bridge, worktree, diveId } = setup("readonly");
-	gitCommitEmpty(worktree, "read-only work");
+	gitCommitEmpty(worktree, "unpublishable work");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
-	const diveText = readFileSync(divePath, "utf8");
-	write(divePath, diveText.replace("mode: rw", "mode: ro"));
+	// Taking the branch away is the whole of what makes a scope read-only now.
+	write(divePath, readFileSync(divePath, "utf8").replace(/^      work-branch: .*\n/m, ""));
 	const result = run(["land"], bridge);
-	assert.notEqual(result.status, 0, "land unexpectedly accepted read-only commits");
-	assert.match(result.stderr, new RegExp(`read-only scope ${repoId} is ahead of pinned ref`));
+	assert.notEqual(result.status, 0, "land unexpectedly accepted unpublishable commits");
+	assert.match(result.stderr, new RegExp(`scope ${repoId} is ahead of pinned ref`));
+	assert.match(result.stderr, /names no work branch/);
 	assert.match(result.stderr, /[0-9a-f]{7,}/, "refusal should name the ahead commit");
+	assert.match(
+		result.stderr,
+		new RegExp(`record\\.dive --ref ${diveId} --upscope ${repoId}`),
+		"the refusal must name the command that fixes it",
+	);
+	assert.match(result.stderr, /work\/land-test\.nosedive/, "and the branch that would be used");
+	assert.match(result.stderr, /branch convention may differ/, "and why to check it first");
+
+	// Naming a branch is all it takes to make the same commits landable.
+	assertOk(run(["record.dive", "--ref", diveId, "--upscope", repoId], bridge), "--upscope failed");
+	assertOk(run(["land"], bridge), "land should accept the scope once it names a branch");
 });

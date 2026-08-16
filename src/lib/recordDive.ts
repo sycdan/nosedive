@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 
 import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
@@ -14,16 +14,20 @@ import {
 	uuidLike,
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
+import {
+	cachedScope,
+	editScopes,
+	featWorkBranch,
+	inheritedScopes,
+	renderScopeEntry,
+	renderScopes,
+	resolveBridgeDocRef,
+	resolveScopeRepo,
+} from "./diveScopes.js";
 import { gitOutput } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
-import {
-	ensureManagedRepoCache,
-	ensureSafeTargetPath,
-	parseRepoMarkerStrict,
-} from "./repoWorkspaceCore.js";
-import { isReadOnlyPushUrl } from "./repoHardening.js";
-import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
+import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
 import { titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
@@ -36,8 +40,13 @@ export interface RecordDiveOptions {
 	diver?: string;
 	takeover: boolean;
 	free: boolean;
-	scopes: string[];
 	clearScopes: boolean;
+	/** Repos to add or make writable, each landing on `workBranch`. */
+	upscopes: string[];
+	/** Repos to drop from the scope set entirely. */
+	unscopes: string[];
+	/** The branch every `--upscope` in this call publishes to. */
+	workBranch?: string;
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -50,8 +59,9 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	const options: RecordDiveOptions = {
 		takeover: false,
 		free: false,
-		scopes: [],
 		clearScopes: false,
+		upscopes: [],
+		unscopes: [],
 	};
 	let featValue: string | undefined;
 	// Holds whatever the `--effort` alias was given; the flag keeps its spelling.
@@ -79,6 +89,9 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 			"--brief",
 			"--diver",
 			"--scope",
+			"--upscope",
+			"--unscope",
+			"--work-branch",
 		].find((candidate) => arg === candidate || arg.startsWith(`${candidate}=`));
 		if (!flag) {
 			if (arg.startsWith("--")) throw new Error(`unknown record.dive option: ${arg}`);
@@ -87,7 +100,11 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
 		if (!value) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
-		if (flag === "--scope") options.scopes.push(value);
+		// `--scope` is the old spelling. It used to replace the whole scope set;
+		// it adds one now, which is what every existing call already meant.
+		if (flag === "--scope" || flag === "--upscope") options.upscopes.push(value);
+		else if (flag === "--unscope") options.unscopes.push(value);
+		else if (flag === "--work-branch") options.workBranch = value;
 		else if (flag === "--ref") options.ref = value;
 		else if (flag === "--feat") featValue = value;
 		else if (flag === "--effort") effortValue = value;
@@ -107,8 +124,12 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		if (args.length !== 1) throw new Error("--free cannot be combined with any other option");
 		return options;
 	}
-	if (options.clearScopes && options.scopes.length > 0) {
-		throw new Error("--clear-scopes cannot be combined with --scope");
+	const contested = options.upscopes.filter((ref) => options.unscopes.includes(ref));
+	if (contested.length > 0) {
+		throw new Error(`--upscope and --unscope name the same repo: ${contested.join(", ")}`);
+	}
+	if (options.workBranch !== undefined && options.upscopes.length === 0) {
+		throw new Error("--work-branch requires at least one --upscope");
 	}
 	if (!options.ref && !options.feat)
 		throw new Error("record.dive requires --feat or --effort when creating a dive");
@@ -126,118 +147,15 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	return options;
 }
 
-function bridgeRelativePath(bridgeDir: string, pathRef: string): string {
-	if (!pathRef || pathRef.includes("\\"))
-		throw new Error(`invalid bridge-relative path: ${pathRef}`);
-	const path = resolve(bridgeDir, pathRef);
-	if (relative(bridgeDir, path).startsWith("..")) {
-		throw new Error(`path resolves outside this bridge: ${pathRef}`);
-	}
-	if (!existsSync(path)) throw new Error(`path not found: ${pathRef}`);
-	return path;
-}
-
-function docFromMarker(path: string, kbDocs: KbDoc[]): KbDoc {
-	const markerPath = statSync(path).isDirectory() ? join(path, ".nosedive-ref") : path;
-	if (basename(markerPath) !== ".nosedive-ref")
-		throw new Error(`not a document or .nosedive-ref: ${formatPath(path)}`);
-	const marker = parseRepoMarkerStrict(markerPath);
-	const doc = kbDocs.find((candidate) => candidate.id === marker.id);
-	if (!doc) throw new Error(`marker references no kb document: ${formatPath(markerPath)}`);
-	return doc;
-}
-
-export function resolveBridgeDocRef(bridgeDir: string, kbDocs: KbDoc[], ref: string): KbDoc {
-	if (uuidLike(ref)) {
-		const doc = kbDocs.find((candidate) => candidate.id === ref);
-		if (!doc) throw new Error(`kb document not found: ${ref}`);
-		return doc;
-	}
-	const path = bridgeRelativePath(bridgeDir, ref);
-	if (basename(path) === ".nosedive-ref") return docFromMarker(path, kbDocs);
-	if (statSync(path).isDirectory()) return docFromMarker(path, kbDocs);
-	if (!statSync(path).isFile()) throw new Error(`not a document or .nosedive-ref: ${ref}`);
-	const doc = kbDocs.find((candidate) => resolve(candidate.path) === path);
-	if (!doc) throw new Error(`file is not a kb document: ${ref}`);
-	return doc;
-}
-
-function resolveScopeRepo(bridgeDir: string, kbDocs: KbDoc[], ref: string): KbDoc {
-	const doc = uuidLike(ref)
-		? kbDocs.find((candidate) => candidate.id === ref)
-		: resolveBridgeDocRef(bridgeDir, kbDocs, ref);
-	if (!doc) throw new Error(`kb document not found: ${ref}`);
-	if (doc.kind !== "repo") throw new Error(`scope does not resolve to a kind: repo doc: ${ref}`);
-	return doc;
-}
-
-function defaultReadOnly(repo: KbDoc): boolean {
-	const mode = repo.metaScalars["default-mode"];
-	if (mode === undefined || mode === "rw") return false;
-	if (mode === "ro") return true;
-	throw new Error(`repo ${repo.id} has invalid meta.default-mode: ${mode}`);
-}
-
-function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string): ScopeRef {
-	const path = expectedWorktreePath(repo, bridgeDir);
-	ensureSafeTargetPath(repo.id, path, workspaceDir);
-	const existing = existsSync(path) && statSync(path).isDirectory();
-	let readOnly = defaultReadOnly(repo);
-	if (existing && existsSync(join(path, ".nosedive-ref"))) {
-		const marker = parseRepoMarkerStrict(join(path, ".nosedive-ref"));
-		if (marker.id !== repo.id)
-			throw new Error(`workspace marker does not match repo ${repo.id}: ${formatPath(path)}`);
-		readOnly = isReadOnlyPushUrl(gitOutput(path, ["config", "--get", "remote.origin.pushurl"]));
-	}
-	const cache = ensureManagedRepoCache(repo, bridgeDir);
-	const trunk = repo.repoBaseBranch ?? "main";
-	return {
-		repoId: repo.id,
-		path: "",
-		ref: resolveRefCommit(cache, repo.id, trunk),
-		readOnly,
-		flags: [],
-	};
-}
-
-/** `parent`, plus the role-suffixed spellings a deck-rooted tree uses (`parent.feat`, `parent.deck`). */
-function isParentRel(rel: string | undefined): boolean {
-	return rel === "parent" || (rel?.startsWith("parent.") ?? false);
-}
-
-/**
- * The scopes a dive under this feat should start from. `pitch` never writes a
- * scopes key, so reading only the feat's own scopes records a dive with none,
- * and a dive with no scope can be jumped with no repo attached and landed
- * without pushing anything. The nearest scoped ancestor is the one the pitcher
- * meant, so the walk stops there instead of unioning the whole chain.
- */
-function inheritedScopes(feat: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
-	const seen = new Set<string>();
-	let current: KbDoc | undefined = feat;
-	while (current && !seen.has(current.id)) {
-		if (current.scopes.length > 0) return current.scopes;
-		seen.add(current.id);
-		current = current.links
-			.filter((link) => isParentRel(link.rel))
-			.map((link) => byId.get(link.id))
-			.find((doc): doc is KbDoc => doc !== undefined);
-	}
-	return [];
-}
-
-function renderScopes(scopes: ScopeRef[]): string[] {
-	if (scopes.length === 0) return ["scopes: []"];
-	const lines = ["scopes:"];
-	for (const scope of scopes) {
-		lines.push(
-			`  - ${scope.repoId}:`,
-			`      ref: ${scope.ref}`,
-			`      mode: ${scope.readOnly ? "ro" : "rw"}`,
-		);
-	}
-	return lines;
+/** What a scope's branch fields become when a feat hands the repo down. */
+function inheritedBranch(
+	repoId: string,
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	feat: KbDoc | undefined,
+): { workBranch?: string; readOnly: boolean } {
+	const workBranch = featWorkBranch(repoId, rc, kbDocs, feat);
+	return { workBranch, readOnly: !workBranch };
 }
 
 function featTitle(feat: KbDoc): string {
@@ -382,24 +300,28 @@ export function recordDive(args: string[], io: CommandIo): void {
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
-		const scopes = options.clearScopes
+		/**
+		 * A new dive inherits its feat's repos, and inherits where they land only
+		 * where the feat has said. A feat that has not said hands down a pinned but
+		 * unpushable scope, so where the work goes stays a decision the pilot makes
+		 * with `--upscope` rather than a branch nobody chose.
+		 */
+		const inherited = options.clearScopes
 			? []
-			: options.scopes.length > 0
-				? options.scopes.map((ref) =>
-						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-					)
-				: inheritedScopes(feat, kbDocs).map((scope) =>
-						cachedScope(
-							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-							rc.bridgeDir,
-							workspaceDir,
-						),
-					);
+			: inheritedScopes(feat, kbDocs).scopes.map((scope) => ({
+					...cachedScope(
+						resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+						rc.bridgeDir,
+						workspaceDir,
+					),
+					...inheritedBranch(scope.repoId, rc, kbDocs, feat),
+				}));
+		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
-		// `--clear-scopes` and `--scope` both say what the pilot wants; only the
+		// `--clear-scopes` and `--upscope` both say what the pilot wants; only the
 		// inherited path can come back empty without anyone having asked for it.
-		if (!options.clearScopes && options.scopes.length === 0 && scopes.length === 0) {
+		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
 			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
 		const id = uuid7AtMs(Date.now());
@@ -448,20 +370,29 @@ export function recordDive(args: string[], io: CommandIo): void {
 		}
 		doc.setIn(["meta", "diver"], options.diver);
 	}
-	if (options.clearScopes || options.scopes.length > 0) {
-		const scopes = options.clearScopes
-			? []
-			: options.scopes.map((ref) =>
-					cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-				);
+	/**
+	 * Gaining a feat for the first time is when a dive learns where its repos
+	 * land, the same way a dive created under one does. Re-homing an already-owned
+	 * dive leaves its branches alone: they may have been chosen by hand, and the
+	 * new feat's opinion does not outrank the pilot's.
+	 */
+	const adopting = options.feat !== undefined && previousFeat === undefined;
+	const inheritedNow = adopting
+		? dive.scopes.map((scope) =>
+				scope.workBranch ? scope : { ...scope, ...inheritedBranch(scope.repoId, rc, kbDocs, feat) },
+			)
+		: dive.scopes;
+	if (
+		adopting ||
+		options.clearScopes ||
+		options.upscopes.length > 0 ||
+		options.unscopes.length > 0
+	) {
+		const base = options.clearScopes ? [] : inheritedNow;
+		const scopes = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
-		doc.set(
-			"scopes",
-			scopes.map((scope) => ({
-				[scope.repoId]: { ref: scope.ref, mode: scope.readOnly ? "ro" : "rw" },
-			})),
-		);
+		doc.set("scopes", scopes.map(renderScopeEntry));
 	}
 	let body = options.title?.trim() ? replaceTitle(parsed.body, options.title.trim()) : parsed.body;
 	if (options.brief?.trim()) {

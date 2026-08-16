@@ -19,6 +19,7 @@ import { run as if108b971e06e50ab8c8cf9ae00500457 } from "./if108b971e06e50ab8c8
 import { run as i1c0a2194ba665e13a6bbebcf5033acaf } from "./i1c0a2194ba665e13a6bbebcf5033acaf.js";
 import { run as if6c2c56c962256f4a9e48e095355c188 } from "./if6c2c56c962256f4a9e48e095355c188.js";
 import { run as ib7dc11975e685ae881068b3b92379c89 } from "./ib7dc11975e685ae881068b3b92379c89.js";
+import { run as i61b2a0b9891f53cbbf99667ca8be6b3f } from "./i61b2a0b9891f53cbbf99667ca8be6b3f.js";
 import { run as iab203ad1a19750cca9ba1e929218bda6 } from "./iab203ad1a19750cca9ba1e929218bda6.js";
 import { run as ic76b835ecbcb559080b2aee1b405babf } from "./ic76b835ecbcb559080b2aee1b405babf.js";
 import { run as idfa77573dddc590cb8f5f5ff784c3384 } from "./idfa77573dddc590cb8f5f5ff784c3384.js";
@@ -85,6 +86,8 @@ export function createImplRegistry(runtime: ImplRuntime) {
 			if6c2c56c962256f4a9e48e095355c188(args, runtime),
 		ib7dc11975e685ae881068b3b92379c89: (args: string[]) =>
 			ib7dc11975e685ae881068b3b92379c89(args, runtime),
+		i61b2a0b9891f53cbbf99667ca8be6b3f: (args: string[]) =>
+			i61b2a0b9891f53cbbf99667ca8be6b3f(args, runtime),
 		iab203ad1a19750cca9ba1e929218bda6: (args: string[]) =>
 			iab203ad1a19750cca9ba1e929218bda6(args, runtime),
 		ic76b835ecbcb559080b2aee1b405babf: (args: string[]) =>

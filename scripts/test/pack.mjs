@@ -68,7 +68,8 @@ id: ${effortId}
 name: pack-test.nosedive
 gist: "Pack test effort"
 scopes:
-  - ${repoId}
+  - ${repoId}:
+      work-branch: work/pack-test.nosedive
 ---
 
 # Pack Test
@@ -306,6 +307,19 @@ meta:
 	assertOk(
 		run(["record.dive", "--ref", diveId, "--scope", roRepoId], bridge),
 		"scoping read-only repo onto dive failed",
+	);
+	/**
+	 * Scoping a repo is an explicit request for somewhere to put its work, so it
+	 * arrives with a branch. Taking that branch away is what makes it read-only,
+	 * and the hydrate flag only picks which sentinel a rejected push cites.
+	 */
+	const roDivePath = join(bridge, "kb", `${diveId}.md`);
+	write(
+		roDivePath,
+		readFileSync(roDivePath, "utf8").replace(
+			new RegExp(`(  - ${roRepoId}:\\n      ref: [0-9a-f]{40}\\n)      work-branch: .*\\n`),
+			"$1",
+		),
 	);
 
 	const roWorktree = repoWorktree(bridge, "readonly-ro");

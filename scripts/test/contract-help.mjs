@@ -67,6 +67,7 @@ test("contract help", () => {
 	// L0 is gone: every command the package ships is contracted at L1 or above.
 	const contractedCommands = [
 		["add-repo.effort", /Usage: nosedive add-repo\.effort <repo-id-or-name>/],
+		["add-repo.feat", /Usage: nosedive add-repo\.feat <repo-id-or-name>/],
 		["dehydrate-repo.workspace", /Usage: nosedive dehydrate-repo\.workspace/],
 		["dump-backlog", /Usage: nosedive dump-backlog$/m],
 		["hydrate-repo.workspace", /Usage: nosedive hydrate-repo\.workspace/],

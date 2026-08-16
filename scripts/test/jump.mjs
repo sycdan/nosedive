@@ -280,8 +280,8 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	);
 	assert.match(
 		diveText,
-		new RegExp(`repo=full-repo path=\\S+ mode=rw ref=${pinnedRef}`),
-		"the hydrated section should name the scoped repo, its path, mode, and pinned ref",
+		new RegExp(`repo=full-repo path=\\S+ work-branch=work/jump-test.nosedive ref=${pinnedRef}`),
+		"the hydrated section should name the scoped repo, its path, work branch, and pinned ref",
 	);
 
 	for (const suffix of ["a", "b", "c"]) {
@@ -309,7 +309,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const pushedDiveText = runTool("git", ["show", `origin/main:kb/${diveId}.md`], bridge).stdout;
 	assert.match(
 		pushedDiveText,
-		new RegExp(`repo=full-repo path=\\S+ mode=rw ref=${pinnedRef}`),
+		new RegExp(`repo=full-repo path=\\S+ work-branch=work/jump-test.nosedive ref=${pinnedRef}`),
 		"the hydrated section should be part of the commit jump pushes",
 	);
 

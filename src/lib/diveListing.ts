@@ -102,7 +102,9 @@ export function localOnlyKbDocIds(bridgeDir: string, kbDir: string): Set<string>
 export function formatScopeRef(scope: ScopeRef): string {
 	const bits = [scope.repoId];
 	if (scope.ref) bits.push(`@${scope.ref}`);
-	if (scope.readOnly) bits.push(":ro");
+	// `:<branch>` says landable and says where. `:ro` said only the first half of
+	// the opposite, and said it about a key nothing writes any more.
+	if (scope.workBranch) bits.push(`:${scope.workBranch}`);
 	if (scope.path && scope.path !== ".") bits.push(` path=${toPosixPath(scope.path)}`);
 	return bits.join("");
 }

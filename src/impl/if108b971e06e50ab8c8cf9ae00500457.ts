@@ -21,7 +21,7 @@ import {
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { parseLinkRefs } from "../lib/kbRefs.js";
 import { posixRelPath } from "../lib/packageBacklog.js";
-import { resolveBridgeDocRef } from "../lib/recordDive.js";
+import { resolveBridgeDocRef } from "../lib/diveScopes.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 
 function parseInjectRefs(args: string[]): string[] {

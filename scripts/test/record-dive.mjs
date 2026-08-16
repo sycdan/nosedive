@@ -609,6 +609,7 @@ test("a scope naming a work branch and a read-only mode is refused", () => {
 	const created = run(["record.dive", "--feat", effortId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
 	// Naming a branch and declaring the scope unpushable answer one question two
 	// ways, so the document has to be fixed rather than guessed at.
 	writeFileSync(
@@ -623,3 +624,103 @@ test("a scope naming a work branch and a read-only mode is refused", () => {
 	assert.match(result.stderr, /work-branch conflicts with a read-only mode or flag/);
 });
 
+test("record.dive composes --upscope, --unscope and one --work-branch", () => {
+	const { bridge } = setup("upscope");
+	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);
+	writeRepoDoc(bridge, unhydratedRepoId, "second", "workspace/second");
+	const thirdCommit = createRepo(join(bridge, "workspace", "third"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "third", "workspace/third");
+
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^  - ${repoId}:`, "m"));
+
+	const edited = run(
+		[
+			"record.dive",
+			"--ref",
+			id,
+			"--upscope",
+			unhydratedRepoId,
+			"--upscope",
+			unrelatedRepoId,
+			"--unscope",
+			repoId,
+			"--work-branch",
+			"release/2026-08",
+		],
+		bridge,
+	);
+	assertOk(edited, "record.dive scope edit failed");
+	const doc = readFileSync(path, "utf8");
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"), "--unscope must drop the repo");
+	// One branch covers every repo the call upscoped, which is the point of
+	// composing them: repos moving together belong on one branch.
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: release/2026-08$`,
+			"m",
+		),
+	);
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${thirdCommit}\n      work-branch: release/2026-08$`,
+			"m",
+		),
+	);
+});
+
+test("record.dive --upscope defaults to the feat's branch and keeps an existing pin", () => {
+	const { bridge, repoCommit } = setup("upscope-default");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Take the branch away, then put it back with --upscope: an already-scoped
+	// repo keeps the pin it has, because upscoping decides where work goes and
+	// never which commit it started from.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(/^      work-branch: .+$/m, "      mode: ro"),
+	);
+	const edited = run(["record.dive", "--ref", id, "--upscope", repoId], bridge);
+	assertOk(edited, "record.dive --upscope failed");
+	assert.match(
+		readFileSync(path, "utf8"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
+test("record.dive refuses contradictory or homeless scope edits", () => {
+	const { bridge } = setup("upscope-refusals");
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+
+	const contested = run(
+		["record.dive", "--ref", id, "--upscope", repoId, "--unscope", repoId],
+		bridge,
+	);
+	assert.notEqual(contested.status, 0, "one repo cannot be both upscoped and unscoped");
+	assert.match(contested.stderr, /--upscope and --unscope name the same repo/);
+
+	const homeless = run(["record.dive", "--ref", id, "--work-branch", "release/x"], bridge);
+	assert.notEqual(homeless.status, 0, "a branch with nothing to apply it to is a mistake");
+	assert.match(homeless.stderr, /--work-branch requires at least one --upscope/);
+
+	const mixed = run(["record.dive", "--ref", id, "--upscope", repoId, "--clear-scopes"], bridge);
+	assert.notEqual(mixed.status, 0, "editing and replacing the scope set are two different ideas");
+	assert.match(mixed.stderr, /cannot be combined with --scope or --clear-scopes/);
+
+	const uncreated = run(["record.dive", "--feat", effortId, "--upscope", repoId], bridge);
+	assert.notEqual(uncreated.status, 0, "there is nothing to edit before a dive exists");
+	assert.match(uncreated.stderr, /edit a recorded dive; name one with --ref/);
+});

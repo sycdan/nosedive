@@ -74,6 +74,7 @@ test("contract help", () => {
 		["mint", /Usage: nosedive mint \[count\] \[--ms <utcmillis>\] \[--ts <iso8601>\]/],
 		["nuke", /Usage: nosedive nuke --config\|--workspace/],
 		["pitch", /Usage: nosedive pitch "<gist>"/],
+		["plan", /Usage: nosedive plan \[<context>\]/],
 		["_pre-push.hook", /Usage: nosedive _pre-push\.hook/],
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],

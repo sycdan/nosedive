@@ -12,9 +12,9 @@ const backlogId = "019fda60-0000-7000-8000-000000000002";
 const posix = (path) => path.replaceAll("\\", "/");
 
 /**
- * `into` is the prompt command under test: its stdout is a brief, which is
+ * `plan` is the prompt command under test: its stdout is a brief, which is
  * exactly what `--exec` exists to hand to a runner. The bridge needs a git
- * identity and a backlog memo before `into` will print one.
+ * identity and a backlog memo before `plan` will print one.
  */
 function createExecBridge(name, models, usage) {
 	const bridge = join(tmp, name);
@@ -72,7 +72,7 @@ function createExecBridge(name, models, usage) {
 test("a prompt command prints its prompt when --exec is absent", () => {
 	const { bridge } = createExecBridge("exec-print", ["effort-0-succeeds"]);
 
-	const result = run(["into", "some context"], bridge);
+	const result = run(["plan", "some context"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /some context/);
 	assert.doesNotMatch(result.stdout, /dropped by/);
@@ -81,17 +81,17 @@ test("a prompt command prints its prompt when --exec is absent", () => {
 test("--exec runs the prompt and prints only the runner's stdout", () => {
 	const { bridge, log } = createExecBridge("exec-runs", ["effort-0-succeeds"]);
 
-	const result = run(["into", "some context", "--exec"], bridge);
+	const result = run(["plan", "some context", "--exec"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "dropped by effort-0-succeeds\n");
 	assert.doesNotMatch(result.stdout, /some context/);
-	assert.match(result.stderr, /into: effort 0, effort-0-succeeds/);
+	assert.match(result.stderr, /plan: effort 0, effort-0-succeeds/);
 	// The prompt reached the runner rather than the pilot.
 	assert.match(readFileSync(log, "utf8"), /some context/);
 });
 
 /**
- * `into` declares only `minimum-effort`, so the ceiling has to come from the
+ * `plan` declares only `minimum-effort`, so the ceiling has to come from the
  * bridge. Succeeding at the last configured effort is what proves it did.
  */
 test("--exec climbs to the highest configured effort and carries failures up", () => {
@@ -101,11 +101,11 @@ test("--exec climbs to the highest configured effort and carries failures up", (
 		"effort-2-succeeds",
 	]);
 
-	const result = run(["into", "some context", "--exec"], bridge);
+	const result = run(["plan", "some context", "--exec"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "dropped by effort-2-succeeds\n");
-	assert.match(result.stderr, /into: effort 0 failed with exit 3/);
-	assert.match(result.stderr, /into: effort 1 failed with exit 3/);
+	assert.match(result.stderr, /plan: effort 0 failed with exit 3/);
+	assert.match(result.stderr, /plan: effort 1 failed with exit 3/);
 
 	const transcript = readFileSync(log, "utf8");
 	const last = transcript.slice(transcript.lastIndexOf("=== effort-2-succeeds ==="));
@@ -117,10 +117,10 @@ test("--exec climbs to the highest configured effort and carries failures up", (
 test("--exec fails when every configured effort fails", () => {
 	const { bridge } = createExecBridge("exec-exhausted", ["effort-0", "effort-1"]);
 
-	const result = run(["into", "some context", "--exec"], bridge);
+	const result = run(["plan", "some context", "--exec"], bridge);
 	assert.equal(result.status, 1);
 	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /into exhausted every effort from 0 to 1/);
+	assert.match(result.stderr, /plan exhausted every effort from 0 to 1/);
 });
 
 test("--exec refuses a command that does not output a prompt", () => {
@@ -134,7 +134,7 @@ test("--exec refuses a command that does not output a prompt", () => {
 test("--exec refuses a ladder the bridge has not configured", () => {
 	const { bridge } = createExecBridge("exec-no-ladder", []);
 
-	const result = run(["into", "some context", "--exec"], bridge);
+	const result = run(["plan", "some context", "--exec"], bridge);
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /has no agent-effort-<n>|is missing agent-effort-0/);
 });
@@ -153,7 +153,7 @@ for (const [label, tail, expected] of refusals) {
 			`<nosedive-command-stdout> | node runner.mjs --model <nosedive-effort-model> ${tail}`,
 		);
 
-		const result = run(["into", "some context", "--exec"], bridge);
+		const result = run(["plan", "some context", "--exec"], bridge);
 		assert.equal(result.status, 1);
 		assert.match(result.stderr, expected);
 	});
@@ -166,7 +166,7 @@ test("--exec refuses a usage whose left side is not the prompt", () => {
 		"node runner.mjs --model <nosedive-effort-model> | <nosedive-command-stdout>",
 	);
 
-	const result = run(["into", "some context", "--exec"], bridge);
+	const result = run(["plan", "some context", "--exec"], bridge);
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /must pipe <nosedive-command-stdout> into the runner/);
 });

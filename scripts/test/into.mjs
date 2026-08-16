@@ -7,7 +7,7 @@ import { createTmp, run, runTool, write, writeBridgeConfig } from "../test-helpe
 
 const tmp = createTmp("into");
 
-test("into requires a write-once endpoint brief and leaves jump to workon", () => {
+test("into warns and delegates to the plan prompt", () => {
 	const bridge = join(tmp, "bridge");
 	const backlogId = "019fcf20-0000-7000-8000-000000000001";
 	mkdirSync(bridge, { recursive: true });
@@ -31,12 +31,11 @@ gist: "Into test backlog"
 
 	const result = run(["into", "test handoff"], bridge);
 	assert.equal(result.status, 0, result.stderr);
-	assert.match(
-		result.stdout,
-		/one small slice, stating where the code is now and what has to be true/,
-	);
-	assert.match(result.stdout, /preserve its existing `## Brief` section byte-for-byte/);
-	assert.match(result.stdout, /Stop once the dive is claimed and briefed/);
+	assert.match(result.stderr, /warning: into is deprecated; use plan instead/);
+	assert.match(result.stdout, /vertical slices at its logical seams/);
+	assert.match(result.stdout, /no more than half a day's work/);
+	assert.match(result.stdout, /rel: land\.gate/);
+	assert.match(result.stdout, /Stop once all slices are recorded/);
 	assert.doesNotMatch(result.stdout, /Then run .*jump/);
 });
 

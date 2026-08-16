@@ -131,6 +131,7 @@ Invoked directly by humans, or indirectly via agents.
 | [`nuke@1`](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md) | `npx nosedive nuke --config\|--workspace` | Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch. |
 | [`pack@2`](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md) | `npx nosedive pack` | Capture all WIP on the active dive's scoped repos and bridge kb/ as patch artifacts, commit and push the bridge, and leave every scoped worktree hydrated where it stands. |
 | [`pitch@2`](kb/d59ff8d4-3366-54cd-ac2e-7ef869752b3a.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <feat>]` | Create a new `kind: feat` KB doc, optionally nested under a parent feat. |
+| [`plan@2`](kb/162068fe-62ff-5f56-945a-76b24ffeb439.md) | `npx nosedive plan [<context>]` | Help the pilot choose a feat, then shape it into gated vertical dives small enough to land in half a day. |
 | [`preflight@2`](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md) | `npx nosedive preflight` | Reconcile the bridge pre-push hook, fetch bridge trunk, then print the session-start report -- bridge status, pilot identity, and open work. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
 | [`record.dive@2`](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md) | `npx nosedive record.dive [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--scope <repo-ref>]... [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--free]` | Create or patch a feat-owned dive record while preserving omitted update fields. |
@@ -158,7 +159,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 | Command | Usage | Use instead |
 | --- | --- | --- |
 | [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]` | `add-repo.feat`, which is the same command under the name of the thing it edits. |
-| [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `preflight`, which prints pilot identity, the backlog, and open work without requiring a piped agent. |
+| [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `plan`, which turns a selected feat into gated vertical dives without starting them. |
 <!-- END nosedive-command-surface -->
 
 `version` and `help` have no command doc; they print the package version and the

@@ -8,7 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
+import { NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
 	defaultWorkBranch,
@@ -33,6 +33,7 @@ import {
 	runLandGates,
 } from "../lib/landGates.js";
 import { gitOutput } from "../lib/gitProcess.js";
+import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
@@ -48,6 +49,15 @@ function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: strin
 		`failed to list commits ahead of pin for repo ${repoId}`,
 	);
 	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
+}
+
+function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
+	const status = gitRun(
+		worktreePath,
+		["status", "--porcelain"],
+		`failed to read dirty status for repo ${repoId}`,
+	);
+	return status.split(/\r?\n/).filter(Boolean);
 }
 
 /**
@@ -88,9 +98,11 @@ function commitAndPushLand(
 	bridgeDir: string,
 	divePath: string,
 	diveName: string,
+	io: CommandIo,
 	featId?: string,
 	featPath?: string,
 ): void {
+	io.err("land: closing bridge dive");
 	const relPath = toPosixPath(relative(bridgeDir, divePath));
 	gitRun(
 		bridgeDir,
@@ -109,22 +121,26 @@ function commitAndPushLand(
 		if (!upstream)
 			throw new Error("bridge has no upstream to push to; configure one before landing");
 		const [remote] = upstream.split("/");
+		io.err(`land: syncing bridge from ${upstream}`);
 		gitRun(bridgeDir, ["fetch", remote!], "failed to fetch bridge remote before land push");
 		gitRun(
 			bridgeDir,
 			["merge", "--ff-only", upstream],
 			"failed to fast-forward bridge before land push; resolve manually and retry",
 		);
+		io.err("land: committing bridge outcome");
 		gitRun(
 			bridgeDir,
 			["commit", "-m", commitMessage(`land(${diveName}): closed`, featId)],
 			"failed to commit landed dive",
 		);
+		io.err("land: pushing bridge");
 		gitRun(
 			bridgeDir,
 			["push"],
 			"failed to push bridge after land; dive is committed locally as a memo",
 		);
+		io.err("land: bridge push complete");
 	} finally {
 		if (stashed)
 			gitRun(bridgeDir, ["stash", "pop"], "failed to restore stashed bridge state after land push");
@@ -162,6 +178,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const slug = slugForBranch(dive, feat);
+	const cli = nosediveInvocation();
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -192,13 +209,32 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 				throw new Error(
 					`land refuses: scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
 						`(${commits.join(", ")}) and names no work branch. ` +
-						`Run \`nosedive record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
 						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
 						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
 				);
 			continue;
 		}
 		writableScopes.push({ scope, path });
+	}
+
+	const dirtyScopes = hydratedWorktrees
+		.map(({ scope, path }) => ({ scope, path, status: dirtyWorktreeStatus(path, scope.repoId) }))
+		.filter((entry) => entry.status.length > 0);
+	if (dirtyScopes.length > 0) {
+		const detail = dirtyScopes
+			.map(
+				({ scope, path, status }) =>
+					`scope ${scope.repoId} at ${formatPath(path)}:\n${status
+						.map((line) => `  ${line}`)
+						.join("\n")}\n\nSuggested git commands:\n` +
+					`  git -C ${shellQuote(formatPath(path))} add -A\n` +
+					`  git -C ${shellQuote(formatPath(path))} commit -m ${shellQuote(dive.gist)}`,
+			)
+			.join("\n\n");
+		throw new Error(
+			`land refuses: scoped worktree(s) are dirty; commit, pack, or stash changes before landing.\n${detail}`,
+		);
 	}
 
 	/**
@@ -219,6 +255,9 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
 	const gates = collectReachableGates("land", gateRoots, kbDocs, rc.bridgeDir);
+	io.err(
+		`land: ${gates.length === 0 ? "no land gates selected" : `running ${gates.length} land gate${gates.length === 1 ? "" : "s"}`}`,
+	);
 	if (gates.length > 0) {
 		const outcome = await runLandGates(gates, {
 			// Live gate output goes to stderr, where a gate's own progress already
@@ -251,12 +290,15 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			io.setExitCode(1);
 			return;
 		}
+		io.err("land: land gates passed");
 	}
 
 	for (const { scope, path } of writableScopes) {
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
+		io.err(`land: pushing scope ${scope.repoId} -> ${branch}`);
 		landRepoScope(path, branch);
+		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}
 
@@ -275,7 +317,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, feat?.id, feat?.path);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, io, feat?.id, feat?.path);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

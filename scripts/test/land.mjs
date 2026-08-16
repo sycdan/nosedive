@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -79,7 +79,23 @@ scopes:
 	assert.ok(diveId, `record.dive did not report a dive id:\n${dive.stdout}`);
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "record dive");
-	return { bridge, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
+	return { bridge, origin, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
+}
+
+function assertInOrder(text, parts) {
+	let offset = 0;
+	for (const part of parts) {
+		const index = text.indexOf(part, offset);
+		assert.notEqual(index, -1, `missing ${JSON.stringify(part)} after offset ${offset}:\n${text}`);
+		offset = index + part.length;
+	}
+}
+
+function installPrePushHook(worktree, body) {
+	const rawPath = runTool("git", ["rev-parse", "--git-path", "hooks/pre-push"], worktree).stdout.trim();
+	const hookPath = isAbsolute(rawPath) ? rawPath : join(worktree, rawPath);
+	write(hookPath, body);
+	chmodSync(hookPath, 0o755);
 }
 
 test("land refuses when no dive is on deck", () => {
@@ -187,6 +203,75 @@ test("land publishes without ever lifting push isolation", () => {
 	);
 });
 
+test("land refuses a dirty scoped worktree before running gates or pushing", () => {
+	const { bridge, worktree } = setup("dirty-worktree");
+	write(join(worktree, "README.md"), "dirty\n");
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly accepted a dirty scoped worktree");
+	assert.match(result.stderr, /land refuses: scoped worktree\(s\) are dirty/);
+	assert.match(result.stderr, new RegExp(`scope ${repoId}`));
+	assert.match(result.stderr, /M README\.md/);
+	assert.match(result.stderr, /Suggested git commands:/);
+	assert.match(result.stderr, /git -C 'workspace\/dirty-worktree-repo' add -A/);
+	assert.match(
+		result.stderr,
+		/git -C 'workspace\/dirty-worktree-repo' commit -m 'Working on Land Test\.'/,
+	);
+	assert.doesNotMatch(result.stderr, /land: no land gates selected/);
+	assert.doesNotMatch(result.stderr, /land: pushing scope/);
+});
+
+test("land reports concise lifecycle progress while publishing", () => {
+	const { bridge, worktree } = setup("progress");
+	gitCommitEmpty(worktree, "landable work");
+	const result = run(["land"], bridge);
+	assertOk(result, "land failed");
+	assertInOrder(result.stderr, [
+		"land: no land gates selected",
+		`land: pushing scope ${repoId} -> work/land-test.nosedive`,
+		`land: pushed scope ${repoId} -> work/land-test.nosedive`,
+		"land: closing bridge dive",
+		"land: syncing bridge from origin/main",
+		"land: committing bridge outcome",
+		"land: pushing bridge",
+		"land: bridge push complete",
+	]);
+});
+
+test("land progress names the last completed phase before a later failure", () => {
+	const { bridge, origin, worktree } = setup("progress-fetch-fails");
+	gitCommitEmpty(worktree, "landable work");
+	rmSync(origin, { recursive: true, force: true });
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly succeeded after its bridge remote vanished");
+	assertInOrder(result.stderr, [
+		"land: no land gates selected",
+		`land: pushing scope ${repoId} -> work/land-test.nosedive`,
+		`land: pushed scope ${repoId} -> work/land-test.nosedive`,
+		"land: closing bridge dive",
+		"land: syncing bridge from origin/main",
+	]);
+	assert.doesNotMatch(result.stderr, /land: bridge push complete/);
+	assert.match(result.stderr, /failed to fetch bridge remote before land push/);
+});
+
+test("land surfaces pre-push hook output when a push fails", () => {
+	const { bridge, worktree } = setup("prepush-detail");
+	gitCommitEmpty(worktree, "landable work");
+	installPrePushHook(
+		worktree,
+		"#!/bin/sh\nprintf '%s\\n' 'pre-push: custom failure from stdout'\nexit 1\n",
+	);
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly succeeded past a failing pre-push hook");
+	assert.match(result.stderr, /failed to push/);
+	assert.match(result.stderr, /error: failed to push some refs/);
+	assert.match(result.stderr, /pre-push: custom failure from stdout/);
+});
+
 /**
  * Work with nowhere to go. The refusal has to leave the pilot able to act: they
  * are looking at commits they already made, so it names the fix, the branch the
@@ -205,9 +290,12 @@ test("land refuses a scope that is ahead of its pin and names no work branch", (
 	assert.match(result.stderr, /[0-9a-f]{7,}/, "refusal should name the ahead commit");
 	assert.match(
 		result.stderr,
-		new RegExp(`record\\.dive --ref ${diveId} --upscope ${repoId}`),
+		new RegExp(
+			`Run \`(?:node .+|npx -y nosedive@[^ ]+) record\\.dive --ref ${diveId} --upscope ${repoId}\``,
+		),
 		"the refusal must name the command that fixes it",
 	);
+	assert.doesNotMatch(result.stderr, /Run `nosedive record\.dive/);
 	assert.match(result.stderr, /work\/land-test\.nosedive/, "and the branch that would be used");
 	assert.match(result.stderr, /branch convention may differ/, "and why to check it first");
 

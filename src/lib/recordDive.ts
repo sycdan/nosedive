@@ -6,6 +6,7 @@ import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import {
+	defaultWorkBranch,
 	formatPath,
 	NosediveRc,
 	parseMarkdownDoc,
@@ -178,17 +179,26 @@ function defaultReadOnly(repo: KbDoc): boolean {
 	throw new Error(`repo ${repo.id} has invalid meta.default-mode: ${mode}`);
 }
 
+/**
+ * Whether a scope is writable is a declaration, and it is taken from the repo
+ * doc alone.
+ *
+ * It used to be read back off `remote.origin.pushurl` in whatever worktree
+ * happened to be on disk, which was survivable only while a hydrated worktree
+ * meant a pilot had asked for one. Gate hydration ended that: a `nosedive test`
+ * sweep leaves read-only worktrees behind, so every dive recorded afterwards
+ * inherited `ro` and could never be landed. A worktree is the consequence of a
+ * mode and was never evidence of one.
+ */
 function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string): ScopeRef {
 	const path = expectedWorktreePath(repo, bridgeDir);
 	ensureSafeTargetPath(repo.id, path, workspaceDir);
-	const existing = existsSync(path) && statSync(path).isDirectory();
-	let readOnly = defaultReadOnly(repo);
-	if (existing && existsSync(join(path, ".nosedive-ref"))) {
+	if (existsSync(path) && statSync(path).isDirectory() && existsSync(join(path, ".nosedive-ref"))) {
 		const marker = parseRepoMarkerStrict(join(path, ".nosedive-ref"));
 		if (marker.id !== repo.id)
 			throw new Error(`workspace marker does not match repo ${repo.id}: ${formatPath(path)}`);
-		readOnly = isReadOnlyPushUrl(gitOutput(path, ["config", "--get", "remote.origin.pushurl"]));
 	}
+	const readOnly = defaultReadOnly(repo);
 	const cache = ensureManagedRepoCache(repo, bridgeDir);
 	const trunk = repo.repoBaseBranch ?? "main";
 	return {
@@ -212,6 +222,17 @@ function isParentRel(rel: string | undefined): boolean {
  * without pushing anything. The nearest scoped ancestor is the one the pitcher
  * meant, so the walk stops there instead of unioning the whole chain.
  */
+/**
+ * Gives a writable scope the branch `land` will publish it to. Feat-derived, so
+ * every dive on one feat shares a branch exactly as `land` computed it before
+ * the name lived on the scope; a scope wanting its own is set afterwards.
+ */
+function stampWorkBranch(scope: ScopeRef, rc: NosediveRc, feat: KbDoc | undefined): ScopeRef {
+	if (scope.readOnly || scope.workBranch) return scope;
+	if (!feat) return scope;
+	return { ...scope, workBranch: defaultWorkBranch(rc, feat.name) };
+}
+
 function inheritedScopes(feat: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
 	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const seen = new Set<string>();
@@ -227,15 +248,23 @@ function inheritedScopes(feat: KbDoc, kbDocs: KbDoc[]): ScopeRef[] {
 	return [];
 }
 
+/**
+ * `mode: rw` is never written again -- the branch says it. `mode: ro` still is,
+ * because absence of a branch has always meant a writable bare scope and cannot
+ * be repurposed without stranding every scope written before this.
+ */
 function renderScopes(scopes: ScopeRef[]): string[] {
 	if (scopes.length === 0) return ["scopes: []"];
 	const lines = ["scopes:"];
 	for (const scope of scopes) {
-		lines.push(
-			`  - ${scope.repoId}:`,
-			`      ref: ${scope.ref}`,
-			`      mode: ${scope.readOnly ? "ro" : "rw"}`,
-		);
+		lines.push(`  - ${scope.repoId}:`, `      ref: ${scope.ref}`);
+		if (scope.readOnly) {
+			lines.push(`      mode: ro`);
+			continue;
+		}
+		if (!scope.workBranch)
+			throw new Error(`writable scope ${scope.repoId} has no work branch to record`);
+		lines.push(`      work-branch: ${scope.workBranch}`);
 	}
 	return lines;
 }
@@ -382,19 +411,21 @@ export function recordDive(args: string[], io: CommandIo): void {
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
-		const scopes = options.clearScopes
-			? []
-			: options.scopes.length > 0
-				? options.scopes.map((ref) =>
-						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-					)
-				: inheritedScopes(feat, kbDocs).map((scope) =>
-						cachedScope(
-							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-							rc.bridgeDir,
-							workspaceDir,
-						),
-					);
+		const scopes = (
+			options.clearScopes
+				? []
+				: options.scopes.length > 0
+					? options.scopes.map((ref) =>
+							cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
+						)
+					: inheritedScopes(feat, kbDocs).map((scope) =>
+							cachedScope(
+								resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+								rc.bridgeDir,
+								workspaceDir,
+							),
+						)
+		).map((scope) => stampWorkBranch(scope, rc, feat));
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		// `--clear-scopes` and `--scope` both say what the pilot wants; only the
@@ -449,17 +480,21 @@ export function recordDive(args: string[], io: CommandIo): void {
 		doc.setIn(["meta", "diver"], options.diver);
 	}
 	if (options.clearScopes || options.scopes.length > 0) {
-		const scopes = options.clearScopes
-			? []
-			: options.scopes.map((ref) =>
-					cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
-				);
+		const scopes = (
+			options.clearScopes
+				? []
+				: options.scopes.map((ref) =>
+						cachedScope(resolveScopeRepo(rc.bridgeDir, kbDocs, ref), rc.bridgeDir, workspaceDir),
+					)
+		).map((scope) => stampWorkBranch(scope, rc, feat));
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		doc.set(
 			"scopes",
 			scopes.map((scope) => ({
-				[scope.repoId]: { ref: scope.ref, mode: scope.readOnly ? "ro" : "rw" },
+				[scope.repoId]: scope.readOnly
+					? { ref: scope.ref, mode: "ro" }
+					: { ref: scope.ref, "work-branch": scope.workBranch },
 			})),
 		);
 	}

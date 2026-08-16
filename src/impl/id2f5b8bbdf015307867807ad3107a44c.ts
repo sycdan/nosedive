@@ -11,6 +11,7 @@ import { commitMessage } from "../lib/commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
+	defaultWorkBranch,
 	formatPath,
 	parseMarkdownDoc,
 	readNosediveRc,
@@ -244,7 +245,9 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	for (const { scope, path } of writableScopes) {
-		const branch = `${rc.workBranchPrefix ?? "work/"}${slug}`;
+		// The scope names its branch; the computed one is the fallback for every
+		// dive written before a scope could carry it.
+		const branch = scope.workBranch ?? defaultWorkBranch(rc, slug);
 		landRepoScope(path, branch);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}

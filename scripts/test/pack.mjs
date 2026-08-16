@@ -294,11 +294,18 @@ gist: "Read-only pack test repo"
 meta:
   path: workspace/readonly-ro-repo
   trunk: main
+  default-mode: ro
   remotes:
     local: ${source.replaceAll("\\", "/")}
 ---
 `,
 	);
+	/**
+	 * The repo doc declares the mode; the hydrate flag only picks which sentinel
+	 * a rejected push cites. `record.dive` used to read the mode back out of the
+	 * hydrated worktree, which meant a gate sweep could silently make a dive
+	 * read-only -- it takes the declaration now, so the fixture has to declare.
+	 */
 	assertOk(
 		run(["hydrate-repo.workspace", roRepoId, "--read-only"], bridge),
 		"hydrate read-only repo failed",

@@ -163,10 +163,10 @@ scopes:
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
 	assert.doesNotMatch(doc, /^  effort: /m, "the dead spelling is never written");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`, "m"));
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      mode: rw$`, "m"),
+		new RegExp(`^  - ${unhydratedRepoId}:\n      ref: ${unhydratedCommit}\n      work-branch: work/record-dive.nosedive$`, "m"),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${unrelatedRepoId}:`, "m"));
 	assert.match(doc, /^# Dive Record$/m);
@@ -181,7 +181,7 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`, "m"));
 });
 
 test("record.dive accepts --effort as a compatibility alias", () => {
@@ -474,7 +474,7 @@ test("record.dive inherits scopes from the nearest scoped ancestor feat", () => 
 	const result = run(["record.dive", "--effort", childEffortId], bridge);
 	assertOk(result, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
-	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`, "m"));
 	assert.doesNotMatch(doc, /^scopes: \[\]$/m);
 });
 
@@ -495,7 +495,7 @@ test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      mode: rw$`, "m"),
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${nearerCommit}\n      work-branch: work/leaf.middle.record-dive.nosedive$`, "m"),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
 });
@@ -514,7 +514,7 @@ test("record.dive lets an explicit --scope override an inherited one", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(
 		doc,
-		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      mode: rw$`, "m"),
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`, "m"),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"));
 });

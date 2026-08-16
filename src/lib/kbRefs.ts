@@ -4,6 +4,24 @@ export interface ScopeRef {
 	repoId: string;
 	path: string;
 	ref?: string;
+	/**
+	 * The branch `land` publishes this scope's HEAD to. Naming one is what makes
+	 * a scope landable: work with nowhere to go is work `land` must refuse.
+	 *
+	 * Absent on every scope written before this existed, which is why `readOnly`
+	 * survives rather than being replaced outright -- see below.
+	 */
+	workBranch?: string;
+	/**
+	 * Not landable. Derived rather than declared once a `work-branch` is present,
+	 * because a branch to push to already says the scope is writable.
+	 *
+	 * Absence of a `work-branch` cannot mean read-only: a bare `- <repo-id>`
+	 * entry has never carried one and has always been writable, so reading
+	 * absence that way would silently strand every hand-written feat scope.
+	 * Read-only therefore stays explicit -- `mode: ro` or `flags: [ro]` -- and
+	 * only `mode: rw` is redundant.
+	 */
 	readOnly: boolean;
 	flags: string[];
 	render?: "body" | "gist";
@@ -76,6 +94,7 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	const ref = optionalScopeString(value, "ref", label);
 	const pathValue = optionalScopeString(value, "path", label) ?? "";
 	const mode = optionalScopeString(value, "mode", label);
+	const workBranch = optionalScopeString(value, "work-branch", label);
 	const render = optionalScopeString(value, "render", label) as "body" | "gist" | undefined;
 	const flags = optionalScopeFlags(value, label);
 
@@ -93,18 +112,30 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	if (mode === "rw" && flagReadOnly) {
 		throw new Error(`invalid scope entry in ${label}: mode=rw conflicts with flags containing ro`);
 	}
+	const declaredReadOnly = mode ? mode === "ro" : flagReadOnly;
+	// Naming a branch and declaring the scope unpushable are two ways of
+	// answering one question, so a document that does both has to be fixed rather
+	// than guessed at.
+	if (workBranch && declaredReadOnly) {
+		throw new Error(
+			`invalid scope entry in ${label}: work-branch conflicts with a read-only mode or flag`,
+		);
+	}
 
 	if (repoId === ".") {
 		if (ref) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set ref`);
 		if (pathValue) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set path`);
 		if (mode) throw new Error(`invalid scope entry in ${label}: '.' scope cannot set mode`);
+		if (workBranch)
+			throw new Error(`invalid scope entry in ${label}: '.' scope cannot set work-branch`);
 	}
 
 	return {
 		repoId,
 		path: pathValue,
 		ref,
-		readOnly: mode ? mode === "ro" : flagReadOnly,
+		workBranch,
+		readOnly: declaredReadOnly,
 		flags,
 		render,
 	};

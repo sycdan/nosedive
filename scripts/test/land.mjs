@@ -191,7 +191,9 @@ test("land refuses a read-only scope that has commits past its pin", () => {
 	gitCommitEmpty(worktree, "read-only work");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	const diveText = readFileSync(divePath, "utf8");
-	write(divePath, diveText.replace("mode: rw", "mode: ro"));
+	// Taking the branch away is what makes the scope read-only now: work with
+	// nowhere to be published is the case land has to refuse.
+	write(divePath, diveText.replace(/^      work-branch: .*$/m, "      mode: ro"));
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "land unexpectedly accepted read-only commits");
 	assert.match(result.stderr, new RegExp(`read-only scope ${repoId} is ahead of pinned ref`));

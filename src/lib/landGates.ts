@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
-import { KbDoc } from "./kbDocs.js";
+import { KbDoc, LinkRef } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
 
@@ -99,7 +99,18 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
  * frontmatter rather than links. Later edges are kept only so the report can
  * name them.
  */
-export function collectLandGates(
+function isDiveEdge(link: LinkRef, target: KbDoc): boolean {
+	/**
+	 * The rel answers cheaply and without a hardcoded list of qualifiers. The kind
+	 * check must remain the backstop: older record.dive versions wrote bare
+	 * `planned`, `pending`, and `working` rels, and live bridges still carry them.
+	 * diveRole deliberately reads both spellings. A dive's gates are that dive's
+	 * business, so a wide walk reaches a dive only when it was passed as a root.
+	 */
+	return link.rel?.endsWith(".dive") === true || target.kind === "dive";
+}
+
+export function collectReachableGates(
 	verb: string,
 	roots: KbDoc[],
 	kbDocs: KbDoc[],
@@ -142,7 +153,7 @@ export function collectLandGates(
 					order.push(target.id);
 				}
 			}
-			if (target) walk(target);
+			if (target && !isDiveEdge(link, target)) walk(target);
 		}
 	};
 

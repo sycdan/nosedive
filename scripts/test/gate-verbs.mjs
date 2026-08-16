@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 import { createBridge, createTmp, libUrl, write } from "../test-helpers.mjs";
 
-const { collectDiveGates, collectLandGates } = await import(libUrl);
+const { collectDiveGates, collectReachableGates } = await import(libUrl);
 const tmp = createTmp("gate-verbs");
 
 function fixture(name) {
@@ -38,7 +38,10 @@ function fixture(name) {
 }
 
 for (const [name, collect] of [
-	["wide gate walk", (verb, root, docs, bridge) => collectLandGates(verb, [root], docs, bridge)],
+	[
+		"wide gate walk",
+		(verb, root, docs, bridge) => collectReachableGates(verb, [root], docs, bridge),
+	],
 	["direct gate links", collectDiveGates],
 ]) {
 	test(`${name} selects only the requested verb`, () => {

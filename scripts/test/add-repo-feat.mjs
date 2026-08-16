@@ -46,8 +46,8 @@ const noBridge = createNoBridge(tmp);
 
 test("add-repo-feat", () => {
 	const addRepoFeatBridge = join(tmp, "add-repo-feat-bridge");
-	const effortId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e001";
-	const effortDiveId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e010";
+	const featId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e001";
+	const diveId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e010";
 	const alphaScopeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e002";
 	const betaScopeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e003";
 	const gammaScopeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e004";
@@ -68,12 +68,12 @@ backlog: 019fbf74-9c6e-71a2-a3f2-f0c99be3e000
 `,
 	);
 	write(
-		join(addRepoFeatBridge, "kb", `${effortId}.md`),
+		join(addRepoFeatBridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: feature
-gist: "Feature effort for add-repo.feat tests."
+gist: "Feat for add-repo.feat tests."
 custom: keep-me
 scopes:
   - ${alphaScopeRepoId}:
@@ -85,20 +85,23 @@ scopes:
 Do not rewrite this body.
 `,
 	);
+	// Deliberately the top-level `effort:` spelling, which `kbDocs.ts` still
+	// accepts on read and this is the only fixture covering. `jump.mjs` covers
+	// the `meta.effort` form; neither is ever written back.
 	write(
-		join(addRepoFeatBridge, "kb", `${effortDiveId}.md`),
+		join(addRepoFeatBridge, "kb", `${diveId}.md`),
 		`---
 kind: dive
-id: ${effortDiveId}
+id: ${diveId}
 name: feature.abcdef
 gist: "Active dive for add-repo.feat tests."
-effort: kb/${effortId}.md
+effort: kb/${featId}.md
 ---
 
 # Feature dive
 `,
 	);
-	write(join(addRepoFeatBridge, "workspace", ".nosedive-ref"), `id: ${effortDiveId}\n`);
+	write(join(addRepoFeatBridge, "workspace", ".nosedive-ref"), `id: ${diveId}\n`);
 	for (const [id, name] of [
 		[alphaScopeRepoId, "alpha"],
 		[betaScopeRepoId, "beta"],
@@ -125,14 +128,14 @@ meta:
 	assertOk(addFeatByName, "add-repo.feat by name failed");
 	assert.match(
 		addFeatByName.stdout,
-		new RegExp(`Added scope ${betaScopeRepoId} to .*${effortId}\\.md`),
+		new RegExp(`Added scope ${betaScopeRepoId} to .*${featId}\\.md`),
 	);
-	const effortAfterName = readFileSync(join(addRepoFeatBridge, "kb", `${effortId}.md`), "utf8");
-	assert.match(effortAfterName, /custom: keep-me/);
-	assert.match(effortAfterName, new RegExp(`^  - ${betaScopeRepoId}$`, "m"));
-	assert.doesNotMatch(effortAfterName, new RegExp(`${betaScopeRepoId}:\\n\\s+ref:`));
-	assert.doesNotMatch(effortAfterName, /^\s+mode: /m);
-	assert.match(effortAfterName, /Do not rewrite this body\./);
+	const featAfterName = readFileSync(join(addRepoFeatBridge, "kb", `${featId}.md`), "utf8");
+	assert.match(featAfterName, /custom: keep-me/);
+	assert.match(featAfterName, new RegExp(`^  - ${betaScopeRepoId}$`, "m"));
+	assert.doesNotMatch(featAfterName, new RegExp(`${betaScopeRepoId}:\\n\\s+ref:`));
+	assert.doesNotMatch(featAfterName, /^\s+mode: /m);
+	assert.match(featAfterName, /Do not rewrite this body\./);
 
 	const addFeatWithModifiers = run(
 		[
@@ -146,15 +149,12 @@ meta:
 		addRepoFeatBridge,
 	);
 	assertOk(addFeatWithModifiers, "add-repo.feat with modifiers failed");
-	const effortAfterModifiers = readFileSync(
-		join(addRepoFeatBridge, "kb", `${effortId}.md`),
-		"utf8",
-	);
+	const featAfterModifiers = readFileSync(join(addRepoFeatBridge, "kb", `${featId}.md`), "utf8");
 	assert.match(
-		effortAfterModifiers,
+		featAfterModifiers,
 		new RegExp(`${gammaScopeRepoId}:\\n\\s+ref: release/candidate\\n\\s+work-branch: work/feature`),
 	);
-	assert.doesNotMatch(effortAfterModifiers, /^\s+mode: /m);
+	assert.doesNotMatch(featAfterModifiers, /^\s+mode: /m);
 
 	// The two flags are two answers to the same question.
 	const bothAnswers = run(
@@ -179,12 +179,12 @@ meta:
 	assert.match(ambiguousEffortAdd.stderr, new RegExp(duplicateScopeRepoIdB));
 
 	rmSync(join(addRepoFeatBridge, "workspace", ".nosedive-ref"), { force: true });
-	const addWithoutActiveEffort = run(["add-repo.effort", "alpha"], addRepoFeatBridge);
+	const addWithoutActiveDive = run(["add-repo.effort", "alpha"], addRepoFeatBridge);
 	assert.notEqual(
-		addWithoutActiveEffort.status,
+		addWithoutActiveDive.status,
 		0,
-		"add-repo.effort without active effort unexpectedly succeeded",
+		"add-repo.effort without an active dive unexpectedly succeeded",
 	);
-	assert.match(addWithoutActiveEffort.stderr, /no active dive/);
-	assert.match(addWithoutActiveEffort.stderr, /workspace\/\.nosedive-ref/);
+	assert.match(addWithoutActiveDive.stderr, /no active dive/);
+	assert.match(addWithoutActiveDive.stderr, /workspace\/\.nosedive-ref/);
 });

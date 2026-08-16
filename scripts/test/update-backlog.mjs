@@ -135,6 +135,23 @@ test("update-backlog never rewrites the memo's links", () => {
 	assert.doesNotMatch(memo, /main-effort/, "the old derived rel must not come back");
 });
 
+/**
+ * `seed` used to write a `## Current efforts` stub, which no render produces:
+ * sections are named for the rel predicate that links them, so the section for
+ * `current.feat` is `## Current` and a bridge with no work has no section at
+ * all. A fresh bridge therefore opened on a heading that vanished the first
+ * time anyone ran `update-backlog`.
+ */
+test("a seeded backlog already holds the body update-backlog renders", () => {
+	const bridge = seeded("update-backlog-seeded-body");
+	const path = backlogPath(bridge);
+	const seededMemo = readFileSync(path, "utf8");
+	assert.doesNotMatch(seededMemo, /efforts/i, "seed wrote the dead word into a fresh backlog");
+
+	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
+	assert.equal(readFileSync(path, "utf8"), seededMemo, "update-backlog rewrote a seeded backlog");
+});
+
 test("update-backlog is idempotent", () => {
 	const bridge = seeded("update-backlog-idempotent");
 	const path = standardTree(bridge);

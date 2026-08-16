@@ -55,7 +55,7 @@ function setup(name) {
 	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
 
 	const repoId = "019fcf10-0000-7000-8000-000000000001";
-	const effortId = "019fcf10-0000-7000-8000-000000000002";
+	const featId = "019fcf10-0000-7000-8000-000000000002";
 	write(
 		join(bridge, "kb", `${repoId}.md`),
 		`---
@@ -72,12 +72,12 @@ meta:
 `,
 	);
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: jump-test.nosedive
-gist: "Jump test effort"
+gist: "Jump test feat"
 scopes:
   - ${repoId}:
       work-branch: work/jump-test.nosedive
@@ -93,7 +93,7 @@ scopes:
 
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
 	const diveResult = run(
-		["record.dive", "--effort", effortId, "--diver", "jump@example.test", "--brief", "Test brief."],
+		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "Test brief."],
 		bridge,
 	);
 	assertOk(diveResult, "record.dive failed");
@@ -102,7 +102,7 @@ scopes:
 
 	const pinnedRef = runTool("git", ["rev-parse", "HEAD"], repoWorktree(bridge, name)).stdout.trim();
 
-	return { bridge, origin, source, repoId, effortId, diveId, pinnedRef };
+	return { bridge, origin, source, repoId, featId, diveId, pinnedRef };
 }
 
 function repoWorktree(bridge, name) {
@@ -234,7 +234,7 @@ test("jump refuses an unbriefed dive before hydrating its scopes", () => {
 });
 
 test("jump hydrates a packed dive's scoped repos and reapplies every patch chain", () => {
-	const { bridge, origin, repoId, effortId, diveId, pinnedRef } = setup("full");
+	const { bridge, origin, repoId, featId, diveId, pinnedRef } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
 
 	write(join(worktree, "feature-a.txt"), "a\n");
@@ -316,7 +316,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked work$/);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Feat: ${featId}`));
 	assert.match(
 		commitBody,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
@@ -345,11 +345,11 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
  * `record.dive`, so they all carry the canonical key now.
  */
 test("jump reads a dive that names its feat in meta.effort", () => {
-	const { bridge, effortId, diveId } = setup("legacy-feat-key");
+	const { bridge, featId, diveId } = setup("legacy-feat-key");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	writeFileSync(
 		divePath,
-		readFileSync(divePath, "utf8").replace(`  feat: ${effortId}`, `  effort: ${effortId}`),
+		readFileSync(divePath, "utf8").replace(`  feat: ${featId}`, `  effort: ${featId}`),
 	);
 	runTool("git", ["add", "-A"], bridge);
 	gitCommit(bridge, "put the dive back on the superseded feat key");
@@ -361,12 +361,12 @@ test("jump reads a dive that names its feat in meta.effort", () => {
 });
 
 test("jump with no patch links still hydrates the scoped repo", () => {
-	const { bridge, repoId, effortId, diveId, pinnedRef } = setup("noop");
+	const { bridge, repoId, featId, diveId, pinnedRef } = setup("noop");
 	const worktree = repoWorktree(bridge, "noop");
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	writeFileSync(
 		divePath,
-		readFileSync(divePath, "utf8").replace(`feat: ${effortId}`, "feat: jump-test.nosedive"),
+		readFileSync(divePath, "utf8").replace(`feat: ${featId}`, "feat: jump-test.nosedive"),
 	);
 	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 	runTool("git", ["add", "-A"], bridge);
@@ -378,7 +378,7 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
 	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
 	assert.match(result.stdout, new RegExp(`Read the dive at kb/${diveId}\\.md in full`));
-	assert.match(result.stdout, new RegExp(`Read the feat it serves at kb/${effortId}\\.md`));
+	assert.match(result.stdout, new RegExp(`Read the feat it serves at kb/${featId}\\.md`));
 	assert.match(result.stdout, /whatever those two link to in their frontmatter/);
 	assert.match(result.stdout, /do the work, to the endpoint the brief names -- not more/);
 	assert.match(result.stdout, /Commit completed work in every writable scoped repo/);
@@ -405,7 +405,7 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 });
 
 test("jump installs provenance for commits made in its hydrated worktree", () => {
-	const { bridge, repoId, effortId } = setup("commit-hook");
+	const { bridge, repoId, featId } = setup("commit-hook");
 	const worktree = repoWorktree(bridge, "commit-hook");
 
 	assertOk(run(["jump"], bridge), "jump failed");
@@ -413,11 +413,11 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	runTool("git", ["add", "implementation.txt"], worktree);
 	gitCommit(
 		worktree,
-		`implementation\n\nFeat: ${effortId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
+		`implementation\n\nFeat: ${featId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
 	);
 
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
-	assert.equal((message.match(new RegExp(`Feat: ${effortId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(new RegExp(`Feat: ${featId}`, "g")) ?? []).length, 1);
 	assert.equal(
 		(message.match(new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`, "g")) ?? [])
 			.length,
@@ -461,7 +461,7 @@ test("jump push-isolates its hydrated worktree without breaking fetch", () => {
  * clear the stale shared value it leaves behind.
  */
 test("jump survives tooling that rewrites core.hooksPath in shared config", () => {
-	const { bridge, effortId } = setup("hooks-pollution");
+	const { bridge, featId } = setup("hooks-pollution");
 	const worktree = repoWorktree(bridge, "hooks-pollution");
 	assertOk(run(["jump"], bridge), "jump failed");
 	const managedHooks = runTool(
@@ -479,7 +479,7 @@ test("jump survives tooling that rewrites core.hooksPath in shared config", () =
 	gitCommitEmpty(worktree, "commit after tooling ran");
 	assert.match(
 		runTool("git", ["log", "-1", "--format=%B"], worktree).stdout,
-		new RegExp(`Feat: ${effortId}`),
+		new RegExp(`Feat: ${featId}`),
 		"managed hooks must still fire after the shared config was rewritten",
 	);
 
@@ -502,7 +502,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 		t.skip("no POSIX shell found on PATH or alongside git; cannot run a shell hook fixture");
 		return;
 	}
-	const { bridge, effortId } = setup("foreign-hook");
+	const { bridge, featId } = setup("foreign-hook");
 	const worktree = repoWorktree(bridge, "foreign-hook");
 	const foreignHooks = join(worktree, ".githooks");
 	const foreignHook = join(foreignHooks, "prepare-commit-msg");
@@ -525,7 +525,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.match(message, /Repo-Hook: ran/);
-	assert.match(message, new RegExp(`Feat: ${effortId}`));
+	assert.match(message, new RegExp(`Feat: ${featId}`));
 	assert.match(message, new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`));
 	const managedHooks = runTool(
 		"git",

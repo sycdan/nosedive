@@ -15,7 +15,7 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("bail");
-const effortId = "019fcf20-0000-7000-8000-000000000001";
+const featId = "019fcf20-0000-7000-8000-000000000001";
 
 function bridgeWithDive(label) {
 	const origin = join(tmp, `${label}-origin.git`);
@@ -28,12 +28,12 @@ function bridgeWithDive(label) {
 	runTool("git", ["config", "user.email", "bail@example.test"], bridge);
 	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: bail-test.nosedive
-gist: "Bail test effort"
+gist: "Bail test feat"
 ---
 `,
 	);
@@ -42,7 +42,7 @@ gist: "Bail test effort"
 	runTool("git", ["remote", "add", "origin", origin], bridge);
 	runTool("git", ["push", "-u", "origin", "main"], bridge);
 
-	const dive = run(["record.dive", "--effort", effortId, "--diver", "bail@example.test"], bridge);
+	const dive = run(["record.dive", "--feat", featId, "--diver", "bail@example.test"], bridge);
 	assertOk(dive, "record.dive failed");
 	const diveId = /kb[\\/]([0-9a-f-]{36})\.md/.exec(dive.stdout)?.[1];
 	assert.ok(diveId, `could not read dive id from record.dive output: ${dive.stdout}`);
@@ -51,14 +51,14 @@ gist: "Bail test effort"
 	return { bridge, diveId, divePath: join(bridge, "kb", `${diveId}.md`) };
 }
 
-test("bail commits effort and nosedive provenance", () => {
+test("bail commits feat and nosedive provenance", () => {
 	const { bridge, diveId, divePath } = bridgeWithDive("happy");
 	const scratchDir = join(bridge, "workspace", ".scratch", diveId);
 	write(join(scratchDir, "temp.txt"), "delete me\n");
 	const result = run(["bail", "--reason", "testing"], bridge);
 	assertOk(result, "bail failed");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Feat: ${featId}`));
 	assert.match(commitBody, /bail\(.*\): testing/);
 	assert.match(
 		commitBody,
@@ -161,12 +161,12 @@ meta:
 `,
 	);
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: bail-test.nosedive
-gist: "Bail test effort"
+gist: "Bail test feat"
 scopes:
   - ${scopedRepoId}
 ---
@@ -180,7 +180,7 @@ scopes:
 	runTool("git", ["push", "-u", "origin", "main"], bridge);
 
 	assertOk(run(["hydrate-repo.workspace", scopedRepoId], bridge), "hydrate scoped repo failed");
-	const dive = run(["record.dive", "--effort", effortId, "--diver", "bail@example.test"], bridge);
+	const dive = run(["record.dive", "--feat", featId, "--diver", "bail@example.test"], bridge);
 	assertOk(dive, "record.dive failed");
 	const diveId = /kb[\\/]([0-9a-f-]{36})\.md/.exec(dive.stdout)?.[1];
 	assert.ok(diveId, `could not read dive id from record.dive output: ${dive.stdout}`);

@@ -196,3 +196,49 @@ gist: "Legacy command fixture."
 		);
 	}
 });
+
+/**
+ * Deprecation is a property of a command, not of one of its docs. A command
+ * deprecated at its newest level still has older docs that predate the
+ * deprecation, and listing the command under one of those advertises it in
+ * wording chosen before we decided against it -- `add-repo.effort` was listed
+ * under its L1 gist, which still called a feat an effort.
+ */
+test("the command list omits a command whose latest doc is deprecated", () => {
+	const latest = new Map();
+	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
+		const docText = readFileSync(join(root, "kb", docName), "utf8");
+		if (!/^kind: command$/m.test(docText)) continue;
+		const named = /^name: (.+)@(\d+)$/m.exec(docText);
+		if (!named) continue;
+		const [, command, rawLevel] = named;
+		const level = Number(rawLevel);
+		if (level < (latest.get(command)?.level ?? -1)) continue;
+		latest.set(command, { level, deprecated: /^  use-instead:/m.test(docText) });
+	}
+
+	const listed = run(["help"], noBridge);
+	assertOk(listed, "help failed");
+	const commands = new Set(
+		listed.stdout
+			.split("\n")
+			.map((line) => /^ {2}(\S+) {2,}\S/.exec(line)?.[1])
+			.filter((command) => command !== undefined),
+	);
+
+	// Guards the loop below against passing because it found nothing to check.
+	assert.ok(commands.has("add-repo.feat"), "help should list add-repo.feat");
+	assert.ok(
+		!commands.has("add-repo.effort"),
+		"help should not list add-repo.effort: its latest doc is deprecated",
+	);
+
+	for (const [command, { deprecated }] of latest) {
+		if (command.startsWith("_")) continue;
+		if (deprecated) {
+			assert.ok(!commands.has(command), `help lists ${command}, whose latest doc is deprecated`);
+		} else {
+			assert.ok(commands.has(command), `help omits ${command}, which is not deprecated`);
+		}
+	}
+});

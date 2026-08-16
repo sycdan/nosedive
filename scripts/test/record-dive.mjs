@@ -15,7 +15,7 @@ import {
 
 const tmp = createTmp("record-dive");
 const repoId = "019fc623-0000-7000-8000-000000000001";
-const effortId = "019fc623-0000-7000-8000-000000000002";
+const featId = "019fc623-0000-7000-8000-000000000002";
 const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
 const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
 const backlogId = "019fc623-0000-7000-8000-000000000005";
@@ -54,10 +54,10 @@ function setup(name) {
 	const repoCommit = createRepo(repo, repoId);
 	writeRepoDoc(bridge, repoId, "repo", "workspace/repo");
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: record-dive.nosedive
 gist: "Record dives"
 scopes:
@@ -104,10 +104,10 @@ ${scopeRepo ? `scopes:\n  - ${repoId}\n` : ""}---
 `,
 	);
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: record-dive.nosedive
 gist: "Record dives"
 scopes:
@@ -141,10 +141,10 @@ test("record.dive defaults to the feat's cached default-branch repositories", ()
 	createRepo(unrelated, unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "unrelated", "workspace/unrelated");
 	write(
-		join(bridge, "kb", `${effortId}.md`),
+		join(bridge, "kb", `${featId}.md`),
 		`---
 kind: feat
-id: ${effortId}
+id: ${featId}
 name: record-dive.nosedive
 gist: "Record dives"
 scopes:
@@ -157,13 +157,13 @@ scopes:
 # Record Dive
 `,
 	);
-	const result = run(["record.dive", "--effort", effortId], bridge);
+	const result = run(["record.dive", "--effort", featId], bridge);
 	assertOk(result, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
-	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${featId}$`, "m"));
 	assert.doesNotMatch(doc, /^  effort: /m, "the dead spelling is never written");
 	assert.match(
 		doc,
@@ -186,12 +186,12 @@ scopes:
 
 test("record.dive accepts --feat as the canonical create flag", () => {
 	const { bridge, repoCommit } = setup("create-feat");
-	const result = run(["record.dive", "--feat", effortId], bridge);
+	const result = run(["record.dive", "--feat", featId], bridge);
 	assertOk(result, "record.dive create with --feat failed");
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
-	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${featId}$`, "m"));
 	assert.match(
 		doc,
 		new RegExp(
@@ -203,25 +203,25 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 
 test("record.dive accepts --effort as a compatibility alias", () => {
 	const { bridge } = setup("create-effort-alias");
-	const result = run(["record.dive", "--effort", effortId], bridge);
+	const result = run(["record.dive", "--effort", featId], bridge);
 	assertOk(result, "record.dive create with --effort alias failed");
 	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^kind: dive$/m);
 });
 
 test("record.dive accepts matching --feat and --effort refs", () => {
 	const { bridge } = setup("create-matching-feat-effort");
-	const result = run(["record.dive", "--feat", effortId, "--effort", effortId], bridge);
+	const result = run(["record.dive", "--feat", featId, "--effort", featId], bridge);
 	assertOk(result, "record.dive create with matching --feat and --effort failed");
 	assert.match(
 		readFileSync(recordedPath(bridge, result.stdout), "utf8"),
-		new RegExp(`^  feat: ${effortId}$`, "m"),
+		new RegExp(`^  feat: ${featId}$`, "m"),
 	);
 });
 
 test("record.dive patches only provided fields and can resolve its marker", () => {
 	const { bridge } = setup("patch");
 	const created = run(
-		["record.dive", "--effort", effortId, "--gist", "Initial.", "--brief", "Keep this."],
+		["record.dive", "--effort", featId, "--gist", "Initial.", "--brief", "Keep this."],
 		bridge,
 	);
 	assertOk(created, "record.dive create failed");
@@ -242,7 +242,7 @@ test("record.dive patches only provided fields and can resolve its marker", () =
 
 test("record.dive patches the owning feat with --feat", () => {
 	const { bridge } = setup("patch-feat");
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -272,7 +272,7 @@ test("record.dive refuses mismatched --feat and --effort without writing", () =>
 		.filter((name) => name.endsWith(".md"))
 		.sort();
 	const result = run(
-		["record.dive", "--feat", effortId, "--effort", "019fc623-0000-7000-8000-000000000099"],
+		["record.dive", "--feat", featId, "--effort", "019fc623-0000-7000-8000-000000000099"],
 		bridge,
 		"",
 	);
@@ -295,11 +295,11 @@ test("record.dive validates mutation modes", () => {
 	// `--clear-scopes` with an upscope is how a dive replaces its scope set rather
 	// than adding to it, so the two are no longer in conflict.
 	const replaced = run(
-		["record.dive", "--effort", effortId, "--scope", repoId, "--clear-scopes"],
+		["record.dive", "--effort", featId, "--scope", repoId, "--clear-scopes"],
 		bridge,
 	);
 	assertOk(replaced, "clearing then scoping should be accepted");
-	const created = run(["record.dive", "--effort", effortId], bridge);
+	const created = run(["record.dive", "--effort", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -312,7 +312,7 @@ test("record.dive validates mutation modes", () => {
 	const rebrief = run(["record.dive", "--ref", id, "--brief", "Second brief."], bridge, "");
 	assert.notEqual(rebrief.status, 0);
 	assert.match(rebrief.stderr, /already has a brief/);
-	const emptyBrief = run(["record.dive", "--effort", effortId, "--brief", "  "], bridge, "");
+	const emptyBrief = run(["record.dive", "--effort", featId, "--brief", "  "], bridge, "");
 	assert.notEqual(emptyBrief.status, 0);
 	assert.match(emptyBrief.stderr, /brief cannot be empty/);
 });
@@ -320,10 +320,10 @@ test("record.dive validates mutation modes", () => {
 test("record.dive activates only for the pilot diver", () => {
 	const { bridge } = setup("activation");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const other = run(["record.dive", "--effort", effortId, "--diver", "other@example.test"], bridge);
+	const other = run(["record.dive", "--effort", featId, "--diver", "other@example.test"], bridge);
 	assertOk(other, "record.dive with another diver failed");
 	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
-	const pilot = run(["record.dive", "--effort", effortId, "--diver", "pilot@example.test"], bridge);
+	const pilot = run(["record.dive", "--effort", featId, "--diver", "pilot@example.test"], bridge);
 	assertOk(pilot, "record.dive with pilot diver failed");
 	assert.match(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), /^id: /);
 });
@@ -331,7 +331,7 @@ test("record.dive activates only for the pilot diver", () => {
 test("record.dive records for others while a dive is active, and claims for nobody else", () => {
 	const { bridge } = setup("record-while-active");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const held = run(["record.dive", "--effort", effortId, "--diver", "pilot@example.test"], bridge);
+	const held = run(["record.dive", "--effort", featId, "--diver", "pilot@example.test"], bridge);
 	assertOk(held, "record.dive create failed");
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	const activeId = /^id: (.+)$/m.exec(readFileSync(marker, "utf8"))[1];
@@ -339,14 +339,14 @@ test("record.dive records for others while a dive is active, and claims for nobo
 	// Writing up work for the backlog touches no marker, so the dive the
 	// workspace holds has no bearing on it.
 	for (const extra of [[], ["--diver", "other@example.test"]]) {
-		const recorded = run(["record.dive", "--effort", effortId, ...extra], bridge);
+		const recorded = run(["record.dive", "--effort", featId, ...extra], bridge);
 		assertOk(recorded, `record.dive ${extra.join(" ")} refused while a dive was active`);
 		assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${activeId}\\n$`));
 	}
 
 	// Claiming is the part that cannot happen twice.
 	const claimed = run(
-		["record.dive", "--effort", effortId, "--diver", "pilot@example.test"],
+		["record.dive", "--effort", featId, "--diver", "pilot@example.test"],
 		bridge,
 		"",
 	);
@@ -358,10 +358,7 @@ test("record.dive records for others while a dive is active, and claims for nobo
 test("record.dive requires --takeover to replace a held diver", () => {
 	const { bridge } = setup("ownership");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const created = run(
-		["record.dive", "--effort", effortId, "--diver", "owner@example.test"],
-		bridge,
-	);
+	const created = run(["record.dive", "--effort", featId, "--diver", "owner@example.test"], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -377,7 +374,7 @@ test("record.dive requires --takeover to replace a held diver", () => {
 
 test("record.dive refuses --takeover on a dive nobody holds", () => {
 	const { bridge } = setup("takeover-unheld");
-	const created = run(["record.dive", "--effort", effortId], bridge);
+	const created = run(["record.dive", "--effort", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -389,14 +386,11 @@ test("record.dive refuses --takeover on a dive nobody holds", () => {
 test("record.dive links a claimed dive as planned while retaining its diver", () => {
 	const { bridge } = setup("working-link");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const created = run(
-		["record.dive", "--effort", effortId, "--diver", "pilot@example.test"],
-		bridge,
-	);
+	const created = run(["record.dive", "--effort", featId, "--diver", "pilot@example.test"], bridge);
 	assertOk(created, "record.dive create failed");
 	const dive = readFileSync(recordedPath(bridge, created.stdout), "utf8");
 	const id = /^id: (.+)$/m.exec(dive)[1];
-	const effort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
+	const effort = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");
 	assert.match(dive, /^  diver: "?pilot@example\.test"?$/m);
 	assert.match(effort, new RegExp(`- kb/${id}\\.md:\n      rel: planned\\.dive`));
 });
@@ -440,11 +434,11 @@ test("record.dive --free warns when the backlog scopes no repos", () => {
 
 test("record.dive --free takes no other option", () => {
 	const { bridge } = setupFree("free-exclusive");
-	const created = run(["record.dive", "--effort", effortId], bridge);
+	const created = run(["record.dive", "--effort", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
 	for (const extra of [
-		["--effort", effortId],
+		["--effort", featId],
 		["--ref", id],
 		["--diver", "pilot@example.test"],
 		["--scope", repoId],
@@ -459,7 +453,7 @@ test("record.dive --free takes no other option", () => {
 
 test("record.dive --free ignores the active dive", () => {
 	const { bridge } = setupFree("free-active");
-	const created = run(["record.dive", "--effort", effortId], bridge);
+	const created = run(["record.dive", "--effort", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
 	const marker = join(bridge, "workspace", ".nosedive-ref");
@@ -491,7 +485,7 @@ test("record.dive inherits scopes from the nearest scoped ancestor feat", () => 
 	// `pitch` writes no scopes key at all, so the whole chain below the scoped
 	// grandparent looks exactly like a freshly pitched pair of feats.
 	writeFeat(bridge, parentEffortId, "middle.record-dive.nosedive", {
-		parent: effortId,
+		parent: featId,
 		parentRel: "parent.feat",
 	});
 	writeFeat(bridge, childEffortId, "leaf.middle.record-dive.nosedive", {
@@ -519,7 +513,7 @@ test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
 	writeRepoDoc(bridge, unrelatedRepoId, "nearer", "workspace/nearer");
 	writeFeat(bridge, parentEffortId, "middle.record-dive.nosedive", {
 		scopes: [unrelatedRepoId],
-		parent: effortId,
+		parent: featId,
 	});
 	writeFeat(bridge, childEffortId, "leaf.middle.record-dive.nosedive", {
 		parent: parentEffortId,
@@ -547,7 +541,7 @@ test("record.dive --scope adds to the inherited set rather than replacing it", (
 	const other = join(bridge, "workspace", "other");
 	const otherCommit = createRepo(other, unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
-	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: effortId });
+	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: featId });
 	const added = run(["record.dive", "--effort", childEffortId, "--scope", unrelatedRepoId], bridge);
 	assertOk(added, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, added.stdout), "utf8");
@@ -591,7 +585,7 @@ test("record.dive warns when no ancestor scopes a repo", () => {
 test("record.dive reassigns its reciprocal feat link", () => {
 	const { bridge } = setup("patch-meta");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const created = run(["record.dive", "--effort", effortId], bridge);
+	const created = run(["record.dive", "--effort", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -600,7 +594,7 @@ test("record.dive reassigns its reciprocal feat link", () => {
 	// document would name two feats and the parser would prefer one in silence.
 	writeFileSync(
 		path,
-		readFileSync(path, "utf8").replace(`  feat: ${effortId}`, `  effort: ${effortId}`),
+		readFileSync(path, "utf8").replace(`  feat: ${featId}`, `  effort: ${featId}`),
 	);
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	writeFileSync(marker, `id: ${id}\n`);
@@ -627,7 +621,7 @@ gist: "Updated effort"
 	assert.doesNotMatch(doc, /^  effort: /m, "the superseded key must not survive a re-home");
 	assert.match(doc, /^  diver: pilot@example\.test$/m);
 	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
-	const oldEffort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");
+	const oldEffort = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");
 	const newEffort = readFileSync(join(bridge, "kb", `${effort}.md`), "utf8");
 	assert.doesNotMatch(oldEffort, new RegExp(`kb/${id}\\.md`));
 	assert.equal((newEffort.match(new RegExp(`kb/${id}\\.md`, "g")) ?? []).length, 1);
@@ -642,7 +636,7 @@ gist: "Updated effort"
  */
 test("a dive scope's superseded mode decides nothing", () => {
 	const { bridge } = setup("legacy-mode");
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -671,7 +665,7 @@ test("record.dive composes --upscope, --unscope and one --work-branch", () => {
 	const thirdCommit = createRepo(join(bridge, "workspace", "third"), unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "third", "workspace/third");
 
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -719,7 +713,7 @@ test("record.dive resolves --upscope and --unscope repos by name", () => {
 	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);
 	writeRepoDoc(bridge, unhydratedRepoId, "second", "workspace/second");
 
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -744,7 +738,7 @@ test("record.dive resolves --upscope and --unscope repos by name", () => {
 
 test("record.dive --upscope defaults to the feat's branch and keeps an existing pin", () => {
 	const { bridge, repoCommit } = setup("upscope-default");
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
@@ -768,7 +762,7 @@ test("record.dive --upscope defaults to the feat's branch and keeps an existing 
 
 test("record.dive refuses contradictory or homeless scope edits", () => {
 	const { bridge } = setup("upscope-refusals");
-	const created = run(["record.dive", "--feat", effortId], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];

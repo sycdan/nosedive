@@ -27,7 +27,7 @@ import {
 	listAheadCommits,
 	writeArtifact,
 } from "./packArtifacts.js";
-import { clearDiveDiver, reconcileDiveEffortLinks, resolveEffortDoc } from "./repoEffortScopes.js";
+import { clearDiveDiver, reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun } from "./repoWorkspaceCore.js";
@@ -290,11 +290,11 @@ function commitAndPushPack(
 	divePath: string,
 	newArtifactAbsPaths: string[],
 	diveName: string,
-	effort: KbDoc | undefined,
+	feat: KbDoc | undefined,
 ): void {
-	// Pack records its phase on the effort's reciprocal link. Stage that edit
+	// Pack records its phase on the feat's reciprocal link. Stage that edit
 	// with the dive so it cannot linger as bridge WIP for the next pack to capture.
-	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(effort ? [effort.path] : [])].map(
+	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(feat ? [feat.path] : [])].map(
 		(path) => toPosixPath(relative(bridgeDir, path)),
 	);
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage packed dive artifacts");
@@ -321,7 +321,7 @@ function commitAndPushPack(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, effort?.id)],
+			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, feat?.id)],
 			"failed to commit packed dive",
 		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after pack; dive is committed locally");
@@ -385,10 +385,10 @@ export function packDive(args: string[], io: CommandIo): void {
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
-	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const released = clearDiveDiver(dive.path);
 	const committing = groups.length > 0 || released;
-	if (committing && effort) reconcileDiveEffortLinks(effort, effort, dive.id, "packed.dive");
+	if (committing && feat) reconcileDiveFeatLinks(feat, feat, dive.id, "packed.dive");
 	const headRelPaths: string[] = [];
 	const newFileAbsPaths: string[] = [];
 	for (const patches of groups) {
@@ -401,7 +401,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	if (headRelPaths.length > 0) appendDivePatchLinks(dive.path, headRelPaths);
 	// Releasing the dive is bookkeeping worth pushing on its own: a dive freed
 	// with nothing to pack has to reach the shared kb before anyone can pick it up.
-	if (committing) commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, effort);
+	if (committing) commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, feat);
 	io.log(
 		capturedCount > 0
 			? `packed dive ${dive.id}: ${capturedCount} artifact(s)`

@@ -4,27 +4,27 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
-import { loadKbDocs, parseAddRepoEffortScopeArgs } from "../lib/kbDocs.js";
-import { appendRepoScopeToEffort, resolveActiveEffortDoc } from "../lib/repoEffortScopes.js";
+import { loadKbDocs, parseAddRepoFeatScopeArgs } from "../lib/kbDocs.js";
+import { appendRepoScopeToFeat, resolveActiveFeatDoc } from "../lib/repoFeatScopes.js";
 import { resolveRepoDoc } from "../lib/repoWorkspaceCore.js";
 
-function addRepoEffort(args: string[], io: CommandIo): void {
-	const options = parseAddRepoEffortScopeArgs(args);
+function addRepoFeat(args: string[], io: CommandIo): void {
+	const options = parseAddRepoFeatScopeArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("add-repo.effort requires a configured kb directory");
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const repoDoc = resolveRepoDoc(kbDocs, options.repoRef);
-	const effortDoc = resolveActiveEffortDoc(kbDocs, rc);
-	const entry = appendRepoScopeToEffort(effortDoc.path, {
+	const featDoc = resolveActiveFeatDoc(kbDocs, rc);
+	const entry = appendRepoScopeToFeat(featDoc.path, {
 		id: repoDoc.id,
 		ref: options.repoEntryRef,
 		readOnly: options.readOnly,
 	});
 
-	io.log(`Added scope ${entry} to ${formatPath(effortDoc.path)}`);
+	io.log(`Added scope ${entry} to ${formatPath(featDoc.path)}`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
-	return captureCommand(addRepoEffort, args);
+	return captureCommand(addRepoFeat, args);
 }

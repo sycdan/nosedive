@@ -12,11 +12,14 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 	return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
 }
 
-function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: boolean } {
+function commitProvenanceOptions(repoDoc: KbDoc): { feat: boolean; coAuthor: boolean } {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+	// `commit-provenance.effort` is the older spelling of the same opt-out, still
+	// read so a repo doc a pilot already configured keeps working.
+	const feat = options.feat ?? options.effort;
 	return {
-		effort: options.effort !== false,
+		feat: feat !== false,
 		coAuthor: options["co-author"] !== false,
 	};
 }
@@ -24,7 +27,7 @@ function commitProvenanceOptions(repoDoc: KbDoc): { effort: boolean; coAuthor: b
 /** Installs the provenance hook while chaining the repo's own hook. */
 export function reconcilePrepareCommitMsgHook(
 	targetPath: string,
-	effortId: string,
+	featId: string,
 	repoDoc: KbDoc,
 ): void {
 	const repoId = repoDoc.id;
@@ -57,7 +60,7 @@ export function reconcilePrepareCommitMsgHook(
 			: undefined;
 	}
 
-	const hook = prepareCommitMsgHook(effortId, originalHookPath, commitProvenanceOptions(repoDoc));
+	const hook = prepareCommitMsgHook(featId, originalHookPath, commitProvenanceOptions(repoDoc));
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(managedHookPath, hook);

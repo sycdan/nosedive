@@ -110,6 +110,9 @@ function setupDive(name, { diveGates = [passId], featGates = [featGateId] } = {}
 	write(
 		join(bridge, "kb", `${diveId}.md`),
 		`---\nkind: dive\nid: ${diveId}\nname: test-selection.nosedive.abc123\ngist: "Selection fixture"\n` +
+			// Deliberately the superseded spelling: `record.dive` writes `meta.feat`
+			// now, so this fixture is one of the few places left that proves the
+			// parser still reads what every older dive on disk carries.
 			`scopes: []\nmeta:\n  effort: ${featId}\n` +
 			`links:\n${diveGates.map(gateLink).join("")}---\n\n# Dive\n`,
 	);
@@ -255,7 +258,7 @@ test("a blocking backlog failure mints one unclaimed linked dive and backlog sti
 	assert.equal(run(["test"], bridge).status, 1);
 	const dives = mintedDives(bridge);
 	assert.equal(dives.length, 1, "the second sweep must deduplicate the failure");
-	assert.match(dives[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
+	assert.match(dives[0].text, new RegExp(`^  feat: ${featId}$`, "m"));
 	assert.match(dives[0].text, /^  diver: null$/m);
 	assert.match(dives[0].text, /^## Brief$/m);
 	assert.match(dives[0].text, new RegExp(`kb/${failId}\\.md:\n      rel: test\\.gate`));
@@ -310,7 +313,7 @@ test("gate ownership reads meta.feat first and still supports meta.effort", () =
 		assert.equal(run(["test"], bridge).status, 1);
 		const minted = mintedDives(bridge);
 		assert.equal(minted.length, 1, `meta.${field} did not resolve a feat to mint against`);
-		assert.match(minted[0].text, new RegExp(`^  effort: ${featId}$`, "m"));
+		assert.match(minted[0].text, new RegExp(`^  feat: ${featId}$`, "m"));
 	}
 });
 

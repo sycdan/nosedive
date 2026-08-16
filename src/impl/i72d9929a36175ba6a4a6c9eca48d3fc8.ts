@@ -28,7 +28,7 @@ import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratc
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
-import { reconcileDiveEffortLinks, resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import {
@@ -59,7 +59,7 @@ function hydrateScopeAtPin(
 	kbDocs: KbDoc[],
 	bridgeDir: string,
 	workspaceDir: string,
-	effortId: string,
+	featId: string,
 ): string {
 	const result = hydrateScopeCore(scope, kbDocs, bridgeDir, workspaceDir);
 	const { repoDoc, sourcePath, targetPath, commit } = result;
@@ -87,7 +87,7 @@ function hydrateScopeAtPin(
 	 * in it fails with "this operation must be run in a work tree".
 	 */
 	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, scope.repoId);
-	reconcilePrepareCommitMsgHook(targetPath, effortId, repoDoc);
+	reconcilePrepareCommitMsgHook(targetPath, featId, repoDoc);
 
 	return targetPath;
 }
@@ -195,7 +195,7 @@ function commitAndPushJump(
 	divePath: string,
 	otherAbsPaths: string[],
 	message: string,
-	effortId?: string,
+	featId?: string,
 ): void {
 	const pathsToStage = [divePath, ...otherAbsPaths].map((path) =>
 		toPosixPath(relative(bridgeDir, path)),
@@ -226,7 +226,7 @@ function commitAndPushJump(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(message, effortId)],
+			["commit", "-m", commitMessage(message, featId)],
 			"failed to commit jumped dive",
 		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after jump; dive is committed locally");
@@ -269,7 +269,7 @@ function applyPatchStep(step: PatchStep, targetPath: string, label: string): voi
  */
 function printWorkDirective(
 	dive: KbDoc,
-	effort: KbDoc | undefined,
+	feat: KbDoc | undefined,
 	bridgeDir: string,
 	workspaceDir: string,
 	io: CommandIo,
@@ -280,9 +280,9 @@ function printWorkDirective(
 		`Read the dive at ${divePath} in full -- its "${DIVE_BRIEF_HEADING}" section is your brief, ` +
 			`and any notes below it are what earlier divers did and left undone.`,
 	);
-	if (effort) {
+	if (feat) {
 		io.log(
-			`Read the effort it serves at ${toPosixPath(relative(process.cwd(), effort.path))}, ` +
+			`Read the feat it serves at ${toPosixPath(relative(process.cwd(), feat.path))}, ` +
 				`and whatever those two link to in their frontmatter.`,
 		);
 	}
@@ -347,15 +347,18 @@ export function jump(args: string[], io: CommandIo): void {
 	if (failures.length > 0) {
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
 	}
-	const effortRef = dive.metaScalars.effort;
-	if (!effortRef) throw new Error(`dive ${dive.id} names no effort in meta.effort`);
-	const effort = resolveEffortDoc(kbDocs, rc, effortRef);
+	// The parsed field, not the raw key: it accepts `meta.feat` and the older
+	// `meta.effort` alike, and reading past it made a dive written the canonical
+	// way impossible to jump at all.
+	const featRef = dive.featRef;
+	if (!featRef) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
+	const feat = resolveFeatDoc(kbDocs, rc, featRef);
 	recreateDiveScratch(rc.workspaceDir, dive.id);
 
 	const scopePaths = new Map<string, string>();
 	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
 	for (const scope of scopes) {
-		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, effort.id);
+		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, feat.id);
 		scopePaths.set(scope.repoId, path);
 		hydratedEntries.push({ scope, path });
 		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
@@ -402,17 +405,17 @@ export function jump(args: string[], io: CommandIo): void {
 	}
 
 	appendTimestampedSection(dive.path, renderHydratedSection(hydratedEntries, kbDocs));
-	reconcileDiveEffortLinks(effort, effort, dive.id, "jumped.dive");
+	reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
 
-	// The effort's reciprocal link records that this command jumped the dive, so
+	// The feat's reciprocal link records that this command jumped the dive, so
 	// it is part of the same bookkeeping -- left unstaged it lingers as bridge
 	// WIP that the next pack captures as though it were work.
 	commitAndPushJump(
 		rc.bridgeDir,
 		dive.path,
-		[...appliedFileAbsPaths, effort.path],
+		[...appliedFileAbsPaths, feat.path],
 		`jump(${dive.name}): unpacked work`,
-		effort.id,
+		feat.id,
 	);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
@@ -428,7 +431,7 @@ export function jump(args: string[], io: CommandIo): void {
 		return;
 	}
 
-	printWorkDirective(dive, effort, rc.bridgeDir, rc.workspaceDir, io);
+	printWorkDirective(dive, feat, rc.bridgeDir, rc.workspaceDir, io);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

@@ -115,14 +115,14 @@ export function readPromptBody(promptDoc: KbDoc): string {
 export function renderDropPrompt(
 	promptBody: string,
 	context: {
-		effort: KbDoc;
+		feat: KbDoc;
 		today: string;
 		repos: DropRepo[];
 		gates: LandGate[];
 		bridgeRepoNote?: string;
 	},
 ): string {
-	const { effort, today, repos, gates, bridgeRepoNote } = context;
+	const { feat, today, repos, gates, bridgeRepoNote } = context;
 	const repoLines = repos.flatMap((repo) => [
 		`- ${repo.doc.name} -- ${repo.worktreePath}`,
 		`    trunk: ${repo.trunk}`,
@@ -138,11 +138,11 @@ export function renderDropPrompt(
 		"",
 		"## Drop",
 		"",
-		`feat: ${effort.name}`,
-		`doc: ${effort.relPath}`,
-		`gist: ${effort.gist}`,
+		`feat: ${feat.name}`,
+		`doc: ${feat.relPath}`,
+		`gist: ${feat.gist}`,
 		`today: ${today}`,
-		`target: ${(effort.metaScalars.target ?? "").trim() || "(none)"}`,
+		`target: ${(feat.metaScalars.target ?? "").trim() || "(none)"}`,
 		...(bridgeRepoNote ? ["", `note: ${bridgeRepoNote}`] : []),
 		"",
 		"### Blockers",
@@ -161,7 +161,7 @@ export function renderDropPrompt(
 		"",
 		"### Close out",
 		"",
-		`1. Close kb/${effort.id}.md: kind: feat -> kind: memo, plus a \"## Drop report\" section.`,
+		`1. Close kb/${feat.id}.md: kind: feat -> kind: memo, plus a \"## Drop report\" section.`,
 		"2. nosedive update-backlog",
 		"3. Commit and push the bridge.",
 		"",

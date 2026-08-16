@@ -58,7 +58,7 @@ test("bail commits effort and nosedive provenance", () => {
 	const result = run(["bail", "--reason", "testing"], bridge);
 	assertOk(result, "bail failed");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Effort: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
 	assert.match(commitBody, /bail\(.*\): testing/);
 	assert.match(
 		commitBody,

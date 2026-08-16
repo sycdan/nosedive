@@ -51,7 +51,7 @@ test("spin requires pilot words", () => {
 	assert.match(result.stderr, /requires words/);
 });
 
-test("spin lists unique loads from the active effort and its ancestors", () => {
+test("spin lists unique loads from the active feat and its ancestors", () => {
 	const bridge = createBridge(tmp, "candidates");
 	activeDive(bridge, ids.child);
 	writeDoc(

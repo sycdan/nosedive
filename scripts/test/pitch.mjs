@@ -13,7 +13,7 @@ function effortDoc(bridge, stdout) {
 	return readFileSync(join(bridge, match[1]), "utf8");
 }
 
-test("pitch writes an effort doc from a bare gist", () => {
+test("pitch writes a feat doc from a bare gist", () => {
 	const bridge = createBridge(tmp, "pitch-bare-bridge");
 
 	const pitched = run(["pitch", "Exercise the L1 pitch contract."], bridge);
@@ -28,7 +28,7 @@ test("pitch writes an effort doc from a bare gist", () => {
 	assert.doesNotMatch(doc, /## /m, "a fresh pitch should carry no body sections");
 });
 
-test("pitch names an effort with --name", () => {
+test("pitch names a feat with --name", () => {
 	const bridge = createBridge(tmp, "pitch-named-bridge");
 
 	const pitched = run(["pitch", "Rework auth.", "--name", "auth-refactor"], bridge);
@@ -100,15 +100,15 @@ test("pitch rejects bad input", () => {
 
 	const missingParent = run(["pitch", "Gist.", "--parent", "nope"], bridge, "");
 	assert.notEqual(missingParent.status, 0, "pitch under a missing parent unexpectedly succeeded");
-	assert.match(missingParent.stderr, /effort not found: nope/);
+	assert.match(missingParent.stderr, /feat not found: nope/);
 
 	assertOk(run(["pitch", "First.", "--name", "taken"], bridge), "first pitch failed");
 	const duplicate = run(["pitch", "Second.", "--name", "taken"], bridge, "");
-	assert.notEqual(duplicate.status, 0, "duplicate effort name unexpectedly succeeded");
-	assert.match(duplicate.stderr, /effort already exists: taken/);
+	assert.notEqual(duplicate.status, 0, "duplicate feat name unexpectedly succeeded");
+	assert.match(duplicate.stderr, /feat already exists: taken/);
 });
 
-test("a pitched effort reaches the backlog memo", () => {
+test("a pitched feat reaches the backlog memo", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	const pitched = run(["pitch", "Indexed effort.", "--name", "indexed"], bridge);
@@ -122,7 +122,7 @@ test("a pitched effort reaches the backlog memo", () => {
 	assert.match(dumped.stdout, /Indexed effort\./);
 });
 
-test("update-backlog rewrites the memo's scopes from its efforts", () => {
+test("update-backlog rewrites the memo's scopes from its feats", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-scopes-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	const backlogId = /^backlog: (.+)$/m.exec(

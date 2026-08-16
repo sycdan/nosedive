@@ -18,7 +18,7 @@ import {
 	resolveGateScript,
 } from "../lib/landGates.js";
 import { recordDive } from "../lib/recordDive.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 interface TestArgs {
 	gateRefs: string[];
@@ -141,9 +141,9 @@ function mintFailedBacklogGates(
 
 		const declaredBy = run.gate.introducedBy;
 		let feat = declaredBy.kind === "feat" ? declaredBy : undefined;
-		if (!feat && declaredBy.effortRef) {
+		if (!feat && declaredBy.featRef) {
 			try {
-				const resolved = resolveEffortDoc(kbDocs, rc, declaredBy.effortRef);
+				const resolved = resolveFeatDoc(kbDocs, rc, declaredBy.featRef);
 				if (resolved.kind === "feat") feat = resolved;
 			} catch {
 				// The failed run already owns the exit status; the message below explains why no work was minted.
@@ -212,10 +212,10 @@ function selectDiveGates(
 	full: boolean,
 ): LandGate[] {
 	if (!full) return collectDiveGates("test", dive, kbDocs, rc.bridgeDir);
-	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const roots = [
 		dive,
-		...(effort ? [effort] : []),
+		...(feat ? [feat] : []),
 		...dive.scopes
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),

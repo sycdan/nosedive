@@ -11,23 +11,23 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "./coreParsing.js";
-import { EffortRepo, KbDoc, readActiveDiveId } from "./kbDocs.js";
+import { FeatRepo, KbDoc, readActiveDiveId } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { writeFileAtomic } from "./renderPlan.js";
 
-export function effortDocs(kbDocs: KbDoc[]): KbDoc[] {
+export function featDocs(kbDocs: KbDoc[]): KbDoc[] {
 	return kbDocs.filter((doc) => doc.kind === "feat");
 }
 
-export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: string): KbDoc {
-	const byId = kbDocs.filter((doc) => doc.id === effortRef);
+export function resolveFeatDoc(kbDocs: KbDoc[], rc: NosediveRc, featRef: string): KbDoc {
+	const byId = kbDocs.filter((doc) => doc.id === featRef);
 	if (byId.length === 1) return byId[0];
 
-	const normalizedRef = toPosixPath(effortRef);
+	const normalizedRef = toPosixPath(featRef);
 	const pathCandidates = [
-		resolve(process.cwd(), effortRef),
-		resolve(rc.bridgeDir, effortRef),
-		rc.kbDir ? resolve(rc.kbDir, effortRef) : undefined,
+		resolve(process.cwd(), featRef),
+		resolve(rc.bridgeDir, featRef),
+		rc.kbDir ? resolve(rc.kbDir, featRef) : undefined,
 	].filter((candidate): candidate is string => candidate !== undefined);
 	const byPath = kbDocs.filter(
 		(doc) =>
@@ -37,45 +37,45 @@ export function resolveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc, effortRef: str
 	if (byPath.length === 1) return byPath[0];
 	if (byPath.length > 1) {
 		throw new Error(
-			`effort path is ambiguous: ${effortRef} (${byPath.map((doc) => doc.id).join(", ")})`,
+			`feat path is ambiguous: ${featRef} (${byPath.map((doc) => doc.id).join(", ")})`,
 		);
 	}
 
-	const byName = kbDocs.filter((doc) => doc.name === effortRef);
+	const byName = kbDocs.filter((doc) => doc.name === featRef);
 	if (byName.length === 1) return byName[0];
 	if (byName.length > 1) {
 		throw new Error(
-			`effort name is ambiguous: ${effortRef} (${byName.map((doc) => doc.id).join(", ")})`,
+			`feat name is ambiguous: ${featRef} (${byName.map((doc) => doc.id).join(", ")})`,
 		);
 	}
-	throw new Error(`effort not found: ${effortRef}`);
+	throw new Error(`feat not found: ${featRef}`);
 }
 
 /**
- * The active effort comes from the workspace dive marker and nowhere else.
- * There is no per-developer "current effort" setting: selecting a dive is how
+ * The active feat comes from the workspace dive marker and nowhere else.
+ * There is no per-developer "current feat" setting: selecting a dive is how
  * a pilot says what they are working on, so anything else would be a second
  * source of truth that can disagree with it.
  */
-export function resolveActiveEffortDoc(kbDocs: KbDoc[], rc: NosediveRc): KbDoc {
+export function resolveActiveFeatDoc(kbDocs: KbDoc[], rc: NosediveRc): KbDoc {
 	const activeDiveId = readActiveDiveId(rc.workspaceDir);
 	if (!activeDiveId) {
 		throw new Error(
-			"no active dive: this command needs an effort, which comes from the dive named in workspace/.nosedive-ref",
+			"no active dive: this command needs a feat, which comes from the dive named in workspace/.nosedive-ref",
 		);
 	}
 
 	const activeDive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeDiveId);
 	if (!activeDive) throw new Error(`active dive ${activeDiveId} is missing from kb`);
-	if (!activeDive.effortRef) {
-		throw new Error(`active dive ${activeDiveId} names no effort in meta.effort`);
+	if (!activeDive.featRef) {
+		throw new Error(`active dive ${activeDiveId} names no feat in meta.feat`);
 	}
 
-	return resolveEffortDoc(kbDocs, rc, activeDive.effortRef);
+	return resolveFeatDoc(kbDocs, rc, activeDive.featRef);
 }
 
 /**
- * Parent and child efforts link both ways, the same shape the L1 migration
+ * Parent and child feats link both ways, the same shape the L1 migration
  * generates, so a doc pitched under a parent is indistinguishable from a
  * migrated one.
  */
@@ -135,19 +135,19 @@ function reconcileDiveLink(path: string, diveId: string, rel: string | undefined
 }
 
 /**
- * Keep an effort's dive index aligned with the dive's current phase. The edge
+ * Keep a feat's dive index aligned with the dive's current phase. The edge
  * records phase while claimed-ness is derived from `meta.diver`, so callers
  * must supply the rel instead of conflating the two states.
  */
-export function reconcileDiveEffortLinks(
-	previousEffort: KbDoc | undefined,
-	effort: KbDoc,
+export function reconcileDiveFeatLinks(
+	previousFeat: KbDoc | undefined,
+	feat: KbDoc,
 	diveId: string,
 	rel: string,
 ): void {
-	if (previousEffort && previousEffort.id !== effort.id)
-		reconcileDiveLink(previousEffort.path, diveId, undefined);
-	reconcileDiveLink(effort.path, diveId, rel);
+	if (previousFeat && previousFeat.id !== feat.id)
+		reconcileDiveLink(previousFeat.path, diveId, undefined);
+	reconcileDiveLink(feat.path, diveId, rel);
 }
 
 /** Release a dive while retaining its marker and any captured patch chains. */
@@ -163,7 +163,7 @@ export function clearDiveDiver(divePath: string): boolean {
 	return true;
 }
 
-export function formatEffortScopeEntry(
+export function formatFeatScopeEntry(
 	repoId: string,
 	ref: string | undefined,
 	readOnly: boolean,
@@ -171,17 +171,17 @@ export function formatEffortScopeEntry(
 	return `${repoId}${ref ? `@${ref}` : ""}:${readOnly ? "ro" : "rw"}`;
 }
 
-export function appendRepoScopeToEffort(path: string, repo: EffortRepo): string {
+export function appendRepoScopeToFeat(path: string, repo: FeatRepo): string {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const rawScopes = parseMarkdownFrontmatter(text, label).raw.scopes;
 	const existing = parseScopeRefs(rawScopes, path);
 	if (existing.some((entry) => entry.repoId === repo.id)) {
-		throw new Error(`effort already includes scope ${repo.id}: ${formatPath(path)}`);
+		throw new Error(`feat already includes scope ${repo.id}: ${formatPath(path)}`);
 	}
 
 	const frontmatter = splitMarkdownFrontmatter(text, label);
-	const entry = formatEffortScopeEntry(repo.id, repo.ref, repo.readOnly);
+	const entry = formatFeatScopeEntry(repo.id, repo.ref, repo.readOnly);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
@@ -198,7 +198,7 @@ export function appendRepoScopeToEffort(path: string, repo: EffortRepo): string 
 	} else if (isSeq(scopes)) {
 		scopes.add(scopeEntry);
 	} else {
-		throw new Error(`invalid effort scopes in ${label}: expected a YAML list`);
+		throw new Error(`invalid feat scopes in ${label}: expected a YAML list`);
 	}
 
 	const yaml = stringifyYaml(doc);

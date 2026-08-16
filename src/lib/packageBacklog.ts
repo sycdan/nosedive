@@ -147,14 +147,14 @@ export function posixRelPath(from: string, to: string): string {
 	return relative(from, to).replaceAll("\\", "/");
 }
 
-export function effortDocTitle(doc: KbDoc, leafSlug: string): string {
+export function featDocTitle(doc: KbDoc, leafSlug: string): string {
 	const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), formatPath(doc.path)).body;
 	return firstMarkdownHeading(body, titleFromSlug(leafSlug));
 }
 
 /** The title a backlog entry renders under: its H1, or its name's leaf slug. */
 export function backlogDocTitle(doc: KbDoc): string {
-	return effortDocTitle(doc, doc.name.split(".").filter(Boolean)[0] ?? doc.id);
+	return featDocTitle(doc, doc.name.split(".").filter(Boolean)[0] ?? doc.id);
 }
 
 export function backlogEntryLine(doc: KbDoc, depth: number): string {

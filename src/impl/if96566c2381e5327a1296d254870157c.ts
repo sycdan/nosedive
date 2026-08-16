@@ -14,7 +14,7 @@ import {
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 /**
  * A ref is a feat or a deck, told apart by the kind of doc it resolves to: a
@@ -30,7 +30,7 @@ function scopedDives(
 ): ListDivesResult {
 	if (!ref) return collectKbDives(kbDocs, localOnlyIds, includeHistorical);
 
-	const doc = resolveEffortDoc(kbDocs, rc, ref);
+	const doc = resolveFeatDoc(kbDocs, rc, ref);
 	if (doc.kind === "feat") return collectListDives(doc, kbDocs, localOnlyIds, includeHistorical);
 	if (doc.kind === "memo") return collectDeckDives(doc, kbDocs, localOnlyIds, includeHistorical);
 	throw new Error(`list-dives needs a feat or a deck: ${ref} is a ${doc.kind}`);

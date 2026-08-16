@@ -14,7 +14,7 @@ import {
 	LandGate,
 	resolveGateScript,
 } from "../lib/landGates.js";
-import { resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 interface TestArgs {
 	gateRefs: string[];
@@ -120,10 +120,10 @@ function selectDiveGates(
 	land: boolean,
 ): LandGate[] {
 	if (!land) return collectDiveGates("land", dive, kbDocs, rc.bridgeDir);
-	const effort = dive.effortRef ? resolveEffortDoc(kbDocs, rc, dive.effortRef) : undefined;
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const roots = [
 		dive,
-		...(effort ? [effort] : []),
+		...(feat ? [feat] : []),
 		...dive.scopes
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),

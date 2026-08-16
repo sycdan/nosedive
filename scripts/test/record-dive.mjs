@@ -126,7 +126,7 @@ function recordedPath(bridge, stdout) {
 	return join(bridge, match[1]);
 }
 
-test("record.dive defaults to the effort's cached default-branch repositories", () => {
+test("record.dive defaults to the feat's cached default-branch repositories", () => {
 	const { bridge, repoCommit } = setup("create");
 	const unhydratedSource = join(bridge, "sources", "unhydrated");
 	const unhydratedCommit = createRepo(unhydratedSource, unhydratedRepoId);
@@ -161,7 +161,8 @@ scopes:
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
 	assert.match(doc, /^gist: "Working on Record Dive\."$/m);
-	assert.match(doc, new RegExp(`^  effort: ${effortId}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
+	assert.doesNotMatch(doc, /^  effort: /m, "the dead spelling is never written");
 	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
 	assert.match(
 		doc,
@@ -179,7 +180,7 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 	const doc = readFileSync(recordedPath(bridge, result.stdout), "utf8");
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^name: record-dive\.nosedive\.[0-9a-f]{6}$/m);
-	assert.match(doc, new RegExp(`^  effort: ${effortId}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${effortId}$`, "m"));
 	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}\n      mode: rw$`, "m"));
 });
 
@@ -196,7 +197,7 @@ test("record.dive accepts matching --feat and --effort refs", () => {
 	assertOk(result, "record.dive create with matching --feat and --effort failed");
 	assert.match(
 		readFileSync(recordedPath(bridge, result.stdout), "utf8"),
-		new RegExp(`^  effort: ${effortId}$`, "m"),
+		new RegExp(`^  feat: ${effortId}$`, "m"),
 	);
 });
 
@@ -245,7 +246,7 @@ gist: "Updated feat"
 	assertOk(updated, "record.dive patch with --feat failed");
 	const doc = readFileSync(path, "utf8");
 	assert.match(doc, new RegExp(`^name: updated-feat\\.[0-9a-f]{6}$`, "m"));
-	assert.match(doc, new RegExp(`^  effort: ${feat}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${feat}$`, "m"));
 });
 
 test("record.dive refuses mismatched --feat and --effort without writing", () => {
@@ -530,13 +531,20 @@ test("record.dive warns when no ancestor scopes a repo", () => {
 	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
 });
 
-test("record.dive reassigns its reciprocal effort link", () => {
+test("record.dive reassigns its reciprocal feat link", () => {
 	const { bridge } = setup("patch-meta");
 	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
 	const created = run(["record.dive", "--effort", effortId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Put the dive back on the old spelling, which is what every dive recorded
+	// before this change carries. Re-homing must not leave it behind, or the
+	// document would name two feats and the parser would prefer one in silence.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(`  feat: ${effortId}`, `  effort: ${effortId}`),
+	);
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	writeFileSync(marker, `id: ${id}\n`);
 	const effort = "019fc623-0000-7000-8000-000000000003";
@@ -558,7 +566,8 @@ gist: "Updated effort"
 	);
 	assertOk(updated, "record.dive meta update failed");
 	const doc = readFileSync(path, "utf8");
-	assert.match(doc, new RegExp(`^  effort: ${effort}$`, "m"));
+	assert.match(doc, new RegExp(`^  feat: ${effort}$`, "m"));
+	assert.doesNotMatch(doc, /^  effort: /m, "the superseded key must not survive a re-home");
 	assert.match(doc, /^  diver: pilot@example\.test$/m);
 	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
 	const oldEffort = readFileSync(join(bridge, "kb", `${effortId}.md`), "utf8");

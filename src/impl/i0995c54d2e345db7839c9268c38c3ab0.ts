@@ -53,8 +53,8 @@ function into(args: string[], io: CommandIo): void {
 	io.log("");
 	io.log(
 		`Help pilot dive into "${context || "something"}" using the information above. ` +
-			`Pick or pitch an effort, then call \`${cli} record.dive --effort <effort-ref> --diver ${identity.email}\` ` +
-			`to claim or create the dive (use --ref <dive-ref> instead of --effort to pick up an existing pending/packed ` +
+			`Pick or pitch a feat, then call \`${cli} record.dive --feat <feat-ref> --diver ${identity.email}\` ` +
+			`to claim or create the dive (use --ref <dive-ref> instead of --feat to pick up an existing pending/packed ` +
 			`dive from the backlog above).`,
 	);
 	io.log("");

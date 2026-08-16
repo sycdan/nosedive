@@ -158,6 +158,7 @@ const PREFLIGHT_PACKED_DIVE_RELS = new Set(["packed", "working", "jumped"]);
 
 function isBacklogFeatRel(rel: string | undefined): boolean {
 	return Boolean(
+		// `-effort` is the old spelling: accepted on read, never written.
 		rel && (BACKLOG_FEAT_RELS.has(rel) || rel.endsWith("-effort") || rel.endsWith(".feat")),
 	);
 }
@@ -232,14 +233,14 @@ export function collectPreflightDives(
 }
 
 /**
- * A dive names its effort in `meta.effort`, which may be the effort's UUID, a
+ * A dive names its feat in `meta.feat`, which may be the feat's UUID, a
  * bridge-root kb path such as `kb/<id>.md`, or its exact `name`. All three
- * have to agree with the effort doc being listed.
+ * have to agree with the feat doc being listed.
  */
-export function sameEffortRef(effortRef: string | undefined, effort: KbDoc): boolean {
-	if (!effortRef) return false;
-	if (effortRef === effort.id || effortRef === effort.name) return true;
-	return toPosixPath(effortRef) === effort.relPath;
+export function sameFeatRef(featRef: string | undefined, feat: KbDoc): boolean {
+	if (!featRef) return false;
+	if (featRef === feat.id || featRef === feat.name) return true;
+	return toPosixPath(featRef) === feat.relPath;
 }
 
 export const DIVE_PENDING_RELS = new Set(["planned", "pending"]);
@@ -318,7 +319,7 @@ export function collectDeckDives(
 }
 
 export function collectListDives(
-	effort: KbDoc,
+	feat: KbDoc,
 	kbDocs: KbDoc[],
 	localOnlyIds: ReadonlySet<string>,
 	includeHistorical: boolean,
@@ -326,13 +327,13 @@ export function collectListDives(
 	const dives = diveDocs(kbDocs);
 	const divesById = new Map(dives.map((doc) => [doc.id, doc]));
 	const kbIds = new Set(kbDocs.map((doc) => doc.id));
-	const effortLabel = effort.name;
+	const featLabel = feat.name;
 
 	const links: DiveLink[] = [];
 	const warnings: string[] = [];
 	const linkedDiveIds = new Set<string>();
 
-	for (const link of effort.links) {
+	for (const link of feat.links) {
 		const dive = divesById.get(link.id);
 		if (!dive) {
 			// A rel-tagged link asserts a pickupable/working dive, so a missing
@@ -343,35 +344,33 @@ export function collectListDives(
 			}
 			continue;
 		}
-		if (!sameEffortRef(dive.effortRef, effort)) {
-			warnings.push(`dive link ${link.id} does not point back at ${effortLabel}`);
+		if (!sameFeatRef(dive.featRef, feat)) {
+			warnings.push(`dive link ${link.id} does not point back at ${featLabel}`);
 			continue;
 		}
 		linkedDiveIds.add(dive.id);
 		links.push({ dive, rel: link.rel });
 	}
 
-	// Drift/superset scan: dives that name this effort but are not linked from it.
+	// Drift/superset scan: dives that name this feat but are not linked from it.
 	// A held (diver set) unlinked dive is a workon-safety hazard, so warn; the
 	// full progression view (--include-historical) also lists them.
 	for (const dive of dives) {
 		if (linkedDiveIds.has(dive.id)) continue;
-		if (!sameEffortRef(dive.effortRef, effort)) continue;
+		if (!sameFeatRef(dive.featRef, feat)) continue;
 		if (diveDiver(dive)) {
-			warnings.push(
-				`held dive ${dive.id} points at ${effortLabel} but is not linked from the effort`,
-			);
+			warnings.push(`held dive ${dive.id} points at ${featLabel} but is not linked from the feat`);
 		}
 		links.push({ dive });
 	}
 
-	return listDivesResult(`feat ${effortLabel}`, links, localOnlyIds, includeHistorical, warnings);
+	return listDivesResult(`feat ${featLabel}`, links, localOnlyIds, includeHistorical, warnings);
 }
 
 /**
  * A markdown link rather than a bare id: the path is ctrl-clickable from a
  * terminal, and anyone reading the output later can follow it to the scopes and
- * brief this line deliberately does not restate. The effort is left off for the
+ * brief this line deliberately does not restate. The feat is left off for the
  * same reason -- a managed dive name already carries the feat slug.
  */
 export function formatListedDive(dive: ListedDive): string {

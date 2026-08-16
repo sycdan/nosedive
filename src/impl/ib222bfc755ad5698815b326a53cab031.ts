@@ -8,14 +8,14 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
 import {
-	defaultEffortName,
+	defaultFeatName,
 	loadKbDocs,
-	mintEffortId,
+	mintFeatId,
 	parsePitchArgs,
-	renderPitchedEffort,
+	renderPitchedFeat,
 } from "../lib/kbDocs.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { appendLinkToDoc, effortDocs, resolveEffortDoc } from "../lib/repoEffortScopes.js";
+import { appendLinkToDoc, featDocs, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 function pitch(args: string[], io: CommandIo): void {
 	const options = parsePitchArgs(args);
@@ -25,20 +25,17 @@ function pitch(args: string[], io: CommandIo): void {
 	if (!existsSync(rc.kbDir)) mkdirSync(rc.kbDir, { recursive: true });
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const parent = options.parent ? resolveEffortDoc(kbDocs, rc, options.parent) : undefined;
-	const leaf = options.name ?? defaultEffortName();
+	const parent = options.parent ? resolveFeatDoc(kbDocs, rc, options.parent) : undefined;
+	const leaf = options.name ?? defaultFeatName();
 	const name = parent ? `${leaf}.${parent.name}` : leaf;
 
-	const clash = effortDocs(kbDocs).find((doc) => doc.name === name);
-	if (clash) throw new Error(`effort already exists: ${name} (${clash.id})`);
+	const clash = featDocs(kbDocs).find((doc) => doc.name === name);
+	if (clash) throw new Error(`feat already exists: ${name} (${clash.id})`);
 
-	const id = mintEffortId();
+	const id = mintFeatId();
 	const path = join(rc.kbDir, `${id}.md`);
 	if (existsSync(path)) throw new Error(`kb doc already exists: ${formatPath(path)}`);
-	writeFileAtomic(
-		path,
-		renderPitchedEffort({ id, name, gist: options.gist, parentId: parent?.id }),
-	);
+	writeFileAtomic(path, renderPitchedFeat({ id, name, gist: options.gist, parentId: parent?.id }));
 	if (parent) appendLinkToDoc(parent.path, id, "child.feat");
 
 	io.log(`Pitched ${formatPath(path)}`);

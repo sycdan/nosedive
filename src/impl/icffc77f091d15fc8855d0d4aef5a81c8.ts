@@ -157,6 +157,8 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 			"",
 			"# Backlog",
 			"",
+			// Heading text written into a bridge's backlog memo, matched by the L1
+			// migration artifact that writes the same memo; not renamed here.
 			"## Current efforts",
 			"",
 		].join("\n"),

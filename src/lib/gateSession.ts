@@ -8,7 +8,7 @@ import {
 	type LandGate,
 	runLandGates,
 } from "./landGates.js";
-import { appendLinkToDoc } from "./repoEffortScopes.js";
+import { appendLinkToDoc } from "./repoFeatScopes.js";
 import { reconcilePushIsolation } from "./repoHardening.js";
 import { ensureRepoMarkerExcluded, writeRepoMarker } from "./repoWorktrees.js";
 import { hydrateScopeAtPin } from "./scopeHydration.js";

@@ -618,9 +618,12 @@ test("a gate's output reaches the terminal while that gate is still running", as
 
 	const child = spawn(process.execPath, [cli, "land"], { cwd: bridge });
 	let exited = false;
+	let progressBeforeExit = false;
 	let spokeBeforeExit = false;
 	child.stderr.on("data", (chunk) => {
-		if (!exited && chunk.toString().includes("gate speaking early")) spokeBeforeExit = true;
+		const text = chunk.toString();
+		if (!exited && text.includes("land: running 1 land gate")) progressBeforeExit = true;
+		if (!exited && text.includes("gate speaking early")) spokeBeforeExit = true;
 	});
 	child.stdout.on("data", () => {});
 	await new Promise((resolve, reject) => {
@@ -631,6 +634,11 @@ test("a gate's output reaches the terminal while that gate is still running", as
 		child.once("close", resolve);
 	});
 
+	assert.equal(
+		progressBeforeExit,
+		true,
+		"the land progress line arrived only after land exited, so it was buffered",
+	);
 	assert.equal(
 		spokeBeforeExit,
 		true,

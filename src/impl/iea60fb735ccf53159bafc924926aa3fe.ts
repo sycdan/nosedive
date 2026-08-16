@@ -2,14 +2,8 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { runPlanningPrompt } from "../lib/planning.js";
 
-function into(args: string[], io: CommandIo): void {
-	io.err("warning: into is deprecated; use plan instead.");
-	runPlanningPrompt(args, io);
-}
-
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
-	return captureCommand(into, args);
+	return captureCommand(runPlanningPrompt, args);
 }

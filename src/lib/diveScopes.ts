@@ -6,6 +6,7 @@ import { KbDoc, ScopeRef } from "./kbDocs.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
+	maybeResolveRepoDoc,
 	parseRepoMarkerStrict,
 } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
@@ -54,7 +55,16 @@ export function resolveBridgeDocRef(bridgeDir: string, kbDocs: KbDoc[], ref: str
 	return doc;
 }
 
+/**
+ * A repo named the way a pilot names it: `--upscope nosedive` resolves the
+ * `kind: repo` doc called `nosedive`. Name resolution runs first because a repo
+ * name is a shorter thing to type than a uuid and cannot be confused for a
+ * path, and the remaining forms -- uuid, kb path, `.nosedive-ref`, a directory
+ * holding one -- fall through to the general document resolver behind it.
+ */
 export function resolveScopeRepo(bridgeDir: string, kbDocs: KbDoc[], ref: string): KbDoc {
+	const named = maybeResolveRepoDoc(kbDocs, ref);
+	if (named) return named;
 	const doc = uuidLike(ref)
 		? kbDocs.find((candidate) => candidate.id === ref)
 		: resolveBridgeDocRef(bridgeDir, kbDocs, ref);

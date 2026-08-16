@@ -714,6 +714,34 @@ test("record.dive composes --upscope, --unscope and one --work-branch", () => {
 	);
 });
 
+test("record.dive resolves --upscope and --unscope repos by name", () => {
+	const { bridge } = setup("upscope-by-name");
+	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);
+	writeRepoDoc(bridge, unhydratedRepoId, "second", "workspace/second");
+
+	const created = run(["record.dive", "--feat", effortId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+
+	// A repo doc's name is what a pilot has in their head, and it is shorter than
+	// a uuid and unambiguous within the bridge.
+	const edited = run(
+		["record.dive", "--ref", id, "--upscope", "second", "--unscope", "repo"],
+		bridge,
+	);
+	assertOk(edited, "record.dive scope edit by repo name failed");
+	const doc = readFileSync(path, "utf8");
+	assert.doesNotMatch(doc, new RegExp(`^  - ${repoId}:`, "m"), "--unscope by name must drop it");
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
 test("record.dive --upscope defaults to the feat's branch and keeps an existing pin", () => {
 	const { bridge, repoCommit } = setup("upscope-default");
 	const created = run(["record.dive", "--feat", effortId], bridge);

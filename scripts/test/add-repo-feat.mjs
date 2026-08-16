@@ -41,11 +41,11 @@ import {
 } from "../test-helpers.mjs";
 
 const { readNosediveRc } = await import(libUrl);
-const tmp = createTmp("add-repo-effort");
+const tmp = createTmp("add-repo-feat");
 const noBridge = createNoBridge(tmp);
 
-test("add-repo-effort", () => {
-	const addRepoEffortBridge = join(tmp, "add-repo-effort-bridge");
+test("add-repo-feat", () => {
+	const addRepoFeatBridge = join(tmp, "add-repo-feat-bridge");
 	const effortId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e001";
 	const effortDiveId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e010";
 	const alphaScopeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e002";
@@ -53,14 +53,14 @@ test("add-repo-effort", () => {
 	const gammaScopeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3e004";
 	const duplicateScopeRepoIdA = "019fbf74-9c6e-71a2-a3f2-f0c99be3e005";
 	const duplicateScopeRepoIdB = "019fbf74-9c6e-71a2-a3f2-f0c99be3e006";
-	mkdirSync(join(addRepoEffortBridge, ".nosedive"), { recursive: true });
-	mkdirSync(join(addRepoEffortBridge, "kb"), { recursive: true });
-	mkdirSync(join(addRepoEffortBridge, "workspace"), { recursive: true });
-	runTool("git", ["init", "-b", "main"], addRepoEffortBridge);
-	runTool("git", ["config", "user.email", "dev@example.invalid"], addRepoEffortBridge);
-	runTool("git", ["config", "user.name", "Nosedive Dev"], addRepoEffortBridge);
+	mkdirSync(join(addRepoFeatBridge, ".nosedive"), { recursive: true });
+	mkdirSync(join(addRepoFeatBridge, "kb"), { recursive: true });
+	mkdirSync(join(addRepoFeatBridge, "workspace"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], addRepoFeatBridge);
+	runTool("git", ["config", "user.email", "dev@example.invalid"], addRepoFeatBridge);
+	runTool("git", ["config", "user.name", "Nosedive Dev"], addRepoFeatBridge);
 	write(
-		join(addRepoEffortBridge, ".nosedive", "config.yaml"),
+		join(addRepoFeatBridge, ".nosedive", "config.yaml"),
 		`compatibility-level: 2
 workspace: ./workspace
 kb: ./kb
@@ -68,16 +68,16 @@ backlog: 019fbf74-9c6e-71a2-a3f2-f0c99be3e000
 `,
 	);
 	write(
-		join(addRepoEffortBridge, "kb", `${effortId}.md`),
+		join(addRepoFeatBridge, "kb", `${effortId}.md`),
 		`---
 kind: feat
 id: ${effortId}
 name: feature
-gist: "Feature effort for add-repo.effort tests."
+gist: "Feature effort for add-repo.feat tests."
 custom: keep-me
 scopes:
   - ${alphaScopeRepoId}:
-      mode: rw
+      work-branch: work/feature
 ---
 
 # Feature
@@ -86,19 +86,19 @@ Do not rewrite this body.
 `,
 	);
 	write(
-		join(addRepoEffortBridge, "kb", `${effortDiveId}.md`),
+		join(addRepoFeatBridge, "kb", `${effortDiveId}.md`),
 		`---
 kind: dive
 id: ${effortDiveId}
 name: feature.abcdef
-gist: "Active dive for add-repo.effort tests."
+gist: "Active dive for add-repo.feat tests."
 effort: kb/${effortId}.md
 ---
 
 # Feature dive
 `,
 	);
-	write(join(addRepoEffortBridge, "workspace", ".nosedive-ref"), `id: ${effortDiveId}\n`);
+	write(join(addRepoFeatBridge, "workspace", ".nosedive-ref"), `id: ${effortDiveId}\n`);
 	for (const [id, name] of [
 		[alphaScopeRepoId, "alpha"],
 		[betaScopeRepoId, "beta"],
@@ -107,7 +107,7 @@ effort: kb/${effortId}.md
 		[duplicateScopeRepoIdB, "duplicate"],
 	]) {
 		write(
-			join(addRepoEffortBridge, "kb", `${id}.md`),
+			join(addRepoFeatBridge, "kb", `${id}.md`),
 			`---
 kind: repo
 id: ${id}
@@ -120,47 +120,66 @@ meta:
 		);
 	}
 
-	const addEffortByName = run(["add-repo.effort", "beta"], addRepoEffortBridge);
-	assertOk(addEffortByName, "add-repo.effort by name failed");
+	// A scope added with no branch is read-only, and says so by naming none.
+	const addFeatByName = run(["add-repo.feat", "beta"], addRepoFeatBridge);
+	assertOk(addFeatByName, "add-repo.feat by name failed");
 	assert.match(
-		addEffortByName.stdout,
-		new RegExp(`Added scope ${betaScopeRepoId}:rw to .*${effortId}\\.md`),
+		addFeatByName.stdout,
+		new RegExp(`Added scope ${betaScopeRepoId} to .*${effortId}\\.md`),
 	);
-	const effortAfterName = readFileSync(join(addRepoEffortBridge, "kb", `${effortId}.md`), "utf8");
+	const effortAfterName = readFileSync(join(addRepoFeatBridge, "kb", `${effortId}.md`), "utf8");
 	assert.match(effortAfterName, /custom: keep-me/);
-	assert.match(effortAfterName, new RegExp(`${betaScopeRepoId}:\\n\\s+mode: rw`));
+	assert.match(effortAfterName, new RegExp(`^  - ${betaScopeRepoId}$`, "m"));
 	assert.doesNotMatch(effortAfterName, new RegExp(`${betaScopeRepoId}:\\n\\s+ref:`));
+	assert.doesNotMatch(effortAfterName, /^\s+mode: /m);
 	assert.match(effortAfterName, /Do not rewrite this body\./);
 
-	const addEffortWithModifiers = run(
-		["add-repo.effort", gammaScopeRepoId, "--ref", "release/candidate", "--read-only"],
-		addRepoEffortBridge,
+	const addFeatWithModifiers = run(
+		[
+			"add-repo.feat",
+			gammaScopeRepoId,
+			"--ref",
+			"release/candidate",
+			"--work-branch",
+			"work/feature",
+		],
+		addRepoFeatBridge,
 	);
-	assertOk(addEffortWithModifiers, "add-repo.effort with modifiers failed");
+	assertOk(addFeatWithModifiers, "add-repo.feat with modifiers failed");
 	const effortAfterModifiers = readFileSync(
-		join(addRepoEffortBridge, "kb", `${effortId}.md`),
+		join(addRepoFeatBridge, "kb", `${effortId}.md`),
 		"utf8",
 	);
 	assert.match(
 		effortAfterModifiers,
-		new RegExp(`${gammaScopeRepoId}:\\n\\s+ref: release/candidate\\n\\s+mode: ro`),
+		new RegExp(`${gammaScopeRepoId}:\\n\\s+ref: release/candidate\\n\\s+work-branch: work/feature`),
 	);
+	assert.doesNotMatch(effortAfterModifiers, /^\s+mode: /m);
 
-	const duplicateEffortAdd = run(["add-repo.effort", "beta"], addRepoEffortBridge);
+	// The two flags are two answers to the same question.
+	const bothAnswers = run(
+		["add-repo.feat", "alpha", "--read-only", "--work-branch", "work/feature"],
+		addRepoFeatBridge,
+	);
+	assert.notEqual(bothAnswers.status, 0, "--read-only with --work-branch unexpectedly succeeded");
+	assert.match(bothAnswers.stderr, /--read-only cannot be combined with --work-branch/);
+
+	// `add-repo.effort` is the superseded spelling and routes to the same place.
+	const duplicateEffortAdd = run(["add-repo.effort", "beta"], addRepoFeatBridge);
 	assert.notEqual(duplicateEffortAdd.status, 0, "duplicate add-repo.effort unexpectedly succeeded");
 	assert.match(
 		duplicateEffortAdd.stderr,
 		new RegExp(`feat already includes scope ${betaScopeRepoId}`),
 	);
 
-	const ambiguousEffortAdd = run(["add-repo.effort", "duplicate"], addRepoEffortBridge);
+	const ambiguousEffortAdd = run(["add-repo.effort", "duplicate"], addRepoFeatBridge);
 	assert.notEqual(ambiguousEffortAdd.status, 0, "ambiguous add-repo.effort unexpectedly succeeded");
 	assert.match(ambiguousEffortAdd.stderr, /repo name is ambiguous: duplicate/);
 	assert.match(ambiguousEffortAdd.stderr, new RegExp(duplicateScopeRepoIdA));
 	assert.match(ambiguousEffortAdd.stderr, new RegExp(duplicateScopeRepoIdB));
 
-	rmSync(join(addRepoEffortBridge, "workspace", ".nosedive-ref"), { force: true });
-	const addWithoutActiveEffort = run(["add-repo.effort", "alpha"], addRepoEffortBridge);
+	rmSync(join(addRepoFeatBridge, "workspace", ".nosedive-ref"), { force: true });
+	const addWithoutActiveEffort = run(["add-repo.effort", "alpha"], addRepoFeatBridge);
 	assert.notEqual(
 		addWithoutActiveEffort.status,
 		0,

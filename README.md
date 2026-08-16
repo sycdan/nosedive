@@ -118,7 +118,7 @@ Invoked directly by humans, or indirectly via agents.
 
 | Command | Usage | What it does |
 | --- | --- | --- |
-| [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--read-only]` | Add a kb `kind: repo` doc to the active feat's `scopes:` by resolving the repo by id or exact name. |
+| [`add-repo.feat@2`](kb/16b4fee2-cc6c-5c29-9327-fde39a35b0a8.md) | `npx nosedive add-repo.feat <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]` | Add a kb `kind: repo` doc to the active feat's `scopes:`, naming the branch its dives push to. |
 | [`bail@2`](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md) | `npx nosedive bail --reason "<why>"` | Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo. |
 | [`dehydrate-repo.workspace@1`](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md) | `npx nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]` | Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata. |
 | [`drop@2`](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md) | `npx nosedive drop "<feat>"` | Ship a ready feat by printing the configured drop prompt followed by generated repo, branch, gate and close-out context for an agent; run nothing and report every readiness blocker on stderr. |
@@ -157,6 +157,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 
 | Command | Usage | Use instead |
 | --- | --- | --- |
+| [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]` | `add-repo.feat`, which is the same command under the name of the thing it edits. |
 | [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `preflight`, which prints pilot identity, the backlog, and open work without requiring a piped agent. |
 <!-- END nosedive-command-surface -->
 

@@ -11,7 +11,7 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "./coreParsing.js";
-import { FeatRepo, KbDoc, readActiveDiveId } from "./kbDocs.js";
+import { KbDoc, readActiveDiveId } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { writeFileAtomic } from "./renderPlan.js";
 
@@ -163,15 +163,27 @@ export function clearDiveDiver(divePath: string): boolean {
 	return true;
 }
 
+/**
+ * What the feat now says about a repo, for the pilot to read back: the repo, the
+ * ref it is pinned to, and the branch its dives push to. A scope with no branch
+ * prints as bare, because that is what it is -- read-only, with nowhere for work
+ * to go until somebody names a branch.
+ */
 export function formatFeatScopeEntry(
 	repoId: string,
 	ref: string | undefined,
-	readOnly: boolean,
+	workBranch: string | undefined,
 ): string {
-	return `${repoId}${ref ? `@${ref}` : ""}:${readOnly ? "ro" : "rw"}`;
+	return `${repoId}${ref ? `@${ref}` : ""}${workBranch ? `:${workBranch}` : ""}`;
 }
 
-export function appendRepoScopeToFeat(path: string, repo: FeatRepo): string {
+export interface FeatScopeAddition {
+	id: string;
+	ref?: string;
+	workBranch?: string;
+}
+
+export function appendRepoScopeToFeat(path: string, repo: FeatScopeAddition): string {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const rawScopes = parseMarkdownFrontmatter(text, label).raw.scopes;
@@ -181,17 +193,21 @@ export function appendRepoScopeToFeat(path: string, repo: FeatRepo): string {
 	}
 
 	const frontmatter = splitMarkdownFrontmatter(text, label);
-	const entry = formatFeatScopeEntry(repo.id, repo.ref, repo.readOnly);
+	const entry = formatFeatScopeEntry(repo.id, repo.ref, repo.workBranch);
 	const doc = parseDocument(frontmatter.yaml);
 	if (doc.errors.length > 0)
 		throw new Error(
 			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 
+	// `mode` is never written. A feat scope declares where its dives push by
+	// naming a branch, and declares read-only by naming none -- so a scope with
+	// nothing to say beyond the repo is written as the repo, which is the bare
+	// form the parser has always read as pinned to trunk and read-only.
 	const scopeValue: Record<string, string> = {};
 	if (repo.ref) scopeValue.ref = repo.ref;
-	scopeValue.mode = repo.readOnly ? "ro" : "rw";
-	const scopeEntry = { [repo.id]: scopeValue };
+	if (repo.workBranch) scopeValue["work-branch"] = repo.workBranch;
+	const scopeEntry = Object.keys(scopeValue).length === 0 ? repo.id : { [repo.id]: scopeValue };
 	const scopes = doc.get("scopes", true);
 	if (scopes === undefined || scopes === null) {
 		doc.set("scopes", [scopeEntry]);

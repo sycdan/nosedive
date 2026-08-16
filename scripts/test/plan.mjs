@@ -39,6 +39,12 @@ test("plan shapes a feat into gated vertical half-day dives without starting the
 	assert.match(result.stdout, /Plan this feat\./);
 	assert.match(result.stdout, /improve handoff/);
 	assert.match(result.stdout, /help the pilot choose (?:which|a) feat/i);
+	assert.match(result.stdout, /inspect the feat, its linked dives, and .*scoped repos/i);
+	assert.match(result.stdout, /existing dives already cover the feat/i);
+	assert.match(result.stdout, /summarize their states instead of duplicating them/i);
+	assert.match(result.stdout, /feat appears complete/i);
+	assert.match(result.stdout, /explain the evidence and stop for pilot confirmation/i);
+	assert.match(result.stdout, /only for uncovered work/i);
 	assert.match(result.stdout, /vertical slices/i);
 	assert.match(result.stdout, /logical seams/i);
 	assert.match(result.stdout, /no more than half a day/i);

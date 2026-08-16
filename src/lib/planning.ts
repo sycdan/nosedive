@@ -44,7 +44,14 @@ export function runPlanningPrompt(args: string[], io: CommandIo): void {
 	io.log(
 		`Help the pilot choose which feat to plan using the backlog and context above. ` +
 			`Do not choose for them, and do not start work they have not selected. ` +
-			`Once they choose, inspect the feat and its scoped repos, then break the feat into vertical slices at its logical seams.`,
+			`Once they choose, inspect the feat, its linked dives, and its current scoped repos.`,
+	);
+	io.log("");
+	io.log(
+		`Before recording anything, check whether existing dives already cover the feat. ` +
+			`If they do, summarize their states instead of duplicating them. ` +
+			`If the feat appears complete, explain the evidence and stop for pilot confirmation. ` +
+			`Record new dives only for uncovered work; break that work into vertical slices at its logical seams.`,
 	);
 	io.log("");
 	io.log(

@@ -92,7 +92,11 @@ function assertInOrder(text, parts) {
 }
 
 function installPrePushHook(worktree, body) {
-	const rawPath = runTool("git", ["rev-parse", "--git-path", "hooks/pre-push"], worktree).stdout.trim();
+	const rawPath = runTool(
+		"git",
+		["rev-parse", "--git-path", "hooks/pre-push"],
+		worktree,
+	).stdout.trim();
 	const hookPath = isAbsolute(rawPath) ? rawPath : join(worktree, rawPath);
 	write(hookPath, body);
 	chmodSync(hookPath, 0o755);

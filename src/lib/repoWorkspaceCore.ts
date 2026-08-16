@@ -156,8 +156,7 @@ export function gitRun(cwd: string, args: string[], label: string): string {
 	const result = runGit(cwd, args);
 	if (result.status === 0) return result.stdout.trim();
 	const detail =
-		[result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n") ||
-		"unknown git error";
+		[result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n") || "unknown git error";
 	throw new Error(`${label}: ${detail}`);
 }
 

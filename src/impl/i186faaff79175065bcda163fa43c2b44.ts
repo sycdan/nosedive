@@ -66,6 +66,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		marker.id !== undefined
 			? kbDocs.find((doc) => doc.id === marker.id && doc.kind === "dive")
 			: undefined;
+	const feat = dive?.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 
 	/**
 	 * No dive is a regression pass, not an error. `test@1` refused here because
@@ -104,6 +105,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		kbDocs,
 		rc.bridgeDir,
 		dive?.id ?? "",
+		feat?.id,
 		hydrated,
 		io,
 	);

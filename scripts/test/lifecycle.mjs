@@ -11,6 +11,7 @@ import {
 	pitchFeat,
 	recordedDiveId,
 	run,
+	runGit,
 	runTool,
 	seededBridge,
 	write,
@@ -24,6 +25,9 @@ const diveGateId = "019fd590-0000-7000-8000-000000000002";
 const featGateId = "019fd590-0000-7000-8000-000000000003";
 const workLoopRepoId = "019fd591-0000-7000-8000-000000000001";
 const workLoopGateId = "019fd591-0000-7000-8000-000000000002";
+const workLoopBranchGateId = "019fd591-0000-7000-8000-000000000003";
+const workLoopSecondRepoId = "019fd591-0000-7000-8000-000000000004";
+const workLoopThirdRepoId = "019fd591-0000-7000-8000-000000000005";
 const marker = "feature.txt";
 
 function assertFeatDiveRel(featPath, diveId, rel) {
@@ -223,6 +227,30 @@ export function run(ctx) {
 `;
 
 /**
+ * A fixture for the branch convention an implementation repo can enforce
+ * without making that convention part of nosedive itself.
+ */
+const WORK_LOOP_BRANCH_GATE = `export async function run(ctx) {
+	if (!ctx.diveId) {
+		console.log("work-loop branch gate skipped: no landing dive");
+		return;
+	}
+	const repo = ctx.repos["work-loop-repo"];
+	if (!repo) {
+		console.error("work-loop branch gate saw no work-loop-repo scope");
+		return false;
+	}
+	const dive = await ctx.resolve(ctx.diveId);
+	const scope = dive.scopes.find((entry) => entry.repoId === repo.id);
+	const expected = "feature/work-loop";
+	const found = scope?.workBranch ?? "none";
+	if (found === expected) return;
+	console.error("work-loop branch gate expected " + expected + ", found " + found);
+	return false;
+}
+`;
+
+/**
  * The loop a team actually runs: a gate declared on a feat fails during a
  * regression sweep, the failure becomes a dive, a diver claims and jumps it,
  * fixes the implementation repo, watches the same gate go green, lands, and
@@ -233,9 +261,14 @@ export function run(ctx) {
  */
 test("a failing gate mints work that a diver jumps, fixes, lands, and re-tests clean", () => {
 	const repo = implRepo(tmp, "work-loop-repo");
+	const secondRepo = implRepo(tmp, "work-loop-second-repo");
+	const thirdRepo = implRepo(tmp, "work-loop-third-repo");
 	const { bridge } = seededBridge(tmp, "work-loop-bridge", diver);
 	writeImplRepoDoc(bridge, workLoopRepoId, repo);
+	writeImplRepoDoc(bridge, workLoopSecondRepoId, secondRepo);
+	writeImplRepoDoc(bridge, workLoopThirdRepoId, thirdRepo);
 	write(join(bridge, "kb", "artifacts", "work-loop-gate.mjs"), WORK_LOOP_GATE);
+	write(join(bridge, "kb", "artifacts", "work-loop-branch-gate.mjs"), WORK_LOOP_BRANCH_GATE);
 	write(
 		join(bridge, "kb", `${workLoopGateId}.md`),
 		`---
@@ -247,6 +280,26 @@ meta:
   test-script: kb/artifacts/work-loop-gate.mjs
 ---
 `,
+	);
+	write(
+		join(bridge, "kb", `${workLoopBranchGateId}.md`),
+		`---
+kind: assertion
+id: ${workLoopBranchGateId}
+name: work-loop-branch-gate
+gist: "The implementation repo lands on its feature branch"
+meta:
+  test-script: kb/artifacts/work-loop-branch-gate.mjs
+---
+`,
+	);
+	const repoPath = join(bridge, "kb", `${workLoopRepoId}.md`);
+	write(
+		repoPath,
+		readFileSync(repoPath, "utf8").replace(
+			/\n---\n$/,
+			`\nlinks:\n  - kb/${workLoopBranchGateId}.md:\n      rel: land.gate\n---\n`,
+		),
 	);
 
 	const { featPath, featId, featText } = pitchFeat(
@@ -263,7 +316,7 @@ meta:
 		featPath,
 		featText.replace(
 			/^---$/m,
-			`---\nscopes:\n  - ${workLoopRepoId}\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate`,
+			`---\nscopes:\n  - ${workLoopRepoId}\n  - ${workLoopSecondRepoId}\n  - ${workLoopThirdRepoId}\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate`,
 		),
 	);
 	runTool("git", ["add", "--", "kb"], bridge);
@@ -345,21 +398,82 @@ meta:
 	assert.match(homeless.stderr, /names no work branch/);
 	assert.match(homeless.stderr, new RegExp(`--upscope ${workLoopRepoId}`));
 
-	// 9. Upscoping is the pilot saying where it goes. Then it lands.
+	// 9. Upscoping without a branch takes nosedive's generated default.
 	assertOk(
 		run(["record.dive", "--ref", mintedId, "--upscope", workLoopRepoId], bridge),
 		"--upscope failed",
 	);
 	assert.match(readFileSync(mintedPath, "utf8"), /^      work-branch: work\/work-loop$/m);
+
+	/**
+	 * 10. A branch now exists, so land reaches the convention declared by the
+	 * implementation repo. The default is wrong for this fixture, and every push
+	 * waits until gates pass.
+	 */
+	const defaultBranch = run(["land"], bridge);
+	assert.notEqual(defaultBranch.status, 0, "the repo's branch convention must refuse land");
+	assert.match(
+		defaultBranch.stderr + defaultBranch.stdout,
+		/work-loop branch gate expected feature\/work-loop, found work\/work-loop/,
+	);
+	const unpublishedDefault = runGit(
+		["show-ref", "--verify", "--quiet", "refs/heads/work/work-loop"],
+		repo.cloud,
+		{ expectOk: false },
+	);
+	assert.notEqual(unpublishedDefault.status, 0, "a failed gate must publish no default branch");
+
+	/**
+	 * 11. One composed edit puts the gated repo and a second real repo on the
+	 * branch the pilot chose, while dropping a third repo from this landing.
+	 */
+	assertOk(
+		run(
+			[
+				"record.dive",
+				"--ref",
+				mintedId,
+				"--upscope",
+				workLoopRepoId,
+				"--upscope",
+				workLoopSecondRepoId,
+				"--unscope",
+				workLoopThirdRepoId,
+				"--work-branch",
+				"feature/work-loop",
+			],
+			bridge,
+		),
+		"composed scope edit failed",
+	);
+	const chosenScope = readFileSync(mintedPath, "utf8");
+	for (const id of [workLoopRepoId, workLoopSecondRepoId]) {
+		assert.match(
+			chosenScope,
+			new RegExp(
+				`^  - ${id}:\\n      ref: [0-9a-f]{40}\\n      work-branch: feature/work-loop$`,
+				"m",
+			),
+		);
+	}
+	assert.doesNotMatch(chosenScope, new RegExp(`^  - ${workLoopThirdRepoId}:`, "m"));
+
+	// 12. The accepted branch lands both upscoped implementation repos together.
 	assertOk(run(["land"], bridge), "land failed");
 	assert.match(readFileSync(mintedPath, "utf8"), /^kind: memo$/m);
 	assertFeatDiveRel(featPath, mintedId, "landed\\.dive");
 	const published = runTool(
 		"git",
-		["show-ref", "--verify", "--hash", "refs/heads/work/work-loop"],
+		["show-ref", "--verify", "--hash", "refs/heads/feature/work-loop"],
 		repo.cloud,
 	).stdout.trim();
 	assert.match(published, /^[0-9a-f]{40}$/, "land must publish the work branch");
+	const secondPublished = runTool(
+		"git",
+		["show-ref", "--verify", "--hash", "refs/heads/feature/work-loop"],
+		secondRepo.cloud,
+	).stdout.trim();
+	assert.match(secondPublished, /^[0-9a-f]{40}$/, "land must publish the second repo");
 
 	/**
 	 * Landing is not merging. Until the published branch reaches trunk, the pin a
@@ -370,10 +484,11 @@ meta:
 	 */
 	runTool("git", ["update-ref", "refs/heads/main", published], repo.cloud);
 
-	// 10. The loop closes: the same sweep that minted the work now passes.
+	// 13. The loop closes: the same sweep that minted the work now passes.
 	const clean = run(["test"], bridge);
 	assertOk(clean, "the backlog sweep must pass once the fix is on trunk");
 	assert.match(clean.stdout, /work-loop gate passed/);
+	assert.match(clean.stdout, /work-loop branch gate skipped: no landing dive/);
 	assert.deepEqual(plannedDiveIds(featPath), [], "a passing sweep must mint nothing");
 	assert.doesNotMatch(
 		clean.stderr,

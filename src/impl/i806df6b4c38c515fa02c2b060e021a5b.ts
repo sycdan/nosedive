@@ -91,7 +91,8 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 
 	// Superseded by test@2, which also reports the skipped repos this discards.
 	const { hydrated } = hydrateGateRepos(selected, kbDocs, rc.bridgeDir, rc.workspaceDir);
-	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", hydrated, io);
+	// This superseded command gains nothing from resolving a feat; test@2 does so.
+	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", undefined, hydrated, io);
 }
 
 /** A gate named by uuid, run whatever it is attached to. */

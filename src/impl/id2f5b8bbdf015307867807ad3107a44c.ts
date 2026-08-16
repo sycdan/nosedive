@@ -227,6 +227,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			context: {
 				bridgeRoot: rc.bridgeDir,
 				diveId: dive.id,
+				featId: feat?.id,
 				repos: gateRepoContext(
 					hydratedWorktrees.map((entry) => ({ repoId: entry.scope.repoId, path: entry.path })),
 					kbDocs,

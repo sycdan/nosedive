@@ -118,6 +118,7 @@ export async function runGateSession(
 	kbDocs: KbDoc[],
 	bridgeDir: string,
 	diveId: string,
+	featId: string | undefined,
 	hydrated: HydratedRepo[],
 	io: CommandIo,
 ): Promise<GateOutcome> {
@@ -128,6 +129,7 @@ export async function runGateSession(
 		context: {
 			bridgeRoot: bridgeDir,
 			diveId,
+			featId,
 			repos: gateRepoContext(hydrated, kbDocs, bridgeDir),
 		},
 	});

@@ -310,8 +310,12 @@ function renderHydratedSection(
 		.map(({ scope, path }) => {
 			const repoDoc = kbDocs.find((doc) => doc.id === scope.repoId);
 			const name = repoDoc?.name ?? scope.repoId;
-			const mode = scope.readOnly ? "ro" : "rw";
-			return `- repo=${name} path=${formatPath(path)} mode=${mode} ref=${scope.ref}`;
+			// No `mode=`: it named a concept that no longer exists. A scope says
+			// where its work goes by naming a branch, so the line carries the branch
+			// when there is one and says nothing when there is not -- the same shape
+			// the scope entry itself has.
+			const branch = scope.workBranch ? ` work-branch=${scope.workBranch}` : "";
+			return `- repo=${name} path=${formatPath(path)}${branch} ref=${scope.ref}`;
 		})
 		.join("\n");
 }

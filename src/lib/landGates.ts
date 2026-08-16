@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
@@ -210,6 +211,12 @@ export function collectDiveGates(
 }
 
 export interface GateRepoContext {
+	/**
+	 * Repos stay keyed by kb `name` because human-written gates read better that
+	 * way. The uuid lives beside that name, never in place of it, so a gate can
+	 * match the repo against ids while navigating the kb.
+	 */
+	id: string;
 	/** Bridge-relative path of the hydrated worktree, e.g. `workspace/nosedive`. */
 	root: string;
 }
@@ -218,8 +225,28 @@ export interface GateRepoContext {
 export interface GateContext {
 	bridgeRoot: string;
 	diveId: string;
+	featId?: string;
+	gateId: string;
+	introducedById: string;
 	repos: Record<string, GateRepoContext>;
+	/**
+	 * Reads one kb document by quid, and throws when there is none. Quids rather
+	 * than documents is the whole design: nothing has to be guessed in advance
+	 * about which fields a gate will read, and nothing can go stale between
+	 * assembling the context and the gate asking.
+	 */
+	resolve: (quid: string) => Promise<KbDoc>;
 }
+
+/**
+ * What crosses into the child, which is everything a function cannot be:
+ * `NOSEDIVE_GATE_CONTEXT` is JSON in an env var. `resolve` is attached on the
+ * other side, by the runner, once this has been parsed.
+ */
+export type SerializedGateContext = Omit<GateContext, "resolve">;
+
+/** Caller-owned fields; gate principals are added only when that gate runs. */
+export type GateCallerContext = Omit<SerializedGateContext, "gateId" | "introducedById">;
 
 /** Builds the stable, human-readable repo map passed to gate scripts. */
 export function gateRepoContext(
@@ -231,7 +258,7 @@ export function gateRepoContext(
 	for (const entry of hydrated) {
 		const doc = kbDocs.find((candidate) => candidate.id === entry.repoId);
 		if (!doc?.name) continue;
-		repos[doc.name] = { root: toPosixPath(relative(bridgeDir, entry.path)) };
+		repos[doc.name] = { id: doc.id, root: toPosixPath(relative(bridgeDir, entry.path)) };
 	}
 	return repos;
 }
@@ -253,7 +280,18 @@ if (typeof mod.run !== "function") {
 	console.error("gate module must export run(ctx)");
 	process.exit(1);
 }
-const outcome = await mod.run(JSON.parse(process.env.NOSEDIVE_GATE_CONTEXT));
+
+// The context arrives as JSON, so it arrives without its reader. Nosedive knows
+// where its own dist is and passes that path in; the gate itself could not name
+// it, since under npx the package sits in a cache directory the bridge cannot
+// see. Assembling ctx here rather than deserializing it whole is what lets it
+// carry a function at all.
+const ctx = JSON.parse(process.env.NOSEDIVE_GATE_CONTEXT);
+const lib = await import(pathToFileURL(process.env.NOSEDIVE_GATE_LIB).href);
+ctx.resolve = lib.createGateResolver(ctx.bridgeRoot);
+
+
+const outcome = await mod.run(ctx);
 if (outcome === false) process.exitCode = 1;
 
 // Draining instead of exiting here is what lets a node:test harness the gate
@@ -296,6 +334,25 @@ function writeGateRunner(): string {
 }
 
 /**
+ * The built entry the gate runner imports to build `ctx.resolve`.
+ *
+ * `dist/nosedive.js` and not the chunk beside it: the chunk's name is
+ * content-hashed and moves on every build, while the entry is what
+ * `package.json` ships and re-exports through. This file's own module sits in
+ * that same directory once bundled, which is the only reason it can name it.
+ */
+function gateLibPath(): string {
+	const path = fileURLToPath(new URL("./nosedive.js", import.meta.url));
+	if (!existsSync(path)) {
+		throw new Error(
+			`gates cannot start: nosedive's built entry is missing at ${path}. ` +
+				`Run \`npm run build\` -- gates resolve kb documents through it.`,
+		);
+	}
+	return path;
+}
+
+/**
  * Where a gate's output goes while it is still running. The text is captured
  * for `renderGateReport` either way; a sink only decides whether a human also
  * sees it live. Callers pass their command's io rather than writing to the
@@ -314,9 +371,9 @@ export interface GateOutputSink {
  */
 function runGateChild(
 	runnerPath: string,
+	libPath: string,
 	gate: LandGate,
-	context: GateContext,
-	serializedContext: string,
+	context: SerializedGateContext,
 	sink?: GateOutputSink,
 ): Promise<{ status: number; stdout: string; stderr: string }> {
 	return new Promise((resolve) => {
@@ -326,7 +383,8 @@ function runGateChild(
 			env: {
 				...cleanGitEnv(),
 				NOSEDIVE_GATE_MODULE: gate.scriptPath,
-				NOSEDIVE_GATE_CONTEXT: serializedContext,
+				NOSEDIVE_GATE_LIB: libPath,
+				NOSEDIVE_GATE_CONTEXT: JSON.stringify(context),
 			},
 		});
 		let stdout = "";
@@ -370,12 +428,15 @@ function runGateChild(
  */
 export async function runLandGates(
 	gates: LandGate[],
-	options: { context: GateContext; sink?: GateOutputSink },
+	options: { context: GateCallerContext; sink?: GateOutputSink },
 ): Promise<GateOutcome> {
 	const runs: GateRun[] = [];
 	const started = Date.now();
 	const runnerPath = gates.length > 0 ? writeGateRunner() : undefined;
-	const serializedContext = JSON.stringify(options.context);
+	// Resolved before the first gate rather than per gate: a missing build is a
+	// reason no gate can start, and finding that out after two have already run
+	// would report it as a gate failure.
+	const libPath = gates.length > 0 ? gateLibPath() : "";
 
 	// A header says which gate is talking. With one gate there is nothing to
 	// disambiguate, so `test <gate>` stays as quiet as the gate itself.
@@ -384,13 +445,12 @@ export async function runLandGates(
 	for (const gate of gates) {
 		const startedAt = new Date();
 		if (headers) options.sink?.err(`\n--- ${gateLabel(gate)} ---\n`);
-		const result = await runGateChild(
-			runnerPath!,
-			gate,
-			options.context,
-			serializedContext,
-			options.sink,
-		);
+		const context: SerializedGateContext = {
+			...options.context,
+			gateId: gate.doc.id,
+			introducedById: gate.introducedBy.id,
+		};
+		const result = await runGateChild(runnerPath!, libPath, gate, context, options.sink);
 		const endedAt = new Date();
 		runs.push({
 			gate,

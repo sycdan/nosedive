@@ -231,6 +231,7 @@ export function run(ctx) {
  * without making that convention part of nosedive itself.
  */
 const WORK_LOOP_BRANCH_GATE = `export async function run(ctx) {
+	// Defensive for direct invocation; wide walks no longer reach this gate through a dive.
 	if (!ctx.diveId) {
 		console.log("work-loop branch gate skipped: no landing dive");
 		return;
@@ -488,7 +489,7 @@ meta:
 	const clean = run(["test"], bridge);
 	assertOk(clean, "the backlog sweep must pass once the fix is on trunk");
 	assert.match(clean.stdout, /work-loop gate passed/);
-	assert.match(clean.stdout, /work-loop branch gate skipped: no landing dive/);
+	assert.doesNotMatch(clean.stdout, /work-loop branch gate skipped: no landing dive/);
 	assert.deepEqual(plannedDiveIds(featPath), [], "a passing sweep must mint nothing");
 	assert.doesNotMatch(
 		clean.stderr,

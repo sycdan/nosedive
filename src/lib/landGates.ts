@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
-import { KbDoc } from "./kbDocs.js";
+import { KbDoc, LinkRef } from "./kbDocs.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
 
@@ -92,14 +92,42 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 }
 
 /**
- * Walks every link reachable from the roots, not just gate edges: a gate may be
- * declared by a feat, a repo, or anything else in the dive's ancestry.
+ * An edge a wide walk must not follow. A dive's gates are that dive's business:
+ * reaching one through its feat would pull another diver's in-progress failures
+ * into an unrelated sweep, and every gate a feat has ever landed into every
+ * sweep after it.
+ *
+ * Both halves are load-bearing, for opposite cases, and neither can be dropped:
+ *
+ * - The **rel** catches a dive that is no longer `kind: dive`. `land` and `bail`
+ *   close a dive by converting it to `kind: memo`, so a `landed.dive` edge
+ *   points at a memo and the kind check cannot see it.
+ * - The **kind** catches a dive whose edge is unsuffixed. Older `record.dive`
+ *   versions wrote bare `planned`, `pending` and `working`, and live bridges
+ *   still carry them -- `diveRole` (`diveListing.ts`) exists to read both
+ *   spellings. Matching a hardcoded list of those words here instead would rot,
+ *   and two of them are generic enough to mean something else on another edge.
+ *
+ * The gap that remains is a bare rel on an already-closed dive, which needs a
+ * bridge old enough to have written unsuffixed edges and to have landed through
+ * them. Not worth a third check until one turns up.
+ */
+function isDiveEdge(link: LinkRef, target: KbDoc): boolean {
+	return link.rel?.endsWith(".dive") === true || target.kind === "dive";
+}
+
+/**
+ * Walks the links reachable from the roots, not just gate edges: a gate may be
+ * declared by a feat, a repo, or anything else in the dive's ancestry. It stops
+ * at dives -- see `isDiveEdge` -- so a root dive's own gates are read while
+ * nobody else's are.
+ *
  * First-seen wins for a gate's attributes, so pass roots closest-first -- the
  * dive, then its feat, then its scoped repos, which reach the dive through
  * frontmatter rather than links. Later edges are kept only so the report can
  * name them.
  */
-export function collectLandGates(
+export function collectReachableGates(
 	verb: string,
 	roots: KbDoc[],
 	kbDocs: KbDoc[],
@@ -142,7 +170,7 @@ export function collectLandGates(
 					order.push(target.id);
 				}
 			}
-			if (target) walk(target);
+			if (target && !isDiveEdge(link, target)) walk(target);
 		}
 	};
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -206,6 +206,79 @@ test("a dive with no gates still lands", () => {
 	const { bridge, worktree } = setup("no-gates");
 	gitCommitEmpty(worktree, "work");
 	assertOk(run(["land"], bridge), "land without gates should push");
+});
+
+test("wide gate walks do not descend into sibling dives", () => {
+	const gateId = "019fd471-0000-7000-8000-000000000040";
+	const siblingId = "019fd471-0000-7000-8000-000000000041";
+	const backlogId = "019fd471-0000-7000-8000-000000000042";
+	const featGateId = "019fd471-0000-7000-8000-000000000043";
+	const logPath = join(tmp, "sibling-dive-gate.json");
+	const { bridge, worktree, diveId } = setup("sibling-dive", [
+		gate(gateId, "sibling-only", contextGate(logPath), undefined, { link: false }),
+		gate(featGateId, "feat-regression", GATE_PASS, undefined, { link: false }),
+	]);
+	write(
+		join(bridge, "kb", `${siblingId}.md`),
+		`---
+kind: dive
+id: ${siblingId}
+name: sibling-dive
+gist: "Work belonging to another dive"
+feat: ${effortId}
+scopes: []
+links:
+  - kb/${gateId}.md:
+      rel: test.gate
+  - kb/${gateId}.md:
+      rel: land.gate
+---
+`,
+	);
+	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	write(
+		effortPath,
+		readFileSync(effortPath, "utf8").replace(
+			/^links:\n/m,
+			`links:\n  - kb/${siblingId}.md:\n      rel: working.dive\n  - kb/${featGateId}.md:\n      rel: test.gate\n`,
+		),
+	);
+	write(
+		join(bridge, "kb", `${backlogId}.md`),
+		`---
+kind: memo
+id: ${backlogId}
+name: backlog
+gist: "Regression roots"
+scopes: []
+links:
+  - kb/${effortId}.md:
+      rel: active.feat
+---
+`,
+	);
+	const configPath = join(bridge, ".nosedive", "config.yaml");
+	write(configPath, `${readFileSync(configPath, "utf8").trimEnd()}\nbacklog: ${backlogId}\n`);
+	runTool("git", ["add", "--", "kb", ".nosedive/config.yaml"], bridge);
+	gitCommit(bridge, "add sibling dive gate");
+
+	const markerPath = join(bridge, "workspace", ".nosedive-ref");
+	rmSync(markerPath);
+	const sweep = run(["test"], bridge);
+	assertOk(sweep, "backlog sweep failed");
+	const ranDuringSweep = existsSync(logPath);
+	rmSync(logPath, { force: true });
+
+	// Bare dive rels survive from older record.dive versions; kind is the backstop.
+	write(effortPath, readFileSync(effortPath, "utf8").replace("rel: working.dive", "rel: working"));
+	write(markerPath, `id: ${diveId}\n`);
+	gitCommitEmpty(worktree, "work");
+	const landed = run(["land"], bridge);
+	assertOk(landed, "first dive should land without running its sibling's gate");
+	const ranDuringLand = existsSync(logPath);
+
+	assert.equal(ranDuringSweep, false, "the backlog sweep descended into a sibling dive");
+	assert.equal(ranDuringLand, false, "land descended into a sibling dive");
 });
 
 test("a legacy gate edge refuses rather than silently skipping the gate", () => {

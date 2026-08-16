@@ -13,7 +13,7 @@ import {
 	resolveRunnerUsage,
 } from "../lib/dropPrompt.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
-import { collectLandGates } from "../lib/landGates.js";
+import { collectReachableGates } from "../lib/landGates.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
@@ -38,7 +38,7 @@ export function run(args: string[], runtime: ImplRuntime): ImplCommandOutput {
 		...readiness.repos.map((repo) => repo.doc),
 		...(bridgeRepo ? [bridgeRepo] : []),
 	];
-	const gates = collectLandGates("land", roots, kbDocs, rc.bridgeDir);
+	const gates = collectReachableGates("land", roots, kbDocs, rc.bridgeDir);
 	const promptDoc = resolvePromptDoc(kbDocs, rc, "drop");
 	return {
 		stdout: renderDropPrompt(readPromptBody(promptDoc), {

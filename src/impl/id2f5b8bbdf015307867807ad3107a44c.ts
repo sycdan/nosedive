@@ -27,7 +27,7 @@ import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
 import {
-	collectLandGates,
+	collectReachableGates,
 	gateRepoContext,
 	renderGateReport,
 	runLandGates,
@@ -218,7 +218,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	const gates = collectLandGates("land", gateRoots, kbDocs, rc.bridgeDir);
+	const gates = collectReachableGates("land", gateRoots, kbDocs, rc.bridgeDir);
 	if (gates.length > 0) {
 		const outcome = await runLandGates(gates, {
 			// Live gate output goes to stderr, where a gate's own progress already

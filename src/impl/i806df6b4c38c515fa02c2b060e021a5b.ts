@@ -10,7 +10,7 @@ import { readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import {
 	collectDiveGates,
-	collectLandGates,
+	collectReachableGates,
 	LandGate,
 	resolveGateScript,
 } from "../lib/landGates.js";
@@ -129,5 +129,5 @@ function selectDiveGates(
 			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	return collectLandGates("land", roots, kbDocs, rc.bridgeDir);
+	return collectReachableGates("land", roots, kbDocs, rc.bridgeDir);
 }

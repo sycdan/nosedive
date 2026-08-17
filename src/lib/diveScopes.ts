@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
+import { CommandIo } from "./bridgeSetupIo.js";
 import { defaultWorkBranch, formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import {
@@ -109,21 +110,36 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
  * A pin is the one field a dive cannot correct for itself: `--upscope`
  * deliberately keeps the pin it finds, and replacing the scope set to move one
  * ref drops the branch with it. Re-resolving in place is the whole operation.
+ *
+ * A scope still carrying the superseded `mode: rw` is the one entry that has to
+ * change to stay the same. `mode` is never written back, so rewriting the entry
+ * without the branch its feat hands down is how a landable dive quietly becomes
+ * read-only -- and unlike `--upscope` or `--clear-scopes`, a repin is nobody
+ * saying they wanted that. Where the feat declares no branch there is nothing to
+ * inherit, and the narrowing is reported instead of happening in silence.
  */
 export function repinScopes(
 	scopes: ScopeRef[],
 	rc: NosediveRc,
 	kbDocs: KbDoc[],
 	workspaceDir: string,
+	feat: KbDoc | undefined,
+	io: CommandIo,
 ): ScopeRef[] {
-	return scopes.map((scope) => ({
-		...scope,
-		ref: cachedScope(
-			resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-			rc.bridgeDir,
-			workspaceDir,
-		).ref,
-	}));
+	return scopes.map((scope) => {
+		const repo = resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId);
+		const ref = cachedScope(repo, rc.bridgeDir, workspaceDir).ref;
+		if (scope.workBranch || scope.legacyMode !== "rw") return { ...scope, ref };
+		const workBranch = featWorkBranch(scope.repoId, rc, kbDocs, feat);
+		if (!workBranch) {
+			io.err(
+				`scope ${repo.name} was writable as mode: rw and its feat declares no branch for it; ` +
+					`it is read-only now -- give it one with \`--upscope ${repo.name}\``,
+			);
+			return { ...scope, ref };
+		}
+		return { ...scope, ref, readOnly: false, workBranch };
+	});
 }
 
 /** `parent`, plus the role-suffixed spellings a deck-rooted tree uses (`parent.feat`, `parent.deck`). */

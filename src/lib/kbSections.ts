@@ -41,9 +41,11 @@ export interface SectionHeading {
  * section is added next.
  *
  * The stamp is searched for rather than indexed at, so where a label sits does
- * not matter. Every shape on record parses: a bare stamp from `jump`, the
- * `<label> <stamp>` that `land`, `test` and `bail` write, and the hand-written
- * `<date> -- <label>` that predates a command for writing these at all.
+ * not matter. Every shape on record parses: the `<label> <stamp>` that `jump`,
+ * `land`, `test` and `bail` write, the bare stamp that `append-log.dive`
+ * writes without a `--label` and that `jump` wrote before it took one, and the
+ * hand-written `<date> -- <label>` that predates a command for writing these
+ * at all.
  *
  * This is the only place a heading is interpreted. New shapes are added here
  * and every reader gains them at once.

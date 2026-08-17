@@ -275,8 +275,15 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.match(diveText, /diver: "jump@example\.test"/);
 	assert.match(
 		diveText,
-		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
-		"a timestamped hydrated-section heading should be appended",
+		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		"a labelled, timestamped hydrated-section heading should be appended",
+	);
+	// The lead line is the whole point of the section carrying a label: a reader
+	// a month later gets the event, the holder and the feat before the paths.
+	assert.match(
+		diveText,
+		/^jump@example\.test picked up jump-test\.nosedive, hydrating 1 scoped repo\.$/m,
+		"the section should say who picked the dive up and what for",
 	);
 	assert.match(
 		diveText,
@@ -642,7 +649,7 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 	assert.match(diveText, /diver: "jump@example\.test"/);
 	assert.match(
 		diveText,
-		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
 		"a partial-success run still hydrated a usable workspace, so the section is still appended",
 	);
 

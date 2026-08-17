@@ -30,6 +30,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
+import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import {
 	ensureManagedRepoCache,
@@ -43,7 +44,11 @@ import {
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
 import { reconcilePrepareCommitMsgHook, reconcilePushIsolation } from "../lib/repoHardening.js";
-import { hydrateScopeAtPin as hydrateScopeCore } from "../lib/scopeHydration.js";
+import {
+	hydrateScopeAtPin as hydrateScopeCore,
+	pinBehindTrunk,
+	type StalePin,
+} from "../lib/scopeHydration.js";
 
 /** One patch memo in reapply order, walked from a dive's `rel: patch` head via `rel: next`. */
 interface PatchStep {
@@ -60,7 +65,7 @@ function hydrateScopeAtPin(
 	bridgeDir: string,
 	workspaceDir: string,
 	featId: string,
-): string {
+): { targetPath: string; stale?: StalePin; repoName: string } {
 	const result = hydrateScopeCore(scope, kbDocs, bridgeDir, workspaceDir);
 	const { repoDoc, sourcePath, targetPath, commit } = result;
 	if (!result.created) {
@@ -89,7 +94,11 @@ function hydrateScopeAtPin(
 	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, scope.repoId);
 	reconcilePrepareCommitMsgHook(targetPath, featId, repoDoc);
 
-	return targetPath;
+	return {
+		targetPath,
+		repoName: repoDoc.name || scope.repoId,
+		stale: pinBehindTrunk(sourcePath, commit, repoDoc.repoBaseBranch ?? "main"),
+	};
 }
 
 function linkDocId(target: string): string {
@@ -362,10 +371,22 @@ export function jump(args: string[], io: CommandIo): void {
 	const scopePaths = new Map<string, string>();
 	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
 	for (const scope of scopes) {
-		const path = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, feat.id);
+		const hydrated = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, feat.id);
+		const path = hydrated.targetPath;
 		scopePaths.set(scope.repoId, path);
 		hydratedEntries.push({ scope, path });
 		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
+		// A warning, not a refusal: a planned dive that merely waited is the
+		// ordinary case. The agent picking it up was not there when the pin was
+		// chosen and has no reason to suspect it, so say how far behind and name
+		// the fix -- a warning nobody can act on only teaches people to skip them.
+		if (hydrated.stale) {
+			io.err(
+				`jump: ${hydrated.repoName} is pinned ${hydrated.stale.behind} commit${
+					hydrated.stale.behind === 1 ? "" : "s"
+				} behind ${hydrated.stale.trunk}; re-pin with \`${nosediveInvocation()} record.dive --ref ${dive.id} --repin\``,
+			);
+		}
 	}
 
 	const patchHeadIds = dive.links.filter((link) => link.rel === "patch").map((link) => link.id);

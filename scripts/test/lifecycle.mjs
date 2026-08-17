@@ -497,3 +497,93 @@ meta:
 		"a merged fix must leave the worktree agreeing with its declared pin",
 	);
 });
+
+const stalePinRepoId = "019fd592-0000-7000-8000-000000000001";
+
+/**
+ * The pin is the one thing a dive cannot correct for itself, and it goes wrong
+ * two ways: recorded against a cache nobody refreshed, or simply overtaken while
+ * the dive waited its turn. Both leave the work built on a base nobody will
+ * merge into, and both used to be silent.
+ */
+test("a dive records current trunk, is warned when its pin goes stale, and re-pins", () => {
+	const repo = implRepo(tmp, "stale-pin-repo");
+	const { bridge } = seededBridge(tmp, "stale-pin-bridge", diver);
+	writeImplRepoDoc(bridge, stalePinRepoId, repo);
+
+	const { featPath, featId, featText } = pitchFeat(bridge, "Exercise stale pins.", "stale-pin");
+	write(
+		featPath,
+		featText.replace(
+			/^---$/m,
+			`---\nscopes:\n  - ${stalePinRepoId}:\n      work-branch: work/stale-pin`,
+		),
+	);
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "scope stale-pin feat");
+	runTool("git", ["push"], bridge);
+
+	const scopeRef = (diveId) =>
+		/^ {6}ref: (\S+)$/m.exec(readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"))?.[1];
+	const trunkHead = () => runTool("git", ["rev-parse", "HEAD"], repo.source).stdout.trim();
+
+	// Recording builds the managed cache, so from here on the cache is a thing
+	// that can be out of date -- which is the whole point of what follows.
+	const waiting = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
+	assertOk(waiting, "record.dive for the waiting dive failed");
+	const waitingId = recordedDiveId(waiting.stdout);
+	assert.equal(scopeRef(waitingId), trunkHead(), "a new dive must pin trunk as it stands");
+	assertOk(
+		run(["record.dive", "--ref", waitingId, "--brief", "Wait while trunk moves."], bridge),
+		"brief for the waiting dive failed",
+	);
+
+	// Trunk moves while the dive waits. Nothing tells the cache.
+	const stalePin = trunkHead();
+	write(join(repo.source, "moved.txt"), "trunk moved\n");
+	runTool("git", ["add", "moved.txt"], repo.source);
+	gitCommit(repo.source, "move trunk out from under the pin");
+	runTool("git", ["push", "cloud", "main"], repo.source);
+	const movedTrunk = trunkHead();
+	assert.notEqual(stalePin, movedTrunk, "the fixture must actually move trunk");
+
+	// A dive recorded now pins the new trunk, not whatever the cache last saw.
+	// That is the half of the bug the incident memo blamed and the code already
+	// handled: pinning fetches, so a stale cache cannot produce a stale pin.
+	const fresh = run(["record.dive", "--feat", featId], bridge);
+	assertOk(fresh, "record.dive after trunk moved failed");
+	assert.equal(
+		scopeRef(recordedDiveId(fresh.stdout)),
+		movedTrunk,
+		"recording must pin current trunk, not the cached commit",
+	);
+
+	// The other half, which was silent: the dive that waited.
+	const jumped = run(["jump"], bridge);
+	assertOk(jumped, "jump on a stale pin must warn, not refuse");
+	assert.match(
+		jumped.stderr,
+		new RegExp(`stale-pin-repo is pinned 1 commit behind main`),
+		`expected a stale-pin warning:\n${jumped.stderr}`,
+	);
+	assert.match(
+		jumped.stderr,
+		new RegExp(`record\.dive --ref ${waitingId} --repin`),
+		"the warning must name the command that fixes it",
+	);
+	assert.equal(scopeRef(waitingId), stalePin, "jump must not move the pin it warned about");
+
+	// And the fix the warning names does what it says, without taking the branch
+	// with it -- which is what made re-pinning by hand the only safe option.
+	assertOk(run(["record.dive", "--ref", waitingId, "--repin"], bridge), "--repin failed");
+	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${waitingId}.md`), "utf8"),
+		/work-branch: work\/stale-pin/,
+		"--repin must leave the work branch alone",
+	);
+
+	const repinned = run(["jump"], bridge);
+	assertOk(repinned, "jump after re-pinning failed");
+	assert.doesNotMatch(repinned.stderr, /pinned \d+ commit/, "a re-pinned dive is not stale");
+});

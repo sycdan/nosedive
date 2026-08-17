@@ -21,6 +21,7 @@ import {
 	inheritedScopes,
 	renderScopeEntry,
 	renderScopes,
+	repinScopes,
 	resolveBridgeDocRef,
 	resolveScopeRepo,
 } from "./diveScopes.js";
@@ -47,6 +48,8 @@ export interface RecordDiveOptions {
 	unscopes: string[];
 	/** The branch every `--upscope` in this call publishes to. */
 	workBranch?: string;
+	/** Re-resolve every scope's ref to current trunk, changing nothing else. */
+	repin: boolean;
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -62,6 +65,7 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		clearScopes: false,
 		upscopes: [],
 		unscopes: [],
+		repin: false,
 	};
 	let featValue: string | undefined;
 	// Holds whatever the `--effort` alias was given; the flag keeps its spelling.
@@ -70,6 +74,10 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		const arg = args[i]!;
 		if (arg === "--clear-scopes") {
 			options.clearScopes = true;
+			continue;
+		}
+		if (arg === "--repin") {
+			options.repin = true;
 			continue;
 		}
 		if (arg === "--free") {
@@ -131,6 +139,9 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	if (options.workBranch !== undefined && options.upscopes.length === 0) {
 		throw new Error("--work-branch requires at least one --upscope");
 	}
+	// There is no pin to move on a dive that does not exist yet: a create already
+	// resolves current trunk for every scope it writes.
+	if (options.repin && !options.ref) throw new Error("--repin requires --ref");
 	if (!options.ref && !options.feat)
 		throw new Error("record.dive requires --feat or --effort when creating a dive");
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
@@ -384,12 +395,15 @@ export function recordDive(args: string[], io: CommandIo): void {
 		: dive.scopes;
 	if (
 		adopting ||
+		options.repin ||
 		options.clearScopes ||
 		options.upscopes.length > 0 ||
 		options.unscopes.length > 0
 	) {
 		const base = options.clearScopes ? [] : inheritedNow;
-		const scopes = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
+		const edited = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
+		// Last, so a repo added in the same call is pinned at trunk like the rest.
+		const scopes = options.repin ? repinScopes(edited, rc, kbDocs, workspaceDir) : edited;
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		doc.set("scopes", scopes.map(renderScopeEntry));

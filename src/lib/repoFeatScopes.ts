@@ -79,7 +79,17 @@ export function resolveActiveFeatDoc(kbDocs: KbDoc[], rc: NosediveRc): KbDoc {
  * generates, so a doc pitched under a parent is indistinguishable from a
  * migrated one.
  */
-export function appendLinkToDoc(path: string, targetId: string, rel: string): void {
+export function appendLinkToDoc(
+	path: string,
+	targetId: string,
+	rel: string,
+	/**
+	 * Extra keys beside `rel`, for edges whose attributes are the caller's to set.
+	 * Scalars rather than strings, so a number writes unquoted the way a
+	 * hand-written link does -- both spellings read back the same.
+	 */
+	attrs: Record<string, string | number | boolean> = {},
+): void {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const frontmatter = splitMarkdownFrontmatter(text, label);
@@ -89,7 +99,7 @@ export function appendLinkToDoc(path: string, targetId: string, rel: string): vo
 			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
 		);
 
-	const entry = { [`kb/${targetId}.md`]: { rel } };
+	const entry = { [`kb/${targetId}.md`]: { rel, ...attrs } };
 	const links = doc.get("links", true);
 	if (links === undefined || links === null) {
 		doc.set("links", [entry]);

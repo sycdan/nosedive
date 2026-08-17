@@ -130,8 +130,8 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 	assert.match(preflight.stdout, /^== pilot identification ==$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-name: Install Pilot$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-email: install-pilot@example\.invalid$/m);
-	assert.match(preflight.stdout, /^== open work: current feat backlog ==$/m);
-	assert.match(preflight.stderr, /dump-backlog requires a UUID-shaped backlog memo id/);
+	assert.doesNotMatch(preflight.stdout, /^== open work/m);
+	assert.match(preflight.stderr, /no kb directory is configured, so no dives can be listed/);
 
 	const preflightAgain = run(["preflight"], bridge);
 	assertOk(preflightAgain, "preflight idempotent refresh failed");
@@ -210,7 +210,7 @@ test("preflight fetches trunk and blocks stale bridge knowledge without rebasing
 	);
 	assert.match(
 		preflight.stdout,
-		/^nose: fix this\^ first, by rebasing the bridge onto FETCH_HEAD before trusting the backlog below$/m,
+		/^nose: fix this\^ first, by rebasing the bridge onto FETCH_HEAD before trusting the dives below$/m,
 	);
 	assert.doesNotMatch(
 		preflight.stdout,
@@ -245,7 +245,7 @@ test("preflight takes over an unwired foreign hook and chains it", () => {
 	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(foreignHook));
 	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
 	assert.equal(readFileSync(originalRecord(bridge), "utf8"), `${posix(dirname(foreignHook))}\n`);
-	assert.match(foreignPreflight.stdout, /^== open work: current feat backlog ==$/m);
+	assert.match(foreignPreflight.stdout, /^== dives ==$/m);
 });
 
 test("preflight leaves a wired foreign hook untouched and reports", () => {
@@ -264,7 +264,7 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 	assert.equal(preflight.stderr, "", `unexpected stderr:\n${preflight.stderr}`);
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 	assert.match(preflight.stdout, /^== pilot identification ==$/m);
-	assert.match(preflight.stdout, /^== open work: current feat backlog ==$/m);
+	assert.match(preflight.stdout, /^== dives ==$/m);
 });
 
 test("preflight takes over a core.hooksPath that names no wired hook", () => {
@@ -285,7 +285,7 @@ test("preflight takes over a core.hooksPath that names no wired hook", () => {
 	// git reads exactly one hooks directory, and the loser rots unwatched.
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
 	assert.match(hooksPathPreflight.stdout, /^Installed nosedive pre-push hook:/m);
-	assert.match(hooksPathPreflight.stdout, /^== open work: current feat backlog ==$/m);
+	assert.match(hooksPathPreflight.stdout, /^== dives ==$/m);
 });
 
 test("preflight reconciles the same hooks path again without re-chaining itself", () => {
@@ -426,7 +426,7 @@ test("preflight leaves a wired core.hooksPath hook untouched and reports", () =>
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 });
 
-test("preflight reports bridge status, pilot identity, and the active dive/feat/backlog", () => {
+test("preflight reports bridge status, pilot identity and the active dive, and no backlog", () => {
 	const bridge = createBridge(tmp, "report-bridge");
 	setIdentity(bridge, "Report Pilot", "report-pilot@example.invalid");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
@@ -455,11 +455,14 @@ test("preflight reports bridge status, pilot identity, and the active dive/feat/
 
 	const bridgeIdx = preflight.stdout.indexOf("== bridge status ==");
 	const pilotIdx = preflight.stdout.indexOf("== pilot identification ==");
-	const backlogIdx = preflight.stdout.indexOf("== open work: current feat backlog ==");
+	const divesIdx = preflight.stdout.indexOf("== dives ==");
 	assert.ok(
-		bridgeIdx !== -1 && bridgeIdx < pilotIdx && pilotIdx < backlogIdx,
+		bridgeIdx !== -1 && bridgeIdx < pilotIdx && pilotIdx < divesIdx,
 		`sections missing or out of order:\n${preflight.stdout}`,
 	);
+	// The backlog is a document to ask for, not one every session pays for.
+	assert.doesNotMatch(preflight.stdout, /^== open work/m);
+	assert.match(preflight.stdout, /Run `dump-backlog` when they want to see the whole backlog/);
 
 	const workspaceLine = /^nosedive-workspace: (.+)$/m.exec(preflight.stdout)?.[1];
 	assert.ok(workspaceLine, `missing nosedive-workspace line:\n${preflight.stdout}`);
@@ -480,7 +483,9 @@ test("preflight reports bridge status, pilot identity, and the active dive/feat/
 	);
 	assert.match(preflight.stdout, /^nosedive-pilot-name: Report Pilot$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-email: report-pilot@example\.invalid$/m);
-	assert.match(preflight.stdout, /Report the dive\./);
+	// The feat's gist came out of the backlog body and is gone with it. A feat
+	// header names the feat and links it; anyone who wants the gist reads it.
+	assert.doesNotMatch(preflight.stdout, /Report the dive\./);
 });
 
 const TOP_FEAT_ID = "019fe500-0000-7000-8000-000000000001";
@@ -646,11 +651,33 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		assert.match(
 			preflight.stdout,
 			new RegExp(
-				`^ {2}- \\[${name}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\) rel=${rel} needs=diver`,
+				`^ {4}- \\[${name}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\) rel=${rel} needs=diver`,
 				"m",
 			),
 		);
 	}
+
+	// Each dive sits under the feat whose links reached it, and the header
+	// carries the feat's path but not its gist.
+	for (const [feat, id] of [
+		["top-fixture", TOP_FEAT_ID],
+		["child-fixture", CHILD_FEAT_ID],
+	]) {
+		assert.match(
+			preflight.stdout,
+			new RegExp(`^ {2}\\[${feat}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\):$`, "m"),
+		);
+	}
+	assert.doesNotMatch(preflight.stdout, /Fixture top-fixture\.|Fixture child-fixture\./);
+
+	const topHeader = preflight.stdout.indexOf("[top-fixture]");
+	const childHeader = preflight.stdout.indexOf("[child-fixture]");
+	const plannedDive = preflight.stdout.indexOf("planned-dive");
+	const pendingDive = preflight.stdout.indexOf("pending-dive");
+	assert.ok(
+		topHeader < plannedDive && plannedDive < childHeader && childHeader < pendingDive,
+		`dives are not grouped under their feats:\n${preflight.stdout}`,
+	);
 
 	const available = preflight.stdout.indexOf("Available:");
 	const held = preflight.stdout.indexOf("Held:");
@@ -668,7 +695,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	// A claimed planned/pending dive is the only way into Held: a claimed
 	// working/jumped dive is somebody's live work and drops out of the list.
 	const heldLine = new RegExp(
-		`^ {2}- \\[held-pending-dive\\]\\(${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}\\) rel=pending diver=other-pilot@example\\.invalid`,
+		`^ {4}- \\[held-pending-dive\\]\\(${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}\\) rel=pending diver=other-pilot@example\\.invalid`,
 		"m",
 	);
 	assert.match(preflight.stdout, heldLine);
@@ -686,12 +713,10 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		assert.doesNotMatch(preflight.stdout, new RegExp(hidden));
 	}
 
-	// Dives outrank the backlog: what the pilot is in the middle of comes first.
-	assert.ok(
-		preflight.stdout.indexOf("== dives ==") <
-			preflight.stdout.indexOf("== open work: current feat backlog =="),
-		"the dive section should print above the backlog",
-	);
+	// The backlog memo is walked for these dives but never printed: the feat
+	// headers are what the pilot needs, and the rest is `dump-backlog`'s job.
+	assert.doesNotMatch(preflight.stdout, /^== open work/m);
+	assert.doesNotMatch(preflight.stdout, /Backlog fixture\./);
 	assert.match(preflight.stdout, /Run `jump` only when the pilot asks for it\./);
 });
 
@@ -714,6 +739,37 @@ test("preflight names record.dive --free when there is no dive to pick up", () =
  * a kb-wide scan would have found. The empty list is not silent: the backlog
  * section names the missing memo on stderr.
  */
+test("preflight groups a dive the deck links directly under no feat", () => {
+	const bridge = createBridge(tmp, "unowned-dive-bridge");
+	setIdentity(bridge, "Unowned Pilot", "unowned-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const backlog = backlogId(bridge);
+
+	// A dive hanging straight off the deck has no feat to sit under. Dropping it
+	// would hide the one dive nobody owns, which is the one worth seeing.
+	writeBacklogMemo(bridge, backlog, [
+		...link(TOP_FEAT_ID, "child.feat"),
+		...link(PLANNED_DIVE_ID, "planned.dive"),
+	]);
+	writeFeatDoc(bridge, TOP_FEAT_ID, "owner-fixture", [...link(PENDING_DIVE_ID, "pending.dive")]);
+	writeDiveDoc(bridge, PLANNED_DIVE_ID, "deck-linked-dive");
+	writeDiveDoc(bridge, PENDING_DIVE_ID, "feat-linked-dive");
+
+	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
+	gitCommit(bridge, "commit unowned dive graph");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with an unowned dive failed");
+	assert.match(preflight.stdout, /^ {2}\(no feat\):$/m);
+	assert.match(preflight.stdout, /^ {4}- \[deck-linked-dive\]/m);
+	assert.match(preflight.stdout, /^ {4}- \[feat-linked-dive\]/m);
+	// Owned feats first; the unowned group trails them.
+	assert.ok(
+		preflight.stdout.indexOf("[owner-fixture]") < preflight.stdout.indexOf("(no feat)"),
+		`the unowned group should trail the feats:\n${preflight.stdout}`,
+	);
+});
+
 test("preflight lists no dives when the backlog memo cannot be resolved", () => {
 	const bridge = createBridge(tmp, "no-backlog-bridge");
 	setIdentity(bridge, "Lost Pilot", "lost-pilot@example.invalid");
@@ -729,6 +785,18 @@ test("preflight lists no dives when the backlog memo cannot be resolved", () => 
 	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
 	assert.doesNotMatch(preflight.stdout, /unreachable-dive/);
 	assert.match(preflight.stderr, new RegExp(`bridge backlog memo not found: ${missing}`));
+
+	// Same rule for a backlog id that could never resolve: an empty list has to
+	// say it is empty because the memo is unreadable, not because there is no
+	// work. Nothing else prints the backlog now, so nothing else would say it.
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+	const unshaped = run(["preflight"], bridge);
+	assertOk(unshaped, "preflight with a non-UUID backlog failed");
+	assert.match(unshaped.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
+	assert.match(
+		unshaped.stderr,
+		/listing dives requires a UUID-shaped backlog memo id: \.\/backlog/,
+	);
 });
 
 test("preflight fails like whoami when git identity is incomplete", () => {

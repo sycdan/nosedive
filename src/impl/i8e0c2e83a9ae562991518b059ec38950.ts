@@ -5,9 +5,8 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { bridgeBacklogMemoBody } from "../lib/backlogDives.js";
 import {
-	appendDiveSection,
+	appendGroupedDiveSection,
 	collectPreflightDives,
 	ListedDive,
 	localOnlyKbDocIds,
@@ -42,7 +41,7 @@ import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 
 const STALE_BRIDGE_NOSE =
-	"nose: fix this^ first, by rebasing the bridge onto FETCH_HEAD before trusting the backlog below";
+	"nose: fix this^ first, by rebasing the bridge onto FETCH_HEAD before trusting the dives below";
 
 const MANAGED_HOOKS_DIRNAME = "nosedive-hooks";
 /**
@@ -286,11 +285,12 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 		return;
 	}
 
-	const { available, held } = collectPreflightDives(
+	const { available, held, warnings } = collectPreflightDives(
 		rc,
 		kbDocs,
 		localOnlyKbDocIds(rc.bridgeDir, rc.kbDir),
 	);
+	for (const warning of warnings) io.err(warning);
 
 	if (available.length === 0 && held.length === 0) {
 		io.log(PREFLIGHT_NO_DIVE_LINE);
@@ -302,7 +302,7 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 
 function appendDiveSectionTo(io: CommandIo, label: string, dives: ListedDive[]): void {
 	const lines: string[] = [];
-	appendDiveSection(lines, label, dives);
+	appendGroupedDiveSection(lines, label, dives);
 	for (const line of lines) io.log(line);
 }
 
@@ -353,18 +353,11 @@ function printSessionReport(
 	io.writeOut(pilotIdentityLines(identity));
 	io.log("");
 
-	// Identity first, so a reader knows whose dives these are; dives before the
-	// backlog, because what the pilot is in the middle of outranks what they
-	// could start.
+	// Identity first, so a reader knows whose dives these are. The backlog is
+	// not printed: every dive already sits under the feat that owns it, and the
+	// rest of the backlog is a document to ask for -- `dump-backlog` -- rather
+	// than one every session pays for whether or not it is read.
 	printDives(rc, kbDocs, io);
-	io.log("");
-
-	io.log("== open work: current feat backlog ==");
-	try {
-		io.writeOut(bridgeBacklogMemoBody(rc));
-	} catch (err) {
-		io.err(err instanceof Error ? err.message : String(err));
-	}
 	io.log("");
 	io.log(PREFLIGHT_GUIDANCE);
 }

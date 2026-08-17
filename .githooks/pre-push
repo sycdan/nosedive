@@ -9,10 +9,11 @@ if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --o
 	exit 1
 fi
 
-echo "pre-push: regenerate command surface"
+echo "pre-push: regenerate README surfaces"
 npm run commands:surface
+npm run faq:surface
 if ! git diff --quiet -- README.md; then
-	echo "pre-push: README.md command surface was stale; review and commit the regenerated README."
+	echo "pre-push: README.md generated surfaces were stale; review and commit the regenerated README."
 	git diff -- README.md
 	exit 1
 fi

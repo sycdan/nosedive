@@ -103,6 +103,29 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 	};
 }
 
+/**
+ * Every scope moved to current trunk, and nothing else about them touched.
+ *
+ * A pin is the one field a dive cannot correct for itself: `--upscope`
+ * deliberately keeps the pin it finds, and replacing the scope set to move one
+ * ref drops the branch with it. Re-resolving in place is the whole operation.
+ */
+export function repinScopes(
+	scopes: ScopeRef[],
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	workspaceDir: string,
+): ScopeRef[] {
+	return scopes.map((scope) => ({
+		...scope,
+		ref: cachedScope(
+			resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+			rc.bridgeDir,
+			workspaceDir,
+		).ref,
+	}));
+}
+
 /** `parent`, plus the role-suffixed spellings a deck-rooted tree uses (`parent.feat`, `parent.deck`). */
 function isParentRel(rel: string | undefined): boolean {
 	return rel === "parent" || (rel?.startsWith("parent.") ?? false);

@@ -3,7 +3,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
-import { TIMESTAMPED_SECTION_HEADING_PATTERN } from "./kbSections.js";
+import { hasLoggedSection } from "./kbSections.js";
 import {
 	formatPath,
 	gitRelPath,
@@ -260,7 +260,7 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 		// otherwise have to guard a value the type says cannot happen.
 		gist: fm.scalars.gist ?? "",
 		hasBrief: DIVE_BRIEF_HEADING_PATTERN.test(text),
-		hasLog: TIMESTAMPED_SECTION_HEADING_PATTERN.test(text),
+		hasLog: hasLoggedSection(text),
 		repoPath: kbMetaPath(fm.nested.meta?.path),
 		repoBaseBranch:
 			fm.nested.meta?.trunk ??

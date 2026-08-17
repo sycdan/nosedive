@@ -14,6 +14,10 @@ import {
 	renderTopLevelHelpText,
 } from "./contracts.js";
 export { collectDiveGates, collectFeatGates, collectReachableGates } from "./lib/landGates.js";
+// The one reader of a section heading. Exported so the shapes it accepts can be
+// asserted directly -- what a heading decomposes *into* reaches no command's
+// output, so nothing else could tell a mangled label from a good one.
+export { decomposeSectionHeading, hasLoggedSection } from "./lib/kbSections.js";
 // Exported for the gate runner, which imports this entry by absolute path to
 // build `ctx.resolve`. It is public surface because a spawned child has no
 // other way in, not because callers outside nosedive are expected to use it.

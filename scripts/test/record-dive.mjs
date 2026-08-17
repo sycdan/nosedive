@@ -668,19 +668,29 @@ test("record.dive --repin keeps a legacy mode: rw scope landable", () => {
 	const { bridge, repoCommit } = setup("repin-legacy-mode");
 	const otherCommit = createRepo(join(bridge, "workspace", "other"), unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	// The feat declares a branch for `other` as well, so the read-only scope below
+	// stays read-only because it never said `rw` -- not because the feat had
+	// nothing to hand it. Without this the assertion would pass either way.
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	writeFileSync(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			/^      work-branch: work\/record-dive\.nosedive$/m,
+			`      work-branch: work/record-dive.nosedive\n  - ${unrelatedRepoId}:\n      work-branch: work/other.record-dive`,
+		),
+	);
 	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
-	// Put the dive back on the pre-migration spelling, and add a scope that never
-	// named a branch, so one legacy `rw` and one genuine read-only go through the
+	// Put the dive back on the pre-migration spelling, and strip the other scope's
+	// branch outright, so one legacy `rw` and one genuine read-only go through the
 	// same repin.
 	writeFileSync(
 		path,
-		readFileSync(path, "utf8").replace(
-			/^      work-branch: .+$/m,
-			`      mode: rw\n  - ${unrelatedRepoId}:\n      ref: ${otherCommit}`,
-		),
+		readFileSync(path, "utf8")
+			.replace(/^      work-branch: work\/record-dive\.nosedive$/m, "      mode: rw")
+			.replace(/\n      work-branch: work\/other\.record-dive$/m, ""),
 	);
 	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
 	assertOk(repinned, "record.dive --repin failed");
@@ -698,6 +708,13 @@ test("record.dive --repin keeps a legacy mode: rw scope landable", () => {
 		doc,
 		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}$`, "m"),
 		"a scope that never named a branch is read-only, and stays that way",
+	);
+	// Stated separately because `$` above anchors to the end of the ref line, not
+	// the end of the entry: a branch appended underneath would slip past it.
+	assert.doesNotMatch(
+		doc,
+		/work-branch: work\/other\.record-dive/,
+		"the feat declares a branch for this repo and the repin must still not take it",
 	);
 });
 

@@ -1,6 +1,7 @@
 import { basename, relative } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
+import { UNOWNED_FEAT_HEADER } from "./constants.js";
 import { NosediveRc, toPosixPath, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
@@ -14,6 +15,12 @@ export interface ListDivesOptions {
 	json: boolean;
 }
 
+/** A feat, named the way a listing refers to one: a slug and a path to read. */
+export interface FeatRef {
+	name: string;
+	source: string;
+}
+
 export interface ListedDive {
 	id: string;
 	name: string;
@@ -23,6 +30,14 @@ export interface ListedDive {
 	scopes: string[];
 	tags: string[];
 	source: string;
+	/** The feat whose links reached this dive, absent when nothing owns it. */
+	feat?: FeatRef;
+}
+
+/** Dives that share a feat, in the order the walk first reached that feat. */
+export interface FeatDiveGroup {
+	feat?: FeatRef;
+	dives: ListedDive[];
 }
 
 export interface ListDivesResult {
@@ -37,11 +52,19 @@ export interface ListDivesResult {
 export interface DiveLink {
 	dive: KbDoc;
 	rel?: string;
+	/** The document whose links named the dive, when the dive was walked to. */
+	owner?: KbDoc;
 }
 
 export interface PreflightDivesResult {
 	available: ListedDive[];
 	held: ListedDive[];
+	/**
+	 * Why the listing is empty, when it is empty because the backlog memo could
+	 * not be read. Every dive here is reached through that memo, so a broken one
+	 * must not be reported as "no work to pick up".
+	 */
+	warnings: string[];
 }
 
 export function parseListDivesArgs(args: string[], io: CommandIo): ListDivesOptions {
@@ -137,7 +160,12 @@ export function diveTags(doc: KbDoc, localOnlyIds: ReadonlySet<string>): string[
 	return tags;
 }
 
-export function listedDive(doc: KbDoc, rel?: string, tags: string[] = []): ListedDive {
+export function listedDive(
+	doc: KbDoc,
+	rel?: string,
+	tags: string[] = [],
+	owner?: KbDoc,
+): ListedDive {
 	return {
 		id: doc.id,
 		name: doc.name,
@@ -149,6 +177,9 @@ export function listedDive(doc: KbDoc, rel?: string, tags: string[] = []): Liste
 			.map((scope) => formatScopeRef(scope)),
 		tags,
 		source: doc.relPath,
+		// Only a feat owns a dive. A deck links dives directly too, and that is
+		// the one case a listing must not dress up as ownership.
+		feat: owner?.kind === "feat" ? { name: owner.name, source: owner.relPath } : undefined,
 	};
 }
 
@@ -197,7 +228,7 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 			if (target.kind === "dive") {
 				if (seenDives.has(target.id)) continue;
 				seenDives.add(target.id);
-				dives.push({ dive: target, rel: link.rel });
+				dives.push({ dive: target, rel: link.rel, owner: current });
 			} else if (target.kind !== "repo" && isBacklogFeatRel(link.rel)) {
 				queue.push(target);
 			}
@@ -218,20 +249,29 @@ export function collectPreflightDives(
 	localOnlyIds: ReadonlySet<string>,
 ): PreflightDivesResult {
 	const backlogId = rc.backlog;
-	if (!backlogId || !uuidLike(backlogId)) return { available: [], held: [] };
+	if (!backlogId) return { available: [], held: [], warnings: ["no backlog memo is configured"] };
+	if (!uuidLike(backlogId)) {
+		return {
+			available: [],
+			held: [],
+			warnings: [`listing dives requires a UUID-shaped backlog memo id: ${backlogId}`],
+		};
+	}
 
 	const deck = kbDocs.find((doc) => doc.id === backlogId);
-	if (!deck) return { available: [], held: [] };
+	if (!deck) {
+		return { available: [], held: [], warnings: [`bridge backlog memo not found: ${backlogId}`] };
+	}
 
 	const available: ListedDive[] = [];
 	const held: ListedDive[] = [];
-	for (const { dive, rel } of walkDeckDives(deck, kbDocs)) {
+	for (const { dive, rel, owner } of walkDeckDives(deck, kbDocs)) {
 		if (!isPreflightDiveRel(rel, dive)) continue;
 		const tags = diveTags(dive, localOnlyIds);
-		(tags.includes("needs-diver") ? available : held).push(listedDive(dive, rel, tags));
+		(tags.includes("needs-diver") ? available : held).push(listedDive(dive, rel, tags, owner));
 	}
 
-	return { available, held };
+	return { available, held, warnings: [] };
 }
 
 /**
@@ -372,10 +412,14 @@ export function collectListDives(
 /**
  * A markdown link rather than a bare id: the path is ctrl-clickable from a
  * terminal, and anyone reading the output later can follow it to the scopes and
- * brief this line deliberately does not restate. The feat is left off for the
- * same reason -- a managed dive name already carries the feat slug.
+ * brief this line deliberately does not restate.
+ *
+ * The feat is not on this line, and is not inferred from the dive name either.
+ * A managed name carries the feat's slug, but a slug is not an id and a
+ * hand-named dive carries nothing at all, so a reader who needs the feat gets
+ * it from the header `appendGroupedDiveSection` puts above these lines.
  */
-export function formatListedDive(dive: ListedDive): string {
+export function formatListedDive(dive: ListedDive, indent = "  "): string {
 	const rel = dive.rel ? ` rel=${dive.rel}` : "";
 	const diver = dive.diver ? ` diver=${dive.diver}` : "";
 	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
@@ -384,7 +428,7 @@ export function formatListedDive(dive: ListedDive): string {
 		needs.length > 0 ? ` needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}` : "";
 	const statePart = states.length > 0 ? ` ${states.join(" ")}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
-	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
+	return `${indent}- [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
 }
 
 export function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {
@@ -394,6 +438,59 @@ export function appendDiveSection(lines: string[], label: string, dives: ListedD
 		return;
 	}
 	for (const dive of dives) lines.push(formatListedDive(dive));
+}
+
+/**
+ * Feats in the order the walk first reached them, dives in the order they were
+ * found under each. Dives no feat owns collect in one trailing group rather
+ * than being dropped: a dive with nowhere to sit is exactly the one a reader
+ * needs to see.
+ */
+export function groupDivesByFeat(dives: ListedDive[]): FeatDiveGroup[] {
+	const groups: FeatDiveGroup[] = [];
+	const byFeat = new Map<string, FeatDiveGroup>();
+	const unowned: FeatDiveGroup = { dives: [] };
+
+	for (const dive of dives) {
+		if (!dive.feat) {
+			unowned.dives.push(dive);
+			continue;
+		}
+		let group = byFeat.get(dive.feat.source);
+		if (!group) {
+			group = { feat: dive.feat, dives: [] };
+			byFeat.set(dive.feat.source, group);
+			groups.push(group);
+		}
+		group.dives.push(dive);
+	}
+
+	if (unowned.dives.length > 0) groups.push(unowned);
+	return groups;
+}
+
+/**
+ * The session-start listing: one header per feat, then its dives indented
+ * under it. The header carries no gist -- a reader who wants to know what the
+ * feat is for follows the link, and every session pays for a gist printed here
+ * whether or not anyone reads it.
+ */
+export function appendGroupedDiveSection(
+	lines: string[],
+	label: string,
+	dives: ListedDive[],
+): void {
+	lines.push(`${label}:`);
+	if (dives.length === 0) {
+		lines.push("  (none)");
+		return;
+	}
+	for (const group of groupDivesByFeat(dives)) {
+		lines.push(
+			group.feat ? `  [${group.feat.name}](${group.feat.source}):` : `  ${UNOWNED_FEAT_HEADER}:`,
+		);
+		for (const dive of group.dives) lines.push(formatListedDive(dive, "    "));
+	}
 }
 
 export function formatListDivesResult(result: ListDivesResult, includeHistorical: boolean): string {

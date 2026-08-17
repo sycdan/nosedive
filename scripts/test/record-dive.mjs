@@ -658,6 +658,91 @@ test("a dive scope's superseded mode decides nothing", () => {
 	assert.doesNotMatch(upscoped, /^      mode: /m);
 });
 
+/**
+ * `--repin` promises it changes nothing but the pin, and a scope written before
+ * branches existed is where that promise costs something: `mode` is no longer
+ * rendered, so rewriting the entry without the branch its feat hands down turns
+ * a landable dive read-only with nothing said about it.
+ */
+test("record.dive --repin keeps a legacy mode: rw scope landable", () => {
+	const { bridge, repoCommit } = setup("repin-legacy-mode");
+	const otherCommit = createRepo(join(bridge, "workspace", "other"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	// The feat declares a branch for `other` as well, so the read-only scope below
+	// stays read-only because it never said `rw` -- not because the feat had
+	// nothing to hand it. Without this the assertion would pass either way.
+	const featPath = join(bridge, "kb", `${featId}.md`);
+	writeFileSync(
+		featPath,
+		readFileSync(featPath, "utf8").replace(
+			/^      work-branch: work\/record-dive\.nosedive$/m,
+			`      work-branch: work/record-dive.nosedive\n  - ${unrelatedRepoId}:\n      work-branch: work/other.record-dive`,
+		),
+	);
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Put the dive back on the pre-migration spelling, and strip the other scope's
+	// branch outright, so one legacy `rw` and one genuine read-only go through the
+	// same repin.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8")
+			.replace(/^      work-branch: work\/record-dive\.nosedive$/m, "      mode: rw")
+			.replace(/\n      work-branch: work\/other\.record-dive$/m, ""),
+	);
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(
+		doc,
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+		"--repin must not take writability away from a scope that declared it as mode: rw",
+	);
+	assert.doesNotMatch(doc, /^      mode: /m);
+	assert.match(
+		doc,
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}$`, "m"),
+		"a scope that never named a branch is read-only, and stays that way",
+	);
+	// Stated separately because `$` above anchors to the end of the ref line, not
+	// the end of the entry: a branch appended underneath would slip past it.
+	assert.doesNotMatch(
+		doc,
+		/work-branch: work\/other\.record-dive/,
+		"the feat declares a branch for this repo and the repin must still not take it",
+	);
+});
+
+test("record.dive --repin reports a legacy scope its feat cannot place", () => {
+	const { bridge } = setup("repin-legacy-unplaceable");
+	const otherCommit = createRepo(join(bridge, "workspace", "other"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// The feat scopes `repo` and nothing else, so the legacy scope below has no
+	// branch to inherit: losing writability is the honest outcome, saying nothing
+	// about it is not.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(
+			new RegExp(`^  - ${repoId}:\n      ref: .+\n      work-branch: .+$`, "m"),
+			`  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      mode: rw`,
+		),
+	);
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	assert.match(repinned.stderr, /mode: rw/);
+	assert.match(repinned.stderr, /--upscope other/, "the report must name the fix");
+	assert.doesNotMatch(readFileSync(path, "utf8"), /^      work-branch: /m);
+});
+
 test("record.dive composes --upscope, --unscope and one --work-branch", () => {
 	const { bridge } = setup("upscope");
 	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);

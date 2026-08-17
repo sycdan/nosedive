@@ -403,7 +403,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		const base = options.clearScopes ? [] : inheritedNow;
 		const edited = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
 		// Last, so a repo added in the same call is pinned at trunk like the rest.
-		const scopes = options.repin ? repinScopes(edited, rc, kbDocs, workspaceDir) : edited;
+		const scopes = options.repin ? repinScopes(edited, rc, kbDocs, workspaceDir, feat, io) : edited;
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		doc.set("scopes", scopes.map(renderScopeEntry));

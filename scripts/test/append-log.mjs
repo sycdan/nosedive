@@ -122,9 +122,16 @@ test("append-log.dive strips carriage returns out of a piped body", () => {
  * command's output and a mangled label would otherwise go unnoticed.
  */
 for (const [name, heading, logged, expectedLabel] of [
-	["a bare stamp, as jump writes it", "## 2026-08-17T14:25:57.907Z", true, undefined],
+	// Every dive jumped before `jump` took a label carries this shape, so it
+	// reading as progress is what makes that change need no migration.
 	[
-		"a labelled stamp, as land and test write",
+		"a bare stamp, as jump wrote before it took a label",
+		"## 2026-08-17T14:25:57.907Z",
+		true,
+		undefined,
+	],
+	[
+		"a labelled stamp, as jump, land and test write",
 		"## Test report 2026-08-17T14:31:23.931Z",
 		true,
 		"Test report",

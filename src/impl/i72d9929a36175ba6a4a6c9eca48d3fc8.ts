@@ -23,6 +23,7 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "../lib/coreParsing.js";
+import { diveDiver } from "../lib/diveListing.js";
 import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
@@ -306,16 +307,26 @@ function printWorkDirective(
 }
 
 /**
- * Mechanical record of what jump hydrated and where, appended to the dive so
- * "has this dive ever been jumped" is readable off its absence -- one line
- * per scoped repo, by kb `name` rather than uuid, same reasoning as
+ * What jump did, appended to the dive: a lead line saying the dive was picked
+ * up and by whom, then the mechanical record of what was hydrated and where --
+ * one line per scoped repo, by kb `name` rather than uuid, same reasoning as
  * `land`'s gate-context repo keys.
+ *
+ * The lead line is there because the mechanical lines alone name paths and
+ * shas and never say what event produced them. It carries the scope count for
+ * the same reason: a dive that scopes no repo and a run whose repos all
+ * dropped out otherwise render identically, as a heading over nothing.
  */
-function renderHydratedSection(
+function renderJumpedSection(
+	who: string,
+	featName: string,
 	entries: { scope: DiveWipScope; path: string }[],
 	kbDocs: KbDoc[],
 ): string {
-	return entries
+	const lead = `${who} picked up ${featName}, hydrating ${entries.length} scoped repo${
+		entries.length === 1 ? "" : "s"
+	}.`;
+	const lines = entries
 		.map(({ scope, path }) => {
 			const repoDoc = kbDocs.find((doc) => doc.id === scope.repoId);
 			const name = repoDoc?.name ?? scope.repoId;
@@ -327,6 +338,7 @@ function renderHydratedSection(
 			return `- repo=${name} path=${formatPath(path)}${branch} ref=${scope.ref}`;
 		})
 		.join("\n");
+	return lines ? `${lead}\n\n${lines}` : lead;
 }
 
 export function jump(args: string[], io: CommandIo): void {
@@ -429,7 +441,15 @@ export function jump(args: string[], io: CommandIo): void {
 		if (existsSync(path)) unlinkSync(path);
 	}
 
-	appendTimestampedSection(dive.path, renderHydratedSection(hydratedEntries, kbDocs));
+	// `meta.diver` is the recorded holder and so the honest answer to whose dive
+	// this is; the rc pilot is merely whoever ran the command, which is the same
+	// person in practice and the only name available on a dive nobody claimed.
+	const diver = diveDiver(dive) || rc.pilotName?.trim() || "an unnamed diver";
+	appendTimestampedSection(
+		dive.path,
+		renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),
+		"jumped",
+	);
 	reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
 
 	// The feat's reciprocal link records that this command jumped the dive, so

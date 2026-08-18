@@ -9,21 +9,67 @@ const sourceRoot = resolve(root, "src");
 /**
  * Architectural boundaries, ordered from reusable core to executable surface.
  *
- * A boundary may use itself and lower boundaries. Cycles remain forbidden by a
- * separate graph check, so ordinary collaboration within lib/ or impl/ does
- * not require inventing a rank for every new module.
+ * Cycles remain forbidden by a separate graph check, so ordinary collaboration
+ * within lib/ or impl/ does not require inventing a rank for every new module.
  */
 const SOURCE_BOUNDARIES = [
-	{ name: "shared core", rank: 0, matches: (path) => path.startsWith("lib/") },
-	{ name: "command implementation", rank: 1, matches: (path) => path.startsWith("impl/") },
-	{ name: "contract discovery", rank: 1, matches: (path) => path === "contractDocs.ts" },
-	{ name: "command façade", rank: 2, matches: (path) => path === "contracts.ts" },
-	{ name: "CLI router", rank: 3, matches: (path) => path === "nosedive.ts" },
-	{ name: "CLI entrypoint", rank: 4, matches: (path) => path === "cli.ts" },
+	{
+		id: "core",
+		name: "shared core",
+		path: "lib/**",
+		allows: ["core"],
+		matches: (path) => path.startsWith("lib/"),
+	},
+	{
+		id: "impl",
+		name: "command implementation",
+		path: "impl/**",
+		allows: ["impl", "core"],
+		matches: (path) => path.startsWith("impl/"),
+	},
+	{
+		id: "docs",
+		name: "contract discovery",
+		path: "contractDocs.ts",
+		allows: ["docs", "core"],
+		matches: (path) => path === "contractDocs.ts",
+	},
+	{
+		id: "contracts",
+		name: "command façade",
+		path: "contracts.ts",
+		allows: ["contracts", "impl", "docs", "core"],
+		matches: (path) => path === "contracts.ts",
+	},
+	{
+		id: "router",
+		name: "CLI router",
+		path: "nosedive.ts",
+		allows: ["router", "contracts", "core"],
+		matches: (path) => path === "nosedive.ts",
+	},
+	{
+		id: "entrypoint",
+		name: "CLI entrypoint",
+		path: "cli.ts",
+		allows: ["entrypoint", "router", "core"],
+		matches: (path) => path === "cli.ts",
+	},
 ];
 
 export function boundaryForSource(path) {
 	return SOURCE_BOUNDARIES.find((boundary) => boundary.matches(path));
+}
+
+function allowedBoundaryNames(boundary, boundaries) {
+	return boundary.allows
+		.map((id) => boundaries.find((candidate) => candidate.id === id)?.name)
+		.filter(Boolean)
+		.join(", ");
+}
+
+function boundaryChoices(boundaries) {
+	return boundaries.map((boundary) => `${boundary.path} (${boundary.name})`).join("; ");
 }
 
 function tsFiles(directory) {
@@ -91,7 +137,9 @@ export function checkSourceStructure({
 	for (const path of paths) {
 		const name = names.get(path);
 		if (!boundaryFor(name))
-			failures.push(`${name} has no declared source boundary; assign one deliberately.`);
+			failures.push(
+				`${name} has no declared source boundary. Put it under an existing boundary or add a deliberate rule: ${boundaryChoices(SOURCE_BOUNDARIES)}.`,
+			);
 	}
 
 	for (const path of paths) {
@@ -114,10 +162,10 @@ export function checkSourceStructure({
 		for (const target of targets) {
 			const targetName = names.get(target);
 			const targetBoundary = boundaryFor(targetName);
-			if (!sourceBoundary || !targetBoundary || sourceBoundary.rank >= targetBoundary.rank)
+			if (!sourceBoundary || !targetBoundary || sourceBoundary.allows.includes(targetBoundary.id))
 				continue;
 			failures.push(
-				`${sourceName} (${sourceBoundary.name}) imports ${targetName} (${targetBoundary.name}); imports may stay within a boundary or point to a lower one. Move a shared helper down or move the caller up. See kb/01a00393-d830-7922-922b-7e8216370c85.md.`,
+				`${sourceName} (${sourceBoundary.name}) imports ${targetName} (${targetBoundary.name}), which is not allowed. ${sourceBoundary.name} may import only: ${allowedBoundaryNames(sourceBoundary, SOURCE_BOUNDARIES)}. Move a shared helper down or move the caller up. See kb/01a00393-d830-7922-922b-7e8216370c85.md.`,
 			);
 		}
 	}

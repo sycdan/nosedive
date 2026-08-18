@@ -563,7 +563,7 @@ for (const [command, docs] of docsByCommand) {
 	}
 }
 
-const MAX_CODE_LINES = 450;
+const MAX_CODE_LINES = 400;
 
 for (const path of tsSourceFiles(join(root, "src"))) {
 	const text = readFileSync(path, "utf8");

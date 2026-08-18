@@ -44,9 +44,13 @@ function sourceRepo(name) {
 	return path;
 }
 
-function setup(name) {
+/**
+ * `repos: 2` scopes a second repo on the same feat. Batched refusals are only
+ * observable across more than one scope: with a single repo, reporting each
+ * failure as it is found and reporting them all at once are the same output.
+ */
+function setup(name, { repos = 1 } = {}) {
 	const origin = bareRemote(`${name}-origin.git`);
-	const source = sourceRepo(`${name}-source`);
 	const bridge = join(tmp, name);
 	mkdirSync(bridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
@@ -54,23 +58,36 @@ function setup(name) {
 	runTool("git", ["config", "user.email", "jump@example.test"], bridge);
 	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
 
-	const repoId = "019fcf10-0000-7000-8000-000000000001";
-	const featId = "019fcf10-0000-7000-8000-000000000002";
-	write(
-		join(bridge, "kb", `${repoId}.md`),
-		`---
+	const featId = "019fcf10-0000-7000-8000-00000000000f";
+	const scopeNames = [];
+	const repoIds = [];
+	const sources = [];
+	for (let index = 0; index < repos; index += 1) {
+		const scopeName = index === 0 ? name : `${name}-${index + 1}`;
+		const repoId = `019fcf10-0000-7000-8000-00000000000${index + 1}`;
+		const source = sourceRepo(`${scopeName}-source`);
+		scopeNames.push(scopeName);
+		repoIds.push(repoId);
+		sources.push(source);
+		write(
+			join(bridge, "kb", `${repoId}.md`),
+			`---
 kind: repo
 id: ${repoId}
-name: ${name}-repo
+name: ${scopeName}-repo
 gist: "Jump test scoped repo"
 meta:
-  path: workspace/${name}-repo
+  path: workspace/${scopeName}-repo
   trunk: main
   remotes:
     local: ${source.replaceAll("\\", "/")}
 ---
 `,
-	);
+		);
+	}
+	const featScopes = repoIds
+		.map((repoId) => `  - ${repoId}:\n      work-branch: work/jump-test.nosedive`)
+		.join("\n");
 	write(
 		join(bridge, "kb", `${featId}.md`),
 		`---
@@ -79,8 +96,7 @@ id: ${featId}
 name: jump-test.nosedive
 gist: "Jump test feat"
 scopes:
-  - ${repoId}:
-      work-branch: work/jump-test.nosedive
+${featScopes}
 ---
 
 # Jump Test
@@ -91,7 +107,9 @@ scopes:
 	runTool("git", ["remote", "add", "origin", origin], bridge);
 	runTool("git", ["push", "-u", "origin", "main"], bridge);
 
-	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
+	for (const repoId of repoIds) {
+		assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
+	}
 	const diveResult = run(
 		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "Test brief."],
 		bridge,
@@ -100,13 +118,52 @@ scopes:
 	const diveId = /^Recorded kb[\\/]([0-9a-f-]{36})\.md$/m.exec(diveResult.stdout)?.[1];
 	assert.ok(diveId, `record.dive did not report a dive id:\n${diveResult.stdout}`);
 
-	const pinnedRef = runTool("git", ["rev-parse", "HEAD"], repoWorktree(bridge, name)).stdout.trim();
+	const pinnedRefs = scopeNames.map((scopeName) =>
+		runTool("git", ["rev-parse", "HEAD"], repoWorktree(bridge, scopeName)).stdout.trim(),
+	);
 
-	return { bridge, origin, source, repoId, featId, diveId, pinnedRef };
+	return {
+		bridge,
+		origin,
+		source: sources[0],
+		sources,
+		repoId: repoIds[0],
+		repoIds,
+		scopeNames,
+		featId,
+		diveId,
+		pinnedRef: pinnedRefs[0],
+		pinnedRefs,
+	};
 }
 
 function repoWorktree(bridge, name) {
 	return join(bridge, "workspace", `${name}-repo`);
+}
+
+/**
+ * Points every one of the dive's scope pins at whatever its worktree is sitting
+ * on now. `jump` refuses to move a worktree off commits no ref contains, so a
+ * fixture that commits in a hydrated worktree and then runs `jump` has to say
+ * the dive means those commits -- which is what `record.dive --repin` does in
+ * real use, and it refuses on the active dive.
+ */
+function repinByHand(bridge, diveId, scopeNames) {
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	let text = readFileSync(divePath, "utf8");
+	const heads = scopeNames.map((scopeName) =>
+		runTool("git", ["rev-parse", "HEAD"], repoWorktree(bridge, scopeName)).stdout.trim(),
+	);
+	let index = 0;
+	text = text.replace(/^(\s+)ref: .*$/gm, (line, indent) => `${indent}ref: ${heads[index++]}`);
+	assert.equal(index, heads.length, `expected ${heads.length} scope ref lines in the dive doc`);
+	writeFileSync(divePath, text);
+	return heads;
+}
+
+/** The commit a detached worktree is on, as jump's refusal reports it. */
+function worktreeHead(bridge, scopeName) {
+	return runTool("git", ["rev-parse", "HEAD"], repoWorktree(bridge, scopeName)).stdout.trim();
 }
 
 /**
@@ -331,8 +388,11 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
 
 	// A second jump run has nothing left to apply (the chain was consumed and
-	// its link removed above) -- hydration must not force the scope back to
-	// its now-stale pin, silently discarding the reapplied commits.
+	// its link removed above). The reapplied commits are locally minted and no
+	// ref contains them, so the pin has to be moved onto them first -- exactly
+	// the `record.dive --repin` a real re-jump runs -- and then hydration must
+	// leave the scope where it stands rather than reset it.
+	repinByHand(bridge, diveId, ["full"]);
 	write(join(scratchDir, "stale.tmp"), "remove me\n");
 	const rerun = run(["jump"], bridge);
 	assertOk(rerun, "second jump run failed");
@@ -470,7 +530,7 @@ test("jump push-isolates its hydrated worktree without breaking fetch", () => {
  * clear the stale shared value it leaves behind.
  */
 test("jump survives tooling that rewrites core.hooksPath in shared config", () => {
-	const { bridge, featId } = setup("hooks-pollution");
+	const { bridge, featId, diveId } = setup("hooks-pollution");
 	const worktree = repoWorktree(bridge, "hooks-pollution");
 	assertOk(run(["jump"], bridge), "jump failed");
 	const managedHooks = runTool(
@@ -492,6 +552,9 @@ test("jump survives tooling that rewrites core.hooksPath in shared config", () =
 		"managed hooks must still fire after the shared config was rewritten",
 	);
 
+	// The commit above is unpublished, and jump refuses to move a worktree off
+	// one; the pin has to follow it before the scope can be re-hydrated.
+	repinByHand(bridge, diveId, ["hooks-pollution"]);
 	assertOk(run(["jump"], bridge), "second jump failed");
 	assert.equal(
 		runGitUnchecked(["config", "--local", "--get", "core.hooksPath"], worktree).stdout.trim(),
@@ -511,7 +574,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 		t.skip("no POSIX shell found on PATH or alongside git; cannot run a shell hook fixture");
 		return;
 	}
-	const { bridge, featId } = setup("foreign-hook");
+	const { bridge, featId, diveId } = setup("foreign-hook");
 	const worktree = repoWorktree(bridge, "foreign-hook");
 	const foreignHooks = join(worktree, ".githooks");
 	const foreignHook = join(foreignHooks, "prepare-commit-msg");
@@ -524,6 +587,9 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	gitCommit(worktree, "track repo hook");
 	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
 	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+	// The fixture commit is unpublished, and jump refuses to move a worktree off
+	// one; the pin follows it so the hook survives into the run under test.
+	repinByHand(bridge, diveId, ["foreign-hook"]);
 
 	const result = run(["jump"], bridge);
 	assertOk(result, "jump failed with a foreign hook");
@@ -549,7 +615,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 });
 
 test("jump preserves a failing repo prepare-commit-msg hook exit", () => {
-	const { bridge } = setup("failing-hook");
+	const { bridge, diveId } = setup("failing-hook");
 	const worktree = repoWorktree(bridge, "failing-hook");
 	const failingHook = join(worktree, ".githooks", "prepare-commit-msg");
 	write(failingHook, "#!/bin/sh\nexit 23\n");
@@ -558,6 +624,7 @@ test("jump preserves a failing repo prepare-commit-msg hook exit", () => {
 	gitCommit(worktree, "track failing hook");
 	runTool("git", ["config", "extensions.worktreeConfig", "true"], worktree);
 	runTool("git", ["config", "core.hooksPath", ".githooks"], worktree);
+	repinByHand(bridge, diveId, ["failing-hook"]);
 	assertOk(run(["jump"], bridge), "jump failed");
 
 	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
@@ -663,6 +730,153 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 			`un-applied memo ${suffix} should be left in place`,
 		);
 	}
+});
+
+/**
+ * The pin is where hydration wants the worktree, so a worktree already there is
+ * finished business. Proven off the per-worktree HEAD reflog rather than the
+ * resulting sha: a `checkout --detach` back onto the commit HEAD already names
+ * leaves the sha identical and the reflog one entry longer, and it is the
+ * needless checkout -- which would discard nothing but would blow away an
+ * in-progress bisect or a stale index -- that this forbids.
+ */
+test("jump leaves a worktree already detached at the pin untouched", () => {
+	const { bridge, pinnedRef } = setup("at-pin");
+	const worktree = repoWorktree(bridge, "at-pin");
+	assert.equal(worktreeHead(bridge, "at-pin"), pinnedRef);
+	const reflogBefore = runTool("git", ["reflog", "show", "HEAD"], worktree).stdout;
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a worktree already at its pin");
+	assert.equal(worktreeHead(bridge, "at-pin"), pinnedRef);
+	assert.equal(
+		runTool("git", ["reflog", "show", "HEAD"], worktree).stdout,
+		reflogBefore,
+		"jump must not run a checkout in a worktree already detached at the pin",
+	);
+	assert.doesNotMatch(result.stdout, /moved-from=/, "nothing moved, so nothing should say it did");
+});
+
+/**
+ * The pack + repin case. `pack` leaves the worktree on the old pin and the
+ * repin moves the pin forward, so the worktree is behind a commit origin
+ * already has -- moving it loses nothing, and refusing here would stop the
+ * pack -> repin -> jump flow dead.
+ */
+test("jump moves a clean worktree off a published commit onto the pin", () => {
+	const { bridge, repoId, diveId, pinnedRef } = setup("published-move");
+	const worktree = repoWorktree(bridge, "published-move");
+
+	write(join(worktree, "published.txt"), "published\n");
+	runTool("git", ["add", "published.txt"], worktree);
+	gitCommit(worktree, "a commit some ref contains");
+	const published = worktreeHead(bridge, "published-move");
+	// A local branch is enough: the refusal asks whether any ref reaches HEAD,
+	// not whether that ref is on a remote.
+	runTool("git", ["branch", "fixture-published", published], worktree);
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a clean worktree at a published commit");
+	assert.equal(
+		worktreeHead(bridge, "published-move"),
+		pinnedRef,
+		"a published worktree should be moved back to the dive's pin",
+	);
+	assert.match(
+		result.stdout,
+		new RegExp(`hydrated repo=${repoId} path=\\S+ moved-from=${published}`),
+		"jump should say which commit it moved the worktree off",
+	);
+	assert.equal(existsSync(join(worktree, "published.txt")), false);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		new RegExp(`repo=published-move-repo path=\\S+ work-branch=\\S+ ref=${pinnedRef}`),
+	);
+});
+
+test("jump refuses a worktree carrying a commit no ref contains", () => {
+	const { bridge, diveId, pinnedRef } = setup("unpublished");
+	const worktree = repoWorktree(bridge, "unpublished");
+
+	write(join(worktree, "unpublished.txt"), "mine\n");
+	runTool("git", ["add", "unpublished.txt"], worktree);
+	gitCommit(worktree, "a commit no ref contains");
+	const unpublished = worktreeHead(bridge, "unpublished");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly moved off an unpublished commit");
+	assert.match(result.stderr, /repo=unpublished-repo/);
+	assert.match(result.stderr, /path=workspace\/unpublished-repo/);
+	assert.match(result.stderr, new RegExp(`head=${unpublished}`));
+	assert.match(result.stderr, new RegExp(`pin=${pinnedRef}`));
+	assert.match(result.stderr, /kb\/019fcb35-d660-7318-ac4c-3d5aeed3a81e/);
+	assert.equal(
+		worktreeHead(bridge, "unpublished"),
+		unpublished,
+		"a refused jump must leave the worktree on the commit it refused to leave",
+	);
+	assert.equal(readFileSync(join(worktree, "unpublished.txt"), "utf8"), "mine\n");
+	assert.doesNotMatch(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^## jumped /m,
+		"a refused run never hydrates, so nothing should be appended",
+	);
+});
+
+/**
+ * A refusal that has already relocated one of two worktrees is not a refusal,
+ * so every scope is evaluated before any of them is touched -- and the pilot is
+ * told about all of them at once rather than one re-run at a time.
+ */
+test("jump reports every unmovable scope in one message and moves none of them", () => {
+	const { bridge, scopeNames } = setup("batch-refusal", { repos: 2 });
+	const heads = [];
+	for (const scopeName of scopeNames) {
+		const worktree = repoWorktree(bridge, scopeName);
+		write(join(worktree, "unpublished.txt"), "mine\n");
+		runTool("git", ["add", "unpublished.txt"], worktree);
+		gitCommit(worktree, `a commit no ref contains in ${scopeName}`);
+		heads.push(worktreeHead(bridge, scopeName));
+	}
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly accepted two unpublished worktrees");
+	for (const [index, scopeName] of scopeNames.entries()) {
+		assert.match(result.stderr, new RegExp(`repo=${scopeName}-repo`));
+		assert.match(result.stderr, new RegExp(`head=${heads[index]}`));
+		assert.equal(
+			worktreeHead(bridge, scopeName),
+			heads[index],
+			`${scopeName} moved despite the run being refused`,
+		);
+	}
+	assert.equal(
+		(result.stderr.match(/^nosedive: refusing/gm) ?? []).length,
+		1,
+		"both scopes belong to one refusal, not one run each",
+	);
+});
+
+/**
+ * A `ref:` naming a branch is a moving target, so a section recording the
+ * string records nothing a month later. Hydration already resolved the commit;
+ * the section writes that.
+ */
+test("jump records the commit a branch ref resolved to, not the branch name", () => {
+	const { bridge, repoId, diveId, pinnedRef } = setup("branch-ref");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(divePath, readFileSync(divePath, "utf8").replace(/^(\s+)ref: .*$/m, "$1ref: main"));
+	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a scope pinned to a branch");
+	const diveText = readFileSync(divePath, "utf8");
+	assert.match(
+		diveText,
+		new RegExp(`repo=branch-ref-repo path=\\S+ work-branch=\\S+ ref=${pinnedRef}`),
+		"the jumped section should carry the resolved commit",
+	);
+	assert.doesNotMatch(diveText, /^- repo=\S+ .*ref=main$/m, "the branch name is not a record");
 });
 
 test("jump rejects a patch memo whose meta.patch escapes kb/artifacts", () => {

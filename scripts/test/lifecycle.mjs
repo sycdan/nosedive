@@ -157,6 +157,17 @@ meta:
 	const testedDive = readFileSync(firstPath, "utf8");
 	assert.match(testedDive, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
 	assert.match(testedDive, new RegExp(`kb/${featGateId}\\.md:\\n      rel: test\\.gate`));
+	// The re-jump above reapplied the packed chain as locally minted commits no
+	// ref contains, and jump refuses to move a worktree off those. A real
+	// re-jump repins first; `--repin` refuses on the active dive, so the pin is
+	// moved by hand here.
+	write(
+		firstPath,
+		readFileSync(firstPath, "utf8").replace(
+			/^(\s+)ref: .*$/m,
+			`$1ref: ${runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim()}`,
+		),
+	);
 	assertOk(run(["jump"], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	assertFeatDiveRel(featPath, firstId, "bailed\\.dive");

@@ -37,6 +37,13 @@ function assertFeatDiveRel(featPath, diveId, rel) {
 	);
 }
 
+/** Publishes pending kb edits, which is what a pilot does before packing. */
+function commitKb(bridge, message) {
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, message);
+	runTool("git", ["push"], bridge);
+}
+
 function plannedDiveIds(featPath) {
 	const pattern = /kb\/([0-9a-f-]{36})\.md:\n      rel: planned\.dive/g;
 	return [...readFileSync(featPath, "utf8").matchAll(pattern)].map((match) => match[1]);
@@ -58,6 +65,9 @@ test("a feat composes through packed, bailed, and landed dives", () => {
 		featPath,
 		featText.replace(/^---$/m, `---\nscopes:\n  - ${repoId}:\n      work-branch: work/lifecycle`),
 	);
+	// Work is picked up off the deck, so a feat nothing reaches has no dives
+	// anybody can jump -- and this test puts its dive down and picks it back up.
+	assertOk(run(["update-backlog", "--inject", featId], bridge), "backlog injection failed");
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "scope lifecycle feat");
 	runTool("git", ["push"], bridge);
@@ -158,17 +168,13 @@ meta:
 	assert.match(testedDive, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
 	assert.match(testedDive, new RegExp(`kb/${featGateId}\\.md:\\n      rel: test\\.gate`));
 	// The re-jump above reapplied the packed chain as locally minted commits no
-	// ref contains, and jump refuses to move a worktree off those. A real
-	// re-jump repins first; `--repin` refuses on the active dive, so the pin is
-	// moved by hand here.
-	write(
-		firstPath,
-		readFileSync(firstPath, "utf8").replace(
-			/^(\s+)ref: .*$/m,
-			`$1ref: ${runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim()}`,
-		),
-	);
-	assertOk(run(["jump"], bridge), "reclaim jump failed");
+	// ref contains, and jump refuses to move a worktree off those. Packing is
+	// what puts the dive down and resets the worktree to its pin, which is what
+	// makes it jumpable again -- the round trip a pilot actually runs.
+	commitKb(bridge, "publish the gate docs before packing");
+	assertOk(run(["pack"], bridge), "pack before reclaiming failed");
+	assertFeatDiveRel(featPath, firstId, "packed\\.dive");
+	assertOk(run(["jump", firstId], bridge), "reclaim jump failed");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	assertFeatDiveRel(featPath, firstId, "bailed\\.dive");
 	const bailed = readFileSync(firstPath, "utf8");
@@ -530,6 +536,9 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 			`---\nscopes:\n  - ${stalePinRepoId}:\n      work-branch: work/stale-pin`,
 		),
 	);
+	// The dive is packed and picked back up below, and only a dive the deck
+	// reaches can be picked up.
+	assertOk(run(["update-backlog", "--inject", featId], bridge), "backlog injection failed");
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "scope stale-pin feat");
 	runTool("git", ["push"], bridge);
@@ -587,15 +596,11 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	// And the fix the warning names does what it says, without taking the branch
 	// with it -- which is what made re-pinning by hand the only safe option.
 	//
-	// `--repin` refuses the dive the workspace is on, because those worktrees were
-	// hydrated from the pin it moves. Releasing the dive is what `pack` is for, and
-	// `pack` does not clear the marker yet, so the marker is dropped and restored
-	// here to stand in for it. Replace this with a real `pack` once it does.
-	const marker = join(bridge, "workspace", ".nosedive-ref");
-	const held = readFileSync(marker, "utf8");
-	rmSync(marker);
+	// `--repin` refuses the dive the workspace is on, and `pack` is what puts it
+	// down: the real sequence is pack, repin, jump.
+	commitKb(bridge, "publish pending kb edits before packing");
+	assertOk(run(["pack"], bridge), "pack before repinning failed");
 	assertOk(run(["record.dive", "--ref", waitingId, "--repin"], bridge), "--repin failed");
-	write(marker, held);
 	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${waitingId}.md`), "utf8"),
@@ -603,7 +608,7 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 		"--repin must leave the work branch alone",
 	);
 
-	const repinned = run(["jump"], bridge);
+	const repinned = run(["jump", waitingId], bridge);
 	assertOk(repinned, "jump after re-pinning failed");
 	assert.doesNotMatch(repinned.stderr, /pinned \d+ commit/, "a re-pinned dive is not stale");
 });

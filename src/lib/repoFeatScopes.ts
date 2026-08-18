@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { isMap, isScalar, isSeq, parseDocument } from "yaml";
+import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
 import {
 	NosediveRc,
@@ -11,6 +11,7 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "./coreParsing.js";
+import { diveDiver } from "./diveListing.js";
 import { KbDoc, readActiveDiveId } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { writeFileAtomic } from "./renderPlan.js";
@@ -160,17 +161,66 @@ export function reconcileDiveFeatLinks(
 	reconcileDiveLink(feat.path, diveId, rel);
 }
 
-/** Release a dive while retaining its marker and any captured patch chains. */
-export function clearDiveDiver(divePath: string): boolean {
+/**
+ * Move a dive's diver into its packer, in a frontmatter document the caller is
+ * already editing. Two callers reach the same release: `pack`, which puts down
+ * the dive the workspace is on, and `record.dive --packer`, which puts down one
+ * recorded somewhere else. Returns whether anything was held, because a pack
+ * with nothing captured still has to commit when it released a dive.
+ */
+export function releaseDiverInFrontmatter(doc: Document): boolean {
+	const diver = doc.getIn(["meta", "diver"]);
+	// `record.dive` writes `diver: null` rather than omitting the key, and a
+	// hand-written dive may spell that as the four-character string.
+	if (typeof diver !== "string" || !diver.trim() || diver.trim() === "null") return false;
+	doc.setIn(["meta", "packer"], diver);
+	doc.setIn(["meta", "diver"], null);
+	return true;
+}
+
+/** `releaseDiverInFrontmatter` against a dive document on disk. */
+export function releaseDiveToPacker(divePath: string): boolean {
 	const text = readFileSync(divePath, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(divePath));
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(divePath)}`);
-	if (!doc.getIn(["meta", "diver"])) return false;
-	doc.setIn(["meta", "diver"], null);
+	if (!releaseDiverInFrontmatter(doc)) return false;
 	writeFileAtomic(divePath, ["---", stringifyYaml(doc).trimEnd(), "---", parsed.body].join("\n"));
 	return true;
+}
+
+/**
+ * `record.dive` does not mutate the dive the workspace is on. Its worktrees
+ * were hydrated from the state the edit would move, and there is one way to put
+ * down the dive you are flying: `pack`, which also clears the marker and resets
+ * those worktrees. Named once because `--repin` and `--packer` both ask it, and
+ * two spellings of one refusal would eventually disagree about it.
+ */
+export function ensureNotActiveDive(dive: KbDoc, active: KbDoc | undefined): void {
+	if (active?.id !== dive.id) return;
+	throw new Error(
+		`dive ${dive.id} is the active workspace dive; \`pack\` is what puts it down -- ` +
+			`its worktrees and marker were made from the state this would edit`,
+	);
+}
+
+/**
+ * Whether `--packer` may release this dive. Releasing is not a handover: it
+ * hands the dive back to nobody, so only the pilot who holds it may do it, and
+ * a dive nobody holds has nothing to release. Mirrors `--takeover`'s refusals,
+ * which is the other command that reads the holder off the document.
+ */
+export function ensureReleasable(dive: KbDoc, pilotEmail: string, active: KbDoc | undefined): void {
+	ensureNotActiveDive(dive, active);
+	const heldBy = diveDiver(dive);
+	if (!heldBy) throw new Error(`dive ${dive.id} is not held; there is nothing to release`);
+	if (!pilotEmail) throw new Error("--packer requires git config user.email in the bridge");
+	if (heldBy !== pilotEmail) {
+		throw new Error(
+			`dive ${dive.id} is held by ${heldBy}; only its diver can release it, or take it over with \`record.dive --ref ${dive.id} --takeover\``,
+		);
+	}
 }
 
 /**

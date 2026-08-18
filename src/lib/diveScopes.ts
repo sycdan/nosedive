@@ -106,22 +106,6 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 }
 
 /**
- * A repin of the dive the workspace is on is refused rather than applied.
- *
- * Hydration built those worktrees from the pin this would move, so afterwards
- * the dive would describe a state no checkout is in and the next `jump` would
- * replay work onto a tree it never started from. Releasing the dive first is the
- * whole of the fix, so the message names the command that does it.
- */
-export function ensureRepinnable(dive: KbDoc, active: KbDoc | undefined): void {
-	if (active?.id !== dive.id) return;
-	throw new Error(
-		`dive ${dive.id} is the active workspace dive; \`pack\` it before repinning -- ` +
-			`its worktrees were hydrated from the pin this would move`,
-	);
-}
-
-/**
  * Where a repin puts one scope: the head of the first named branch origin has,
  * and trunk when it has none of them.
  *

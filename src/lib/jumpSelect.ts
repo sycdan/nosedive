@@ -146,6 +146,9 @@ function setDiveDiver(divePath: string, email: string): void {
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(divePath)}`);
 	}
 	doc.setIn(["meta", "diver"], email);
+	// `meta.packer` records who put the dive down last, so it is only true of a
+	// dive nobody holds. Picking it up ends that.
+	doc.deleteIn(["meta", "packer"]);
 	writeFileAtomic(divePath, `---\n${stringifyYaml(doc).trimEnd()}\n---\n${block.body}`);
 }
 

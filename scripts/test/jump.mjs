@@ -1090,6 +1090,26 @@ test("jump <dive-ref> claims the dive it picks up and commits the claim", () => 
 	);
 });
 
+/**
+ * `meta.packer` records who put the dive down last, so it is only true of a
+ * dive nobody holds. Picking the dive up ends that, and leaving the field
+ * behind would have the document name a holder and a releaser at once.
+ */
+test("jump <dive-ref> clears the packer of the dive it picks up", () => {
+	const { bridge, diveId } = deckSetup("deck-packer", { claimed: false });
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8").replace(/^meta:$/m, "meta:\n  packer: earlier@example.test"),
+	);
+	commitBridge(bridge, "record who packed the dive");
+
+	assertOk(run(["jump", diveId], bridge), "jump <dive-ref> failed on a packed dive");
+	const jumped = readFileSync(divePath, "utf8");
+	assert.match(jumped, /^ {2}diver: jump@example\.test$/m);
+	assert.doesNotMatch(jumped, /^ {2}packer:/m, "picking a dive up ends who packed it");
+});
+
 test("jump <dive-ref> refuses a dive the deck does not offer, and carries the list", () => {
 	const { bridge, featId, diveId } = deckSetup("deck-ineligible", { claimed: false });
 	const held = freeDive(bridge, featId, "A dive somebody else is flying");

@@ -17,7 +17,6 @@ import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
 import {
 	cachedScope,
 	editScopes,
-	ensureRepinnable,
 	featWorkBranch,
 	inheritedScopes,
 	renderScopeEntry,
@@ -29,7 +28,13 @@ import {
 import { gitOutput } from "./gitProcess.js";
 import { activeDive, ensureActivation } from "./jumpSelect.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
-import { reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
+import {
+	ensureNotActiveDive,
+	ensureReleasable,
+	reconcileDiveFeatLinks,
+	releaseDiverInFrontmatter,
+	resolveFeatDoc,
+} from "./repoFeatScopes.js";
 import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
 import { titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
@@ -42,6 +47,8 @@ export interface RecordDiveOptions {
 	brief?: string;
 	diver?: string;
 	takeover: boolean;
+	/** Hand the dive back: its diver becomes its packer, and it holds nobody. */
+	packer: boolean;
 	free: boolean;
 	clearScopes: boolean;
 	/** Repos to add or make writable, each landing on `workBranch`. */
@@ -63,6 +70,7 @@ function optionValue(args: string[], index: number, flag: string): string {
 export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	const options: RecordDiveOptions = {
 		takeover: false,
+		packer: false,
 		free: false,
 		clearScopes: false,
 		upscopes: [],
@@ -88,6 +96,12 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		}
 		if (arg === "--takeover") {
 			options.takeover = true;
+			continue;
+		}
+		// Valueless, like --takeover: the packer is whoever the dive already names
+		// as its diver, so accepting a value would only be a way to type it wrong.
+		if (arg === "--packer") {
+			options.packer = true;
 			continue;
 		}
 		const flag = [
@@ -144,6 +158,8 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	// There is no pin to move on a dive that does not exist yet: a create already
 	// resolves current trunk for every scope it writes.
 	if (options.repin && !options.ref) throw new Error("--repin requires --ref");
+	// Nothing to release on a dive that does not exist yet.
+	if (options.packer && !options.ref) throw new Error("--packer requires --ref");
 	if (!options.ref && !options.feat)
 		throw new Error("record.dive requires --feat or --effort when creating a dive");
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
@@ -328,7 +344,8 @@ export function recordDive(args: string[], io: CommandIo): void {
 		throw new Error(`--ref does not resolve to a kind: dive doc: ${options.ref}`);
 	// Before anything is read off the document, so a refused repin leaves it as it
 	// stands rather than partway through an edit.
-	if (options.repin) ensureRepinnable(dive, active);
+	if (options.repin) ensureNotActiveDive(dive, active);
+	if (options.packer) ensureReleasable(dive, pilotEmail, active);
 	const text = readFileSync(dive.path, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(dive.path));
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
@@ -362,6 +379,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		}
 		doc.setIn(["meta", "diver"], options.diver);
 	}
+	if (options.packer) releaseDiverInFrontmatter(doc);
 	/**
 	 * Gaining a feat for the first time is when a dive learns where its repos
 	 * land, the same way a dive created under one does. Re-homing an already-owned

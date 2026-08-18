@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -382,6 +382,104 @@ test("record.dive refuses --takeover on a dive nobody holds", () => {
 	const taken = run(["record.dive", "--ref", id, "--takeover"], bridge);
 	assert.notEqual(taken.status, 0);
 	assert.match(taken.stderr, /not held/);
+});
+
+/**
+ * `pack` puts down the dive the workspace is on. `--packer` is the same release
+ * reached from outside that workspace, for a dive recorded somewhere else, so
+ * the two agree on what a released dive looks like: diver null, packer set.
+ */
+test("record.dive --packer releases a dive the pilot holds", () => {
+	const { bridge } = setup("packer");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	assertOk(run(["record.dive", "--ref", id, "--diver", "pilot@example.test"], bridge), "claim");
+	// Claiming activated it; `--packer` is for a dive recorded elsewhere, so put
+	// the workspace back on no dive before releasing it.
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	rmSync(marker);
+	assertOk(run(["record.dive", "--ref", id, "--packer"], bridge), "record.dive --packer failed");
+	const released = readFileSync(path, "utf8");
+	assert.match(released, /^  diver: null$/m);
+	assert.match(released, /^  packer: "?pilot@example\.test"?$/m);
+	assert.equal(existsSync(marker), false, "releasing a dive must not activate it");
+});
+
+test("record.dive --packer refuses a dive held by another email", () => {
+	const { bridge } = setup("packer-other");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId, "--diver", "owner@example.test"], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const before = readFileSync(path, "utf8");
+	const packed = run(["record.dive", "--ref", id, "--packer"], bridge);
+	assert.notEqual(packed.status, 0, "--packer on somebody else's dive unexpectedly succeeded");
+	assert.match(packed.stderr, /held by owner@example\.test/);
+	assert.equal(readFileSync(path, "utf8"), before, "a refused --packer writes nothing");
+});
+
+test("record.dive --packer refuses a dive nobody holds", () => {
+	const { bridge } = setup("packer-unheld");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const packed = run(["record.dive", "--ref", id, "--packer"], bridge);
+	assert.notEqual(packed.status, 0, "--packer on an unheld dive unexpectedly succeeded");
+	assert.match(packed.stderr, /not held/);
+	assert.doesNotMatch(readFileSync(path, "utf8"), /^  packer:/m);
+});
+
+/**
+ * There is one way to put down the dive you are on, and it is `pack` -- which
+ * also clears the marker and resets the worktrees `--packer` knows nothing
+ * about. The refusal has to name it or the pilot's only visible option is
+ * editing the document by hand.
+ */
+test("record.dive --packer refuses the active workspace dive", () => {
+	const { bridge } = setup("packer-active");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId, "--diver", "pilot@example.test"], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	assert.match(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
+		new RegExp(`^id: ${id}\n$`),
+	);
+	const before = readFileSync(path, "utf8");
+	const packed = run(["record.dive", "--ref", id, "--packer"], bridge);
+	assert.equal(packed.status, 1);
+	assert.match(packed.stderr, /is the active workspace dive/);
+	assert.match(
+		packed.stderr,
+		/`pack`/,
+		"the refusal must name the command that puts the dive down",
+	);
+	assert.equal(readFileSync(path, "utf8"), before, "a refused --packer writes nothing");
+});
+
+/**
+ * The packer is derivable -- it is whoever the dive already says holds it -- so
+ * accepting a value would only create a way to type it wrong.
+ */
+test("record.dive --packer takes no value and requires --ref", () => {
+	const { bridge } = setup("packer-args");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId, "--diver", "pilot@example.test"], bridge);
+	assertOk(created, "record.dive create failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const valued = run(["record.dive", "--ref", id, "--packer", "pilot@example.test"], bridge);
+	assert.notEqual(valued.status, 0, "--packer <email> unexpectedly succeeded");
+	assert.match(valued.stderr, /unexpected record\.dive argument: pilot@example\.test/);
+	const bare = run(["record.dive", "--packer"], bridge, "");
+	assert.notEqual(bare.status, 0, "--packer without --ref unexpectedly succeeded");
+	assert.match(bare.stderr, /--packer requires --ref/);
 });
 
 test("record.dive links a claimed dive as planned while retaining its diver", () => {

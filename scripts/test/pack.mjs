@@ -15,6 +15,7 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("pack");
+const backlogId = "019fcf00-0000-7000-8000-00000000000b";
 
 function bareRemote(name) {
 	const path = join(tmp, name);
@@ -41,7 +42,7 @@ function setup(name, diver = "pack@example.test") {
 	runTool("git", ["init", "-b", "main"], bridge);
 	runTool("git", ["config", "user.name", "Pack Test"], bridge);
 	runTool("git", ["config", "user.email", "pack@example.test"], bridge);
-	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
+	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb", backlog: backlogId });
 
 	const repoId = "019fcf00-0000-7000-8000-000000000001";
 	const effortId = "019fcf00-0000-7000-8000-000000000002";
@@ -73,6 +74,23 @@ scopes:
 ---
 
 # Pack Test
+`,
+	);
+	// A dive is only pickable back up if the deck reaches its feat, and putting
+	// the dive down is the whole point of packing.
+	write(
+		join(bridge, "kb", `${backlogId}.md`),
+		`---
+kind: memo
+id: ${backlogId}
+name: pack-test-backlog
+gist: "Pack test backlog"
+links:
+  - kb/${effortId}.md:
+      rel: child.feat
+---
+
+# Backlog
 `,
 	);
 	runTool("git", ["add", "."], bridge);
@@ -267,6 +285,39 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.equal(readFileSync(stray, "utf8"), "unrelated bridge dirty file\n");
 });
 
+/**
+ * Who put the dive down is the half of a handoff nothing recorded: the diver
+ * went to null and no field said whose null it was.
+ */
+test("pack moves the dive's diver to its packer", () => {
+	const { bridge, diveId } = setup("packer");
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack failed");
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /^  diver: null$/m, "pack should release the dive");
+	assert.match(
+		diveText,
+		/^  packer: "?pack@example\.test"?$/m,
+		"pack should record who put the dive down",
+	);
+});
+
+/**
+ * A dive nobody holds is not the dive the workspace is on. Leaving the marker
+ * behind left `append-log.dive`, `spin` and `land` reading an active dive that
+ * had already been handed back.
+ */
+test("pack removes the workspace dive marker", () => {
+	const { bridge } = setup("marker");
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	assert.equal(existsSync(marker), true, "the fixture must start with an active dive");
+	assertOk(run(["pack"], bridge), "pack failed");
+	assert.equal(existsSync(marker), false, "pack should leave no active dive");
+	// Proved by the command that needs one: with no marker there is nothing to pack.
+	const again = run(["pack"], bridge);
+	assert.notEqual(again.status, 0, "a second pack with no active dive unexpectedly succeeded");
+});
+
 test("a packed dive reaches jump and reapplies its patch chain", () => {
 	const { bridge, diveId } = setup("resume");
 	const worktree = repoWorktree(bridge, "resume");
@@ -275,7 +326,9 @@ test("a packed dive reaches jump and reapplies its patch chain", () => {
 	runTool("git", ["add", "resumed.txt"], worktree);
 	gitCommit(worktree, "resume me");
 	assertOk(run(["pack"], bridge), "pack failed");
-	assertOk(run(["jump"], bridge), "jump failed after pack");
+	// Named, not bare: pack put the dive down, so there is no dive on deck for a
+	// bare `jump` to re-run.
+	assertOk(run(["jump", diveId], bridge), "jump failed after pack");
 	assert.equal(readFileSync(join(worktree, "resumed.txt"), "utf8"), "resumed\n");
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.doesNotMatch(diveText, /rel: patch/);

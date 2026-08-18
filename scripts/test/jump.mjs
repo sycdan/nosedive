@@ -490,7 +490,7 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout.trim();
 	assert.equal(
 		message,
-		`implementation\n\nFeat: ${featId}\nDive: ${diveId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
+		`implementation\n\nDive: ${diveId}\nFeat: ${featId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
 	);
 	assert.equal((message.match(new RegExp(`Feat: ${featId}`, "g")) ?? []).length, 1);
 	assert.equal((message.match(new RegExp(`Dive: ${diveId}`, "g")) ?? []).length, 1);

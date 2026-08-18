@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -271,6 +272,10 @@ test("jump requires an active dive marker", () => {
 	runTool("git", ["init", "-b", "main"], bridge);
 	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb" });
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
+	// The kb directory exists and is empty: `jump` reads it to say what could
+	// have been jumped instead, and a missing directory would be a different
+	// complaint than the one this test is about.
+	mkdirSync(join(bridge, "kb"), { recursive: true });
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump without a dive marker unexpectedly succeeded");
 	assert.match(result.stderr, /^nosedive-error: \S/m);
@@ -337,9 +342,11 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	);
 	// The lead line is the whole point of the section carrying a label: a reader
 	// a month later gets the event, the holder and the feat before the paths.
+	// The holder is written in git's author form when it is this pilot, whose
+	// `user.name` the fixture sets -- see the deck-lead test below.
 	assert.match(
 		diveText,
-		/^jump@example\.test picked up jump-test\.nosedive, hydrating 1 scoped repo\.$/m,
+		/^Jump Test <jump@example\.test> picked up jump-test\.nosedive, hydrating 1 scoped repo\.$/m,
 		"the section should say who picked the dive up and what for",
 	);
 	assert.match(
@@ -921,4 +928,200 @@ meta:
 		/^##\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
 		"a total-failure run never reaches the commit, so nothing should be appended",
 	);
+});
+
+// --- choosing a dive --------------------------------------------------------
+//
+// `jump` picks the dive up as well as unpacking it, so it needs the same answer
+// to "may this pilot take this dive" that preflight prints. That answer is the
+// backlog walk, and a bridge with no deck reaches no dive at all -- so these
+// fixtures configure a backlog memo, which the fixtures above deliberately do
+// not, and which is why they exercise only the marker path.
+
+const BACKLOG_ID = "019fcf10-0000-7000-8000-0000000000b1";
+
+/** The `setup` bridge with a backlog memo above its feat, so its dives are reachable. */
+function deckSetup(name, { claimed = true } = {}) {
+	const fixture = setup(name);
+	const { bridge, featId, diveId } = fixture;
+	writeBridgeConfig(bridge, { workspace: "./workspace", kb: "./kb", backlog: BACKLOG_ID });
+	write(
+		join(bridge, "kb", `${BACKLOG_ID}.md`),
+		`---
+kind: memo
+id: ${BACKLOG_ID}
+name: jump-test-backlog
+gist: "Jump test backlog"
+links:
+  - kb/${featId}.md:
+      rel: child.feat
+---
+
+# Backlog
+`,
+	);
+	if (!claimed) unclaim(bridge, diveId);
+	commitBridge(bridge, "add the backlog deck");
+	return fixture;
+}
+
+/** Frees a dive and takes it off deck, which is the state a pilot picks one up from. */
+function unclaim(bridge, diveId) {
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	writeFileSync(divePath, readFileSync(divePath, "utf8").replace(/^ {2}diver: .*\n/m, ""));
+	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+}
+
+function setDiver(bridge, diveId, email) {
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const text = readFileSync(divePath, "utf8");
+	writeFileSync(
+		divePath,
+		/^ {2}diver: .*$/m.test(text)
+			? text.replace(/^ {2}diver: .*$/m, `  diver: ${email}`)
+			: text.replace(/^meta:$/m, `meta:\n  diver: ${email}`),
+	);
+}
+
+function commitBridge(bridge, message) {
+	runTool("git", ["add", "-A"], bridge);
+	gitCommit(bridge, message);
+	runTool("git", ["push"], bridge);
+}
+
+/** A second, unheld dive on the same feat -- the thing a selection has to choose between. */
+function freeDive(bridge, featId, gist) {
+	const result = run(
+		["record.dive", "--feat", featId, "--gist", gist, "--brief", "Test brief."],
+		bridge,
+	);
+	assertOk(result, "record.dive failed");
+	const id = /^Recorded kb[\/]([0-9a-f-]{36})\.md$/m.exec(result.stdout)?.[1];
+	assert.ok(id, `record.dive did not report a dive id:\n${result.stdout}`);
+	return id;
+}
+
+function jumpedSection(bridge, diveId) {
+	const text = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const match = /^## jumped [^\n]*\n\n([\s\S]*)$/m.exec(text);
+	assert.ok(match, `dive doc carries no jumped section:\n${text}`);
+	return match[1].trim();
+}
+
+test("bare jump with nothing on deck lists the dives that could be jumped", () => {
+	const { bridge, diveId } = deckSetup("deck-list", { claimed: false });
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump with nothing on deck unexpectedly succeeded");
+	assert.match(result.stderr, /no dive is on deck/);
+	assert.match(result.stderr, /jump <dive-ref>/);
+	assert.ok(
+		result.stderr.includes("[jump-test.nosedive](kb/"),
+		`the eligible dives should be grouped under their feat:\n${result.stderr}`,
+	);
+	assert.match(result.stderr, new RegExp(`kb/${diveId}\\.md`));
+});
+
+test("bare jump with nothing to pick up says so rather than printing an empty list", () => {
+	const { bridge, diveId } = deckSetup("deck-empty");
+	setDiver(bridge, diveId, "someone-else@example.test");
+	rmSync(join(bridge, "workspace", ".nosedive-ref"));
+	commitBridge(bridge, "hand the only dive to another pilot");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump with no eligible dive unexpectedly succeeded");
+	assert.match(result.stderr, /no dive is available to pick up/);
+	assert.doesNotMatch(result.stderr, /\(none\)/, "an empty list is not an answer");
+	// Still the no-active-dive error doc: there is nothing to offer, so the
+	// standing explanation of an empty deck is the honest thing to point at.
+	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
+});
+
+test("the jumped section names the pilot and their email, and its repo lines are unchanged", () => {
+	const { bridge, diveId, pinnedRef, scopeNames } = deckSetup("deck-lead");
+
+	assertOk(run(["jump"], bridge), "jump failed on a dive already on deck");
+
+	const section = jumpedSection(bridge, diveId);
+	assert.equal(
+		section,
+		`Jump Test <jump@example.test> picked up jump-test.nosedive, hydrating 1 scoped repo.\n\n` +
+			`- repo=${scopeNames[0]}-repo path=workspace/${scopeNames[0]}-repo` +
+			` work-branch=work/jump-test.nosedive ref=${pinnedRef}`,
+	);
+});
+
+test("a dive held by another diver renders that email alone in the jumped section", () => {
+	const { bridge, diveId } = deckSetup("deck-other");
+	setDiver(bridge, diveId, "someone-else@example.test");
+	commitBridge(bridge, "hand the dive to another pilot");
+
+	assertOk(run(["jump"], bridge), "jump failed on a dive held by another diver");
+
+	const section = jumpedSection(bridge, diveId);
+	assert.match(section, /^someone-else@example\.test picked up jump-test\.nosedive,/);
+	assert.doesNotMatch(section, /[<>]/, "only the local pilot's own name is available to print");
+});
+
+test("jump <dive-ref> claims the dive it picks up and commits the claim", () => {
+	const { bridge, diveId } = deckSetup("deck-claim", { claimed: false });
+
+	const result = run(["jump", diveId], bridge);
+	assertOk(result, "jump <dive-ref> failed on an unheld dive");
+
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^ {2}diver: jump@example\.test$/m,
+		"the claim is meta.diver, as the pilot's email",
+	);
+	assert.equal(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8").trim(),
+		`id: ${diveId}`,
+	);
+	assert.match(
+		runTool("git", ["show", "--name-only", "--format=", "HEAD"], bridge).stdout,
+		new RegExp(`kb/${diveId}\.md`),
+		"the claim rides the commit jump already makes",
+	);
+	assert.equal(
+		runTool("git", ["status", "--porcelain", "--", `kb/${diveId}.md`], bridge).stdout.trim(),
+		"",
+		"the claimed dive doc should be left committed, not as bridge WIP",
+	);
+});
+
+test("jump <dive-ref> refuses a dive the deck does not offer, and carries the list", () => {
+	const { bridge, featId, diveId } = deckSetup("deck-ineligible", { claimed: false });
+	const held = freeDive(bridge, featId, "A dive somebody else is flying");
+	setDiver(bridge, held, "someone-else@example.test");
+	commitBridge(bridge, "add a dive another pilot holds");
+
+	const result = run(["jump", held], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly accepted a dive held by another pilot");
+	assert.match(result.stderr, new RegExp(`${held} is not a dive you can pick up`));
+	// The refusal carries the eligible list, so the reader never has to run a
+	// second command to find out what they should have named.
+	assert.match(result.stderr, new RegExp(`kb/${diveId}\.md`));
+});
+
+test("jump <dive-ref> refuses when the workspace already holds a different dive", () => {
+	const { bridge, featId, diveId } = deckSetup("deck-held");
+	const other = freeDive(bridge, featId, "A dive that is not on deck");
+	commitBridge(bridge, "add a second dive");
+
+	const result = run(["jump", other], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly swapped the dive on deck");
+	assert.match(result.stderr, new RegExp(`already has active dive ${diveId}`));
+	assert.equal(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8").trim(),
+		`id: ${diveId}`,
+		"a refused jump leaves the deck as it stands",
+	);
+});
+
+test("jump <dive-ref> naming the dive already on deck re-jumps it", () => {
+	const { bridge, diveId } = deckSetup("deck-rejump");
+
+	assertOk(run(["jump", diveId], bridge), "jump <dive-ref> failed on the dive already on deck");
+	assert.match(jumpedSection(bridge, diveId), /^Jump Test <jump@example\.test> picked up /);
 });

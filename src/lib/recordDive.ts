@@ -27,6 +27,7 @@ import {
 	resolveScopeRepo,
 } from "./diveScopes.js";
 import { gitOutput } from "./gitProcess.js";
+import { activeDive, ensureActivation } from "./jumpSelect.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
 import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
@@ -264,30 +265,6 @@ function recordFreeDive(
 function replaceTitle(body: string, title: string): string {
 	if (/^#\s+.*$/m.test(body)) return body.replace(/^#\s+.*$/m, `# ${title}`);
 	return `# ${title}\n\n${body}`;
-}
-
-function activeDive(kbDocs: KbDoc[], workspaceDir: string): KbDoc | undefined {
-	const markerPath = join(workspaceDir, ".nosedive-ref");
-	if (!existsSync(markerPath)) return undefined;
-	const marker = parseRepoMarkerStrict(markerPath);
-	const doc = kbDocs.find((candidate) => candidate.id === marker.id);
-	if (!doc || doc.kind !== "dive")
-		throw new Error(`active marker names no kind: dive doc: ${formatPath(markerPath)}`);
-	return doc;
-}
-
-function ensureActivation(
-	target: KbDoc | { id: string },
-	diver: string | undefined,
-	pilotEmail: string,
-	active: KbDoc | undefined,
-): boolean {
-	if (!diver || diver !== pilotEmail) return false;
-	if (!active || active.id === target.id) return true;
-	if (active.metaScalars.diver === diver) {
-		throw new Error(`pilot already has active dive ${active.id}; land or hand it off first`);
-	}
-	throw new Error(`workspace already has active dive ${active.id}`);
 }
 
 export function recordDive(args: string[], io: CommandIo): void {

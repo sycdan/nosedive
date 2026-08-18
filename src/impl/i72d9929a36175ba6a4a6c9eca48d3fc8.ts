@@ -8,11 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import {
-	DIVE_BRIEF_HEADING,
-	DIVE_BRIEF_HEADING_PATTERN,
-	NO_ACTIVE_DIVE_ERROR_ID,
-} from "../lib/constants.js";
+import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
 import {
 	formatPath,
 	isInsideDir,
@@ -23,11 +19,11 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "../lib/coreParsing.js";
-import { diveDiver } from "../lib/diveListing.js";
-import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
+import { DiveWipScope, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
@@ -336,21 +332,19 @@ function renderJumpedSection(
 }
 
 export function jump(args: string[], io: CommandIo): void {
-	if (args.length > 0) throw new Error(`jump takes no arguments: ${args.join(" ")}`);
+	const ref = parseJumpArgs(args);
 
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
-	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
-	if (!marker.present) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
-	if (marker.error || !marker.id) {
-		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
-	}
-
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const dive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
-	if (!dive) throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+	// A refusal here is already on stderr with the exit code set: what it has to
+	// say is a list of the dives that could be jumped instead, which reads far
+	// better unprefixed than folded into a single thrown error line.
+	const selection = selectJumpDive(rc, kbDocs, ref, io);
+	if (!selection) return;
+	const dive = selection.dive;
 
 	// Checked before anything is hydrated: an unbriefed dive has nothing to hand
 	// the next agent, and jump's whole output is that handoff.
@@ -451,9 +445,9 @@ export function jump(args: string[], io: CommandIo): void {
 	}
 
 	// `meta.diver` is the recorded holder and so the honest answer to whose dive
-	// this is; the rc pilot is merely whoever ran the command, which is the same
-	// person in practice and the only name available on a dive nobody claimed.
-	const diver = diveDiver(dive) || rc.pilotName?.trim() || "an unnamed diver";
+	// this is; a run that claimed the dive writes that holder here, and the name
+	// beside it is display only -- see `claimAndLabel`.
+	const diver = claimAndLabel(rc, dive, selection);
 	appendTimestampedSection(
 		dive.path,
 		renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import { commandDocId, commandEntrypointName, commandImplId } from "./command-identifiers.mjs";
+import { checkSourceStructure } from "./check-source-structure.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const kbDir = join(root, "kb");
@@ -578,6 +579,8 @@ for (const path of tsSourceFiles(join(root, "src"))) {
 		);
 	}
 }
+
+for (const failure of checkSourceStructure().failures) fail(failure);
 
 if (failures.length > 0) {
 	console.error("release surface check failed:");

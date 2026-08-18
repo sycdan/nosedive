@@ -5,7 +5,11 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { checkSourceStructure } from "../check-source-structure.mjs";
 
-function fixture(files, layers) {
+function boundary(name, rank) {
+	return { name, rank };
+}
+
+function fixture(files, boundaries) {
 	const rootPath = mkdtempSync(join(tmpdir(), "nosedive-source-structure-"));
 	for (const [path, text] of Object.entries(files)) {
 		const target = join(rootPath, path);
@@ -13,7 +17,7 @@ function fixture(files, layers) {
 		writeFileSync(target, text);
 	}
 	return {
-		check: () => checkSourceStructure({ rootPath, layers }),
+		check: () => checkSourceStructure({ rootPath, boundaryFor: (path) => boundaries[path] }),
 		remove: () => rmSync(rootPath, { recursive: true, force: true }),
 	};
 }
@@ -24,7 +28,7 @@ test("source structure permits a downward runtime import", () => {
 			"entry.ts": 'import { value } from "./leaf.js";\nexport const result = value;\n',
 			"leaf.ts": "export const value = 1;\n",
 		},
-		{ "entry.ts": 1, "leaf.ts": 0 },
+		{ "entry.ts": boundary("entrypoint", 1), "leaf.ts": boundary("shared core", 0) },
 	);
 	try {
 		assert.deepEqual(source.check().failures, []);
@@ -33,28 +37,46 @@ test("source structure permits a downward runtime import", () => {
 	}
 });
 
-test("source structure rejects imports that point up a layer", () => {
+test("source structure permits imports within one boundary", () => {
 	const source = fixture(
 		{
-			"leaf.ts": 'import { value } from "./entry.js";\nexport const result = value;\n',
+			"impl/first.ts": 'import { second } from "./second.js";\nexport const first = second;\n',
+			"impl/second.ts": "export const second = 1;\n",
+		},
+		{
+			"impl/first.ts": boundary("implementation", 1),
+			"impl/second.ts": boundary("implementation", 1),
+		},
+	);
+	try {
+		assert.deepEqual(source.check().failures, []);
+	} finally {
+		source.remove();
+	}
+});
+
+test("source structure rejects imports that point up a boundary", () => {
+	const source = fixture(
+		{
+			"core.ts": 'import { value } from "./entry.js";\nexport const result = value;\n',
 			"entry.ts": "export const value = 1;\n",
 		},
-		{ "leaf.ts": 0, "entry.ts": 1 },
+		{ "core.ts": boundary("shared core", 0), "entry.ts": boundary("entrypoint", 1) },
 	);
 	try {
 		assert.match(
 			source.check().failures.join("\n"),
-			/leaf\.ts \(layer 0\) imports entry\.ts \(layer 1\).*Move a shared helper down or move the caller up/,
+			/core\.ts \(shared core\) imports entry\.ts \(entrypoint\).*Move a shared helper down or move the caller up/,
 		);
 	} finally {
 		source.remove();
 	}
 });
 
-test("source structure rejects a source file without a declared layer", () => {
+test("source structure rejects a source file without a declared boundary", () => {
 	const source = fixture({ "missing.ts": "export const value = 1;\n" }, {});
 	try {
-		assert.match(source.check().failures.join("\n"), /missing\.ts has no declared source layer/);
+		assert.match(source.check().failures.join("\n"), /missing\.ts has no declared source boundary/);
 	} finally {
 		source.remove();
 	}
@@ -66,7 +88,7 @@ test("source structure reports a complete runtime import cycle", () => {
 			"first.ts": 'import { second } from "./second.js";\nexport const first = second;\n',
 			"second.ts": 'import { first } from "./first.js";\nexport const second = first;\n',
 		},
-		{ "first.ts": 1, "second.ts": 0 },
+		{ "first.ts": boundary("implementation", 1), "second.ts": boundary("implementation", 1) },
 	);
 	try {
 		assert.match(
@@ -84,7 +106,7 @@ test("source structure ignores type-only imports", () => {
 			"consumer.ts": 'import type { Value } from "./types.js";\nexport type Alias = Value;\n',
 			"types.ts": "export type Value = string;\n",
 		},
-		{ "consumer.ts": 0, "types.ts": 0 },
+		{ "consumer.ts": boundary("shared core", 0), "types.ts": boundary("shared core", 0) },
 	);
 	try {
 		assert.deepEqual(source.check().failures, []);
@@ -99,7 +121,7 @@ test("source structure checks runtime re-exports", () => {
 			"entry.ts": 'export { value } from "./leaf.js";\n',
 			"leaf.ts": "export const value = 1;\n",
 		},
-		{ "entry.ts": 1, "leaf.ts": 0 },
+		{ "entry.ts": boundary("entrypoint", 1), "leaf.ts": boundary("shared core", 0) },
 	);
 	try {
 		assert.deepEqual(source.check().failures, []);

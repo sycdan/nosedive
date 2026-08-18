@@ -412,19 +412,21 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 });
 
 test("jump installs provenance for commits made in its hydrated worktree", () => {
-	const { bridge, repoId, featId } = setup("commit-hook");
+	const { bridge, repoId, featId, diveId } = setup("commit-hook");
 	const worktree = repoWorktree(bridge, "commit-hook");
 
 	assertOk(run(["jump"], bridge), "jump failed");
 	write(join(worktree, "implementation.txt"), "implemented\n");
 	runTool("git", ["add", "implementation.txt"], worktree);
-	gitCommit(
-		worktree,
-		`implementation\n\nFeat: ${featId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
-	);
+	gitCommit(worktree, "implementation");
 
-	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout.trim();
+	assert.equal(
+		message,
+		`implementation\n\nFeat: ${featId}\nDive: ${diveId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
+	);
 	assert.equal((message.match(new RegExp(`Feat: ${featId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(new RegExp(`Dive: ${diveId}`, "g")) ?? []).length, 1);
 	assert.equal(
 		(message.match(new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`, "g")) ?? [])
 			.length,
@@ -592,7 +594,7 @@ test("jump honors independent repo provenance opt-outs and still installs the wr
 });
 
 test("jump honors the canonical commit-provenance opt-out key", () => {
-	const { bridge, repoId } = setup("feat-opt-out");
+	const { bridge, repoId, diveId } = setup("feat-opt-out");
 	const worktree = repoWorktree(bridge, "feat-opt-out");
 	const repoDoc = join(bridge, "kb", `${repoId}.md`);
 	writeFileSync(
@@ -606,7 +608,8 @@ test("jump honors the canonical commit-provenance opt-out key", () => {
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.doesNotMatch(message, /Feat:/);
-	// Only the feat trailer is opted out, so the co-author one must survive.
+	// Only the feat trailer is opted out, so the others must survive.
+	assert.match(message, new RegExp(`Dive: ${diveId}`));
 	assert.match(message, /Co-Authored-By: nosedive/);
 });
 

@@ -53,10 +53,12 @@ export function proxyHook(originalHookPath: string): string {
 /** Generates the worktree hook that gives implementation commits provenance. */
 export function prepareCommitMsgHook(
 	featId: string,
+	diveId: string,
 	originalHookPath: string | undefined,
 	options: CommitProvenanceOptions,
 ): string {
 	const trailers = options.feat ? [`Feat: ${featId}`] : [];
+	trailers.push(`Dive: ${diveId}`);
 	if (options.coAuthor) {
 		trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
 	}

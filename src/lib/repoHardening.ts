@@ -12,7 +12,10 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 	return gitOutput(targetPath, ["config", "--get", "extensions.worktreeConfig"]) === "true";
 }
 
-function commitProvenanceOptions(repoDoc: KbDoc): { feat: boolean; coAuthor: boolean } {
+function commitProvenanceOptions(repoDoc: KbDoc): {
+	feat: boolean;
+	coAuthor: boolean;
+} {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	// `commit-provenance.effort` is the older spelling of the same opt-out, still
@@ -28,6 +31,7 @@ function commitProvenanceOptions(repoDoc: KbDoc): { feat: boolean; coAuthor: boo
 export function reconcilePrepareCommitMsgHook(
 	targetPath: string,
 	featId: string,
+	diveId: string,
 	repoDoc: KbDoc,
 ): void {
 	const repoId = repoDoc.id;
@@ -60,7 +64,12 @@ export function reconcilePrepareCommitMsgHook(
 			: undefined;
 	}
 
-	const hook = prepareCommitMsgHook(featId, originalHookPath, commitProvenanceOptions(repoDoc));
+	const hook = prepareCommitMsgHook(
+		featId,
+		diveId,
+		originalHookPath,
+		commitProvenanceOptions(repoDoc),
+	);
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(managedHookPath, hook);

@@ -3,6 +3,7 @@ import { basename, join, relative, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
 import { defaultWorkBranch, formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
+import { gitOutput } from "./gitProcess.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import {
 	ensureManagedRepoCache,
@@ -105,11 +106,76 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 }
 
 /**
- * Every scope moved to current trunk, and nothing else about them touched.
+ * A repin of the dive the workspace is on is refused rather than applied.
+ *
+ * Hydration built those worktrees from the pin this would move, so afterwards
+ * the dive would describe a state no checkout is in and the next `jump` would
+ * replay work onto a tree it never started from. Releasing the dive first is the
+ * whole of the fix, so the message names the command that does it.
+ */
+export function ensureRepinnable(dive: KbDoc, active: KbDoc | undefined): void {
+	if (active?.id !== dive.id) return;
+	throw new Error(
+		`dive ${dive.id} is the active workspace dive; \`pack\` it before repinning -- ` +
+			`its worktrees were hydrated from the pin this would move`,
+	);
+}
+
+/**
+ * Where a repin puts one scope: the head of the first named branch origin has,
+ * and trunk when it has none of them.
+ *
+ * Origin is the only place a branch may answer from. The managed cache is a bare
+ * clone, so it carries a local branch for every name origin held when it was
+ * made, and resolving there would pin a dive at a commit no other machine can
+ * reach. A branch origin does not have is skipped rather than raised: the first
+ * dive on a feat has pushed nothing yet, and trunk is the honest answer for it.
+ *
+ * `cachedScope` resolves trunk even when a branch goes on to answer, because it
+ * is also what runs the target-path and workspace-marker checks, and its fetch
+ * is what puts origin's current heads in the cache for the probe below to read.
+ * That fetch is load-bearing past the pin itself: `land` publishes to the origin
+ * URL rather than the remote name, so a stacked dive only sees its predecessor's
+ * landed commits once a repin has fetched them.
+ */
+function repinnedRef(
+	repo: KbDoc,
+	bridgeDir: string,
+	workspaceDir: string,
+	candidates: [source: string, branch: string | undefined][],
+): { ref: string | undefined; source: string } {
+	const trunk = repo.repoBaseBranch ?? "main";
+	const trunkRef = cachedScope(repo, bridgeDir, workspaceDir).ref;
+	const cache = ensureManagedRepoCache(repo, bridgeDir);
+	for (const [source, branch] of candidates) {
+		if (!branch) continue;
+		const head = gitOutput(cache, [
+			"rev-parse",
+			"--verify",
+			`refs/remotes/origin/${branch}^{commit}`,
+		]);
+		if (head) return { ref: head, source: `${source} ${branch}` };
+	}
+	return { ref: trunkRef, source: `trunk ${trunk}` };
+}
+
+/**
+ * Every scope moved to the head of the branch that speaks for it, and nothing
+ * else about them touched.
  *
  * A pin is the one field a dive cannot correct for itself: `--upscope`
  * deliberately keeps the pin it finds, and replacing the scope set to move one
  * ref drops the branch with it. Re-resolving in place is the whole operation.
+ *
+ * Trunk is the last answer rather than the only one. A dive stacked on another
+ * needs the branch its predecessor published to, which is a ref and not a commit
+ * anyone should have to name by hand, so the scope's own branch is asked first
+ * and the feat's branch for that repo second. Both are read on origin, and both
+ * fall through to trunk when origin does not have them.
+ *
+ * Every move is reported with the source that answered it. A repin can retarget
+ * a dive onto a branch somebody else pushed to, and that is exactly the outcome
+ * that must not be silent.
  *
  * A scope still carrying the superseded `mode: rw` is the one entry that has to
  * change to stay the same. `mode` is never written back, so rewriting the entry
@@ -128,17 +194,21 @@ export function repinScopes(
 ): ScopeRef[] {
 	return scopes.map((scope) => {
 		const repo = resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId);
-		const ref = cachedScope(repo, rc.bridgeDir, workspaceDir).ref;
+		const inherited = featWorkBranch(scope.repoId, rc, kbDocs, feat);
+		const { ref, source } = repinnedRef(repo, rc.bridgeDir, workspaceDir, [
+			["work-branch", scope.workBranch],
+			["feat branch", inherited],
+		]);
+		io.log(`${repo.name}: ${scope.ref} -> ${ref} (${source})`);
 		if (scope.workBranch || scope.legacyMode !== "rw") return { ...scope, ref };
-		const workBranch = featWorkBranch(scope.repoId, rc, kbDocs, feat);
-		if (!workBranch) {
+		if (!inherited) {
 			io.err(
 				`scope ${repo.name} was writable as mode: rw and its feat declares no branch for it; ` +
 					`it is read-only now -- give it one with \`--upscope ${repo.name}\``,
 			);
 			return { ...scope, ref };
 		}
-		return { ...scope, ref, readOnly: false, workBranch };
+		return { ...scope, ref, readOnly: false, workBranch: inherited };
 	});
 }
 

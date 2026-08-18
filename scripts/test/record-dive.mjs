@@ -9,6 +9,7 @@ import {
 	createTmp,
 	gitCommit,
 	run,
+	runGit,
 	runTool,
 	write,
 } from "../test-helpers.mjs";
@@ -741,6 +742,217 @@ test("record.dive --repin reports a legacy scope its feat cannot place", () => {
 	assert.match(repinned.stderr, /mode: rw/);
 	assert.match(repinned.stderr, /--upscope other/, "the report must name the fix");
 	assert.doesNotMatch(readFileSync(path, "utf8"), /^      work-branch: /m);
+});
+
+/**
+ * `--repin` resolves branches on origin, and the fixture repo doc names this
+ * very checkout as `remotes.local`, so a branch committed here is a branch the
+ * managed cache can fetch. Returns the branch head, which is what a repin has
+ * to land on.
+ */
+function commitOnBranch(repo, branch, label) {
+	const started = runTool("git", ["rev-parse", "--abbrev-ref", "HEAD"], repo).stdout.trim();
+	if (started !== branch) runTool("git", ["checkout", "-B", branch], repo);
+	write(join(repo, `${label}.txt`), `${label}\n`);
+	runTool("git", ["add", "--", `${label}.txt`], repo);
+	gitCommit(repo, label);
+	const head = runTool("git", ["rev-parse", "HEAD"], repo).stdout.trim();
+	if (started !== branch) runTool("git", ["checkout", started], repo);
+	return head;
+}
+
+/**
+ * A stacked dive's pin is the branch its predecessor published to, so a scope
+ * that names one is answered by that branch and not by the feat's -- the feat
+ * declares where a repo lands in general, and the scope is the dive saying it
+ * has been told otherwise.
+ */
+test("record.dive --repin pins a scope at its own work branch on origin", () => {
+	const { bridge, repo, repoCommit } = setup("repin-scope-branch");
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const scopeHead = commitOnBranch(repo, "work/scope-own", "scope-work");
+	assert.notEqual(scopeHead, featHead, "the two branches must differ or the pin proves nothing");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	assertOk(
+		run(
+			["record.dive", "--ref", id, "--upscope", repoId, "--work-branch", "work/scope-own"],
+			bridge,
+		),
+		"--upscope failed",
+	);
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	assert.match(
+		readFileSync(path, "utf8"),
+		new RegExp(`^  - ${repoId}:\n      ref: ${scopeHead}\n      work-branch: work/scope-own$`, "m"),
+	);
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${repoCommit} -> ${scopeHead} \\(work-branch work/scope-own\\)`),
+		"the move and the source that answered are both reported",
+	);
+});
+
+/**
+ * A scope naming no branch is read-only, and still has a pin worth moving: the
+ * feat says where this repo's work is going, so that branch is the state the
+ * dive should read it at. Repinning must not hand it the branch as well --
+ * naming none is what read-only means.
+ */
+test("record.dive --repin falls back to the feat's branch for the repo", () => {
+	const { bridge, repo, repoCommit } = setup("repin-feat-branch");
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(/\n      work-branch: work\/record-dive\.nosedive$/m, ""),
+	);
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${featHead}$`, "m"));
+	assert.doesNotMatch(doc, /^      work-branch: /m, "a repin never hands a scope a branch");
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${repoCommit} -> ${featHead} \\(feat branch work/record-dive\\.nosedive\\)`),
+	);
+});
+
+/**
+ * Trunk is the last answer, not the only one, and a repin of several scopes has
+ * to say which source answered for each: one branch nobody else can see moving
+ * a pin in silence is what this report exists to prevent.
+ */
+test("record.dive --repin falls back to trunk and reports every scope", () => {
+	const { bridge, repo, repoCommit } = setup("repin-trunk");
+	const other = join(bridge, "workspace", "other");
+	const otherCommit = createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// The feat scopes `repo` and nothing else, so `other` names no branch and has
+	// none to inherit: trunk is all that is left to answer.
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(
+			/^scopes:$/m,
+			`scopes:\n  - ${unrelatedRepoId}:\n      ref: ${otherCommit}`,
+		),
+	);
+	// Both branches move after the dive was written, which is the case a repin is
+	// for -- and why its fetch cannot be skipped when the pin looks settled.
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const otherTrunk = commitOnBranch(other, "main", "trunk-work");
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherTrunk}$`, "m"));
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${featHead}$`, "m"));
+	assert.match(
+		repinned.stdout,
+		new RegExp(`other: ${otherCommit} -> ${otherTrunk} \\(trunk main\\)`),
+	);
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${repoCommit} -> ${featHead} \\(work-branch work/record-dive\\.nosedive\\)`),
+	);
+});
+
+/**
+ * The first dive on a feat has pushed nothing, so its branch exists nowhere on
+ * origin and trunk is the honest pin. The managed cache is a bare clone, so it
+ * keeps a local branch of the same name long after origin drops it -- resolving
+ * anywhere but origin would answer with a ref no other machine has.
+ */
+test("record.dive --repin resolves a work branch on origin only", () => {
+	const { bridge, repo, repoCommit } = setup("repin-origin-only");
+	const localOnly = commitOnBranch(repo, "work/record-dive.nosedive", "never-pushed");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	runTool("git", ["branch", "-D", "work/record-dive.nosedive"], repo);
+	const cache = join(bridge, ".nosedive", "cache", repoId);
+	const local = runTool(
+		"git",
+		["rev-parse", "--verify", "work/record-dive.nosedive^{commit}"],
+		cache,
+	);
+	assert.equal(
+		local.stdout.trim(),
+		localOnly,
+		"the cache must still hold the branch locally, or this proves nothing",
+	);
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "record.dive --repin failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	assert.doesNotMatch(doc, new RegExp(localOnly), "a local-only branch must not answer");
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${repoCommit} -> ${repoCommit} \\(trunk main\\)`),
+	);
+});
+
+/**
+ * The workspace was hydrated from the pin, so moving it under the dive somebody
+ * is on describes a state their worktrees are not in. `pack` is what releases
+ * the dive, and the refusal has to say so or the pilot's only visible option is
+ * editing the document by hand.
+ */
+test("record.dive --repin refuses the active workspace dive", () => {
+	const { bridge } = setup("repin-active");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const created = run(["record.dive", "--feat", featId, "--diver", "pilot@example.test"], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\n$`));
+	const before = readFileSync(path, "utf8");
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assert.equal(repinned.status, 1);
+	assert.match(repinned.stderr, /pack/, "the refusal must name the command that frees the dive");
+	assert.equal(readFileSync(path, "utf8"), before, "a refused repin writes nothing");
+	// Another dive under the same feat is not the one the workspace is on, and the
+	// gate must not reach past the dive it was given.
+	const second = run(["record.dive", "--feat", featId], bridge);
+	assertOk(second, "record.dive create failed");
+	const secondId = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, second.stdout), "utf8"))[1];
+	assertOk(
+		run(["record.dive", "--ref", secondId, "--repin"], bridge),
+		"record.dive --repin failed",
+	);
+});
+
+/**
+ * A repin is an edit to a document. Publishing it is the pilot's own act, so the
+ * command leaves the bridge uncommitted and the remote untouched -- it reads
+ * origin to resolve, and writes nothing back to it.
+ */
+test("record.dive --repin writes the dive and touches nothing else", () => {
+	const { bridge, repo } = setup("repin-writes-only");
+	commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	const originRefs = runTool("git", ["show-ref"], repo).stdout;
+	assertOk(run(["record.dive", "--ref", id, "--repin"], bridge), "record.dive --repin failed");
+	assert.equal(runTool("git", ["show-ref"], repo).stdout, originRefs, "a repin publishes nothing");
+	assert.notEqual(
+		runGit(["rev-parse", "--verify", "HEAD"], bridge, { expectOk: false }).status,
+		0,
+		"the bridge still has no commits: a repin commits nothing",
+	);
 });
 
 test("record.dive composes --upscope, --unscope and one --work-branch", () => {

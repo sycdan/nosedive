@@ -17,6 +17,7 @@ import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
 import {
 	cachedScope,
 	editScopes,
+	ensureRepinnable,
 	featWorkBranch,
 	inheritedScopes,
 	renderScopeEntry,
@@ -348,6 +349,9 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const dive = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref);
 	if (dive.kind !== "dive")
 		throw new Error(`--ref does not resolve to a kind: dive doc: ${options.ref}`);
+	// Before anything is read off the document, so a refused repin leaves it as it
+	// stands rather than partway through an edit.
+	if (options.repin) ensureRepinnable(dive, active);
 	const text = readFileSync(dive.path, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(dive.path));
 	const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));

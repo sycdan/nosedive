@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -575,7 +575,16 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 
 	// And the fix the warning names does what it says, without taking the branch
 	// with it -- which is what made re-pinning by hand the only safe option.
+	//
+	// `--repin` refuses the dive the workspace is on, because those worktrees were
+	// hydrated from the pin it moves. Releasing the dive is what `pack` is for, and
+	// `pack` does not clear the marker yet, so the marker is dropped and restored
+	// here to stand in for it. Replace this with a real `pack` once it does.
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	const held = readFileSync(marker, "utf8");
+	rmSync(marker);
 	assertOk(run(["record.dive", "--ref", waitingId, "--repin"], bridge), "--repin failed");
+	write(marker, held);
 	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${waitingId}.md`), "utf8"),

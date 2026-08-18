@@ -496,6 +496,7 @@ const PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000beef";
 const WORKING_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000cafe";
 const JUMPED_PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000fade";
 const PACKED_DIVE_ID = "019fe500-0000-7000-8000-00000000f00e";
+const REVIEWING_DIVE_ID = "019fe500-0000-7000-8000-00000000fee1";
 const HELD_WORKING_DIVE_ID = "019fe500-0000-7000-8000-00000000feed";
 const HELD_PENDING_DIVE_ID = "019fe500-0000-7000-8000-00000000c0de";
 const LANDED_DIVE_ID = "019fe500-0000-7000-8000-00000000abba";
@@ -606,6 +607,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		...link(WORKING_PACKED_DIVE_ID, "working.dive"),
 		...link(JUMPED_PACKED_DIVE_ID, "jumped.dive"),
 		...link(PACKED_DIVE_ID, "packed.dive"),
+		...link(REVIEWING_DIVE_ID, "reviewing.dive"),
 		// Bare, unsuffixed: what `record.dive` still writes, so the legacy rel has
 		// to keep reading as the same edge.
 		...link(HELD_PENDING_DIVE_ID, "pending"),
@@ -619,6 +621,10 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	writeDiveDoc(bridge, WORKING_PACKED_DIVE_ID, "working-packed-dive", { log: true });
 	writeDiveDoc(bridge, JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", { log: true });
 	writeDiveDoc(bridge, PACKED_DIVE_ID, "packed-dive", { log: true });
+	writeDiveDoc(bridge, REVIEWING_DIVE_ID, "reviewing-dive", {
+		effort: CHILD_FEAT_ID,
+		log: true,
+	});
 	writeDiveDoc(bridge, HELD_WORKING_DIVE_ID, "held-working-dive", {
 		diver: "dive-pilot@example.invalid",
 		log: true,
@@ -647,6 +653,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		[WORKING_PACKED_DIVE_ID, "working-packed-dive", "working.dive"],
 		[JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", "jumped.dive"],
 		[PACKED_DIVE_ID, "packed-dive", "packed.dive"],
+		[REVIEWING_DIVE_ID, "reviewing-dive", "reviewing.dive"],
 	]) {
 		assert.match(
 			preflight.stdout,
@@ -692,8 +699,17 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 			preflight.stdout.indexOf("packed-dive") < held,
 		"a packed dive belongs under Available",
 	);
-	// A claimed planned/pending dive is the only way into Held: a claimed
-	// working/jumped dive is somebody's live work and drops out of the list.
+	// `reviewing` is a working rel that neither of the old admit-lists named, so
+	// a reviewing dive used to be invisible. Nothing bailed or landed it, so it
+	// is still work someone can pick up.
+	assert.ok(
+		preflight.stdout.indexOf("reviewing-dive") > available &&
+			preflight.stdout.indexOf("reviewing-dive") < held,
+		"a reviewing dive belongs under Available",
+	);
+	// A claimed dive is Held only when somebody else holds it: the running
+	// pilot's own claimed dive is the one they came back for, so it is
+	// Available and its diver is printed on the line.
 	const heldLine = new RegExp(
 		`^ {4}- \\[held-pending-dive\\]\\(${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}\\) rel=pending diver=other-pilot@example\\.invalid`,
 		"m",
@@ -701,15 +717,21 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	assert.match(preflight.stdout, heldLine);
 	assert.ok(
 		preflight.stdout.indexOf("held-pending-dive") > held,
-		"a claimed pending dive belongs under Held",
+		"a pending dive another pilot holds belongs under Held",
 	);
-	for (const hidden of [
-		"held-working-dive",
-		"landed-dive",
-		"bailed-dive",
-		"unlinked-dive",
-		"off-backlog-dive",
-	]) {
+	assert.match(
+		preflight.stdout,
+		new RegExp(
+			`^ {4}- \\[held-working-dive\\]\\(${escapeRegExp(`kb/${HELD_WORKING_DIVE_ID}.md`)}\\) rel=working diver=dive-pilot@example\\.invalid`,
+			"m",
+		),
+	);
+	assert.ok(
+		preflight.stdout.indexOf("held-working-dive") > available &&
+			preflight.stdout.indexOf("held-working-dive") < held,
+		"the running pilot's own working dive belongs under Available",
+	);
+	for (const hidden of ["landed-dive", "bailed-dive", "unlinked-dive", "off-backlog-dive"]) {
 		assert.doesNotMatch(preflight.stdout, new RegExp(hidden));
 	}
 
@@ -734,21 +756,120 @@ test("preflight names record.dive --free when there is no dive to pick up", () =
 });
 
 /**
- * The dive list is only as good as the backlog it walks from, so a bridge whose
- * backlog memo cannot be resolved has no reachable dives -- including dives that
- * a kb-wide scan would have found. The empty list is not silent: the backlog
- * section names the missing memo on stderr.
+ * A backlog reaching one feat reaching one dive. Every eligibility question is
+ * about one dive and one pilot, so the graph stays at the smallest shape that
+ * can answer one and the assertion is the only interesting part of the test.
  */
-test("preflight groups a dive the deck links directly under no feat", () => {
-	const bridge = createBridge(tmp, "unowned-dive-bridge");
-	setIdentity(bridge, "Unowned Pilot", "unowned-pilot@example.invalid");
+function bridgeWithOneDive(name, email, { rel = "packed.dive", diver } = {}) {
+	const bridge = createBridge(tmp, name);
+	setIdentity(bridge, "Solo Pilot", email);
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	const backlog = backlogId(bridge);
+	writeBacklogMemo(bridge, backlogId(bridge), link(TOP_FEAT_ID, "release-effort"));
+	writeFeatDoc(bridge, TOP_FEAT_ID, "solo-fixture", [...link(PACKED_DIVE_ID, rel)]);
+	writeDiveDoc(bridge, PACKED_DIVE_ID, "solo-dive", { diver, log: true });
+	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
+	gitCommit(bridge, "commit solo dive graph");
+	return bridge;
+}
 
-	// A dive hanging straight off the deck has no feat to sit under. Dropping it
-	// would hide the one dive nobody owns, which is the one worth seeing.
-	writeBacklogMemo(bridge, backlog, [
-		...link(TOP_FEAT_ID, "child.feat"),
+/** The section a named dive was printed under, or undefined when it was not. */
+function diveSection(stdout, name) {
+	const dive = stdout.indexOf(`[${name}]`);
+	if (dive === -1) return undefined;
+	const held = stdout.indexOf("Held:");
+	return held !== -1 && dive > held ? "Held" : "Available";
+}
+
+test("preflight lists a packed dive the running pilot holds under Available", () => {
+	const bridge = bridgeWithOneDive("own-packed-bridge", "solo-pilot@example.invalid", {
+		diver: "solo-pilot@example.invalid",
+	});
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with an own-held packed dive failed");
+	assert.equal(diveSection(preflight.stdout, "solo-dive"), "Available");
+	assert.match(
+		preflight.stdout,
+		/- \[solo-dive\]\(kb\/.+\.md\) rel=packed\.dive diver=solo-pilot@example\.invalid/,
+	);
+});
+
+test("preflight holds a packed dive another pilot claimed", () => {
+	const bridge = bridgeWithOneDive("other-packed-bridge", "solo-pilot@example.invalid", {
+		diver: "other-pilot@example.invalid",
+	});
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with an other-held packed dive failed");
+	assert.equal(diveSection(preflight.stdout, "solo-dive"), "Held");
+});
+
+test("preflight hides a bailed or landed dive whose doc is still kind: dive", () => {
+	const bridge = createBridge(tmp, "finished-dive-bridge");
+	setIdentity(bridge, "Finished Pilot", "finished-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	writeBacklogMemo(bridge, backlogId(bridge), link(TOP_FEAT_ID, "release-effort"));
+	writeFeatDoc(bridge, TOP_FEAT_ID, "finished-fixture", [
+		...link(PENDING_DIVE_ID, "pending.dive"),
+		...link(LANDED_DIVE_ID, "landed.dive"),
+		...link(BAILED_DIVE_ID, "bailed.dive"),
+	]);
+	writeDiveDoc(bridge, PENDING_DIVE_ID, "live-dive");
+	writeDiveDoc(bridge, LANDED_DIVE_ID, "landed-dive");
+	writeDiveDoc(bridge, BAILED_DIVE_ID, "bailed-dive");
+
+	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
+	gitCommit(bridge, "commit finished dive graph");
+
+	// The rel is the whole reason these two are gone: `land` and `bail` rewrite
+	// the doc's kind, and these fixtures deliberately have not, so a listing
+	// that read only the doc would still print them.
+	for (const id of [LANDED_DIVE_ID, BAILED_DIVE_ID]) {
+		assert.match(readFileSync(join(bridge, "kb", `${id}.md`), "utf8"), /^kind: dive$/m);
+	}
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with finished dives failed");
+	assert.equal(diveSection(preflight.stdout, "live-dive"), "Available");
+	assert.doesNotMatch(preflight.stdout, /landed-dive/);
+	assert.doesNotMatch(preflight.stdout, /bailed-dive/);
+});
+
+test("preflight never reaches a dive behind an edge that is not a feat rel", () => {
+	const bridge = createBridge(tmp, "off-rel-bridge");
+	setIdentity(bridge, "Off Rel Pilot", "off-rel-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	// `note` is a provenance edge, not a backlog edge. The feat behind it is a
+	// real feat with a real dive, so only the rel keeps the dive out.
+	writeBacklogMemo(bridge, backlogId(bridge), [
+		...link(TOP_FEAT_ID, "note"),
+		...link(CHILD_FEAT_ID, "release-effort"),
+	]);
+	writeFeatDoc(bridge, TOP_FEAT_ID, "noted-fixture", [...link(PLANNED_DIVE_ID, "planned.dive")]);
+	writeFeatDoc(bridge, CHILD_FEAT_ID, "walked-fixture", [...link(PENDING_DIVE_ID, "pending.dive")]);
+	writeDiveDoc(bridge, PLANNED_DIVE_ID, "unreached-dive");
+	writeDiveDoc(bridge, PENDING_DIVE_ID, "walked-dive", { effort: CHILD_FEAT_ID });
+
+	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
+	gitCommit(bridge, "commit off-rel dive graph");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight with an off-rel feat failed");
+	assert.equal(diveSection(preflight.stdout, "walked-dive"), "Available");
+	assert.doesNotMatch(preflight.stdout, /unreached-dive/);
+});
+
+test("preflight does not list a dive linked straight off the backlog memo", () => {
+	const bridge = createBridge(tmp, "deck-linked-bridge");
+	setIdentity(bridge, "Deck Pilot", "deck-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	// Only a dive a feat owns is selectable. A free dive stays possible, and
+	// stays deliberately hard to pick up until it names a feat.
+	writeBacklogMemo(bridge, backlogId(bridge), [
+		...link(TOP_FEAT_ID, "release-effort"),
 		...link(PLANNED_DIVE_ID, "planned.dive"),
 	]);
 	writeFeatDoc(bridge, TOP_FEAT_ID, "owner-fixture", [...link(PENDING_DIVE_ID, "pending.dive")]);
@@ -756,20 +877,21 @@ test("preflight groups a dive the deck links directly under no feat", () => {
 	writeDiveDoc(bridge, PENDING_DIVE_ID, "feat-linked-dive");
 
 	runTool("git", ["add", "--", "kb", ".nosedive", "AGENTS.md"], bridge);
-	gitCommit(bridge, "commit unowned dive graph");
+	gitCommit(bridge, "commit deck-linked dive graph");
 
 	const preflight = run(["preflight"], bridge);
-	assertOk(preflight, "preflight with an unowned dive failed");
-	assert.match(preflight.stdout, /^ {2}\(no feat\):$/m);
-	assert.match(preflight.stdout, /^ {4}- \[deck-linked-dive\]/m);
-	assert.match(preflight.stdout, /^ {4}- \[feat-linked-dive\]/m);
-	// Owned feats first; the unowned group trails them.
-	assert.ok(
-		preflight.stdout.indexOf("[owner-fixture]") < preflight.stdout.indexOf("(no feat)"),
-		`the unowned group should trail the feats:\n${preflight.stdout}`,
-	);
+	assertOk(preflight, "preflight with a deck-linked dive failed");
+	assert.equal(diveSection(preflight.stdout, "feat-linked-dive"), "Available");
+	assert.doesNotMatch(preflight.stdout, /deck-linked-dive/);
+	assert.doesNotMatch(preflight.stdout, /\(no feat\)/);
 });
 
+/**
+ * The dive list is only as good as the backlog it walks from, so a bridge whose
+ * backlog memo cannot be resolved has no reachable dives -- including dives that
+ * a kb-wide scan would have found. The empty list is not silent: the backlog
+ * section names the missing memo on stderr.
+ */
 test("preflight lists no dives when the backlog memo cannot be resolved", () => {
 	const bridge = createBridge(tmp, "no-backlog-bridge");
 	setIdentity(bridge, "Lost Pilot", "lost-pilot@example.invalid");

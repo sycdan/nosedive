@@ -66,6 +66,7 @@ function hydrateScopeAtPin(
 	bridgeDir: string,
 	workspaceDir: string,
 	featId: string,
+	diveId: string,
 ): { targetPath: string; stale?: StalePin; repoName: string } {
 	const result = hydrateScopeCore(scope, kbDocs, bridgeDir, workspaceDir);
 	const { repoDoc, sourcePath, targetPath, commit } = result;
@@ -93,7 +94,7 @@ function hydrateScopeAtPin(
 	 * in it fails with "this operation must be run in a work tree".
 	 */
 	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, scope.repoId);
-	reconcilePrepareCommitMsgHook(targetPath, featId, repoDoc);
+	reconcilePrepareCommitMsgHook(targetPath, featId, diveId, repoDoc);
 
 	return {
 		targetPath,
@@ -383,7 +384,14 @@ export function jump(args: string[], io: CommandIo): void {
 	const scopePaths = new Map<string, string>();
 	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
 	for (const scope of scopes) {
-		const hydrated = hydrateScopeAtPin(scope, kbDocs, rc.bridgeDir, rc.workspaceDir, feat.id);
+		const hydrated = hydrateScopeAtPin(
+			scope,
+			kbDocs,
+			rc.bridgeDir,
+			rc.workspaceDir,
+			feat.id,
+			dive.id,
+		);
 		const path = hydrated.targetPath;
 		scopePaths.set(scope.repoId, path);
 		hydratedEntries.push({ scope, path });

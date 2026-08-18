@@ -56,17 +56,6 @@ export interface DiveLink {
 	owner?: KbDoc;
 }
 
-export interface PreflightDivesResult {
-	available: ListedDive[];
-	held: ListedDive[];
-	/**
-	 * Why the listing is empty, when it is empty because the backlog memo could
-	 * not be read. Every dive here is reached through that memo, so a broken one
-	 * must not be reported as "no work to pick up".
-	 */
-	warnings: string[];
-}
-
 export function parseListDivesArgs(args: string[], io: CommandIo): ListDivesOptions {
 	let ref: string | undefined;
 	let includeHistorical = false;
@@ -185,22 +174,11 @@ export function listedDive(
 
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
 
-// `packed` is the written phase. `working` and `jumped` remain readable for
-// dives created before packing had its own rel.
-const PREFLIGHT_PACKED_DIVE_RELS = new Set(["packed", "working", "jumped"]);
-
 function isBacklogFeatRel(rel: string | undefined): boolean {
 	return Boolean(
 		// `-effort` is the old spelling: accepted on read, never written.
 		rel && (BACKLOG_FEAT_RELS.has(rel) || rel.endsWith("-effort") || rel.endsWith(".feat")),
 	);
-}
-
-function isPreflightDiveRel(rel: string | undefined, dive: KbDoc): boolean {
-	const role = diveRole(rel);
-	if (!role) return false;
-	if (DIVE_PENDING_RELS.has(role)) return true;
-	return PREFLIGHT_PACKED_DIVE_RELS.has(role) && !diveDiver(dive);
 }
 
 /**
@@ -236,42 +214,6 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 	}
 
 	return dives;
-}
-
-/**
- * The session-start dive list is not a KB-wide inventory. It is the in-flight
- * work reachable from the configured backlog memo: walk the deck, then surface
- * only the dive rels that can still be picked up.
- */
-export function collectPreflightDives(
-	rc: NosediveRc,
-	kbDocs: KbDoc[],
-	localOnlyIds: ReadonlySet<string>,
-): PreflightDivesResult {
-	const backlogId = rc.backlog;
-	if (!backlogId) return { available: [], held: [], warnings: ["no backlog memo is configured"] };
-	if (!uuidLike(backlogId)) {
-		return {
-			available: [],
-			held: [],
-			warnings: [`listing dives requires a UUID-shaped backlog memo id: ${backlogId}`],
-		};
-	}
-
-	const deck = kbDocs.find((doc) => doc.id === backlogId);
-	if (!deck) {
-		return { available: [], held: [], warnings: [`bridge backlog memo not found: ${backlogId}`] };
-	}
-
-	const available: ListedDive[] = [];
-	const held: ListedDive[] = [];
-	for (const { dive, rel, owner } of walkDeckDives(deck, kbDocs)) {
-		if (!isPreflightDiveRel(rel, dive)) continue;
-		const tags = diveTags(dive, localOnlyIds);
-		(tags.includes("needs-diver") ? available : held).push(listedDive(dive, rel, tags, owner));
-	}
-
-	return { available, held, warnings: [] };
 }
 
 /**
@@ -442,9 +384,9 @@ export function appendDiveSection(lines: string[], label: string, dives: ListedD
 
 /**
  * Feats in the order the walk first reached them, dives in the order they were
- * found under each. Dives no feat owns collect in one trailing group rather
- * than being dropped: a dive with nowhere to sit is exactly the one a reader
- * needs to see.
+ * found under each. A dive no feat owns still gets a group, trailing the rest:
+ * a caller that hands one over has decided it is worth printing, and dropping
+ * it silently here would make that decision twice, in the wrong place.
  */
 export function groupDivesByFeat(dives: ListedDive[]): FeatDiveGroup[] {
 	const groups: FeatDiveGroup[] = [];

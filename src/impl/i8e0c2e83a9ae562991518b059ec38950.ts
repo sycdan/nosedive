@@ -5,12 +5,8 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import {
-	appendGroupedDiveSection,
-	collectPreflightDives,
-	ListedDive,
-	localOnlyKbDocIds,
-} from "../lib/diveListing.js";
+import { appendGroupedDiveSection, ListedDive, localOnlyKbDocIds } from "../lib/diveListing.js";
+import { collectPreflightDives } from "../lib/diveSelection.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import {
 	CURRENT_COMPATIBILITY_LEVEL,

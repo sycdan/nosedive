@@ -722,7 +722,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	assert.match(
 		preflight.stdout,
 		new RegExp(
-			`^ {4}- \\[held-working-dive\\]\\(${escapeRegExp(`kb/${HELD_WORKING_DIVE_ID}.md`)}\\) rel=working diver=dive-pilot@example\\.invalid`,
+			`^ {4}- \\[held-working-dive\\]\\(${escapeRegExp(`kb/${HELD_WORKING_DIVE_ID}.md`)}\\) rel=working\\.dive diver=dive-pilot@example\\.invalid`,
 			"m",
 		),
 	);

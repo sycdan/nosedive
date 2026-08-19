@@ -74,15 +74,22 @@ jobs:
       # npm rejects duplicate versions, which enforces the one-release-per-day rule.
       - name: Publish to npm
         run: npm publish --tag "${{ steps.version.outputs.tag }}" --access public
-      # Derived from the package's own level, never chosen: the day
-      # CURRENT_COMPATIBILITY_LEVEL goes N -> N+1, nothing computes `level-N` any
-      # more and it freezes on the last release that claimed N.
-      # `level-<n>`, never `<n>`: npm rejects a dist-tag name that is a valid semver.
-      - name: Tag the compatibility level
+      # Trusted publishing authenticates `npm publish`, but not `npm dist-tag`.
+      # Leave an explicit follow-up instead of failing after the package is live.
+      - name: Note manual compatibility tag
         if: github.event_name == 'workflow_dispatch'
         run: |
           level=$(node scripts/compatibility-level.mjs)
-          npm dist-tag add "nosedive@${{ steps.version.outputs.version }}" "level-$level"
+          {
+            echo "### Manual npm compatibility tag"
+            echo
+            echo 'Trusted publishing does not authenticate `npm dist-tag`; run:'
+            echo
+            echo '```sh'
+            printf 'npm dist-tag add "nosedive@%s" "level-%s"\n' \
+              "${{ steps.version.outputs.version }}" "$level"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Create GitHub release and tag
         if: github.event_name == 'workflow_dispatch'
         run: gh release create "v${{ steps.version.outputs.version }}" --generate-notes

@@ -38,6 +38,14 @@ import { writeFileAtomic } from "../lib/renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
+/** The explicit expected value of a `--hard` push, plus what a refusal must name. */
+interface LandLease {
+	repoId: string;
+	pin: string;
+	diveId: string;
+	cli: string;
+}
+
 function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
 	return feat?.name ?? dive.name;
 }
@@ -68,17 +76,32 @@ function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
  * every worktree with a `remote.origin.pushurl` sentinel so an agent working in
  * it cannot push, and a `pushurl` override applies only to the *named* remote.
  * Landing this way means the isolation is never lifted, not even briefly.
+ *
+ * `lease` carries the `--hard` case. Its expected value is spelled out rather
+ * than left to git: a URL push maintains no `refs/remotes/origin/<branch>`, and
+ * a valueless `--force-with-lease` resolved against a ref that does not exist
+ * is a silent unconditional force. Naming the dive's own pin is also what gives
+ * the flag its meaning -- replace the branch only while it still stands where
+ * this dive started -- and refuses an absent branch for free, since git rejects
+ * a non-empty expected value against a ref that is not there.
  */
-function landRepoScope(worktreePath: string, branch: string): string {
+function landRepoScope(worktreePath: string, branch: string, lease?: LandLease): string {
 	const url = gitRun(
 		worktreePath,
 		["config", "--get", "remote.origin.url"],
 		`failed to resolve origin URL for ${formatPath(worktreePath)}`,
 	);
+	const force = lease ? [`--force-with-lease=refs/heads/${branch}:${lease.pin}`] : [];
 	gitRun(
 		worktreePath,
-		["push", url, `HEAD:refs/heads/${branch}`],
-		`failed to push ${formatPath(worktreePath)} to ${branch}`,
+		["push", url, ...force, `HEAD:refs/heads/${branch}`],
+		lease
+			? `land refuses: scope ${lease.repoId} could not replace ${branch} under a lease expecting ` +
+					`${lease.pin} -- the branch moved since this dive was pinned, or does not exist. ` +
+					`Repin the dive at the new branch head (\`${lease.cli} record.dive --ref ${lease.diveId} ` +
+					`--repin\`) and rebase again; do not force-push past it, which would discard whatever ` +
+					`moved it`
+			: `failed to push ${formatPath(worktreePath)} to ${branch}`,
 	);
 	return branch;
 }
@@ -147,11 +170,17 @@ function commitAndPushLand(
 	}
 }
 
-function parseLandArgs(args: string[]): void {
+function parseLandArgs(args: string[]): { hard: boolean } {
+	let hard = false;
 	for (const arg of args) {
+		if (arg === "--hard") {
+			hard = true;
+			continue;
+		}
 		if (arg.startsWith("--")) throw new Error(`unknown land option: ${arg}`);
 		throw new Error(`unexpected land argument: ${arg}`);
 	}
+	return { hard };
 }
 
 /**
@@ -163,7 +192,7 @@ function appendGateReportToDive(divePath: string, report: string): void {
 }
 
 async function land(args: string[], io: CommandIo): Promise<void> {
-	parseLandArgs(args);
+	const { hard } = parseLandArgs(args);
 	const rc = readNosediveRc(process.cwd());
 
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
@@ -296,8 +325,21 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	for (const { scope, path } of writableScopes) {
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
+		/**
+		 * No pin, no lease -- and never a weaker push instead. A `--hard` land that
+		 * cannot say what it expects to replace is an unconditional force wearing
+		 * the flag's name, so it is refused before anything is published.
+		 */
+		if (hard && !scope.ref)
+			throw new Error(
+				`land refuses: scope ${scope.repoId} has no pinned ref, so --hard has no expected ` +
+					`value to lease against; land will not force a push it cannot condition`,
+			);
+		const lease = hard
+			? { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli }
+			: undefined;
 		io.err(`land: pushing scope ${scope.repoId} -> ${branch}`);
-		landRepoScope(path, branch);
+		landRepoScope(path, branch, lease);
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}

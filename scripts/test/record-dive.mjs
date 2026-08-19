@@ -1054,6 +1054,47 @@ test("record.dive --repin refuses a scope whose commits the new pin would strand
 });
 
 /**
+ * The repin after a merge: the worktree sits on the work branch, the branch has
+ * been merged, and the new pin is a trunk that contains it. HEAD and the merge
+ * commit are on different lines of history, so neither is reachable the way the
+ * backwards case is -- but the merge contains every commit the worktree holds,
+ * so nothing can be stranded and the move must be allowed. Refusing here would
+ * send the pilot to `pack` work that is already published.
+ */
+test("record.dive --repin <ref> --scope pins at a merge that contains HEAD", () => {
+	const { bridge, repo, repoCommit } = setup("repin-merged");
+	const branch = "work/record-dive.nosedive";
+	const featHead = commitOnBranch(repo, branch, "feat-work");
+	const { path, id } = recordDive(bridge);
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	// The worktree sits on the work branch, ahead of its pin, and stays there:
+	// that is the only state the guard has anything to say about.
+	runTool("git", ["checkout", branch], repo);
+	runTool("git", ["checkout", "main"], repo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"merge",
+			"--no-ff",
+			"-m",
+			"merge work",
+			branch,
+		],
+		repo,
+	);
+	const merged = runTool("git", ["rev-parse", "HEAD"], repo).stdout.trim();
+	runTool("git", ["checkout", branch], repo);
+	assert.notEqual(merged, featHead, "the fixture must actually merge");
+	const repinned = run(["record.dive", "--ref", id, "--repin", "main", "--scope", "repo"], bridge);
+	assertOk(repinned, "a repin onto a commit that already contains HEAD must be allowed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${merged}$`, "m"));
+});
+
+/**
  * Folding in the dive this one was stacked on moves the pin *backwards*, and
  * that is always safe: the worktree's history still descends from the older
  * commit, so everything ahead of it replays.

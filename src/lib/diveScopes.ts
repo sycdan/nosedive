@@ -194,10 +194,19 @@ function explicitPin(
  * A repin edits a document and moves nothing on disk, so the question is never
  * "is this worktree busy" -- it is "would the new pin stop what is in this
  * worktree from replaying". `pack` captures the commits ahead of the pin and
- * `jump` replays them onto it, so either the new pin is an ancestor of HEAD and
- * everything ahead still lands on it, or there is nothing ahead of the current
- * pin to land at all. Uncommitted changes are captured against HEAD rather than
- * the pin, so a merely dirty worktree is not a reason to refuse anything.
+ * `jump` replays them onto it, so the rule is a single one: refuse only when
+ * HEAD and the new pin have diverged *and* the worktree holds committed work
+ * the new pin does not already contain.
+ *
+ * Not diverging is spelled three ways, and each is a reason there is nothing to
+ * lose. The new pin is an ancestor of HEAD, so everything ahead still replays
+ * onto it. HEAD is an ancestor of the new pin, so the new pin already contains
+ * everything this worktree has -- which is what every repin after a merge looks
+ * like, the worktree on the work branch and the new pin a trunk that swallowed
+ * it. Or there is nothing ahead of the current pin to replay at all.
+ *
+ * Uncommitted changes are captured against HEAD rather than the pin, so a
+ * merely dirty worktree is not a reason to refuse anything.
  *
  * A scope with no hydrated worktree is not checked: there is no HEAD to compare
  * against and no work in reach to strand.
@@ -214,6 +223,7 @@ function ensureRepinnable(
 	const { path } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, workspaceDir);
 	if (!path) return;
 	if (runGit(path, ["merge-base", "--is-ancestor", newRef, "HEAD"]).status === 0) return;
+	if (runGit(path, ["merge-base", "--is-ancestor", "HEAD", newRef]).status === 0) return;
 	const ahead = gitOutput(path, ["rev-list", `${scope.ref}..HEAD`]);
 	if (ahead !== undefined && ahead.trim() === "") return;
 	const stranded = (ahead ?? "").split(/\r?\n/).filter(Boolean);

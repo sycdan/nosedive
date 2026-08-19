@@ -145,6 +145,28 @@ function patchHeadsByRel(diveText, rel) {
 	].map((match) => match[1]);
 }
 
+/**
+ * A dive captures bridge `kb/` WIP only in docs it links, so a test that wants
+ * a doc captured has to say so on the dive the way a pilot would -- a link.
+ */
+function addDiveLink(bridge, diveId, target, rel = "related") {
+	const path = join(bridge, "kb", `${diveId}.md`);
+	const { yaml, body } = splitDoc(readFileSync(path, "utf8"));
+	const entry = `  - ${target}:\n      rel: ${rel}`;
+	const linked = /^links:$/m.test(yaml)
+		? yaml.replace(/^links:$/m, `links:\n${entry}`)
+		: `${yaml}\nlinks:\n${entry}`;
+	write(path, `---\n${linked}\n---\n${body}`);
+}
+
+/** A doc has to be tracked before dirtying it proves anything about capture. */
+function commitMemo(bridge, relPath, id, gist) {
+	write(join(bridge, relPath), `---\nkind: memo\nid: ${id}\nname: ${id}\ngist: "${gist}"\n---\n`);
+	runTool("git", ["add", "--", relPath], bridge);
+	gitCommit(bridge, `add ${relPath}`);
+	runTool("git", ["push"], bridge);
+}
+
 test("pack requires an active dive marker", () => {
 	const bridge = join(tmp, "no-marker");
 	mkdirSync(bridge, { recursive: true });
@@ -178,6 +200,13 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 
 	const effortPath = join(bridge, "kb", `${effortId}.md`);
 	write(effortPath, `${readFileSync(effortPath, "utf8")}\nExtra bridge WIP line.\n`);
+
+	// The dive links this memo, so its dirty state is the dive's to carry.
+	const linkedId = "019fcf00-0000-7000-8000-00000000000f";
+	commitMemo(bridge, `kb/${linkedId}.md`, linkedId, "Linked bridge memo");
+	addDiveLink(bridge, diveId, `kb/${linkedId}.md`);
+	const linkedPath = join(bridge, "kb", `${linkedId}.md`);
+	write(linkedPath, `${readFileSync(linkedPath, "utf8")}\nExtra linked WIP line.\n`);
 
 	const stray = join(bridge, "stray.txt");
 	write(stray, "unrelated bridge dirty file\n");
@@ -254,7 +283,10 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.match(dirtyPatch, /\n$/, "captured dirty diff must keep its trailing newline");
 
 	const bridgeWipPatch = readFileSync(join(bridge, bridgeWip.patch), "utf8");
-	assert.match(bridgeWipPatch, /Extra bridge WIP line\./);
+	assert.match(bridgeWipPatch, /Extra linked WIP line\./);
+	// The feat doc is the dive's parent, never its cargo: pack excludes it from
+	// the capture and lets `commitAndPushPack` stage it alongside the dive.
+	assert.doesNotMatch(bridgeWipPatch, /Extra bridge WIP line\./);
 	assert.match(bridgeWipPatch, /\n$/, "captured bridge-wip diff must keep its trailing newline");
 
 	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
@@ -375,6 +407,12 @@ meta:
 		),
 	);
 
+	// The new repo doc is a bridge kb/ edit the dive does not link, and pack now
+	// refuses those ahead of the scope loop -- publish it the way a pilot would,
+	// so the read-only refusal below is the one under test.
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "publish the read-only repo doc");
+
 	const roWorktree = repoWorktree(bridge, "readonly-ro");
 	write(join(roWorktree, "dirty.txt"), "dirty\n");
 
@@ -426,6 +464,9 @@ test("pack captures bridge kb/ WIP whose filename needs quoting under plain --po
 	// undo -- the file would be silently dropped from bridge-wip capture.
 	const spaceyPath = join(bridge, "kb", "space name.md");
 	write(spaceyPath, "kind: memo\ngist: has a space in its filename\n");
+	// Capture is now narrowed to what the dive links, so the spacey doc has to
+	// be linked for the `-z` parsing this test exists for to be reached at all.
+	addDiveLink(bridge, diveId, "kb/space name.md");
 
 	const result = run(["pack"], bridge);
 	assertOk(result, "pack failed to capture a spacey-filename bridge-wip change");
@@ -441,6 +482,64 @@ test("pack captures bridge kb/ WIP whose filename needs quoting under plain --po
 	assert.match(patchText, /space name\.md/);
 	assert.match(patchText, /has a space in its filename/);
 	void effortId;
+});
+
+/**
+ * A dive that sweeps every dirty `kb/` path claims edits it has nothing to do
+ * with: any memo a pilot touched while the dive happened to be open ends up
+ * committed under `dive(<name>): packed wip` and replayed on the next jump.
+ */
+test("pack refuses a dirty bridge kb/ doc the dive does not link", () => {
+	const { bridge, diveId } = setup("unlinked");
+	// Dirty the scoped repo too: the scope loop mints a `.patch` into kb/ for it,
+	// so this is what proves the refusal is decided ahead of that loop.
+	write(join(repoWorktree(bridge, "unlinked"), "dirty.txt"), "dirty\n");
+	const strayId = "019fcf00-0000-7000-8000-00000000000c";
+	write(join(bridge, "kb", `${strayId}.md`), `---\nkind: memo\nid: ${strayId}\n---\n`);
+
+	const result = run(["pack"], bridge);
+	assert.notEqual(result.status, 0, "pack over an unlinked dirty kb/ doc unexpectedly succeeded");
+	assert.match(result.stderr, new RegExp(`kb/${strayId}\\.md`));
+	// Both recourses, named: adopt it onto the dive, or publish it yourself.
+	assert.match(result.stderr, /link/);
+	assert.match(result.stderr, /commit/);
+	// Refused ahead of the scope loop, so no half-written artifacts are left behind.
+	assert.equal(existsSync(join(bridge, "kb", "artifacts")), false, "refusal wrote artifacts");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^\s+diver: "?pack@example\.test"?$/m,
+		"a refused pack should not release the dive",
+	);
+	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), true);
+});
+
+test("pack names every unlinked dirty kb/ doc at once", () => {
+	const { bridge } = setup("unlinked-many");
+	const firstId = "019fcf00-0000-7000-8000-00000000000d";
+	const secondId = "019fcf00-0000-7000-8000-00000000000e";
+	write(join(bridge, "kb", `${firstId}.md`), `---\nkind: memo\nid: ${firstId}\n---\n`);
+	write(join(bridge, "kb", `${secondId}.md`), `---\nkind: memo\nid: ${secondId}\n---\n`);
+
+	const result = run(["pack"], bridge);
+	assert.notEqual(result.status, 0, "pack over unlinked dirty kb/ docs unexpectedly succeeded");
+	assert.match(result.stderr, new RegExp(`kb/${firstId}\\.md`));
+	assert.match(result.stderr, new RegExp(`kb/${secondId}\\.md`));
+});
+
+/**
+ * The dive doc is dirty on every pack that follows a `--brief` or a `jump`, and
+ * the feat doc is dirty whenever a rel was rewritten. Neither is cargo.
+ */
+test("pack counts neither the dive's own doc nor its feat as unlinked", () => {
+	const { bridge, effortId, diveId } = setup("own-doc");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	write(divePath, `${readFileSync(divePath, "utf8")}\nExtra dive body line.\n`);
+	const effortPath = join(bridge, "kb", `${effortId}.md`);
+	write(effortPath, `${readFileSync(effortPath, "utf8")}\nExtra feat body line.\n`);
+
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack over its own dirty dive and feat docs failed");
+	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: nothing to pack`));
 });
 
 test("pack does not capture ignored dive scratch contents", () => {

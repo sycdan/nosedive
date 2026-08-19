@@ -27,6 +27,12 @@ import {
 	listAheadCommits,
 	writeArtifact,
 } from "./packArtifacts.js";
+import {
+	assertDiveOwnsDirtyKb,
+	dirtyKbEntries,
+	excludedKbPaths,
+	linkedKbPaths,
+} from "./packKbWip.js";
 import { reconcileDiveFeatLinks, releaseDiveToPacker, resolveFeatDoc } from "./repoFeatScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
@@ -82,44 +88,15 @@ function packRepoScope(
 function packBridgeWip(
 	bridgeDir: string,
 	kbDir: string,
-	divePath: string,
-	excludeAbsPaths: string[],
+	excluded: Set<string>,
 	mintUuid: () => string,
 ): CapturedPatch | undefined {
-	const kbRel = toPosixPath(relative(bridgeDir, kbDir));
-	/**
-	 * Plain `--porcelain` C-quotes paths with spaces/non-ASCII (`core.quotePath`)
-	 * and joins a rename/copy as one `XY orig -> new` line -- naive
-	 * `split(/\r?\n/)` + `slice(3)` mis-parses both. `-z` NUL-delimits instead
-	 * (no quoting; a rename/copy becomes two separate records), same pattern
-	 * as `statusEntries` in `proveCore.ts`. `--untracked-files=all` stops an
-	 * entirely-untracked directory from collapsing into one directory line.
-	 */
-	const statusResult = runGit(bridgeDir, [
-		"status",
-		"--porcelain",
-		"-z",
-		"--untracked-files=all",
-		"--",
-		kbRel,
-	]);
-	const statusEntries = statusResult.stdout.split("\0").filter(Boolean);
-	if (statusEntries.length === 0) return undefined;
-
-	const excluded = new Set(
-		[divePath, ...excludeAbsPaths].map((path) => toPosixPath(relative(bridgeDir, path))),
-	);
 	const dirtyKbFiles: string[] = [];
 	const untracked: string[] = [];
-	for (let i = 0; i < statusEntries.length; i += 1) {
-		const entry = statusEntries[i]!;
-		const statusCode = entry.slice(0, 2);
-		const path = entry.slice(3);
-		// Skip a rename/copy's orig-path record, its own NUL-terminated entry.
-		if (statusCode.includes("R") || statusCode.includes("C")) i += 1;
-		if (excluded.has(path)) continue;
-		dirtyKbFiles.push(path);
-		if (statusCode === "??") untracked.push(path);
+	for (const entry of dirtyKbEntries(bridgeDir, kbDir)) {
+		if (excluded.has(entry.path)) continue;
+		dirtyKbFiles.push(entry.path);
+		if (entry.statusCode === "??") untracked.push(entry.path);
 	}
 	if (dirtyKbFiles.length === 0) return undefined;
 
@@ -356,6 +333,16 @@ export function packDive(args: string[], io: CommandIo): void {
 		if (!scope.ref)
 			throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
 	}
+	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
+	// Ahead of the scope loop, which mints `.patch` artifacts into kb/: a refusal
+	// decided after it would leave orphans behind, and the newly untracked
+	// artifacts would be competing with the unlinked docs the message is about.
+	const linked = linkedKbPaths(dive.links.map((link) => link.target));
+	assertDiveOwnsDirtyKb(
+		dirtyKbEntries(rc.bridgeDir, rc.kbDir),
+		excludedKbPaths(rc.bridgeDir, dive.path, feat?.path, []),
+		linked,
+	);
 	const mintUuid = createUuid7Minter();
 	const groups: CapturedPatch[][] = [];
 	let capturedCount = 0;
@@ -380,12 +367,15 @@ export function packDive(args: string[], io: CommandIo): void {
 	const bridgeWip = packBridgeWip(
 		rc.bridgeDir,
 		rc.kbDir,
-		dive.path,
-		groups.flat().map((patch) => patch.patchAbsPath),
+		excludedKbPaths(
+			rc.bridgeDir,
+			dive.path,
+			feat?.path,
+			groups.flat().map((patch) => patch.patchAbsPath),
+		),
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
-	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const released = releaseDiveToPacker(dive.path);
 	const committing = groups.length > 0 || released;
 	if (committing && feat) reconcileDiveFeatLinks(feat, feat, dive.id, "packed.dive");

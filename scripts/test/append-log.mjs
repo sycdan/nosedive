@@ -82,6 +82,15 @@ test("append-log.dive refuses what it cannot honestly record", () => {
 	assert.notEqual(positional.status, 0);
 	assert.match(positional.stderr, /takes the section body on stdin, not as an argument/);
 
+	// The same mistake with nothing piped, which is what it actually looks like:
+	// somebody who put the body in an argument had no reason to also pipe one.
+	// Arguments are parsed before stdin is read, so this reports where the body
+	// belongs rather than complaining that no body arrived -- and, on a stdin
+	// that stays open instead of ending, refuses rather than waiting forever.
+	const positionalNoBody = run(["append-log.dive", "did the thing"], bridge, "");
+	assert.notEqual(positionalNoBody.status, 0);
+	assert.match(positionalNoBody.stderr, /takes the section body on stdin, not as an argument/);
+
 	const multiline = run(["append-log.dive", "--gist", "one\ntwo"], bridge, "body\n");
 	assert.notEqual(multiline.status, 0);
 	assert.match(multiline.stderr, /--gist must be a single line/);

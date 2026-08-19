@@ -326,15 +326,12 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
 		/**
-		 * No pin, no lease -- and never a weaker push instead. A `--hard` land that
-		 * cannot say what it expects to replace is an unconditional force wearing
-		 * the flag's name, so it is refused before anything is published.
+		 * Every scope was refused above unless it carries a pinned ref, so a lease
+		 * always has an expected value to name. That check is what keeps `--hard`
+		 * honest: a `--force-with-lease` with nothing to expect is an
+		 * unconditional force wearing the flag's name, so there is deliberately no
+		 * weaker push to fall back to here.
 		 */
-		if (hard && !scope.ref)
-			throw new Error(
-				`land refuses: scope ${scope.repoId} has no pinned ref, so --hard has no expected ` +
-					`value to lease against; land will not force a push it cannot condition`,
-			);
 		const lease = hard
 			? { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli }
 			: undefined;

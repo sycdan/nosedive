@@ -254,7 +254,11 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 		relPath: toPosixPath(relative(bridgeDir, path)),
 		id: fm.scalars.id,
 		name: fm.scalars.name,
-		kind: fm.scalars.kind,
+		// `effort` is the old spelling of `feat`: normalized here on read, same as
+		// `featRef` below, so every `doc.kind === "feat"` check downstream (dive
+		// ownership, gate feats, repo-feat scoping) works with bridges that still
+		// spell it the old way.
+		kind: fm.scalars.kind === "effort" ? "feat" : fm.scalars.kind,
 		// A doc with no `gist:` has no gist, not the four-character string
 		// `undefined`: the field is typed as present, so every reader would
 		// otherwise have to guard a value the type says cannot happen.

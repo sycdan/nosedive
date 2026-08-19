@@ -57,8 +57,8 @@ export function prepareCommitMsgHook(
 	originalHookPath: string | undefined,
 	options: CommitProvenanceOptions,
 ): string {
-	const trailers = options.feat ? [`Feat: ${featId}`] : [];
-	trailers.push(`Dive: ${diveId}`);
+	const trailers = [`Dive: ${diveId}`];
+	if (options.feat) trailers.push(`Feat: ${featId}`);
 	if (options.coAuthor) {
 		trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
 	}

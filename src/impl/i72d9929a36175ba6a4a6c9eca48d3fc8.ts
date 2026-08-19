@@ -8,11 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import {
-	DIVE_BRIEF_HEADING,
-	DIVE_BRIEF_HEADING_PATTERN,
-	NO_ACTIVE_DIVE_ERROR_ID,
-} from "../lib/constants.js";
+import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
 import {
 	formatPath,
 	isInsideDir,
@@ -23,11 +19,11 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "../lib/coreParsing.js";
-import { diveDiver } from "../lib/diveListing.js";
-import { DiveWipScope, readWorkspaceDiveMarker, uniqueDiveWipScopes } from "../lib/gitState.js";
+import { DiveWipScope, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
@@ -39,15 +35,14 @@ import {
 	gitRun,
 	maybeResolveRepoDoc,
 } from "../lib/repoWorkspaceCore.js";
-import {
-	ensureDetachedAtCommit,
-	ensureRepoMarkerExcluded,
-	writeRepoMarker,
-} from "../lib/repoWorktrees.js";
+import { ensureRepoMarkerExcluded, writeRepoMarker } from "../lib/repoWorktrees.js";
 import { reconcilePrepareCommitMsgHook, reconcilePushIsolation } from "../lib/repoHardening.js";
 import {
 	hydrateScopeAtPin as hydrateScopeCore,
+	moveScopeToPin,
 	pinBehindTrunk,
+	refuseUnmovableScopes,
+	type HydratedScope,
 	type StalePin,
 } from "../lib/scopeHydration.js";
 
@@ -60,30 +55,19 @@ interface PatchStep {
 	isCommit: boolean;
 }
 
-function hydrateScopeAtPin(
+/**
+ * Everything a scope needs after the reuse policy has cleared the whole set:
+ * the move onto the pin, the marker, and the worktree-local config an agent
+ * commits through.
+ */
+function settleScope(
+	hydrated: HydratedScope,
 	scope: DiveWipScope,
-	kbDocs: KbDoc[],
-	bridgeDir: string,
-	workspaceDir: string,
 	featId: string,
 	diveId: string,
-): { targetPath: string; stale?: StalePin; repoName: string } {
-	const result = hydrateScopeCore(scope, kbDocs, bridgeDir, workspaceDir);
-	const { repoDoc, sourcePath, targetPath, commit } = result;
-	if (!result.created) {
-		/**
-		 * Only force back to the pin when the target isn't already sitting on
-		 * top of it. A prior jump run may have already reapplied (and then
-		 * deleted) this scope's chain, leaving HEAD legitimately ahead of the
-		 * pin with nothing left to apply -- forcing it back to the pin on every
-		 * re-run would silently discard that progress.
-		 */
-		const pinIsAncestorOfHead =
-			runGit(targetPath, ["merge-base", "--is-ancestor", commit, "HEAD"]).status === 0;
-		if (!pinIsAncestorOfHead) {
-			ensureDetachedAtCommit(targetPath, commit, scope.repoId);
-		}
-	}
+): { targetPath: string; stale?: StalePin; repoName: string; movedFrom?: string } {
+	const { repoDoc, sourcePath, targetPath, commit } = hydrated;
+	const movedFrom = moveScopeToPin(hydrated);
 	writeRepoMarker(targetPath, scope.repoId);
 	ensureRepoMarkerExcluded(targetPath, scope.repoId);
 
@@ -98,6 +82,7 @@ function hydrateScopeAtPin(
 
 	return {
 		targetPath,
+		movedFrom,
 		repoName: repoDoc.name || scope.repoId,
 		stale: pinBehindTrunk(sourcePath, commit, repoDoc.repoBaseBranch ?? "main"),
 	};
@@ -317,18 +302,22 @@ function printWorkDirective(
  * shas and never say what event produced them. It carries the scope count for
  * the same reason: a dive that scopes no repo and a run whose repos all
  * dropped out otherwise render identically, as a heading over nothing.
+ *
+ * `ref=` is the commit hydration resolved, not the scope's `ref:` string. A
+ * `ref:` may name a branch, and a branch moves -- a section recording the name
+ * records nothing a reader can go back to.
  */
 function renderJumpedSection(
 	who: string,
 	featName: string,
-	entries: { scope: DiveWipScope; path: string }[],
+	entries: { scope: DiveWipScope; path: string; commit: string }[],
 	kbDocs: KbDoc[],
 ): string {
 	const lead = `${who} picked up ${featName}, hydrating ${entries.length} scoped repo${
 		entries.length === 1 ? "" : "s"
 	}.`;
 	const lines = entries
-		.map(({ scope, path }) => {
+		.map(({ scope, path, commit }) => {
 			const repoDoc = kbDocs.find((doc) => doc.id === scope.repoId);
 			const name = repoDoc?.name ?? scope.repoId;
 			// No `mode=`: it named a concept that no longer exists. A scope says
@@ -336,28 +325,26 @@ function renderJumpedSection(
 			// when there is one and says nothing when there is not -- the same shape
 			// the scope entry itself has.
 			const branch = scope.workBranch ? ` work-branch=${scope.workBranch}` : "";
-			return `- repo=${name} path=${formatPath(path)}${branch} ref=${scope.ref}`;
+			return `- repo=${name} path=${formatPath(path)}${branch} ref=${commit}`;
 		})
 		.join("\n");
 	return lines ? `${lead}\n\n${lines}` : lead;
 }
 
 export function jump(args: string[], io: CommandIo): void {
-	if (args.length > 0) throw new Error(`jump takes no arguments: ${args.join(" ")}`);
+	const ref = parseJumpArgs(args);
 
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
-	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
-	if (!marker.present) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
-	if (marker.error || !marker.id) {
-		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
-	}
-
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const dive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
-	if (!dive) throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+	// A refusal here is already on stderr with the exit code set: what it has to
+	// say is a list of the dives that could be jumped instead, which reads far
+	// better unprefixed than folded into a single thrown error line.
+	const selection = selectJumpDive(rc, kbDocs, ref, io);
+	if (!selection) return;
+	const dive = selection.dive;
 
 	// Checked before anything is hydrated: an unbriefed dive has nothing to hand
 	// the next agent, and jump's whole output is that handoff.
@@ -382,29 +369,37 @@ export function jump(args: string[], io: CommandIo): void {
 	recreateDiveScratch(rc.workspaceDir, dive.id);
 
 	const scopePaths = new Map<string, string>();
-	const hydratedEntries: { scope: DiveWipScope; path: string }[] = [];
+	const hydratedEntries: { scope: DiveWipScope; path: string; commit: string }[] = [];
+	// Two passes on purpose. A refusal that has already relocated three of five
+	// worktrees is not a refusal, so every scope is resolved and judged before
+	// any of them is moved, and every offender is named in the one message.
+	const resolved: { scope: DiveWipScope; hydrated: HydratedScope }[] = [];
 	for (const scope of scopes) {
-		const hydrated = hydrateScopeAtPin(
-			scope,
-			kbDocs,
-			rc.bridgeDir,
-			rc.workspaceDir,
-			feat.id,
-			dive.id,
-		);
-		const path = hydrated.targetPath;
+		const hydrated = hydrateScopeCore(scope, kbDocs, rc.bridgeDir, rc.workspaceDir);
+		resolved.push({ scope, hydrated });
+	}
+	refuseUnmovableScopes(
+		resolved.map((entry) => entry.hydrated),
+		`${nosediveInvocation()} record.dive --ref ${dive.id} --repin`,
+	);
+	for (const { scope, hydrated } of resolved) {
+		const settled = settleScope(hydrated, scope, feat.id, dive.id);
+		const path = settled.targetPath;
 		scopePaths.set(scope.repoId, path);
-		hydratedEntries.push({ scope, path });
-		io.log(`hydrated repo=${scope.repoId} path=${formatPath(path)}`);
+		hydratedEntries.push({ scope, path, commit: hydrated.commit });
+		io.log(
+			`hydrated repo=${scope.repoId} path=${formatPath(path)}` +
+				(settled.movedFrom ? ` moved-from=${settled.movedFrom}` : ""),
+		);
 		// A warning, not a refusal: a planned dive that merely waited is the
 		// ordinary case. The agent picking it up was not there when the pin was
 		// chosen and has no reason to suspect it, so say how far behind and name
 		// the fix -- a warning nobody can act on only teaches people to skip them.
-		if (hydrated.stale) {
+		if (settled.stale) {
 			io.err(
-				`jump: ${hydrated.repoName} is pinned ${hydrated.stale.behind} commit${
-					hydrated.stale.behind === 1 ? "" : "s"
-				} behind ${hydrated.stale.trunk}; re-pin with \`${nosediveInvocation()} record.dive --ref ${dive.id} --repin\``,
+				`jump: ${settled.repoName} is pinned ${settled.stale.behind} commit${
+					settled.stale.behind === 1 ? "" : "s"
+				} behind ${settled.stale.trunk}; re-pin with \`${nosediveInvocation()} record.dive --ref ${dive.id} --repin\``,
 			);
 		}
 	}
@@ -450,9 +445,9 @@ export function jump(args: string[], io: CommandIo): void {
 	}
 
 	// `meta.diver` is the recorded holder and so the honest answer to whose dive
-	// this is; the rc pilot is merely whoever ran the command, which is the same
-	// person in practice and the only name available on a dive nobody claimed.
-	const diver = diveDiver(dive) || rc.pilotName?.trim() || "an unnamed diver";
+	// this is; a run that claimed the dive writes that holder here, and the name
+	// beside it is display only -- see `claimAndLabel`.
+	const diver = claimAndLabel(rc, dive, selection);
 	appendTimestampedSection(
 		dive.path,
 		renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),

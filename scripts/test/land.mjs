@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
 	assertOk,
 	createTmp,
+	escapeRegExp,
 	gitCommit,
 	gitCommitEmpty,
 	packageVersionPattern,
@@ -80,6 +81,47 @@ scopes:
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "record dive");
 	return { bridge, origin, worktree: join(bridge, "workspace", `${name}-repo`), diveId };
+}
+
+const workBranch = "work/land-test.nosedive";
+
+/** The published head of the shared work branch, or "" when the branch is absent. */
+function remoteWorkBranch(source) {
+	const shown = runGitUnchecked(
+		["show-ref", "--verify", "--hash", `refs/heads/${workBranch}`],
+		source,
+	);
+	return shown.status === 0 ? shown.stdout.trim() : "";
+}
+
+function scopePin(bridge, diveId) {
+	const text = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(text)?.[1];
+	assert.ok(pin, "dive should have a scope pin");
+	return pin;
+}
+
+/**
+ * A head that is a sibling of the pin rather than a descendant of it -- the
+ * shape a rebase leaves behind, and the only shape a plain push cannot publish.
+ */
+function rewriteHead(worktree, message) {
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=nosedive@example.invalid",
+			"commit",
+			"--amend",
+			"--allow-empty",
+			"-m",
+			message,
+		],
+		worktree,
+	);
+	return runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
 }
 
 function assertInOrder(text, parts) {
@@ -306,4 +348,108 @@ test("land refuses a scope that is ahead of its pin and names no work branch", (
 	// Naming a branch is all it takes to make the same commits landable.
 	assertOk(run(["record.dive", "--ref", diveId, "--upscope", repoId], bridge), "--upscope failed");
 	assertOk(run(["land"], bridge), "land should accept the scope once it names a branch");
+});
+
+/**
+ * The lease case the whole flag exists for: a work branch built by earlier
+ * dives, rebased onto a trunk it conflicted with, republished over a remote
+ * that has not moved since this dive pinned it.
+ */
+test("land --hard publishes a head the remote work branch does not descend from", () => {
+	const { bridge, worktree, diveId } = setup("hard-publishes");
+	const source = join(tmp, "hard-publishes-source");
+	const pin = scopePin(bridge, diveId);
+	runTool("git", ["branch", workBranch, pin], source);
+	const head = rewriteHead(worktree, "rewritten history");
+	assert.notEqual(head, pin, "the fixture must rewrite the pinned commit");
+
+	assertOk(run(["land", "--hard"], bridge), "land --hard failed");
+	assert.equal(remoteWorkBranch(source), head, "land --hard must replace the branch");
+	assert.match(readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"), /^kind: memo$/m);
+});
+
+test("plain land still refuses a head the remote work branch does not descend from", () => {
+	const { bridge, worktree, diveId } = setup("plain-refuses-rewrite");
+	const source = join(tmp, "plain-refuses-rewrite-source");
+	const pin = scopePin(bridge, diveId);
+	runTool("git", ["branch", workBranch, pin], source);
+	rewriteHead(worktree, "rewritten history");
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "plain land unexpectedly published a rewritten head");
+	assert.match(result.stderr, /failed to push/);
+	assert.equal(remoteWorkBranch(source), pin, "a refused plain land must not move the remote");
+});
+
+test("land --hard refuses when the remote work branch has moved away from the pin", () => {
+	const { bridge, worktree, diveId } = setup("hard-stale-lease");
+	const source = join(tmp, "hard-stale-lease-source");
+	const pin = scopePin(bridge, diveId);
+	write(join(source, "third-party.txt"), "somebody else was here\n");
+	runTool("git", ["add", "third-party.txt"], source);
+	gitCommit(source, "third-party work on the shared branch");
+	const advanced = runTool("git", ["rev-parse", "HEAD"], source).stdout.trim();
+	runTool("git", ["branch", workBranch, advanced], source);
+	gitCommitEmpty(worktree, "landable work");
+
+	const result = run(["land", "--hard"], bridge);
+	assert.notEqual(result.status, 0, "land --hard unexpectedly replaced a branch that had moved");
+	assert.match(result.stderr, new RegExp(escapeRegExp(workBranch)), "name the branch");
+	assert.match(result.stderr, new RegExp(pin), "name the pin the lease expected");
+	assert.match(result.stderr, /moved since this dive was pinned/, "say what went wrong");
+	assert.match(result.stderr, /--repin/, "and name the recovery");
+});
+
+/**
+ * A refused lease has to cost nothing: the pilot must be able to repin, rebase
+ * and try again from exactly where they stood.
+ */
+test("a land --hard refused by the lease leaves remote, dive and marker untouched", () => {
+	const { bridge, worktree, diveId } = setup("hard-refusal-inert");
+	const source = join(tmp, "hard-refusal-inert-source");
+	write(join(source, "third-party.txt"), "somebody else was here\n");
+	runTool("git", ["add", "third-party.txt"], source);
+	gitCommit(source, "third-party work on the shared branch");
+	const advanced = runTool("git", ["rev-parse", "HEAD"], source).stdout.trim();
+	runTool("git", ["branch", workBranch, advanced], source);
+	gitCommitEmpty(worktree, "landable work");
+
+	const result = run(["land", "--hard"], bridge);
+	assert.notEqual(result.status, 0, "land --hard unexpectedly replaced a branch that had moved");
+	assert.equal(remoteWorkBranch(source), advanced, "a refused land must not move the remote");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^kind: dive$/m,
+		"a refused land must leave the dive open",
+	);
+	assert.equal(
+		existsSync(join(bridge, "workspace", ".nosedive-ref")),
+		true,
+		"a refused land must leave the active dive marker in place",
+	);
+});
+
+/**
+ * An absent branch is a stale lease too: a non-empty expected value against a
+ * ref that is not there is exactly what must not be created behind the pilot.
+ */
+test("land --hard refuses when the remote work branch is absent rather than creating it", () => {
+	const { bridge, worktree, diveId } = setup("hard-absent-branch");
+	const source = join(tmp, "hard-absent-branch-source");
+	const pin = scopePin(bridge, diveId);
+	gitCommitEmpty(worktree, "landable work");
+	assert.equal(remoteWorkBranch(source), "", "the fixture must start with no work branch");
+
+	const result = run(["land", "--hard"], bridge);
+	assert.notEqual(result.status, 0, "land --hard unexpectedly created an absent work branch");
+	assert.equal(remoteWorkBranch(source), "", "land --hard must not create the branch");
+	assert.match(result.stderr, new RegExp(escapeRegExp(workBranch)));
+	assert.match(result.stderr, new RegExp(pin));
+});
+
+test("land still rejects an unknown option", () => {
+	const { bridge } = setup("hard-unknown-option");
+	const result = run(["land", "--soft"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly accepted an unknown option");
+	assert.match(result.stderr, /unknown land option: --soft/);
 });

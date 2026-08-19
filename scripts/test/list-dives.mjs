@@ -17,6 +17,7 @@ const WORKING_DIVE_ID = "019fe510-0000-7000-8000-0000000000a3";
 const LANDED_DIVE_ID = "019fe510-0000-7000-8000-0000000000a4";
 const OFF_DECK_DIVE_ID = "019fe510-0000-7000-8000-0000000000a5";
 const UNLINKED_DIVE_ID = "019fe510-0000-7000-8000-0000000000a6";
+const DECK_LINKED_DIVE_ID = "019fe510-0000-7000-8000-0000000000a7";
 
 function link(id, rel) {
 	return [`  - kb/${id}.md:`, `      rel: ${rel}`];
@@ -59,7 +60,10 @@ function writeDive(bridge, id, name, { feat, diver } = {}) {
  */
 function bridgeWithDives(name) {
 	const bridge = createBridge(tmp, name, { backlog: DECK_ID });
-	writeDoc(bridge, "memo", DECK_ID, "main.deck", link(TOP_FEAT_ID, "main-effort.feat"));
+	writeDoc(bridge, "memo", DECK_ID, "main.deck", [
+		...link(TOP_FEAT_ID, "main-effort.feat"),
+		...link(DECK_LINKED_DIVE_ID, "pending.dive"),
+	]);
 	writeDoc(bridge, "feat", TOP_FEAT_ID, "top-fixture", [
 		...link(CHILD_FEAT_ID, "child"),
 		...link(PENDING_DIVE_ID, "pending.dive"),
@@ -80,6 +84,7 @@ function bridgeWithDives(name) {
 	writeDive(bridge, LANDED_DIVE_ID, "landed-dive", { feat: TOP_FEAT_ID });
 	writeDive(bridge, OFF_DECK_DIVE_ID, "off-deck-dive", { feat: OFF_DECK_FEAT_ID });
 	writeDive(bridge, UNLINKED_DIVE_ID, "unlinked-dive");
+	writeDive(bridge, DECK_LINKED_DIVE_ID, "deck-linked-dive");
 	return bridge;
 }
 
@@ -122,6 +127,9 @@ test("list-dives on a deck lists every dive its feat tree reaches", () => {
 	// Reached two feats down, and by a bare rel.
 	assert.match(listed.stdout, /- \[deep-dive\]\(kb\/.+\.md\) rel=pending/);
 	assert.match(listed.stdout, /- \[working-dive\]\(kb\/.+\.md\) rel=working/);
+	// A dive the deck links straight off itself has no feat to sit under, and
+	// the deck listing is unfiltered: preflight drops it, this does not.
+	assert.match(listed.stdout, /- \[deck-linked-dive\]\(kb\/.+\.md\) rel=pending\.dive/);
 	for (const absent of ["off-deck-dive", "unlinked-dive"]) {
 		assert.doesNotMatch(listed.stdout, new RegExp(absent));
 	}
@@ -201,7 +209,7 @@ test("list-dives --json reports the scope and its sections", () => {
 	assert.equal(result.scope, "deck main.deck");
 	assert.deepEqual(
 		result.pending.map((dive) => dive.name),
-		["pending-dive", "deep-dive"],
+		["deck-linked-dive", "pending-dive", "deep-dive"],
 	);
 	assert.deepEqual(
 		result.working.map((dive) => dive.name),

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, relative } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
@@ -27,7 +27,7 @@ import {
 	listAheadCommits,
 	writeArtifact,
 } from "./packArtifacts.js";
-import { clearDiveDiver, reconcileDiveFeatLinks, resolveFeatDoc } from "./repoFeatScopes.js";
+import { reconcileDiveFeatLinks, releaseDiveToPacker, resolveFeatDoc } from "./repoFeatScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { gitRun } from "./repoWorkspaceCore.js";
@@ -386,7 +386,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	);
 	if (bridgeWip) groups.push([bridgeWip]);
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
-	const released = clearDiveDiver(dive.path);
+	const released = releaseDiveToPacker(dive.path);
 	const committing = groups.length > 0 || released;
 	if (committing && feat) reconcileDiveFeatLinks(feat, feat, dive.id, "packed.dive");
 	const headRelPaths: string[] = [];
@@ -402,6 +402,11 @@ export function packDive(args: string[], io: CommandIo): void {
 	// Releasing the dive is bookkeeping worth pushing on its own: a dive freed
 	// with nothing to pack has to reach the shared kb before anyone can pick it up.
 	if (committing) commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, feat);
+	// After the push, where `land` and `bail` also drop it: a dive nobody holds
+	// is not the dive the workspace is on, and leaving the marker would have
+	// `append-log.dive`, `spin` and `land` reading a dive already handed back.
+	const markerPath = join(rc.workspaceDir, ".nosedive-ref");
+	if (existsSync(markerPath)) unlinkSync(markerPath);
 	io.log(
 		capturedCount > 0
 			? `packed dive ${dive.id}: ${capturedCount} artifact(s)`

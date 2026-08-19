@@ -491,6 +491,9 @@ test("pack captures bridge kb/ WIP whose filename needs quoting under plain --po
  */
 test("pack refuses a dirty bridge kb/ doc the dive does not link", () => {
 	const { bridge, diveId } = setup("unlinked");
+	// Dirty the scoped repo too: the scope loop mints a `.patch` into kb/ for it,
+	// so this is what proves the refusal is decided ahead of that loop.
+	write(join(repoWorktree(bridge, "unlinked"), "dirty.txt"), "dirty\n");
 	const strayId = "019fcf00-0000-7000-8000-00000000000c";
 	write(join(bridge, "kb", `${strayId}.md`), `---\nkind: memo\nid: ${strayId}\n---\n`);
 

@@ -191,11 +191,14 @@ export function releaseDiveToPacker(divePath: string): boolean {
 }
 
 /**
- * `record.dive` does not mutate the dive the workspace is on. Its worktrees
- * were hydrated from the state the edit would move, and there is one way to put
+ * `--packer` does not put down the dive the workspace is on. Its worktrees were
+ * hydrated from the state a release moves on from, and there is one way to put
  * down the dive you are flying: `pack`, which also clears the marker and resets
- * those worktrees. Named once because `--repin` and `--packer` both ask it, and
- * two spellings of one refusal would eventually disagree about it.
+ * those worktrees.
+ *
+ * Only `--packer` asks. `--repin` used to as well, and that was wrong: moving a
+ * pin edits a document and puts nothing down, so it is gated on the work a
+ * scope's worktree holds rather than on which dive is active.
  */
 export function ensureNotActiveDive(dive: KbDoc, active: KbDoc | undefined): void {
 	if (active?.id !== dive.id) return;

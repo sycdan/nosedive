@@ -296,7 +296,7 @@ test("record.dive validates mutation modes", () => {
 	// `--clear-scopes` with an upscope is how a dive replaces its scope set rather
 	// than adding to it, so the two are no longer in conflict.
 	const replaced = run(
-		["record.dive", "--effort", featId, "--scope", repoId, "--clear-scopes"],
+		["record.dive", "--effort", featId, "--upscope", repoId, "--clear-scopes"],
 		bridge,
 	);
 	assertOk(replaced, "clearing then scoping should be accepted");
@@ -631,17 +631,21 @@ test("record.dive stops the scope walk at the nearest scoped ancestor", () => {
 });
 
 /**
- * `--scope` used to replace the inherited set. It is the old spelling of
- * `--upscope` now, so it adds a repo instead -- and `--clear-scopes` alongside
- * it is how a dive says it wants only what it named.
+ * `--upscope` adds to the inherited set rather than replacing it, and
+ * `--clear-scopes` alongside it is how a dive says it wants only what it named.
+ * The superseded `--scope` spelling used to mean this; it names the scope a
+ * `--repin <ref>` moves now, so upscoping has one spelling again.
  */
-test("record.dive --scope adds to the inherited set rather than replacing it", () => {
+test("record.dive --upscope adds to the inherited set rather than replacing it", () => {
 	const { bridge, repoCommit } = setup("inherit-override");
 	const other = join(bridge, "workspace", "other");
 	const otherCommit = createRepo(other, unrelatedRepoId);
 	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
 	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: featId });
-	const added = run(["record.dive", "--effort", childEffortId, "--scope", unrelatedRepoId], bridge);
+	const added = run(
+		["record.dive", "--effort", childEffortId, "--upscope", unrelatedRepoId],
+		bridge,
+	);
 	assertOk(added, "record.dive create failed");
 	const doc = readFileSync(recordedPath(bridge, added.stdout), "utf8");
 	assert.match(
@@ -661,7 +665,7 @@ test("record.dive --scope adds to the inherited set rather than replacing it", (
 	);
 
 	const only = run(
-		["record.dive", "--effort", childEffortId, "--clear-scopes", "--scope", unrelatedRepoId],
+		["record.dive", "--effort", childEffortId, "--clear-scopes", "--upscope", unrelatedRepoId],
 		bridge,
 	);
 	assertOk(only, "record.dive create failed");
@@ -1000,35 +1004,170 @@ test("record.dive --repin resolves a work branch on origin only", () => {
 	);
 });
 
-/**
- * The workspace was hydrated from the pin, so moving it under the dive somebody
- * is on describes a state their worktrees are not in. `pack` is what releases
- * the dive, and the refusal has to say so or the pilot's only visible option is
- * editing the document by hand.
- */
-test("record.dive --repin refuses the active workspace dive", () => {
-	const { bridge } = setup("repin-active");
-	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
-	const created = run(["record.dive", "--feat", featId, "--diver", "pilot@example.test"], bridge);
+/** Records a dive under the fixture feat and hands back its path and id. */
+function recordDive(bridge, args = []) {
+	const created = run(["record.dive", "--feat", featId, ...args], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
-	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	return { path, id: /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1] };
+}
+
+/**
+ * A repin edits a document and moves no worktree, so which dive the workspace
+ * happens to be on decides nothing. Holding an open dive and folding trunk into
+ * it is the flow the old active-dive refusal blocked outright, and a worktree
+ * sitting clean at its pin -- exactly what `pack` leaves behind -- has no
+ * committed work a forward move could strand.
+ */
+test("record.dive --repin moves a pin on the active workspace dive", () => {
+	const { bridge, repo, repoCommit } = setup("repin-active-clean");
+	runTool("git", ["config", "user.email", "pilot@example.test"], bridge);
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const { path, id } = recordDive(bridge, ["--diver", "pilot@example.test"]);
 	const marker = join(bridge, "workspace", ".nosedive-ref");
-	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\n$`));
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\n$`), "the fixture must arm");
+	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
+	assertOk(repinned, "a repin of the active dive must be allowed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${featHead}$`, "m"));
+	assert.notEqual(featHead, repoCommit, "the fixture must actually move the pin");
+});
+
+/**
+ * The pin is the base packed work replays onto, so the one thing a repin can
+ * destroy is a commit the new pin cannot explain. `E` sits on top of the old pin
+ * and the new pin never had it, so replaying `E` there would rebuild it on a
+ * tree it was never written against.
+ */
+test("record.dive --repin refuses a scope whose commits the new pin would strand", () => {
+	const { bridge, repo } = setup("repin-strands");
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const { path, id } = recordDive(bridge);
+	const stranded = commitOnBranch(repo, "main", "ahead");
 	const before = readFileSync(path, "utf8");
 	const repinned = run(["record.dive", "--ref", id, "--repin"], bridge);
-	assert.equal(repinned.status, 1);
-	assert.match(repinned.stderr, /pack/, "the refusal must name the command that frees the dive");
+	assert.equal(repinned.status, 1, "a repin that would strand committed work must refuse");
+	assert.match(repinned.stderr, /\brepo\b/, "the refusal must name the repo");
+	assert.match(repinned.stderr, new RegExp(stranded), "the refusal must name the stranded commit");
+	assert.match(repinned.stderr, new RegExp(featHead), "the refusal must name the pin it refused");
+	assert.match(repinned.stderr, /\bpack\b/, "the refusal must name the way to bank the work");
 	assert.equal(readFileSync(path, "utf8"), before, "a refused repin writes nothing");
-	// Another dive under the same feat is not the one the workspace is on, and the
-	// gate must not reach past the dive it was given.
-	const second = run(["record.dive", "--feat", featId], bridge);
-	assertOk(second, "record.dive create failed");
-	const secondId = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, second.stdout), "utf8"))[1];
-	assertOk(
-		run(["record.dive", "--ref", secondId, "--repin"], bridge),
-		"record.dive --repin failed",
+});
+
+/**
+ * Folding in the dive this one was stacked on moves the pin *backwards*, and
+ * that is always safe: the worktree's history still descends from the older
+ * commit, so everything ahead of it replays.
+ */
+test("record.dive --repin <ref> --scope pins backwards at an ancestor of HEAD", () => {
+	const { bridge, repo, repoCommit } = setup("repin-backwards");
+	const moved = commitOnBranch(repo, "main", "trunk-work");
+	const { path, id } = recordDive(bridge);
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${moved}$`, "m"));
+	commitOnBranch(repo, "main", "ahead");
+	runTool("git", ["branch", "base", repoCommit], repo);
+	const repinned = run(["record.dive", "--ref", id, "--repin", "base", "--scope", "repo"], bridge);
+	assertOk(repinned, "a repin onto an ancestor of HEAD must be allowed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${moved} -> ${repoCommit} \\(ref base\\)`),
+		"an explicit ref reports itself as the source that answered",
 	);
+});
+
+/**
+ * Uncommitted work is captured against HEAD, not against the pin, so a pack
+ * carries it whatever the pin says. A dirty worktree is therefore not a reason
+ * to refuse anything -- only committed work ahead of the pin is at risk.
+ */
+test("record.dive --repin ignores a merely dirty worktree", () => {
+	const { bridge, repo } = setup("repin-dirty");
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const { path, id } = recordDive(bridge);
+	write(join(repo, "dirty.txt"), "uncommitted\n");
+	writeFileSync(join(repo, "README.md"), "edited\n");
+	assertOk(run(["record.dive", "--ref", id, "--repin"], bridge), "a dirty tree must not block");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${featHead}$`, "m"));
+});
+
+/**
+ * A ref is repo-specific. Applying one repo's branch name to every scope in the
+ * dive would be a footgun, so the two flags only mean anything together and
+ * either one alone is a mistake rather than something to interpret.
+ */
+test("record.dive pairs --repin <ref> with --scope or refuses", () => {
+	const { bridge } = setup("repin-scope-pairing");
+	const { id } = recordDive(bridge);
+	const unscoped = run(["record.dive", "--ref", id, "--repin", "main"], bridge, "");
+	assert.notEqual(unscoped.status, 0, "--repin <ref> without --scope unexpectedly succeeded");
+	assert.match(unscoped.stderr, /--repin <ref> requires --scope/);
+	const unrepinned = run(["record.dive", "--ref", id, "--scope", "repo"], bridge, "");
+	assert.notEqual(unrepinned.status, 0, "--scope without --repin <ref> unexpectedly succeeded");
+	assert.match(unrepinned.stderr, /--scope requires --repin <ref>/);
+});
+
+/**
+ * The commit a predecessor dive was pinned at is a thing the bridge already
+ * knows, and making the pilot go and find the hash is how a stacked dive gets
+ * folded in wrong. Only the named scope moves: the other one is a different
+ * repo, about which a ref for this one says nothing.
+ */
+test("record.dive --repin <dive-quid> --scope pins at that dive's ref", () => {
+	const { bridge, repo, repoCommit } = setup("repin-quid");
+	const other = join(bridge, "workspace", "other");
+	const otherCommit = createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const earlier = recordDive(bridge);
+	const moved = commitOnBranch(repo, "main", "trunk-work");
+	const { path, id } = recordDive(bridge);
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(
+			/^scopes:$/m,
+			`scopes:\n  - ${unrelatedRepoId}:\n      ref: ${otherCommit}`,
+		),
+	);
+	const repinned = run(
+		["record.dive", "--ref", id, "--repin", earlier.id, "--scope", "repo"],
+		bridge,
+	);
+	assertOk(repinned, "record.dive --repin <dive-quid> failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}`, "m"));
+	assert.match(
+		doc,
+		new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}$`, "m"),
+		"an explicit ref moves the scope it names and no other",
+	);
+	assert.match(
+		repinned.stdout,
+		new RegExp(`repo: ${moved} -> ${repoCommit} \\(dive ${earlier.id}\\)`),
+		"the report must say which dive answered",
+	);
+});
+
+/** A quid that answers no pin for this repo is a mistyped fold-in, not a git ref. */
+test("record.dive --repin <quid> refuses a doc that is not a scoped dive", () => {
+	const { bridge } = setup("repin-quid-refusals");
+	const other = join(bridge, "workspace", "other");
+	createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const earlier = recordDive(bridge);
+	const { id } = recordDive(bridge, ["--upscope", unrelatedRepoId]);
+	const notADive = run(
+		["record.dive", "--ref", id, "--repin", featId, "--scope", "repo"],
+		bridge,
+		"",
+	);
+	assert.notEqual(notADive.status, 0, "--repin <feat-quid> unexpectedly succeeded");
+	assert.match(notADive.stderr, /does not resolve to a kind: dive doc/);
+	const unscoped = run(
+		["record.dive", "--ref", id, "--repin", earlier.id, "--scope", "other"],
+		bridge,
+		"",
+	);
+	assert.notEqual(unscoped.status, 0, "a dive with no scope for the repo unexpectedly answered");
+	assert.match(unscoped.stderr, /scopes no repo other/);
 });
 
 /**

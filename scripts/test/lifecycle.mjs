@@ -596,10 +596,9 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	// And the fix the warning names does what it says, without taking the branch
 	// with it -- which is what made re-pinning by hand the only safe option.
 	//
-	// `--repin` refuses the dive the workspace is on, and `pack` is what puts it
-	// down: the real sequence is pack, repin, jump.
-	commitKb(bridge, "publish pending kb edits before packing");
-	assertOk(run(["pack"], bridge), "pack before repinning failed");
+	// It runs against the dive the workspace is on, with no pack first: the
+	// worktree sits clean at its pin, so there is no committed work a forward
+	// move could strand, and a repin moves nothing but the document.
 	assertOk(run(["record.dive", "--ref", waitingId, "--repin"], bridge), "--repin failed");
 	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
 	assert.match(

@@ -358,7 +358,7 @@ meta:
 		"hydrate read-only repo failed",
 	);
 	assertOk(
-		run(["record.dive", "--ref", diveId, "--scope", roRepoId], bridge),
+		run(["record.dive", "--ref", diveId, "--upscope", roRepoId], bridge),
 		"scoping read-only repo onto dive failed",
 	);
 	/**

@@ -29,7 +29,6 @@ import { gitOutput } from "./gitProcess.js";
 import { activeDive, ensureActivation } from "./jumpSelect.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
-	ensureNotActiveDive,
 	ensureReleasable,
 	reconcileDiveFeatLinks,
 	releaseDiverInFrontmatter,
@@ -57,8 +56,12 @@ export interface RecordDiveOptions {
 	unscopes: string[];
 	/** The branch every `--upscope` in this call publishes to. */
 	workBranch?: string;
-	/** Re-resolve every scope's ref to current trunk, changing nothing else. */
+	/** Re-resolve scope refs, changing nothing else. */
 	repin: boolean;
+	/** The explicit `--repin <ref>`: a git ref on origin, or a dive quid. */
+	repinRef?: string;
+	/** The one scope `--repin <ref>` moves. */
+	scope?: string;
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -86,8 +89,19 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 			options.clearScopes = true;
 			continue;
 		}
-		if (arg === "--repin") {
+		// Optionally valued: bare, every scope follows its own branch; with a ref,
+		// one named scope moves. A following word that is not itself a flag is
+		// that ref, which is the only reading a valueless spelling leaves room for.
+		if (arg === "--repin" || arg.startsWith("--repin=")) {
 			options.repin = true;
+			const next = args[i + 1];
+			if (arg !== "--repin") options.repinRef = arg.slice("--repin=".length);
+			else if (next !== undefined && !next.startsWith("--")) {
+				options.repinRef = next;
+				i += 1;
+			}
+			if (options.repinRef !== undefined && !options.repinRef)
+				throw new Error("--repin requires a value when one is given");
 			continue;
 		}
 		if (arg === "--free") {
@@ -124,9 +138,10 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
 		if (!value) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
-		// `--scope` is the old spelling. It used to replace the whole scope set;
-		// it adds one now, which is what every existing call already meant.
-		if (flag === "--scope" || flag === "--upscope") options.upscopes.push(value);
+		// `--scope` is no longer a way to spell `--upscope`: it names the one scope
+		// an explicit `--repin <ref>` moves, and a ref belongs to one repo.
+		if (flag === "--scope") options.scope = value;
+		else if (flag === "--upscope") options.upscopes.push(value);
 		else if (flag === "--unscope") options.unscopes.push(value);
 		else if (flag === "--work-branch") options.workBranch = value;
 		else if (flag === "--ref") options.ref = value;
@@ -158,6 +173,13 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 	// There is no pin to move on a dive that does not exist yet: a create already
 	// resolves current trunk for every scope it writes.
 	if (options.repin && !options.ref) throw new Error("--repin requires --ref");
+	// The two halves of an explicit repin only mean anything together: a ref
+	// applied to every scope would silently pin repos it says nothing about, and
+	// a named scope with no ref to put it at is a call that lost its other half.
+	if (options.repinRef !== undefined && options.scope === undefined)
+		throw new Error("--repin <ref> requires --scope <repo-ref>: a ref names one repo");
+	if (options.scope !== undefined && options.repinRef === undefined)
+		throw new Error("--scope requires --repin <ref>: it names the scope that ref moves");
 	// Nothing to release on a dive that does not exist yet.
 	if (options.packer && !options.ref) throw new Error("--packer requires --ref");
 	if (!options.ref && !options.feat)
@@ -342,9 +364,10 @@ export function recordDive(args: string[], io: CommandIo): void {
 	const dive = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref);
 	if (dive.kind !== "dive")
 		throw new Error(`--ref does not resolve to a kind: dive doc: ${options.ref}`);
-	// Before anything is read off the document, so a refused repin leaves it as it
-	// stands rather than partway through an edit.
-	if (options.repin) ensureNotActiveDive(dive, active);
+	// Before anything is read off the document, so a refused release leaves it as
+	// it stands rather than partway through an edit. A repin is not gated here:
+	// it moves no worktree, so which dive the workspace is on decides nothing,
+	// and what it can strand is checked per scope against that scope's worktree.
 	if (options.packer) ensureReleasable(dive, pilotEmail, active);
 	const text = readFileSync(dive.path, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(dive.path));
@@ -402,7 +425,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 		const base = options.clearScopes ? [] : inheritedNow;
 		const edited = editScopes(base, options, rc, kbDocs, workspaceDir, feat);
 		// Last, so a repo added in the same call is pinned at trunk like the rest.
-		const scopes = options.repin ? repinScopes(edited, rc, kbDocs, workspaceDir, feat, io) : edited;
+		const scopes = options.repin
+			? repinScopes(edited, rc, kbDocs, workspaceDir, feat, io, {
+					ref: options.repinRef,
+					scope: options.scope,
+				})
+			: edited;
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
 		doc.set("scopes", scopes.map(renderScopeEntry));

@@ -25,24 +25,15 @@ export const PREFLIGHT_NO_DIVE_LINE =
 	"nose: no dive to pick up; run `record.dive --free` before acting on the pilot's first instruction";
 
 /**
- * Heads the dives no feat owns. A dive reached straight off the deck has no
- * feat to sit under, and saying so is better than a listing that quietly drops
- * it or invents an owner for it.
- */
-export const UNOWNED_FEAT_HEADER = "(no feat)";
-
-/**
  * The tail of the session-start report. It is guidance, not a document the
  * pilot goes and reads, so it lives here rather than in a kb doc -- and it is
  * deliberately not a prompt fed to a subprocess, which is what the `.prompt`
  * convention exists for.
  */
 export const PREFLIGHT_GUIDANCE = [
-	"Help the pilot choose what to work on next -- from the dives above, or from a feat with",
-	"no dive yet -- but do not choose for them and do not start work they have not asked for.",
-	"Run `dump-backlog` when they want to see the whole backlog; preflight does not print it.",
-	"Once they say which, claim it with `record.dive --ref <id> --diver <email>`, then fill in",
-	"its gist, name, brief and scopes together. Run `jump` only when the pilot asks for it.",
+	"If the pilot wants to work on something specific, start with `nosedive jump <doc-path>`.",
+	"Otherwise, suggest they address something that has `needs`.",
+	"If nothing needs to be done right now, start a free dive with `nosedive record.dive --free`, then help the pilot pitch a feat and record it on the dive.",
 ].join("\n");
 
 /** Quotes a value for a `/bin/sh` hook body. */

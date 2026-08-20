@@ -1,11 +1,11 @@
 import { basename, relative } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { UNOWNED_FEAT_HEADER } from "./constants.js";
 import { NosediveRc, toPosixPath, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import { printCommandHelp } from "./packageBacklog.js";
 import { gitOutput } from "./gitProcess.js";
+import { titleFromSlug } from "./slugs.js";
 
 export interface ListDivesOptions {
 	/** A feat or a deck to constrain the listing to. Absent means the whole kb. */
@@ -359,9 +359,9 @@ export function collectListDives(
  * The feat is not on this line, and is not inferred from the dive name either.
  * A managed name carries the feat's slug, but a slug is not an id and a
  * hand-named dive carries nothing at all, so a reader who needs the feat gets
- * it from the header `appendGroupedDiveSection` puts above these lines.
+ * it from the `Scope:` line this listing opens with.
  */
-export function formatListedDive(dive: ListedDive, indent = "  "): string {
+export function formatListedDive(dive: ListedDive): string {
 	const rel = dive.rel ? ` rel=${dive.rel}` : "";
 	const diver = dive.diver ? ` diver=${dive.diver}` : "";
 	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
@@ -370,7 +370,7 @@ export function formatListedDive(dive: ListedDive, indent = "  "): string {
 		needs.length > 0 ? ` needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}` : "";
 	const statePart = states.length > 0 ? ` ${states.join(" ")}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
-	return `${indent}- [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
+	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
 }
 
 export function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {
@@ -412,26 +412,50 @@ export function groupDivesByFeat(dives: ListedDive[]): FeatDiveGroup[] {
 }
 
 /**
- * The session-start listing: one header per feat, then its dives indented
- * under it. The header carries no gist -- a reader who wants to know what the
- * feat is for follows the link, and every session pays for a gist printed here
- * whether or not anyone reads it.
+ * A dive line that can be copied straight into `jump`: the doc path comes
+ * first because the path is the argument, and the gist follows because that is
+ * what the reader is choosing between. Nothing else on the line is
+ * addressable, which is the point -- a name and an id on one line left readers
+ * guessing which of the two `jump` wanted.
+ *
+ * `notes` is for a listing whose dives are not all equally takeable: it names
+ * the holder and what the dive still lacks. `jump` lists only dives it has
+ * already decided this pilot can take, so it leaves them off.
  */
-export function appendGroupedDiveSection(
-	lines: string[],
-	label: string,
-	dives: ListedDive[],
-): void {
-	lines.push(`${label}:`);
-	if (dives.length === 0) {
-		lines.push("  (none)");
-		return;
-	}
+export function formatJumpableDive(dive: ListedDive, notes = false): string {
+	const gist = dive.gist.trim() ? `: ${dive.gist.trim()}` : "";
+	const line = `- ${dive.source}${gist}`;
+	if (!notes) return line;
+	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
+	const states = dive.tags.filter((tag) => !tag.startsWith("needs-"));
+	const parts = [
+		...(dive.diver ? [`diver=${dive.diver}`] : []),
+		...(needs.length > 0
+			? [`needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}`]
+			: []),
+		...states,
+	];
+	return parts.length > 0 ? `${line} -- ${parts.join(" ")}` : line;
+}
+
+/**
+ * The choose-what-to-jump listing: a heading per feat, then that feat's dives
+ * as paths. Preflight and a bare `jump` both print it from here, so the
+ * session report and the refusal cannot describe the same choice two ways.
+ */
+export function appendJumpableDives(lines: string[], dives: ListedDive[], notes = false): void {
 	for (const group of groupDivesByFeat(dives)) {
+		if (lines.length > 0 && lines.at(-1) !== "") lines.push("");
+		// The feat's own slug, not its dotted lineage: the parent is one link
+		// away for a reader who wants it, and repeating it on every heading buys
+		// nothing but width.
 		lines.push(
-			group.feat ? `  [${group.feat.name}](${group.feat.source}):` : `  ${UNOWNED_FEAT_HEADER}:`,
+			group.feat
+				? `## [${titleFromSlug(group.feat.name.split(".")[0]!)}](${group.feat.source})`
+				: "## Free dives",
 		);
-		for (const dive of group.dives) lines.push(formatListedDive(dive, "    "));
+		lines.push("");
+		for (const dive of group.dives) lines.push(formatJumpableDive(dive, notes));
 	}
 }
 

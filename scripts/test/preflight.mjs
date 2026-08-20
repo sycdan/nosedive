@@ -131,7 +131,10 @@ test("preflight installs and refreshes the managed hook, then reports with no ac
 	assert.match(preflight.stdout, /^nosedive-pilot-name: Install Pilot$/m);
 	assert.match(preflight.stdout, /^nosedive-pilot-email: install-pilot@example\.invalid$/m);
 	assert.doesNotMatch(preflight.stdout, /^== open work/m);
-	assert.match(preflight.stderr, /no kb directory is configured, so no dives can be listed/);
+	assert.match(
+		preflight.stderr,
+		/no kb directory is configured, so no feats or dives can be listed/,
+	);
 
 	const preflightAgain = run(["preflight"], bridge);
 	assertOk(preflightAgain, "preflight idempotent refresh failed");
@@ -245,7 +248,7 @@ test("preflight takes over an unwired foreign hook and chains it", () => {
 	assert.equal(readFileSync(managedHook(bridge), "utf8"), chainedHook(foreignHook));
 	assert.equal(configuredHooksPath(bridge), posix(managedHooksDir(bridge)));
 	assert.equal(readFileSync(originalRecord(bridge), "utf8"), `${posix(dirname(foreignHook))}\n`);
-	assert.match(foreignPreflight.stdout, /^== dives ==$/m);
+	assert.match(foreignPreflight.stdout, /^== feats and their dives ==$/m);
 });
 
 test("preflight leaves a wired foreign hook untouched and reports", () => {
@@ -264,7 +267,7 @@ test("preflight leaves a wired foreign hook untouched and reports", () => {
 	assert.equal(preflight.stderr, "", `unexpected stderr:\n${preflight.stderr}`);
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 	assert.match(preflight.stdout, /^== pilot identification ==$/m);
-	assert.match(preflight.stdout, /^== dives ==$/m);
+	assert.match(preflight.stdout, /^== feats and their dives ==$/m);
 });
 
 test("preflight takes over a core.hooksPath that names no wired hook", () => {
@@ -285,7 +288,7 @@ test("preflight takes over a core.hooksPath that names no wired hook", () => {
 	// git reads exactly one hooks directory, and the loser rots unwatched.
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
 	assert.match(hooksPathPreflight.stdout, /^Installed nosedive pre-push hook:/m);
-	assert.match(hooksPathPreflight.stdout, /^== dives ==$/m);
+	assert.match(hooksPathPreflight.stdout, /^== feats and their dives ==$/m);
 });
 
 test("preflight reconciles the same hooks path again without re-chaining itself", () => {
@@ -455,14 +458,14 @@ test("preflight reports bridge status, pilot identity and the active dive, and n
 
 	const bridgeIdx = preflight.stdout.indexOf("== bridge status ==");
 	const pilotIdx = preflight.stdout.indexOf("== pilot identification ==");
-	const divesIdx = preflight.stdout.indexOf("== dives ==");
+	const divesIdx = preflight.stdout.indexOf("== feats and their dives ==");
 	assert.ok(
 		bridgeIdx !== -1 && bridgeIdx < pilotIdx && pilotIdx < divesIdx,
 		`sections missing or out of order:\n${preflight.stdout}`,
 	);
 	// The backlog is a document to ask for, not one every session pays for.
 	assert.doesNotMatch(preflight.stdout, /^== open work/m);
-	assert.match(preflight.stdout, /Run `dump-backlog` when they want to see the whole backlog/);
+	assert.match(preflight.stdout, /start with `nosedive jump <doc-path>`/);
 
 	const workspaceLine = /^nosedive-workspace: (.+)$/m.exec(preflight.stdout)?.[1];
 	assert.ok(workspaceLine, `missing nosedive-workspace line:\n${preflight.stdout}`);
@@ -503,6 +506,7 @@ const LANDED_DIVE_ID = "019fe500-0000-7000-8000-00000000abba";
 const BAILED_DIVE_ID = "019fe500-0000-7000-8000-00000000ba11";
 const UNLINKED_DIVE_ID = "019fe500-0000-7000-8000-00000000babe";
 const OFF_BACKLOG_DIVE_ID = "019fe500-0000-7000-8000-00000000f00d";
+const HELD_HEADING = "Held by other pilots:";
 
 function backlogId(bridge) {
 	const match = /^backlog: (\S+)$/m.exec(
@@ -645,40 +649,40 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight with dives failed");
-	assert.match(preflight.stdout, /^== dives ==$/m);
+	assert.match(preflight.stdout, /^== feats and their dives ==$/m);
 
-	for (const [id, name, rel] of [
-		[PLANNED_DIVE_ID, "planned-dive", "planned.dive"],
-		[PENDING_DIVE_ID, "pending-dive", "pending.dive"],
-		[WORKING_PACKED_DIVE_ID, "working-packed-dive", "working.dive"],
-		[JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", "jumped.dive"],
-		[PACKED_DIVE_ID, "packed-dive", "packed.dive"],
-		[REVIEWING_DIVE_ID, "reviewing-dive", "reviewing.dive"],
+	// The path leads the line because the path is the argument `jump` takes.
+	// The name is not on the line at all, so nothing else can be taken for it.
+	for (const [id, name] of [
+		[PLANNED_DIVE_ID, "planned-dive"],
+		[PENDING_DIVE_ID, "pending-dive"],
+		[WORKING_PACKED_DIVE_ID, "working-packed-dive"],
+		[JUMPED_PACKED_DIVE_ID, "jumped-packed-dive"],
+		[PACKED_DIVE_ID, "packed-dive"],
+		[REVIEWING_DIVE_ID, "reviewing-dive"],
 	]) {
 		assert.match(
 			preflight.stdout,
-			new RegExp(
-				`^ {4}- \\[${name}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\) rel=${rel} needs=diver`,
-				"m",
-			),
+			new RegExp(`^- ${escapeRegExp(`kb/${id}.md`)}: Fixture ${name}\\. -- needs=diver`, "m"),
 		);
 	}
+	assert.doesNotMatch(preflight.stdout, /rel=/, "a rel is not something to jump by");
 
 	// Each dive sits under the feat whose links reached it, and the header
 	// carries the feat's path but not its gist.
 	for (const [feat, id] of [
-		["top-fixture", TOP_FEAT_ID],
-		["child-fixture", CHILD_FEAT_ID],
+		["Top Fixture", TOP_FEAT_ID],
+		["Child Fixture", CHILD_FEAT_ID],
 	]) {
 		assert.match(
 			preflight.stdout,
-			new RegExp(`^ {2}\\[${feat}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\):$`, "m"),
+			new RegExp(`^## \\[${feat}\\]\\(${escapeRegExp(`kb/${id}.md`)}\\)$`, "m"),
 		);
 	}
 	assert.doesNotMatch(preflight.stdout, /Fixture top-fixture\.|Fixture child-fixture\./);
 
-	const topHeader = preflight.stdout.indexOf("[top-fixture]");
-	const childHeader = preflight.stdout.indexOf("[child-fixture]");
+	const topHeader = preflight.stdout.indexOf("[Top Fixture]");
+	const childHeader = preflight.stdout.indexOf("[Child Fixture]");
 	const plannedDive = preflight.stdout.indexOf("planned-dive");
 	const pendingDive = preflight.stdout.indexOf("pending-dive");
 	assert.ok(
@@ -686,50 +690,43 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		`dives are not grouped under their feats:\n${preflight.stdout}`,
 	);
 
-	const available = preflight.stdout.indexOf("Available:");
-	const held = preflight.stdout.indexOf("Held:");
-	assert.ok(available !== -1 && held !== -1 && available < held, "expected Available above Held");
+	// Available dives get no heading of their own: they are the listing, and the
+	// only section under them is the one nobody here can take.
+	const held = preflight.stdout.indexOf(HELD_HEADING);
+	assert.notEqual(held, -1, "expected a held section");
 	assert.ok(
-		preflight.stdout.indexOf("working-packed-dive") > available &&
-			preflight.stdout.indexOf("working-packed-dive") < held,
-		"a legacy working dive belongs under Available",
+		preflight.stdout.indexOf("working-packed-dive") < held,
+		"a legacy working dive is available",
 	);
-	assert.ok(
-		preflight.stdout.indexOf("packed-dive") > available &&
-			preflight.stdout.indexOf("packed-dive") < held,
-		"a packed dive belongs under Available",
-	);
+	assert.ok(preflight.stdout.indexOf("packed-dive") < held, "a packed dive is available");
 	// `reviewing` is a working rel that neither of the old admit-lists named, so
 	// a reviewing dive used to be invisible. Nothing bailed or landed it, so it
 	// is still work someone can pick up.
-	assert.ok(
-		preflight.stdout.indexOf("reviewing-dive") > available &&
-			preflight.stdout.indexOf("reviewing-dive") < held,
-		"a reviewing dive belongs under Available",
-	);
-	// A claimed dive is Held only when somebody else holds it: the running
-	// pilot's own claimed dive is the one they came back for, so it is
-	// Available and its diver is printed on the line.
-	const heldLine = new RegExp(
-		`^ {4}- \\[held-pending-dive\\]\\(${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}\\) rel=pending diver=other-pilot@example\\.invalid`,
-		"m",
-	);
-	assert.match(preflight.stdout, heldLine);
-	assert.ok(
-		preflight.stdout.indexOf("held-pending-dive") > held,
-		"a pending dive another pilot holds belongs under Held",
-	);
+	assert.ok(preflight.stdout.indexOf("reviewing-dive") < held, "a reviewing dive is available");
+	// A claimed dive is held only when somebody else holds it: the running
+	// pilot's own claimed dive is the one they came back for, so it stays on
+	// offer and its diver is printed on the line.
 	assert.match(
 		preflight.stdout,
 		new RegExp(
-			`^ {4}- \\[held-working-dive\\]\\(${escapeRegExp(`kb/${HELD_WORKING_DIVE_ID}.md`)}\\) rel=working\\.dive diver=dive-pilot@example\\.invalid`,
+			`^- ${escapeRegExp(`kb/${HELD_PENDING_DIVE_ID}.md`)}: Fixture held-pending-dive\\. -- diver=other-pilot@example\\.invalid`,
 			"m",
 		),
 	);
 	assert.ok(
-		preflight.stdout.indexOf("held-working-dive") > available &&
-			preflight.stdout.indexOf("held-working-dive") < held,
-		"the running pilot's own working dive belongs under Available",
+		preflight.stdout.indexOf("held-pending-dive") > held,
+		"a pending dive another pilot holds is held",
+	);
+	assert.match(
+		preflight.stdout,
+		new RegExp(
+			`^- ${escapeRegExp(`kb/${HELD_WORKING_DIVE_ID}.md`)}: Fixture held-working-dive\\. -- diver=dive-pilot@example\\.invalid`,
+			"m",
+		),
+	);
+	assert.ok(
+		preflight.stdout.indexOf("held-working-dive") < held,
+		"the running pilot's own working dive is available",
 	);
 	for (const hidden of ["landed-dive", "bailed-dive", "unlinked-dive", "off-backlog-dive"]) {
 		assert.doesNotMatch(preflight.stdout, new RegExp(hidden));
@@ -739,7 +736,9 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 	// headers are what the pilot needs, and the rest is `dump-backlog`'s job.
 	assert.doesNotMatch(preflight.stdout, /^== open work/m);
 	assert.doesNotMatch(preflight.stdout, /Backlog fixture\./);
-	assert.match(preflight.stdout, /Run `jump` only when the pilot asks for it\./);
+	// The listing prints paths, so the guidance has to name the same thing: an
+	// agent told one and shown the other is back to guessing.
+	assert.match(preflight.stdout, /start with `nosedive jump <doc-path>`/);
 });
 
 test("preflight names record.dive --free when there is no dive to pick up", () => {
@@ -749,10 +748,10 @@ test("preflight names record.dive --free when there is no dive to pick up", () =
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight with no dives failed");
-	assert.match(preflight.stdout, /^== dives ==$/m);
+	assert.match(preflight.stdout, /^== feats and their dives ==$/m);
 	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
-	assert.doesNotMatch(preflight.stdout, /^Available:$/m);
-	assert.doesNotMatch(preflight.stdout, /^Held:$/m);
+	assert.doesNotMatch(preflight.stdout, /^## /m);
+	assert.doesNotMatch(preflight.stdout, new RegExp(`^${HELD_HEADING}$`, "m"));
 });
 
 /**
@@ -772,11 +771,15 @@ function bridgeWithOneDive(name, email, { rel = "packed.dive", diver } = {}) {
 	return bridge;
 }
 
-/** The section a named dive was printed under, or undefined when it was not. */
+/**
+ * The section a named dive was printed under, or undefined when it was not.
+ * A dive line carries its path and its gist and not its name, so the fixture
+ * gist is what identifies the dive in the output.
+ */
 function diveSection(stdout, name) {
-	const dive = stdout.indexOf(`[${name}]`);
+	const dive = stdout.indexOf(`Fixture ${name}.`);
 	if (dive === -1) return undefined;
-	const held = stdout.indexOf("Held:");
+	const held = stdout.indexOf(HELD_HEADING);
 	return held !== -1 && dive > held ? "Held" : "Available";
 }
 
@@ -790,7 +793,7 @@ test("preflight lists a packed dive the running pilot holds under Available", ()
 	assert.equal(diveSection(preflight.stdout, "solo-dive"), "Available");
 	assert.match(
 		preflight.stdout,
-		/- \[solo-dive\]\(kb\/.+\.md\) rel=packed\.dive diver=solo-pilot@example\.invalid/,
+		/- kb\/.+\.md: Fixture solo-dive\. -- diver=solo-pilot@example\.invalid/,
 	);
 });
 
@@ -883,7 +886,7 @@ test("preflight does not list a dive linked straight off the backlog memo", () =
 	assertOk(preflight, "preflight with a deck-linked dive failed");
 	assert.equal(diveSection(preflight.stdout, "feat-linked-dive"), "Available");
 	assert.doesNotMatch(preflight.stdout, /deck-linked-dive/);
-	assert.doesNotMatch(preflight.stdout, /\(no feat\)/);
+	assert.doesNotMatch(preflight.stdout, /Free dives/);
 });
 
 /**

@@ -67,6 +67,26 @@ export function hasLoggedSection(text: string): boolean {
 }
 
 /**
+ * The newest parseable progress-section timestamp, in epoch milliseconds.
+ *
+ * `decomposeSectionHeading` deliberately recognizes malformed, date-shaped
+ * stamps as progress. Time comparisons cannot do that, so malformed stamps are
+ * ignored here; a caller that needs proof of recent activity will consequently
+ * treat a document carrying only malformed stamps as stale.
+ */
+export function latestLoggedSectionTime(text: string): number | undefined {
+	let latest: number | undefined;
+	for (const line of text.split(/\r?\n/)) {
+		const heading = decomposeSectionHeading(line);
+		if (!heading) continue;
+		const parsed = Date.parse(heading.stamp);
+		if (!Number.isFinite(parsed)) continue;
+		if (latest === undefined || parsed > latest) latest = parsed;
+	}
+	return latest;
+}
+
+/**
  * Appends `## [<label> ]<iso timestamp>` plus a body to a kb doc on disk.
  * The optional label lets a caller keep its own heading text (`land`'s
  * "Land report") while still writing a section `decomposeSectionHeading`

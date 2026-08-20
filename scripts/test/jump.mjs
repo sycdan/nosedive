@@ -337,7 +337,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	assert.match(diveText, /diver: "jump@example\.test"/);
 	assert.match(
 		diveText,
-		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/im,
 		"a labelled, timestamped hydrated-section heading should be appended",
 	);
 	// The lead line is the whole point of the section carrying a label: a reader
@@ -726,7 +726,7 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 	assert.match(diveText, /diver: "jump@example\.test"/);
 	assert.match(
 		diveText,
-		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/m,
+		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/im,
 		"a partial-success run still hydrated a usable workspace, so the section is still appended",
 	);
 
@@ -771,7 +771,7 @@ test("jump leaves a worktree already detached at the pin untouched", () => {
  * pack -> repin -> jump flow dead.
  */
 test("jump moves a clean worktree off a published commit onto the pin", () => {
-	const { bridge, repoId, diveId, pinnedRef } = setup("published-move");
+	const { bridge, repoId, diveId, pinnedRef } = deckSetup("published-move", { claimed: false });
 	const worktree = repoWorktree(bridge, "published-move");
 
 	write(join(worktree, "published.txt"), "published\n");
@@ -782,7 +782,7 @@ test("jump moves a clean worktree off a published commit onto the pin", () => {
 	// not whether that ref is on a remote.
 	runTool("git", ["branch", "fixture-published", published], worktree);
 
-	const result = run(["jump"], bridge);
+	const result = run(["jump", diveId], bridge);
 	assertOk(result, "jump failed on a clean worktree at a published commit");
 	assert.equal(
 		worktreeHead(bridge, "published-move"),
@@ -825,7 +825,7 @@ test("jump refuses a worktree carrying a commit no ref contains", () => {
 	assert.equal(readFileSync(join(worktree, "unpublished.txt"), "utf8"), "mine\n");
 	assert.doesNotMatch(
 		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
-		/^## jumped /m,
+		/^## jumped /im,
 		"a refused run never hydrates, so nothing should be appended",
 	);
 });
@@ -870,12 +870,12 @@ test("jump reports every unmovable scope in one message and moves none of them",
  * the section writes that.
  */
 test("jump records the commit a branch ref resolved to, not the branch name", () => {
-	const { bridge, repoId, diveId, pinnedRef } = setup("branch-ref");
+	const { bridge, repoId, diveId, pinnedRef } = deckSetup("branch-ref", { claimed: false });
 	const divePath = join(bridge, "kb", `${diveId}.md`);
 	writeFileSync(divePath, readFileSync(divePath, "utf8").replace(/^(\s+)ref: .*$/m, "$1ref: main"));
 	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 
-	const result = run(["jump"], bridge);
+	const result = run(["jump", diveId], bridge);
 	assertOk(result, "jump failed on a scope pinned to a branch");
 	const diveText = readFileSync(divePath, "utf8");
 	assert.match(
@@ -1003,9 +1003,13 @@ function freeDive(bridge, featId, gist) {
 
 function jumpedSection(bridge, diveId) {
 	const text = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
-	const match = /^## jumped [^\n]*\n\n([\s\S]*)$/m.exec(text);
+	const match = /^## jumped [^\n]*\n\n([\s\S]*)$/im.exec(text);
 	assert.ok(match, `dive doc carries no jumped section:\n${text}`);
 	return match[1].trim();
+}
+
+function jumpedSectionCount(text) {
+	return (text.match(/^## Jumped /gim) ?? []).length;
 }
 
 test("bare jump with nothing on deck lists the dives that could be jumped", () => {
@@ -1038,9 +1042,9 @@ test("bare jump with nothing to pick up says so rather than printing an empty li
 });
 
 test("the jumped section names the pilot and their email, and its repo lines are unchanged", () => {
-	const { bridge, diveId, pinnedRef, scopeNames } = deckSetup("deck-lead");
+	const { bridge, diveId, pinnedRef, scopeNames } = deckSetup("deck-lead", { claimed: false });
 
-	assertOk(run(["jump"], bridge), "jump failed on a dive already on deck");
+	assertOk(run(["jump", diveId], bridge), "jump failed to claim the dive");
 
 	const section = jumpedSection(bridge, diveId);
 	assert.equal(
@@ -1051,16 +1055,38 @@ test("the jumped section names the pilot and their email, and its repo lines are
 	);
 });
 
-test("a dive held by another diver renders that email alone in the jumped section", () => {
-	const { bridge, diveId } = deckSetup("deck-other");
+test("jump refuses a dive held by another diver and names takeover", () => {
+	const { bridge, repoId, diveId } = deckSetup("deck-other");
 	setDiver(bridge, diveId, "someone-else@example.test");
+	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 	commitBridge(bridge, "hand the dive to another pilot");
+	const before = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const beforeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
 
-	assertOk(run(["jump"], bridge), "jump failed on a dive held by another diver");
+	const bare = run(["jump"], bridge);
+	assert.notEqual(bare.status, 0, "bare jump accepted a dive held by another diver");
+	assert.match(bare.stderr, /held by someone-else@example\.test/);
+	assert.match(bare.stderr, new RegExp(`record\\.dive --ref ${diveId} --takeover`));
+	assert.equal(
+		existsSync(repoWorktree(bridge, "deck-other")),
+		false,
+		"refusal must precede hydration",
+	);
 
-	const section = jumpedSection(bridge, diveId);
-	assert.match(section, /^someone-else@example\.test picked up jump-test\.nosedive,/);
-	assert.doesNotMatch(section, /[<>]/, "only the local pilot's own name is available to print");
+	rmSync(join(bridge, "workspace", ".nosedive-ref"));
+	const explicit = run(["jump", diveId], bridge);
+	assert.notEqual(explicit.status, 0, "explicit jump accepted a dive held by another diver");
+	assert.match(explicit.stderr, /held by someone-else@example\.test/);
+	assert.match(explicit.stderr, new RegExp(`record\\.dive --ref ${diveId} --takeover`));
+
+	const after = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.equal(jumpedSectionCount(after), jumpedSectionCount(before));
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), beforeHead);
+	assert.equal(
+		existsSync(repoWorktree(bridge, "deck-other")),
+		false,
+		"explicit refusal must precede hydration",
+	);
 });
 
 test("jump <dive-ref> claims the dive it picks up and commits the claim", () => {
@@ -1090,6 +1116,22 @@ test("jump <dive-ref> claims the dive it picks up and commits the claim", () => 
 	);
 });
 
+test("bare jump claims an unheld dive already marked on deck", () => {
+	const { bridge, diveId } = deckSetup("deck-bare-claim");
+	setDiver(bridge, diveId, "null");
+	commitBridge(bridge, "release the marked dive");
+
+	assertOk(run(["jump"], bridge), "bare jump failed to claim the marked dive");
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /^ {2}diver: jump@example\.test$/m);
+	assert.equal(jumpedSectionCount(diveText), 1);
+	assert.match(
+		runTool("git", ["show", "--name-only", "--format=", "HEAD"], bridge).stdout,
+		new RegExp(`kb/${diveId}\\.md`),
+	);
+});
+
 /**
  * `meta.packer` records who put the dive down last, so it is only true of a
  * dive nobody holds. Picking the dive up ends that, and leaving the field
@@ -1110,7 +1152,7 @@ test("jump <dive-ref> clears the packer of the dive it picks up", () => {
 	assert.doesNotMatch(jumped, /^ {2}packer:/m, "picking a dive up ends who packed it");
 });
 
-test("jump <dive-ref> refuses a dive the deck does not offer, and carries the list", () => {
+test("jump <dive-ref> refuses a foreign-held dive with takeover rather than alternatives", () => {
 	const { bridge, featId, diveId } = deckSetup("deck-ineligible", { claimed: false });
 	const held = freeDive(bridge, featId, "A dive somebody else is flying");
 	setDiver(bridge, held, "someone-else@example.test");
@@ -1118,10 +1160,13 @@ test("jump <dive-ref> refuses a dive the deck does not offer, and carries the li
 
 	const result = run(["jump", held], bridge);
 	assert.notEqual(result.status, 0, "jump unexpectedly accepted a dive held by another pilot");
-	assert.match(result.stderr, new RegExp(`${held} is not a dive you can pick up`));
-	// The refusal carries the eligible list, so the reader never has to run a
-	// second command to find out what they should have named.
-	assert.match(result.stderr, new RegExp(`kb/${diveId}\.md`));
+	assert.match(result.stderr, new RegExp(`dive ${held} is held by someone-else@example\\.test`));
+	assert.match(result.stderr, new RegExp(`record\\.dive --ref ${held} --takeover`));
+	assert.doesNotMatch(
+		result.stderr,
+		new RegExp(`kb/${diveId}\\.md`),
+		"a known foreign holder should name takeover instead of unrelated alternatives",
+	);
 });
 
 test("jump <dive-ref> refuses when the workspace already holds a different dive", () => {
@@ -1139,9 +1184,82 @@ test("jump <dive-ref> refuses when the workspace already holds a different dive"
 	);
 });
 
-test("jump <dive-ref> naming the dive already on deck re-jumps it", () => {
+test("jump <dive-ref> records the first jump of a same-pilot planned dive", () => {
 	const { bridge, diveId } = deckSetup("deck-rejump");
+	const before = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const beforeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
 
 	assertOk(run(["jump", diveId], bridge), "jump <dive-ref> failed on the dive already on deck");
-	assert.match(jumpedSection(bridge, diveId), /^Jump Test <jump@example\.test> picked up /);
+	const after = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.equal(
+		jumpedSectionCount(after),
+		jumpedSectionCount(before) + 1,
+		"the first jump should append one log section",
+	);
+	assert.notEqual(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), beforeHead);
+});
+
+test("repeated explicit jumps on a recent same-pilot dive remain idempotent", () => {
+	const { bridge, diveId } = deckSetup("deck-explicit-clean");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const before = readFileSync(divePath, "utf8");
+	assert.equal(jumpedSectionCount(before), 0, "fixture should start without a jump log");
+	const beforeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+
+	assertOk(run(["jump", diveId], bridge), "explicit jump failed on a same-pilot dive");
+	const firstJumpHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	assertOk(run(["jump", diveId], bridge), "repeated explicit jump failed");
+
+	const after = readFileSync(divePath, "utf8");
+	assert.equal(
+		jumpedSectionCount(after),
+		1,
+		"the first same-pilot jump should append a log section",
+	);
+	assert.notEqual(firstJumpHead, beforeHead);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), firstJumpHead);
+	assert.equal(runTool("git", ["status", "--porcelain", "--", "kb"], bridge).stdout.trim(), "");
+	assert.equal(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8").trim(),
+		`id: ${diveId}`,
+	);
+});
+
+test("jump records another claim when the latest log is more than four hours old", () => {
+	const { bridge, diveId } = deckSetup("deck-stale-log");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+
+	assertOk(run(["jump"], bridge), "first bare jump failed");
+	const oldStamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8").replace(/^## jumped .*$/im, `## Jumped ${oldStamp}`),
+	);
+	commitBridge(bridge, "age the latest dive log");
+	const staleHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+
+	assertOk(run(["jump"], bridge), "jump failed to refresh a stale claim");
+
+	assert.equal(jumpedSectionCount(readFileSync(divePath, "utf8")), 2);
+	assert.notEqual(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), staleHead);
+});
+
+test("repeated bare jumps on the same-pilot dive remain idempotent", () => {
+	const { bridge, diveId } = deckSetup("deck-bare-repeat");
+
+	assertOk(run(["jump"], bridge), "first bare jump failed");
+	const firstJumpHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	assertOk(run(["jump"], bridge), "second bare jump failed");
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.equal(
+		jumpedSectionCount(diveText),
+		1,
+		"repeated hydration should append only the first jump log section",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
+		firstJumpHead,
+		"the second hydration should not create a bridge commit",
+	);
 });

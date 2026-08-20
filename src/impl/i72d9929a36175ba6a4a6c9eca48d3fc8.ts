@@ -21,7 +21,7 @@ import {
 } from "../lib/coreParsing.js";
 import { DiveWipScope, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
-import { appendTimestampedSection } from "../lib/kbSections.js";
+import { appendTimestampedSection, latestLoggedSectionTime } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
@@ -54,6 +54,8 @@ interface PatchStep {
 	/** `<sha12>.<slug>` memos are real commits (git am); `dirty.*` / `bridge-wip.*` are working-tree diffs (git apply). */
 	isCommit: boolean;
 }
+
+const JUMP_LOG_FRESH_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Everything a scope needs after the reuse policy has cleared the whole set:
@@ -448,23 +450,35 @@ export function jump(args: string[], io: CommandIo): void {
 	// this is; a run that claimed the dive writes that holder here, and the name
 	// beside it is display only -- see `claimAndLabel`.
 	const diver = claimAndLabel(rc, dive, selection);
-	appendTimestampedSection(
-		dive.path,
-		renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),
-		"jumped",
+	const alreadyJumped = feat.links.some(
+		(link) => link.id === dive.id && link.rel === "jumped.dive",
 	);
-	reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
+	const latestLogAt = latestLoggedSectionTime(readFileSync(dive.path, "utf8"));
+	const hasRecentLog = latestLogAt !== undefined && Date.now() - latestLogAt <= JUMP_LOG_FRESH_MS;
+	// A recent re-hydration of the same pilot's already-jumped dive is the one
+	// true no-op. Claims, phase transitions, stale/missing logs, and every patch
+	// result are events worth committing even when hydration itself moved no ref.
+	const shouldRecord =
+		selection.claim || !alreadyJumped || !hasRecentLog || appliedCount > 0 || failedChains > 0;
+	if (shouldRecord) {
+		appendTimestampedSection(
+			dive.path,
+			renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),
+			"Jumped",
+		);
+		reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
 
-	// The feat's reciprocal link records that this command jumped the dive, so
-	// it is part of the same bookkeeping -- left unstaged it lingers as bridge
-	// WIP that the next pack captures as though it were work.
-	commitAndPushJump(
-		rc.bridgeDir,
-		dive.path,
-		[...appliedFileAbsPaths, feat.path],
-		`jump(${dive.name}): unpacked work`,
-		feat.id,
-	);
+		// The feat's reciprocal link records that this command jumped the dive, so
+		// it is part of the same bookkeeping -- left unstaged it lingers as bridge
+		// WIP that the next pack captures as though it were work.
+		commitAndPushJump(
+			rc.bridgeDir,
+			dive.path,
+			[...appliedFileAbsPaths, feat.path],
+			`jump(${dive.name}): unpacked work`,
+			feat.id,
+		);
+	}
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 

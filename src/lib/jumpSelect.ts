@@ -84,7 +84,16 @@ export function selectJumpDive(
 ): JumpSelection | undefined {
 	const held = activeDive(kbDocs, rc.workspaceDir!);
 	const pilotEmail = readPilotIdentity(rc.bridgeDir).email.trim();
-	if (ref === undefined && held) return { dive: held, claim: false, pilotEmail };
+	if (ref === undefined && held) {
+		if (!pilotEmail) throw new Error("jump requires git config user.email in the bridge");
+		const diver = diveDiver(held);
+		if (diver && diver !== pilotEmail) {
+			throw new Error(
+				`dive ${held.id} is held by ${diver}; take it over with \`${nosediveInvocation()} record.dive --ref ${held.id} --takeover\``,
+			);
+		}
+		return { dive: held, claim: diver !== pilotEmail, pilotEmail };
+	}
 
 	const selection = selectPilotDives(rc, kbDocs, localOnlyKbDocIds(rc.bridgeDir, rc.kbDir!));
 	for (const warning of selection.warnings) io.err(warning);
@@ -107,18 +116,25 @@ export function selectJumpDive(
 	const dive = resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref);
 	if (dive.kind !== "dive")
 		throw new Error(`<dive-ref> does not resolve to a kind: dive doc: ${ref}`);
+	if (!pilotEmail) throw new Error("jump <dive-ref> requires git config user.email in the bridge");
+	const diver = diveDiver(dive);
+	if (diver && diver !== pilotEmail) {
+		throw new Error(
+			`dive ${dive.id} is held by ${diver}; take it over with \`${nosediveInvocation()} record.dive --ref ${dive.id} --takeover\``,
+		);
+	}
 	// Checked even when the dive is the one already on deck: a dive that stopped
-	// being eligible is one this pilot no longer holds, and re-jumping it would
-	// quietly re-take work somebody else picked up.
+	// being eligible for some reason other than its holder is not silently
+	// accepted. A foreign holder was handled above so that refusal can name the
+	// explicit takeover rather than burying it in the general alternatives list.
 	if (!eligible.has(dive.id)) {
 		io.err(`${dive.id} is not a dive you can pick up; these are:`);
 		listEligible(io, selection);
 		io.setExitCode(1);
 		return undefined;
 	}
-	if (!pilotEmail) throw new Error("jump <dive-ref> requires git config user.email in the bridge");
 	ensureActivation(dive, pilotEmail, pilotEmail, held);
-	return { dive, claim: diveDiver(dive) !== pilotEmail, pilotEmail };
+	return { dive, claim: diver !== pilotEmail, pilotEmail };
 }
 
 /**

@@ -3,9 +3,8 @@ import { join } from "node:path";
 import { parseDocument } from "yaml";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { NO_ACTIVE_DIVE_ERROR_ID } from "./constants.js";
 import { NosediveRc, formatPath, splitMarkdownFrontmatter, stringifyYaml } from "./coreParsing.js";
-import { appendGroupedDiveSection, diveDiver, localOnlyKbDocIds } from "./diveListing.js";
+import { appendJumpableDives, diveDiver, localOnlyKbDocIds } from "./diveListing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { PilotDiveSelection, selectPilotDives } from "./diveSelection.js";
 import { readPilotIdentity } from "./gitState.js";
@@ -57,15 +56,10 @@ export interface JumpSelection {
 	pilotEmail: string;
 }
 
-/**
- * The dives this pilot could jump, rendered the way preflight renders them.
- * Reusing preflight's shape is the point: a reader who has seen one session
- * report already knows how to read this, and the two lists come from one rule
- * so they cannot offer different work.
- */
+/** The dives this pilot could jump, grouped by feat with the path to jump them by. */
 function listEligible(io: CommandIo, selection: PilotDiveSelection): void {
 	const lines: string[] = [];
-	appendGroupedDiveSection(lines, "Available", selection.eligible);
+	appendJumpableDives(lines, selection.eligible);
 	for (const line of lines) io.err(line);
 }
 
@@ -104,10 +98,15 @@ export function selectJumpDive(
 		// empty deck is the honest thing to point at, but say why the list is
 		// missing first -- an unexplained absence reads as a broken command.
 		if (eligible.size === 0) {
-			io.err("no dive is available to pick up");
-			throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
+			io.err(
+				`nose: no dive is available to pick up; create one with \`${nosediveInvocation()} record.dive\``,
+			);
+			io.setExitCode(1);
+			return undefined;
 		}
-		io.err(`no dive is on deck; pick one up with \`${nosediveInvocation()} jump <dive-ref>\`:`);
+		io.err(
+			`nose: no dive is on deck; pick one up with \`${nosediveInvocation()} jump <dive-doc-path>\`. Options:`,
+		);
 		listEligible(io, selection);
 		io.setExitCode(1);
 		return undefined;

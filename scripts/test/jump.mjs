@@ -266,7 +266,7 @@ meta:
 	runTool("git", ["push"], bridge);
 }
 
-test("jump requires an active dive marker", () => {
+test("jump with no available dive explains how to create one", () => {
 	const bridge = join(tmp, "no-marker");
 	mkdirSync(bridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
@@ -278,8 +278,9 @@ test("jump requires an active dive marker", () => {
 	mkdirSync(join(bridge, "kb"), { recursive: true });
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump without a dive marker unexpectedly succeeded");
-	assert.match(result.stderr, /^nosedive-error: \S/m);
-	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
+	assert.match(result.stderr, /no dive is available to pick up/);
+	assert.match(result.stderr, /record\.dive/);
+	assert.doesNotMatch(result.stderr, /nosedive-error:/);
 });
 
 test("jump refuses an unbriefed dive before hydrating its scopes", () => {
@@ -1018,12 +1019,17 @@ test("bare jump with nothing on deck lists the dives that could be jumped", () =
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump with nothing on deck unexpectedly succeeded");
 	assert.match(result.stderr, /no dive is on deck/);
-	assert.match(result.stderr, /jump <dive-ref>/);
+	assert.match(result.stderr, /jump <dive-doc-path>/);
 	assert.ok(
-		result.stderr.includes("[jump-test.nosedive](kb/"),
-		`the eligible dives should be grouped under their feat:\n${result.stderr}`,
+		result.stderr.includes("## [Jump Test](kb/"),
+		`the eligible dives should be grouped under their feat heading:\n${result.stderr}`,
 	);
-	assert.match(result.stderr, new RegExp(`kb/${diveId}\\.md`));
+	assert.match(result.stderr, new RegExp(`- kb/${diveId}\\.md: Working on Jump Test\\.`));
+	assert.doesNotMatch(
+		result.stderr,
+		/\n\s+- \[/,
+		"dive options should not be nested under feat names",
+	);
 });
 
 test("bare jump with nothing to pick up says so rather than printing an empty list", () => {
@@ -1035,10 +1041,9 @@ test("bare jump with nothing to pick up says so rather than printing an empty li
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump with no eligible dive unexpectedly succeeded");
 	assert.match(result.stderr, /no dive is available to pick up/);
+	assert.match(result.stderr, /record\.dive/);
 	assert.doesNotMatch(result.stderr, /\(none\)/, "an empty list is not an answer");
-	// Still the no-active-dive error doc: there is nothing to offer, so the
-	// standing explanation of an empty deck is the honest thing to point at.
-	assert.match(result.stderr, /render 019fe2f7-5922-72d5-abda-b5b8cb7300cf/);
+	assert.doesNotMatch(result.stderr, /nosedive-error:/);
 });
 
 test("the jumped section names the pilot and their email, and its repo lines are unchanged", () => {

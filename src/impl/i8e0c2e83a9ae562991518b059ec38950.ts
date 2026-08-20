@@ -5,7 +5,7 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { appendGroupedDiveSection, ListedDive, localOnlyKbDocIds } from "../lib/diveListing.js";
+import { appendJumpableDives, formatJumpableDive, localOnlyKbDocIds } from "../lib/diveListing.js";
 import { collectPreflightDives } from "../lib/diveSelection.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import {
@@ -275,9 +275,9 @@ function printCurrentDiveAndFeat(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io
 }
 
 function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo): void {
-	io.log("== dives ==");
+	io.log("== feats and their dives ==");
 	if (!kbDocs || !rc.kbDir) {
-		io.err("no kb directory is configured, so no dives can be listed");
+		io.err("no kb directory is configured, so no feats or dives can be listed");
 		return;
 	}
 
@@ -292,13 +292,16 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 		io.log(PREFLIGHT_NO_DIVE_LINE);
 		return;
 	}
-	appendDiveSectionTo(io, "Available", available);
-	appendDiveSectionTo(io, "Held", held);
-}
 
-function appendDiveSectionTo(io: CommandIo, label: string, dives: ListedDive[]): void {
-	const lines: string[] = [];
-	appendGroupedDiveSection(lines, label, dives);
+	const lines: string[] = [""];
+	appendJumpableDives(lines, available, true);
+	// Held dives are not grouped under their feats: they are not on offer, so
+	// the only thing worth reading off them is who to ask, and a feat heading
+	// over work nobody here can take reads as a choice that is not there.
+	if (held.length > 0) {
+		lines.push("", "Held by other pilots:", "");
+		for (const dive of held) lines.push(formatJumpableDive(dive, true));
+	}
 	for (const line of lines) io.log(line);
 }
 

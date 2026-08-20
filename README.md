@@ -3,6 +3,7 @@
 </p>
 
 # Nosedive: intentional velocity
+_Pick **what's next**, and do it **by the book**._
 
 ⚠️ This repo is currently undergoing active development and may undergo breaking changes without warning. ⚠️
 

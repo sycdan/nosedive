@@ -2,6 +2,14 @@ import { relative } from "node:path";
 
 import { toPosixPath } from "./coreParsing.js";
 import { runGit } from "./gitProcess.js";
+import type { KbDoc } from "./kbDocs.js";
+
+export interface BundleMetaRole {
+	match: RegExp;
+	metaKeys: string[];
+}
+
+export const BUNDLE_META_PATHS_BY_ROLE: BundleMetaRole[] = [{ match: /\.gate$/, metaKeys: ["test-script"] }];
 
 export interface DirtyKbEntry {
 	statusCode: string;
@@ -64,27 +72,42 @@ export function linkedKbPaths(linkTargets: string[]): Set<string> {
 	return new Set(linkTargets.map((target) => toPosixPath(target)));
 }
 
+export function bundleMetaPathsForDoc(doc: KbDoc, rel?: string): string[] {
+	const rules = rel !== undefined ? BUNDLE_META_PATHS_BY_ROLE.filter((rule) => rule.match.test(rel)) : [];
+	if (rules.length === 0) return [];
+	return rules
+		.flatMap((rule) => rule.metaKeys)
+		.map((key) => doc.metaScalars[key])
+		.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+		.map((value) => toPosixPath(value));
+}
+
+export function followLinkedKbPaths(kbDocs: KbDoc[], linkTargets: string[], rels: string[] = []): Set<string> {
+	const visited = new Set(linkTargets.map((target) => toPosixPath(target)));
+	for (const [index, target] of linkTargets.entries()) {
+		const rel = rels[index];
+		const doc = kbDocs.find((entry) => entry.relPath === toPosixPath(target) || entry.id === target);
+		if (!doc || !rel) continue;
+		for (const path of bundleMetaPathsForDoc(doc, rel)) visited.add(toPosixPath(path));
+	}
+	return visited;
+}
+
 /**
- * A pack that swept the whole `kb/` directory made the dive claim every memo a
- * pilot happened to touch while it was open -- committed under the dive's own
- * `packed wip` and replayed onto whatever machine next jumped it. Refusing here
- * rather than at capture time keeps the decision ahead of the scope loop, so a
- * refused pack leaves no orphan `.patch` artifacts behind.
+ * A pack that swept the whole `kb/` directory could accidentally claim every memo
+ * a pilot happened to touch while it was open. We still surface these as a
+ * warning, but a pack ignores them unless they are linked or explicitly bundled
+ * by a linked doc role. This keeps the capture decision ahead of the scope loop
+ * without leaving half-written `.patch` artifacts behind on a refused run.
  */
 export function assertDiveOwnsDirtyKb(
 	entries: DirtyKbEntry[],
 	excluded: Set<string>,
 	linked: Set<string>,
-): void {
+): { unlinked: string[]; warned: string[] } {
 	const unlinked = entries
 		.map((entry) => entry.path)
 		.filter((path) => !excluded.has(path) && !linked.has(path));
-	if (unlinked.length === 0) return;
-	throw new Error(
-		[
-			"refusing to pack: the bridge kb/ is dirty in paths this dive does not link:",
-			...unlinked.map((path) => `  ${path}`),
-			"a dive packs only what it links -- either link each path from the dive, or commit it to the bridge yourself",
-		].join("\n"),
-	);
+	if (unlinked.length === 0) return { unlinked: [], warned: [] };
+	return { unlinked, warned: unlinked };
 }

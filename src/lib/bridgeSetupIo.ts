@@ -22,7 +22,7 @@ import {
 } from "./coreParsing.js";
 import { nosediveInvocation, packageMigrationDocs, packageRoot } from "./packageBacklog.js";
 import { levelMigration, levelsInGap } from "./packageLevels.js";
-import { gitOutput } from "./gitProcess.js";
+import { readGitAuthorIdentity } from "./gitProcess.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
 	const options: SeedOptions = { help: false, headless: false, files: [] };
@@ -289,9 +289,10 @@ export async function migrateBridgeConfig(bridgeDir: string, io: CommandIo): Pro
 export function loadGitPilotIdentity(
 	bridgeDir: string,
 ): Pick<RcSettings, "pilotName" | "pilotEmail"> {
+	const { name, email } = readGitAuthorIdentity(bridgeDir);
 	return {
-		pilotName: gitOutput(bridgeDir, ["config", "user.name"]) ?? "",
-		pilotEmail: gitOutput(bridgeDir, ["config", "user.email"]) ?? "",
+		pilotName: name,
+		pilotEmail: email,
 	};
 }
 

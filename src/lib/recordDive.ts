@@ -25,8 +25,8 @@ import {
 	resolveBridgeDocRef,
 	resolveScopeRepo,
 } from "./diveScopes.js";
-import { gitOutput } from "./gitProcess.js";
 import { activeDive, ensureActivation } from "./jumpSelect.js";
+import { readGitAuthorIdentity } from "./gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureReleasable,
@@ -318,7 +318,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		return;
 	}
 	const active = activeDive(kbDocs, rc.workspaceDir);
-	const pilotEmail = gitOutput(rc.bridgeDir, ["config", "user.email"]) ?? "";
+	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
 
 	if (!options.ref) {

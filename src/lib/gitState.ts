@@ -12,7 +12,7 @@ import {
 	uuidLike,
 } from "./coreParsing.js";
 import { KbDoc, ScopeRef, loadKbDocs } from "./kbDocs.js";
-import { gitOutput } from "./gitProcess.js";
+import { gitOutput, readGitAuthorIdentity } from "./gitProcess.js";
 import { rewriteMarkdownLinks } from "./markdownLinks.js";
 import { packageRoot } from "./packageBacklog.js";
 import { executableForSpawn } from "./renderPlan.js";
@@ -88,8 +88,7 @@ export interface PilotIdentity {
 }
 
 export function readPilotIdentity(cwd: string): PilotIdentity {
-	const name = gitOutput(cwd, ["config", "user.name"]) ?? "";
-	const email = gitOutput(cwd, ["config", "user.email"]) ?? "";
+	const { name, email } = readGitAuthorIdentity(cwd);
 	const missing: string[] = [];
 	if (!name) missing.push("user.name");
 	if (!email) missing.push("user.email");

@@ -35,3 +35,10 @@ export function gitOutput(cwd: string, args: string[]): string | undefined {
 	if (result.status !== 0) return undefined;
 	return result.stdout.trim();
 }
+
+export function readGitAuthorIdentity(cwd: string): { name: string; email: string } {
+	return {
+		name: gitOutput(cwd, ["config", "user.name"]) ?? "",
+		email: gitOutput(cwd, ["config", "user.email"]) ?? "",
+	};
+}

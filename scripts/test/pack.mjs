@@ -202,7 +202,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	write(effortPath, `${readFileSync(effortPath, "utf8")}\nExtra bridge WIP line.\n`);
 
 	// The dive links this memo, so its dirty state is the dive's to carry.
-	const linkedId = "019fcf00-0000-7000-8000-00000000000f";
+	const linkedId = "01a024ef-1cef-7ca8-adfb-753b56c6c2ac";
 	commitMemo(bridge, `kb/${linkedId}.md`, linkedId, "Linked bridge memo");
 	addDiveLink(bridge, diveId, `kb/${linkedId}.md`);
 	const linkedPath = join(bridge, "kb", `${linkedId}.md`);
@@ -484,46 +484,67 @@ test("pack captures bridge kb/ WIP whose filename needs quoting under plain --po
 	void effortId;
 });
 
-/**
- * A dive that sweeps every dirty `kb/` path claims edits it has nothing to do
- * with: any memo a pilot touched while the dive happened to be open ends up
- * committed under `dive(<name>): packed wip` and replayed on the next jump.
- */
-test("pack refuses a dirty bridge kb/ doc the dive does not link", () => {
+test("pack ignores unlinked dirty bridge kb docs with warning", () => {
 	const { bridge, diveId } = setup("unlinked");
-	// Dirty the scoped repo too: the scope loop mints a `.patch` into kb/ for it,
-	// so this is what proves the refusal is decided ahead of that loop.
+	// Dirty the scoped repo so pack mints a `.patch` into kb/ for it
 	write(join(repoWorktree(bridge, "unlinked"), "dirty.txt"), "dirty\n");
 	const strayId = "019fcf00-0000-7000-8000-00000000000c";
 	write(join(bridge, "kb", `${strayId}.md`), `---\nkind: memo\nid: ${strayId}\n---\n`);
 
 	const result = run(["pack"], bridge);
-	assert.notEqual(result.status, 0, "pack over an unlinked dirty kb/ doc unexpectedly succeeded");
+	assertOk(result, "pack should warn and keep going when dirty bridge docs are unlinked");
 	assert.match(result.stderr, new RegExp(`kb/${strayId}\\.md`));
-	// Both recourses, named: adopt it onto the dive, or publish it yourself.
-	assert.match(result.stderr, /link/);
-	assert.match(result.stderr, /commit/);
-	// Refused ahead of the scope loop, so no half-written artifacts are left behind.
-	assert.equal(existsSync(join(bridge, "kb", "artifacts")), false, "refusal wrote artifacts");
+	assert.match(result.stderr, /warning:/);
+	assert.match(result.stderr, /ignoring/i);
+	assert.equal(
+		existsSync(join(bridge, "workspace", ".nosedive-ref")),
+		false,
+		"pack should release the dive",
+	);
 	assert.match(
 		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
-		/^\s+diver: "?pack@example\.test"?$/m,
-		"a refused pack should not release the dive",
+		/^\s+diver: null$/m,
+		"pack should release the dive even when it ignores unlinked bridge WIP",
 	);
-	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), true);
+});
+
+test("pack bundles linked doc meta files like a gate test-script", () => {
+	const { bridge, diveId } = setup("bundle-meta");
+	const gateId = "019fcf00-0000-7000-8000-00000000000d";
+	const scriptPath = join(bridge, "kb", "artifacts", "gate-test.mjs");
+	mkdirSync(join(bridge, "kb", "artifacts"), { recursive: true });
+	write(scriptPath, "export async function run() { return 0; }\n");
+	write(
+		join(bridge, "kb", `${gateId}.md`),
+		`---\nkind: gate\nid: ${gateId}\nname: gate-test\ngist: gate bundle test\nmeta:\n  test-script: kb/artifacts/gate-test.mjs\n---\n`,
+	);
+	addDiveLink(bridge, diveId, `kb/${gateId}.md`, "test.gate");
+
+	const result = run(["pack"], bridge);
+	assertOk(result, "pack failed while bundling linked gate metadata");
+	assert.match(result.stdout, new RegExp(`packed dive ${diveId}: 1 artifact\\(s\\)`));
+
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	const heads = patchHeadsByRel(diveText, "patch");
+	assert.equal(heads.length, 1, `expected 1 patch head:\n${diveText}`);
+	const bridgeWip = readMemo(bridge, heads[0]);
+	const patchText = readFileSync(join(bridge, bridgeWip.patch), "utf8");
+	assert.match(patchText, /gate-test\.mjs/);
+	assert.match(patchText, /export async function run\(\)/);
 });
 
 test("pack names every unlinked dirty kb/ doc at once", () => {
 	const { bridge } = setup("unlinked-many");
-	const firstId = "019fcf00-0000-7000-8000-00000000000d";
-	const secondId = "019fcf00-0000-7000-8000-00000000000e";
+	const firstId = "01a024ee-880f-7893-bfcc-a5629604f4dc";
+	const secondId = "01a024ee-8810-7652-9444-c6023866a354";
 	write(join(bridge, "kb", `${firstId}.md`), `---\nkind: memo\nid: ${firstId}\n---\n`);
 	write(join(bridge, "kb", `${secondId}.md`), `---\nkind: memo\nid: ${secondId}\n---\n`);
 
 	const result = run(["pack"], bridge);
-	assert.notEqual(result.status, 0, "pack over unlinked dirty kb/ docs unexpectedly succeeded");
+	assertOk(result, "pack should warn and continue when several dirty bridge docs are unlinked");
 	assert.match(result.stderr, new RegExp(`kb/${firstId}\\.md`));
 	assert.match(result.stderr, new RegExp(`kb/${secondId}\\.md`));
+	assert.match(result.stderr, /warning:/);
 });
 
 /**

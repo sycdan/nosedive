@@ -31,7 +31,7 @@ import {
 	assertDiveOwnsDirtyKb,
 	dirtyKbEntries,
 	excludedKbPaths,
-	linkedKbPaths,
+	followLinkedKbPaths,
 } from "./packKbWip.js";
 import { reconcileDiveFeatLinks, releaseDiveToPacker, resolveFeatDoc } from "./repoFeatScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
@@ -89,12 +89,13 @@ function packBridgeWip(
 	bridgeDir: string,
 	kbDir: string,
 	excluded: Set<string>,
+	linked: Set<string>,
 	mintUuid: () => string,
 ): CapturedPatch | undefined {
 	const dirtyKbFiles: string[] = [];
 	const untracked: string[] = [];
 	for (const entry of dirtyKbEntries(bridgeDir, kbDir)) {
-		if (excluded.has(entry.path)) continue;
+		if (excluded.has(entry.path) || !linked.has(entry.path)) continue;
 		dirtyKbFiles.push(entry.path);
 		if (entry.statusCode === "??") untracked.push(entry.path);
 	}
@@ -337,12 +338,24 @@ export function packDive(args: string[], io: CommandIo): void {
 	// Ahead of the scope loop, which mints `.patch` artifacts into kb/: a refusal
 	// decided after it would leave orphans behind, and the newly untracked
 	// artifacts would be competing with the unlinked docs the message is about.
-	const linked = linkedKbPaths(dive.links.map((link) => link.target));
-	assertDiveOwnsDirtyKb(
+	const linked = followLinkedKbPaths(
+		kbDocs,
+		dive.links.map((link) => ({ target: link.target, rel: link.rel })),
+	);
+	const dirtyGuard = assertDiveOwnsDirtyKb(
 		dirtyKbEntries(rc.bridgeDir, rc.kbDir),
 		excludedKbPaths(rc.bridgeDir, dive.path, feat?.path, []),
 		linked,
 	);
+	if (dirtyGuard.unlinked.length > 0) {
+		io.err(
+			[
+				"warning: pack is ignoring bridge kb dirty paths this dive does not link:",
+				...dirtyGuard.unlinked.map((path) => `  ${path}`),
+				"the dive will pack only linked paths and explicit bundle metadata from linked docs",
+			].join("\n"),
+		);
+	}
 	const mintUuid = createUuid7Minter();
 	const groups: CapturedPatch[][] = [];
 	let capturedCount = 0;
@@ -373,6 +386,7 @@ export function packDive(args: string[], io: CommandIo): void {
 			feat?.path,
 			groups.flat().map((patch) => patch.patchAbsPath),
 		),
+		linked,
 		mintUuid,
 	);
 	if (bridgeWip) groups.push([bridgeWip]);

@@ -1002,6 +1002,83 @@ function freeDive(bridge, featId, gist) {
 	return id;
 }
 
+test("jump accepts a dive whose direct owner is a non-feat doc", () => {
+	const { bridge, featId, repoId } = deckSetup("deck-non-feat-owner", { claimed: false });
+	const ownerId = "019fcf10-0000-7000-8000-0000000000c1";
+	const ownerPath = join(bridge, "kb", `${ownerId}.md`);
+	writeFileSync(
+		ownerPath,
+		`---
+kind: bug
+id: ${ownerId}
+name: non-feat-owner
+gist: "A bug doc owns the dive"
+links:
+  - kb/${featId}.md:
+      rel: parent
+---
+
+# Non-feat owner
+`,
+	);
+	writeFileSync(
+		join(bridge, "kb", `${featId}.md`),
+		`---
+kind: feat
+id: ${featId}
+name: jump-test.nosedive
+gist: "Jump test feat"
+links:
+  - kb/${ownerId}.md:
+      rel: child
+scopes:
+  - ${repoId}:
+      work-branch: work/jump-test.nosedive
+---
+
+# Jump Test
+`,
+	);
+	runTool("git", ["add", "-A"], bridge);
+	gitCommit(bridge, "attach a bug document under the feat");
+	runTool("git", ["push"], bridge);
+
+	const diveResult = run(
+		[
+			"record.dive",
+			"--feat",
+			featId,
+			"--diver",
+			"jump@example.test",
+			"--brief",
+			"Owned by a bug doc.",
+		],
+		bridge,
+	);
+	assertOk(diveResult, "record.dive failed for a feat while the bug doc owns the path");
+	const diveId = /^Recorded kb\/[0-9a-f-]{36}\.md$/m
+		.exec(diveResult.stdout)?.[0]
+		?.replace(/^Recorded kb\//, "")
+		?.replace(/\.md$/, "");
+	assert.ok(diveId, `record.dive did not report a dive id:\n${diveResult.stdout}`);
+
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const diveText = readFileSync(divePath, "utf8");
+	writeFileSync(
+		ownerPath,
+		readFileSync(ownerPath, "utf8").replace(
+			/---\n\n# Non-feat owner\n/,
+			`---\nlinks:\n  - kb/${diveId}.md:\n      rel: planned.dive\n\n# Non-feat owner\n`,
+		),
+	);
+	const result = run(["jump", diveId], bridge);
+	assertOk(result, "jump refused a dive whose direct owner is a non-feat doc");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^ {2}diver: "jump@example\.test"$/m,
+	);
+});
+
 function jumpedSection(bridge, diveId) {
 	const text = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	const match = /^## jumped [^\n]*\n\n([\s\S]*)$/im.exec(text);

@@ -496,7 +496,11 @@ test("pack ignores unlinked dirty bridge kb docs with warning", () => {
 	assert.match(result.stderr, new RegExp(`kb/${strayId}\\.md`));
 	assert.match(result.stderr, /warning:/);
 	assert.match(result.stderr, /ignoring/i);
-	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false, "pack should release the dive");
+	assert.equal(
+		existsSync(join(bridge, "workspace", ".nosedive-ref")),
+		false,
+		"pack should release the dive",
+	);
 	assert.match(
 		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
 		/^\s+diver: null$/m,

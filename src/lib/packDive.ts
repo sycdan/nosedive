@@ -338,7 +338,10 @@ export function packDive(args: string[], io: CommandIo): void {
 	// Ahead of the scope loop, which mints `.patch` artifacts into kb/: a refusal
 	// decided after it would leave orphans behind, and the newly untracked
 	// artifacts would be competing with the unlinked docs the message is about.
-	const linked = followLinkedKbPaths(kbDocs, dive.links.map((link) => link.target));
+	const linked = followLinkedKbPaths(
+		kbDocs,
+		dive.links.map((link) => ({ target: link.target, rel: link.rel })),
+	);
 	const dirtyGuard = assertDiveOwnsDirtyKb(
 		dirtyKbEntries(rc.bridgeDir, rc.kbDir),
 		excludedKbPaths(rc.bridgeDir, dive.path, feat?.path, []),

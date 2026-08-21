@@ -9,7 +9,9 @@ export interface BundleMetaRole {
 	metaKeys: string[];
 }
 
-export const BUNDLE_META_PATHS_BY_ROLE: BundleMetaRole[] = [{ match: /\.gate$/, metaKeys: ["test-script"] }];
+export const BUNDLE_META_PATHS_BY_ROLE: BundleMetaRole[] = [
+	{ match: /\.gate$/, metaKeys: ["test-script"] },
+];
 
 export interface DirtyKbEntry {
 	statusCode: string;
@@ -73,7 +75,8 @@ export function linkedKbPaths(linkTargets: string[]): Set<string> {
 }
 
 export function bundleMetaPathsForDoc(doc: KbDoc, rel?: string): string[] {
-	const rules = rel !== undefined ? BUNDLE_META_PATHS_BY_ROLE.filter((rule) => rule.match.test(rel)) : [];
+	const rules =
+		rel !== undefined ? BUNDLE_META_PATHS_BY_ROLE.filter((rule) => rule.match.test(rel)) : [];
 	if (rules.length === 0) return [];
 	return rules
 		.flatMap((rule) => rule.metaKeys)
@@ -82,13 +85,18 @@ export function bundleMetaPathsForDoc(doc: KbDoc, rel?: string): string[] {
 		.map((value) => toPosixPath(value));
 }
 
-export function followLinkedKbPaths(kbDocs: KbDoc[], linkTargets: string[], rels: string[] = []): Set<string> {
-	const visited = new Set(linkTargets.map((target) => toPosixPath(target)));
-	for (const [index, target] of linkTargets.entries()) {
-		const rel = rels[index];
-		const doc = kbDocs.find((entry) => entry.relPath === toPosixPath(target) || entry.id === target);
-		if (!doc || !rel) continue;
-		for (const path of bundleMetaPathsForDoc(doc, rel)) visited.add(toPosixPath(path));
+export function followLinkedKbPaths(
+	kbDocs: KbDoc[],
+	links: Array<{ target: string; rel?: string }>,
+): Set<string> {
+	const visited = new Set(links.map((link) => toPosixPath(link.target)));
+	for (const link of links) {
+		const target = toPosixPath(link.target);
+		const doc = kbDocs.find(
+			(entry) => entry.relPath === target || entry.id === link.target || entry.id === target,
+		);
+		if (!doc || !link.rel) continue;
+		for (const path of bundleMetaPathsForDoc(doc, link.rel)) visited.add(toPosixPath(path));
 	}
 	return visited;
 }

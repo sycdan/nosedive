@@ -16,4 +16,5 @@ export * from "./renderPlan.js";
 export * from "./repoWorkspaceCore.js";
 export * from "./repoWorktrees.js";
 export * from "./recordDive.js";
+export * from "./recordRepo.js";
 export * from "./slugs.js";

@@ -1056,7 +1056,10 @@ scopes:
 		bridge,
 	);
 	assertOk(diveResult, "record.dive failed for a feat while the bug doc owns the path");
-	const diveId = /^Recorded kb\/[0-9a-f-]{36}\.md$/m.exec(diveResult.stdout)?.[0]?.replace(/^Recorded kb\//, "")?.replace(/\.md$/, "");
+	const diveId = /^Recorded kb\/[0-9a-f-]{36}\.md$/m
+		.exec(diveResult.stdout)?.[0]
+		?.replace(/^Recorded kb\//, "")
+		?.replace(/\.md$/, "");
 	assert.ok(diveId, `record.dive did not report a dive id:\n${diveResult.stdout}`);
 
 	const divePath = join(bridge, "kb", `${diveId}.md`);
@@ -1075,7 +1078,6 @@ scopes:
 		/^ {2}diver: "jump@example\.test"$/m,
 	);
 });
-
 
 function jumpedSection(bridge, diveId) {
 	const text = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");

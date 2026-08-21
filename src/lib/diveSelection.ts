@@ -43,11 +43,12 @@ function pilotEmail(rc: NosediveRc): string | undefined {
 	return email || undefined;
 }
 
-function selectable(link: DiveLink): boolean {
-	// Only a feat owns a dive. A deck links dives directly too, and one of those
-	// is deliberately not selectable: a free dive stays possible to write and
-	// stays awkward to pick up until it names a feat.
-	if (link.owner?.kind !== "feat") return false;
+function selectable(link: DiveLink, deckId: string): boolean {
+	// A free dive is linked directly from the backlog deck, so it is not a feat
+	// walk result and should stay awkward to pick up until it pays for a real
+	// owner. The backlog tree is carried by rel semantics, not doc kind, so a
+	// non-feat doc may still own the dive when it sits in the feat walk.
+	if (!link.owner || link.owner.id === deckId) return false;
 	const role = diveRole(link.rel);
 	return !role || !FINISHED_DIVE_ROLES.has(role);
 }
@@ -82,7 +83,7 @@ export function selectPilotDives(
 	const eligible: ListedDive[] = [];
 	const held: ListedDive[] = [];
 	for (const link of walkDeckDives(deck, kbDocs)) {
-		if (!selectable(link)) continue;
+		if (!selectable(link, deck.id)) continue;
 		const { dive, rel, owner } = link;
 		const diver = diveDiver(dive);
 		const bucket = !diver || (pilot !== undefined && diver === pilot) ? eligible : held;

@@ -344,10 +344,57 @@ test("land refuses a scope that is ahead of its pin and names no work branch", (
 	assert.doesNotMatch(result.stderr, /Run `nosedive record\.dive/);
 	assert.match(result.stderr, /work\/land-test\.nosedive/, "and the branch that would be used");
 	assert.match(result.stderr, /branch convention may differ/, "and why to check it first");
+	assert.doesNotMatch(result.stderr, /\(no scoped repos to push\)/);
 
 	// Naming a branch is all it takes to make the same commits landable.
 	assertOk(run(["record.dive", "--ref", diveId, "--upscope", repoId], bridge), "--upscope failed");
 	assertOk(run(["land"], bridge), "land should accept the scope once it names a branch");
+});
+
+test("land silently accepts a scope whose HEAD matches its pin and names no work branch", () => {
+	const { bridge, worktree, diveId } = setup("readonly-equals-pin");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	write(divePath, readFileSync(divePath, "utf8").replace(/^      work-branch: .*\n/m, ""));
+	const result = run(["land"], bridge);
+	assertOk(result, "land unexpectedly refused a scope that matches its pin");
+	assert.doesNotMatch(result.stderr, /land refuses: scope .* is (ahead|behind) pinned ref/);
+	assert.doesNotMatch(result.stderr, /names no work branch/);
+});
+
+test("land refuses a scope that is behind its pin and names no work branch", () => {
+	const { bridge, worktree, diveId } = setup("readonly-behind");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	write(divePath, readFileSync(divePath, "utf8").replace(/^      work-branch: .*\n/m, ""));
+	const earlier = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	gitCommitEmpty(worktree, "work moved past the pin");
+	const moved = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	const sourceUrl = runTool(
+		"git",
+		["config", "--get", "remote.origin.url"],
+		worktree,
+	).stdout.trim();
+	runTool("git", ["push", sourceUrl, `HEAD:refs/heads/${workBranch}`], worktree);
+	assertOk(run(["record.dive", "--ref", diveId, "--repin", workBranch, "--scope", repoId], bridge));
+	runTool("git", ["checkout", earlier], worktree);
+
+	const result = run(["land"], bridge);
+	assert.notEqual(
+		result.status,
+		0,
+		"land unexpectedly accepted a scope that had rolled back behind its pin",
+	);
+	assert.match(result.stderr, new RegExp(`scope ${repoId} is behind pinned ref`));
+	assert.match(result.stderr, /names no work branch/);
+	assert.match(result.stderr, /--upscope/);
+	assert.doesNotMatch(result.stderr, /\(no scoped repos to push\)/);
+	assert.match(
+		result.stderr,
+		new RegExp(
+			`Run \`(?:node .+|npx -y nosedive@[^ ]+) record\\.dive --ref ${diveId} --upscope ${repoId}\``,
+		),
+	);
+	assert.match(result.stderr, /work\/land-test\.nosedive/);
+	assert.match(result.stderr, /branch convention may differ/);
 });
 
 /**

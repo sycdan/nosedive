@@ -1091,7 +1091,8 @@ function jumpedSectionCount(text) {
 }
 
 test("bare jump with nothing on deck lists the dives that could be jumped", () => {
-	const { bridge, diveId } = deckSetup("deck-list", { claimed: false });
+	const { bridge, featId, diveId } = deckSetup("deck-list", { claimed: false });
+	const second = freeDive(bridge, featId, "Another eligible dive");
 
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump with nothing on deck unexpectedly succeeded");
@@ -1102,10 +1103,73 @@ test("bare jump with nothing on deck lists the dives that could be jumped", () =
 		`the eligible dives should be grouped under their feat heading:\n${result.stderr}`,
 	);
 	assert.match(result.stderr, new RegExp(`- kb/${diveId}\\.md: Working on Jump Test\\.`));
+	assert.match(result.stderr, new RegExp(`- kb/${second}\\.md: Another eligible dive`));
 	assert.doesNotMatch(
 		result.stderr,
 		/\n\s+- \[/,
 		"dive options should not be nested under feat names",
+	);
+});
+
+test("bare jump picks up the only eligible dive", () => {
+	const { bridge, diveId } = deckSetup("deck-single", { claimed: false });
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "bare jump failed to pick up the only eligible dive");
+	assert.match(
+		result.stdout,
+		new RegExp(`jump: picked up the only dive on deck -- kb/${diveId}\\.md: `),
+	);
+	assert.match(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
+		new RegExp(`id: ${diveId}`),
+	);
+});
+
+test("bare jump with two eligible dives lists the chooser and does not hydrate", () => {
+	const { bridge, featId, diveId } = deckSetup("deck-two", { claimed: false });
+	const second = freeDive(bridge, featId, "A second eligible dive");
+	const beforeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(
+		result.status,
+		0,
+		"bare jump unexpectedly picked a dive with two eligible options",
+	);
+	assert.match(result.stderr, /no dive is on deck/);
+	assert.match(result.stderr, new RegExp(`- kb/${diveId}\\.md:`));
+	assert.match(result.stderr, new RegExp(`- kb/${second}\\.md:`));
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), beforeHead);
+	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
+});
+
+test("bare jump with zero eligible dives says so rather than printing an empty list", () => {
+	const { bridge, diveId } = deckSetup("deck-zero", { claimed: false });
+	setDiver(bridge, diveId, "someone-else@example.test");
+	commitBridge(bridge, "hand the only dive to another pilot");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "bare jump with no eligible dives unexpectedly succeeded");
+	assert.match(result.stderr, /no dive is available to pick up/);
+	assert.match(result.stderr, /record\.dive/);
+	assert.doesNotMatch(result.stderr, /\(none\)/, "an empty list is not an answer");
+	assert.doesNotMatch(result.stderr, /nosedive-error:/);
+});
+
+test("bare jump refuses a single foreign-held dive", () => {
+	const { bridge, diveId } = deckSetup("deck-foreign", { claimed: false });
+	setDiver(bridge, diveId, "someone-else@example.test");
+	commitBridge(bridge, "hand the only dive to another pilot");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "bare jump unexpectedly picked up a foreign-held dive");
+	assert.match(result.stderr, /no dive is available to pick up/);
+	assert.doesNotMatch(result.stdout, /jump: picked up the only dive on deck/);
+	assert.equal(
+		existsSync(join(bridge, "workspace", ".nosedive-ref")),
+		false,
+		"no marker should be written",
 	);
 });
 

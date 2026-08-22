@@ -104,6 +104,22 @@ export function selectJumpDive(
 			io.setExitCode(1);
 			return undefined;
 		}
+		// One dive on deck is not a choice, and offering it as one is how a new
+		// pilot's first `jump` becomes a menu of length one. No holder check is
+		// needed here: `selectPilotDives` has already put anything another pilot
+		// holds in `held`, so nothing in `eligible` can be theirs.
+		if (eligible.size === 1) {
+			const only = selection.eligible[0]!;
+			const dive = kbDocs.find((candidate) => candidate.id === only.id);
+			if (!dive) throw new Error(`selected dive not found in kb: ${only.id}`);
+			if (!pilotEmail) throw new Error("jump requires git config user.email in the bridge");
+			const diver = diveDiver(dive);
+			ensureActivation(dive, pilotEmail, pilotEmail, held);
+			// Named, because a pilot who did not choose still has to know what they
+			// are on before the brief scrolls past.
+			io.log(`jump: picked up the only dive on deck -- ${dive.relPath}: ${dive.gist}`);
+			return { dive, claim: diver !== pilotEmail, pilotEmail };
+		}
 		io.err(
 			`nose: no dive is on deck; pick one up with \`${nosediveInvocation()} jump <dive-doc-path>\`. Options:`,
 		);

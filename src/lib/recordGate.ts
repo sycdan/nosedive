@@ -187,12 +187,7 @@ export function recordGate(args: string[], io: CommandIo): void {
 
 	io.log(`Recorded ${formatPath(docPath)}`);
 	io.log(`Wrote ${formatPath(scriptPath)}`);
-	if (options.action === "land") {
-		io.log(`Declared land.gate on ${formatPath(feat.path)}`);
-		io.log(`It blocks nosedive land until it passes.`);
-		io.log(`It fails until written. Run it with: nosedive test ${id}`);
-	} else {
-		io.log(`Declared test.gate on ${formatPath(feat.path)}`);
-		io.log(`It fails until written. Run it with: nosedive test ${id}`);
-	}
+	io.log(`Declared ${options.action}.gate on ${formatPath(feat.path)}`);
+	if (options.action === "land") io.log("It blocks nosedive land until it passes.");
+	io.log(`It fails until written. Run it with: nosedive test ${id}`);
 }

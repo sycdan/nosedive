@@ -52,7 +52,28 @@ function prePushHook(_args: string[], io: CommandIo, cwd: string): void {
 		);
 		if (!touchingCommits) continue;
 
-		throw new Error(PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID);
+		// rev-list bounded the range; diff-tree only sharpens the message. A commit
+		// it reports no paths for -- a merge, say -- must still be refused, so the
+		// path list is detail on a refusal that has already been decided.
+		const paths = new Set<string>();
+		for (const commit of touchingCommits.split(/\r?\n/).filter(Boolean)) {
+			const changed = gitOutput(
+				repoRoot,
+				["diff-tree", "--no-commit-id", "--name-only", "-r", commit, "--", pathspec],
+				"cannot inspect pushed commit paths",
+			);
+			for (const path of changed.split(/\r?\n/).filter(Boolean)) paths.add(path);
+		}
+
+		const sorted = [...paths].sort();
+		throw new Error(
+			[
+				"push rejected because a pushed commit touches the workspace path",
+				...sorted.map((path) => `- ${path}`),
+				...sorted.map((path) => `git rm -r --cached ${path}`),
+				`see kb/${PRE_PUSH_WORKSPACE_COMMIT_ERROR_ID}.md for why`,
+			].join("\n"),
+		);
 	}
 }
 

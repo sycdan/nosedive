@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -51,28 +51,34 @@ function assertManagedBlock(text, label) {
 }
 
 test("seed-agent-instructions", () => {
-	// Nothing to manage and nothing named: seed refuses to invent a file.
+	// Nothing to manage and nothing named: seed creates AGENTS.md for the new bridge.
 	const bareBridge = newBridge("bare-bridge");
 	const bare = run(["seed", "--headless"], bareBridge, "");
-	assert.notEqual(bare.status, 0, "seed without any instructions file unexpectedly succeeded");
-	for (const candidate of [
-		"AGENTS.md",
-		"CLAUDE.md",
-		"GEMINI.md",
-		".github/copilot-instructions.md",
-	]) {
-		assert.match(bare.stderr, new RegExp(candidate.replace(".", "\\.")));
-	}
-	assert.equal(existsSync(join(bareBridge, ".nosedive", "config.yaml")), false);
+	assertOk(bare, "seed without any instructions file failed");
+	assert.match(bare.stdout, /Wrote AGENTS\.md/);
+	assert.equal(existsSync(join(bareBridge, ".nosedive", "config.yaml")), true);
+	assert.match(
+		readFileSync(join(bareBridge, "AGENTS.md"), "utf8"),
+		/<!-- BEGIN nosedive managed instructions -->/,
+	);
+	assert.equal(existsSync(join(bareBridge, ".nosedive", ".gitignore")), true);
+	const backlogMemos = readdirSync(join(bareBridge, "kb")).filter((entry) => entry.endsWith(".md"));
+	assert.equal(backlogMemos.length, 1, "fresh seed should mint exactly one backlog memo");
+	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Backlog$/m);
+	assert.equal(existsSync(join(bareBridge, "CLAUDE.md")), false);
+	assert.equal(existsSync(join(bareBridge, "GEMINI.md")), false);
+	assert.equal(existsSync(join(bareBridge, ".github", "copilot-instructions.md")), false);
 
-	// A named file that does not exist is created whole.
+	// A named file that does not exist is created whole and no AGENTS.md is created.
 	const createdBridge = newBridge("created-bridge");
 	const created = run(["seed", "--headless", "--file", "NOTES.md"], createdBridge, "");
 	assertOk(created, "seed with a missing --file failed");
 	assert.match(created.stdout, /Wrote NOTES\.md/);
+	assert.doesNotMatch(created.stdout, /Wrote AGENTS\.md/);
 	const createdText = readFileSync(join(createdBridge, "NOTES.md"), "utf8");
 	assert.equal(createdText.startsWith("# Agent Instructions\n\n"), true);
 	assertManagedBlock(createdText, "NOTES.md");
+	assert.equal(existsSync(join(createdBridge, "AGENTS.md")), false);
 
 	// Autodetected, and only the span between the markers is rewritten.
 	const detectedBridge = newBridge("detected-bridge");

@@ -90,12 +90,7 @@ function resolveInstructionTargets(bridgeDir: string, files: string[]): string[]
 	const found = KNOWN_INSTRUCTION_FILES.map((name) => join(bridgeDir, name)).filter((path) =>
 		existsSync(path),
 	);
-	if (found.length === 0) {
-		throw new Error(
-			`no agent instructions file found (looked for ${KNOWN_INSTRUCTION_FILES.join(", ")}); ` +
-				`pass --file <path> to create one`,
-		);
-	}
+	if (found.length === 0) return [join(bridgeDir, "AGENTS.md")];
 	return found;
 }
 

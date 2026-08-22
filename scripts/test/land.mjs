@@ -562,6 +562,83 @@ test("land --hard refuses when the remote work branch is absent rather than crea
 	assert.match(result.stderr, new RegExp(pin));
 });
 
+/**
+ * A work branch can carry several landed dives. When trunk later conflicts with
+ * one of them, a third dive rebases the branch and republishes it under a
+ * lease -- and the dives that built the branch are closed history. Their pins
+ * record the bases they actually used, which the rewrite does not change and
+ * must not appear to.
+ */
+test("land --hard leaves the landed dives that built the work branch untouched", () => {
+	const { bridge, worktree, diveId } = setup("hard-keeps-landed-history");
+	const source = join(tmp, "hard-keeps-landed-history-source");
+	const pin = scopePin(bridge, diveId);
+	runTool("git", ["branch", workBranch, pin], source);
+
+	// Two dives that already landed to this branch, closed as memos, linked from
+	// the feat so they are reachable from everything land walks.
+	const landedIds = [
+		"019fd470-0000-7000-8000-000000000003",
+		"019fd470-0000-7000-8000-000000000004",
+	];
+	const landedPins = [runTool("git", ["rev-parse", "main"], source).stdout.trim(), pin];
+	landedIds.forEach((id, index) => {
+		write(
+			join(bridge, "kb", `${id}.md`),
+			`---
+kind: memo
+id: ${id}
+name: land-test.landed-${index + 1}
+gist: "Landed dive ${index + 1}"
+scopes:
+  - ${repoId}:
+      ref: ${landedPins[index]}
+      work-branch: ${workBranch}
+meta:
+  feat: ${effortId}
+---
+
+# Dive Record
+
+## Outcome
+
+Landed.
+`,
+		);
+	});
+	write(
+		join(bridge, "kb", `${effortId}.md`),
+		`---
+kind: feat
+id: ${effortId}
+name: land-test.nosedive
+gist: "Land test effort"
+scopes:
+  - ${repoId}:
+      work-branch: ${workBranch}
+links:
+${landedIds.map((id) => `  - kb/${id}.md:\n      rel: landed.dive`).join("\n")}
+---
+`,
+	);
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "record the dives that already landed");
+	const before = landedIds.map((id) => readFileSync(join(bridge, "kb", `${id}.md`), "utf8"));
+
+	const head = rewriteHead(worktree, "rewritten history");
+	assertOk(run(["land", "--hard"], bridge), "land --hard failed");
+	// Without this the assertions below would pass on a land that did nothing.
+	assert.equal(remoteWorkBranch(source), head, "the fixture must actually republish the branch");
+
+	landedIds.forEach((id, index) => {
+		assert.equal(
+			readFileSync(join(bridge, "kb", `${id}.md`), "utf8"),
+			before[index],
+			`land --hard rewrote landed dive ${id}`,
+		);
+	});
+});
+
 test("land still rejects an unknown option", () => {
 	const { bridge } = setup("hard-unknown-option");
 	const result = run(["land", "--soft"], bridge);

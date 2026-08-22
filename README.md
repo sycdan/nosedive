@@ -56,7 +56,8 @@ Turn a notes repo into a bridge and take one change all the way to a pushed
 branch. Every command after `seed` prints the next one, so you can follow the
 screen rather than this page.
 
-Start from a clone of a repo you control. The bridge needs to be able to push to the trunk branch.
+Start from a clone of a repo you control -- `seed` refuses a bridge with no
+`origin` -- an empty GitHub repo is enough.
 
 ```
 npm i -g nosedive
@@ -65,13 +66,13 @@ git clone <your-notes-repo> ~/BASE && cd ~/BASE
 
 nosedive seed                                 # bridge config, AGENTS.md, and
                                               # the bridge itself as a repo doc
-git add .nosedive AGENTS.md kb                # seed prints the exact paths
+git add -A
 git commit -m "seed nosedive"
 git push -u origin main
 
 nosedive pitch "Add a hello note"
 nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..." \
-  --upscope notes --work-branch work/add-a-hello-note
+  --upscope BASE --work-branch work/add-a-hello-note
 nosedive jump                                 # hydrates workspace/__self
 
 # do the work there, and commit it in that worktree
@@ -87,7 +88,7 @@ Three things worth knowing before you start:
   push once after `seed`; until it does, `record.dive` and `jump` both fail
   resolving a ref. Cloning an empty repo is fine -- that push creates it.
 - **You do not need `record.repo`.** `seed` registers the bridge itself, named
-  after its own directory -- `notes` above -- and hydrates it at
+  after its own directory -- `BASE` above -- and hydrates it at
   `workspace/__self`. Add other repos when you need them.
 - **You do not have to commit the bridge between steps.** The kb documents each
   command writes are read off disk; `land` commits and pushes them for you.

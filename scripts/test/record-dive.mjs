@@ -9,7 +9,6 @@ import {
 	createTmp,
 	gitCommit,
 	run,
-	runGit,
 	runTool,
 	write,
 } from "../test-helpers.mjs";
@@ -1230,12 +1229,13 @@ test("record.dive --repin writes the dive and touches nothing else", () => {
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
 	const originRefs = runTool("git", ["show-ref"], repo).stdout;
+	const bridgeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout;
 	assertOk(run(["record.dive", "--ref", id, "--repin"], bridge), "record.dive --repin failed");
 	assert.equal(runTool("git", ["show-ref"], repo).stdout, originRefs, "a repin publishes nothing");
-	assert.notEqual(
-		runGit(["rev-parse", "--verify", "HEAD"], bridge, { expectOk: false }).status,
-		0,
-		"the bridge still has no commits: a repin commits nothing",
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout,
+		bridgeHead,
+		"a repin commits nothing to the bridge",
 	);
 });
 

@@ -23,6 +23,7 @@ import {
 	createTmp,
 	escapeRegExp,
 	gitCommit,
+	giveOrigin,
 	gitCommonDir,
 	handoffRunbookId,
 	lib,
@@ -288,6 +289,7 @@ Beta body.
 	const effortsBridge = join(tmp, "efforts-bridge");
 	mkdirSync(effortsBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], effortsBridge);
+	giveOrigin(tmp, effortsBridge, "efforts-bridge");
 	runTool("git", ["config", "user.name", "Efforts Person"], effortsBridge);
 	runTool("git", ["config", "user.email", "efforts@example.invalid"], effortsBridge);
 	write(
@@ -310,6 +312,9 @@ gist: Solo gist
 	const dirtyManagedBridge = join(tmp, "dirty-managed-bridge");
 	mkdirSync(dirtyManagedBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], dirtyManagedBridge);
+	runTool("git", ["config", "user.name", "Migration Person"], dirtyManagedBridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], dirtyManagedBridge);
+	giveOrigin(tmp, dirtyManagedBridge, "dirty-managed-bridge");
 	write(join(dirtyManagedBridge, "efforts", "solo", "Solo.md"), "# Solo\n");
 	write(join(dirtyManagedBridge, "kb", "dirty.md"), "# Dirty\n");
 	const dirtyManagedSeed = run(["seed", "--headless"], dirtyManagedBridge, "");
@@ -327,6 +332,9 @@ gist: Solo gist
 	const ambiguousBridge = join(tmp, "ambiguous-bridge");
 	mkdirSync(ambiguousBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], ambiguousBridge);
+	runTool("git", ["config", "user.name", "Migration Person"], ambiguousBridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], ambiguousBridge);
+	giveOrigin(tmp, ambiguousBridge, "ambiguous-bridge");
 	write(join(ambiguousBridge, ".nosediverc"), "workspace: ./workspace\n");
 	write(join(ambiguousBridge, ".nosedive", "config.yaml"), "compatibility-level: 2\n");
 	const initAmbiguous = run(["seed", "--headless"], ambiguousBridge, "");
@@ -347,6 +355,9 @@ gist: Solo gist
 	const unversionedBridge = join(tmp, "unversioned-bridge");
 	mkdirSync(unversionedBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], unversionedBridge);
+	runTool("git", ["config", "user.name", "Migration Person"], unversionedBridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], unversionedBridge);
+	giveOrigin(tmp, unversionedBridge, "unversioned-bridge");
 	write(join(unversionedBridge, ".nosedive", "config.yaml"), "workspace: ./workspace\n");
 	const initUnversioned = run(["seed", "--headless"], unversionedBridge, "");
 	assert.notEqual(initUnversioned.status, 0, "init with unversioned config unexpectedly succeeded");
@@ -364,6 +375,9 @@ gist: Solo gist
 	const scriptFailureBridge = join(tmp, "script-failure-bridge");
 	mkdirSync(scriptFailureBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], scriptFailureBridge);
+	runTool("git", ["config", "user.name", "Migration Person"], scriptFailureBridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], scriptFailureBridge);
+	giveOrigin(tmp, scriptFailureBridge, "script-failure-bridge");
 	write(join(scriptFailureBridge, ".nosediverc"), "workspace: ./workspace\nkb: ./kb\n");
 	const migrationScriptPath = join(root, "kb", "artifacts", packageMigrationScript);
 	const originalMigrationScript = readFileSync(migrationScriptPath, "utf8");
@@ -398,6 +412,7 @@ test("seed migrates an L1 backlog body tree into L2 feat-role links", () => {
 	const bridge = join(tmp, "l2-body-links-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
+	giveOrigin(tmp, bridge, "l2-body-links-bridge");
 	runTool("git", ["config", "user.name", "Bump Person"], bridge);
 	runTool("git", ["config", "user.email", "bump@example.invalid"], bridge);
 
@@ -586,6 +601,9 @@ test("L2 backlog body migration refuses managed docs as work nodes", () => {
 	const bridge = join(tmp, "l2-managed-kind-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
+	runTool("git", ["config", "user.name", "Migration Person"], bridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], bridge);
+	giveOrigin(tmp, bridge, "l2-managed-kind-bridge");
 	const backlogId = "00000000-0000-7000-8000-0000000009b1";
 	const repoId = "00000000-0000-7000-8000-0000000009b2";
 	write(
@@ -651,6 +669,9 @@ test("seed refuses to write a level lower than the bridge already carries", () =
 	const bridge = join(tmp, "downgrade-bridge");
 	mkdirSync(join(bridge, "workspace"), { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
+	runTool("git", ["config", "user.name", "Migration Person"], bridge);
+	runTool("git", ["config", "user.email", "migration@example.invalid"], bridge);
+	giveOrigin(tmp, bridge, "downgrade-bridge");
 	const configPath = join(bridge, ".nosedive", "config.yaml");
 	const config = ["compatibility-level: 99", "workspace: ./workspace", "kb: ./kb", ""].join("\n");
 	write(configPath, config);

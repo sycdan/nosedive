@@ -23,6 +23,7 @@ import {
 	createTmp,
 	escapeRegExp,
 	gitCommit,
+	giveOrigin,
 	gitCommonDir,
 	handoffRunbookId,
 	lib,
@@ -56,6 +57,7 @@ test("nuke", () => {
 	runTool("git", ["init", "-b", "main"], nukeWorkspaceBridge);
 	runTool("git", ["config", "user.email", "nuke-workspace@example.invalid"], nukeWorkspaceBridge);
 	runTool("git", ["config", "user.name", "Nuke Workspace"], nukeWorkspaceBridge);
+	giveOrigin(tmp, nukeWorkspaceBridge, "nuke-workspace-bridge");
 	const nukeWorkspaceSource = join(nukeWorkspaceBridge, "repos", "source");
 	runTool("git", ["init", "-b", "main"], nukeWorkspaceSource);
 	runTool("git", ["config", "user.email", "nuke-workspace@example.invalid"], nukeWorkspaceSource);
@@ -184,6 +186,9 @@ meta:
 	const nukeConfigBridge = join(tmp, "nuke-config-bridge");
 	mkdirSync(nukeConfigBridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], nukeConfigBridge);
+	runTool("git", ["config", "user.name", "Nuke Config"], nukeConfigBridge);
+	runTool("git", ["config", "user.email", "nuke-config@example.invalid"], nukeConfigBridge);
+	giveOrigin(tmp, nukeConfigBridge, "nuke-config-bridge");
 	const nukeConfigSeed = run(["seed", "--headless", "--file", "AGENTS.md"], nukeConfigBridge, "");
 	assertOk(nukeConfigSeed, "seed before nuke --config failed");
 	const nukeConfigExclude = join(nukeConfigBridge, ".git", "info", "exclude");

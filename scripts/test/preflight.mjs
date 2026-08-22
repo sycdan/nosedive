@@ -14,6 +14,7 @@ import {
 	root,
 	run,
 	gitCommit,
+	giveOrigin,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -92,6 +93,8 @@ function freshGitBridge(name) {
 	const bridge = join(tmp, name);
 	mkdirSync(bridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
+	setIdentity(bridge, "Nosedive Test", "test@nosedive.invalid");
+	giveOrigin(tmp, bridge, name);
 	return bridge;
 }
 
@@ -167,17 +170,16 @@ test("preflight streams its first line before the CLI exits", async () => {
 });
 
 test("preflight fetches trunk and blocks stale bridge knowledge without rebasing", () => {
-	const remote = join(tmp, "sync-remote.git");
-	mkdirSync(remote, { recursive: true });
 	const seed = freshGitBridge("sync-seed");
+	// The origin `freshGitBridge` already published `main` to. Cloned below, so
+	// the two checkouts diverge the way a pilot's and a teammate's do.
+	const remote = join(tmp, "sync-seed-origin.git");
 	setIdentity(seed, "Sync Pilot", "sync-pilot@example.invalid");
 	writeBridgeConfig(seed, { backlog: "./backlog" });
 	write(join(seed, "README.md"), "seed\n");
 	runTool("git", ["add", "--", "."], seed);
 	gitCommit(seed, "seed bridge");
-	runTool("git", ["init", "--bare", "-b", "main"], remote);
-	runTool("git", ["remote", "add", "origin", remote], seed);
-	runTool("git", ["push", "-u", "origin", "main"], seed);
+	runTool("git", ["push"], seed);
 
 	const bridge = join(tmp, "sync-bridge");
 	runTool("git", ["clone", remote, bridge], tmp);

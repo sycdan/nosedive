@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, run, runTool, write } from "../test-helpers.mjs";
+import { assertOk, createTmp, giveOrigin, run, runTool, write } from "../test-helpers.mjs";
 import { createRequire } from "node:module";
 
 const tmp = createTmp("seed-agent-instructions");
@@ -21,6 +21,7 @@ function newBridge(name) {
 	runTool("git", ["init", "-b", "main"], bridgeDir);
 	runTool("git", ["config", "user.name", "Instructions Person"], bridgeDir);
 	runTool("git", ["config", "user.email", "instructions@example.invalid"], bridgeDir);
+	giveOrigin(tmp, bridgeDir, name);
 	return bridgeDir;
 }
 

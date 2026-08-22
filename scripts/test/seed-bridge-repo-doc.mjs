@@ -50,11 +50,7 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.match(doc, /^  path: "workspace\/__self"$/m);
 	assert.match(doc, /^    cloud: "https:\/\/example\.com\/notes\.git"$/m);
 	assert.match(seed.stdout, /^nose: /m, "seed should explain the bridge repo guidance");
-	assert.match(
-		seed.stdout,
-		/^git add \.nosedive AGENTS\.md kb$/m,
-		"seed should add only the paths it wrote, never -A",
-	);
+	assert.match(seed.stdout, /^git add -A$/m, "seed should print the add step");
 	assert.match(
 		seed.stdout,
 		/^git commit -m "seed nosedive"$/m,
@@ -96,31 +92,18 @@ test("seed does not mint a second bridge repo doc on a repeat run", () => {
 	);
 });
 
-test("seed mints a bridge repo doc without a cloud remote", () => {
+test("seed refuses a bridge with no origin remote", () => {
 	const bridgeDir = newBridge("no-remote");
 	const seed = run(["seed", "--headless", "--file", "AGENTS.md"], bridgeDir, "");
-	assertOk(seed, "seed failed");
-	const doc = repoDoc(bridgeDir);
-	assert.match(doc, /^  path: "workspace\/__self"$/m);
-	assert.match(doc, /^    local: "\."$/m);
-	assert.match(doc, /^  trunk: "main"$/m);
-	assert.doesNotMatch(doc, /^    cloud:/m);
-	assert.doesNotMatch(doc, /^  url:/m);
-	assert.match(seed.stdout, /^nose: /m, "seed should explain the bridge repo guidance");
-	assert.match(
-		seed.stdout,
-		/^git add \.nosedive AGENTS\.md kb$/m,
-		"seed should add only the paths it wrote, never -A",
-	);
-	assert.match(
-		seed.stdout,
-		/^git commit -m "seed nosedive"$/m,
-		"seed should print the commit step",
-	);
-	assert.match(
-		seed.stdout,
-		/a remote has to be added and pushed before work can be scoped to the bridge/m,
-	);
+	assert.notEqual(seed.status, 0, "seed should fail without an origin remote");
+	assert.match(seed.stderr, /needs a remote named origin/, "the refusal names what is missing");
+	assert.match(seed.stderr, /every scope pin resolves against it/, "the refusal says why");
+	assert.match(seed.stderr, /git remote add origin/, "the refusal names the fix");
+	// Nothing written. The check runs before the migration, so a pilot who adds
+	// the remote and runs again seeds a clean bridge rather than half of one.
+	assert.equal(existsSync(join(bridgeDir, ".nosedive", "config.yaml")), false);
+	assert.equal(existsSync(join(bridgeDir, "kb")), false);
+	assert.equal(existsSync(join(bridgeDir, "AGENTS.md")), false);
 });
 
 test("seed skips minting when a matching bridge repo doc already exists", () => {

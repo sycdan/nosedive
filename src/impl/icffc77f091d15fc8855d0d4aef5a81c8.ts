@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 
 import { captureCommand } from "./commandAdapter.js";
 
@@ -14,7 +14,6 @@ import {
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
 import {
-	BRIDGE_STATE_DIRNAME,
 	CURRENT_COMPATIBILITY_LEVEL,
 	KNOWN_INSTRUCTION_FILES,
 	MANAGED_INSTRUCTIONS_BEGIN,
@@ -137,11 +136,7 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 	return writes;
 }
 
-function mintBacklogMemo(
-	bridgeDir: string,
-	kbDir: string,
-	io: CommandIo,
-): { id: string; path: string } {
+function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): string {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -169,7 +164,7 @@ function mintBacklogMemo(
 		].join("\n"),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
-	return { id, path };
+	return id;
 }
 
 /**
@@ -204,7 +199,7 @@ function mintBridgeRepoDoc(
 	kbDir: string,
 	homeBranch: string,
 	io: CommandIo,
-): string {
+): void {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -224,7 +219,6 @@ function mintBridgeRepoDoc(
 		}),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
-	return path;
 }
 
 async function seed(args: string[], io: CommandIo): Promise<void> {
@@ -237,6 +231,19 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	const bridgeDir = process.cwd();
 	if (!gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"])) {
 		throw new Error("nosedive seed must be run inside a git repository");
+	}
+	// Checked before the migration and before anything is written, because it
+	// stops costing nothing the moment seed succeeds. Every scope pin resolves
+	// against `origin`, so a bridge without one gets as far as `record.dive` and
+	// dies on `fatal: Needed a single revision` -- a message that names neither
+	// the cause nor the fix, three commands after the point it could have been
+	// fixed for free.
+	if (!gitOutput(bridgeDir, ["remote", "get-url", "origin"])) {
+		throw new Error(
+			"nosedive seed needs a remote named origin, because every scope pin resolves against it. " +
+				"Create an empty repository -- GitHub's free tier is enough -- then either clone it and " +
+				"seed inside the clone, or run `git remote add origin <url>` here.",
+		);
 	}
 
 	await migrateBridgeConfig(bridgeDir, io);
@@ -271,30 +278,17 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	// own workspace is not worth half-creating.
 	assertWorkspaceInsideBridge(bridgeDir, settings.workspace);
 
-	// Where this run wrote, so the guidance below can name those paths instead of
-	// telling the pilot to `git add -A`. A bridge's untracked entries include its
-	// hydrated worktrees, and staging one of those commits another repo's checkout
-	// into the bridge. Minted documents collapse to their directory: the pilot
-	// wants their whole kb staged, and a line of uuid filenames that grows with
-	// every mint is one nobody reads.
-	const written: string[] = [];
-
 	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
 	// L0 already carries the memo its migration minted; a fresh one does not,
 	// and without this update-backlog and dump-backlog have nothing to read.
 	if (!uuidLike(settings.backlog)) {
-		const backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
-		settings.backlog = backlog.id;
-		written.push(dirname(backlog.path));
+		settings.backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
 	}
 
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
 	io.log(`Wrote ${formatPath(basePath)}`);
-	// The directory, not the two files: it holds config.yaml and the ignore rules
-	// that keep its cache out of the commit, and nothing else that is not ours.
-	written.push(join(bridgeDir, BRIDGE_STATE_DIRNAME));
 
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
@@ -304,9 +298,8 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	const remotes = bridgeRemoteUrls(bridgeDir);
 	const knowsItself = docs.some((doc) => {
 		if (doc.kind !== "repo") return false;
-		// A bridge with no remote has no cloud URL to match on, and would
-		// otherwise mint a fresh doc on every run. The workspace path is what it
-		// can be recognised by instead.
+		// Recognises the bridge's own repo doc even after its remote URL has
+		// changed, which matching on `cloud` alone would not.
 		if (doc.metaScalars.path === BRIDGE_SELF_WORKSPACE_PATH) return true;
 		const rawRemotes = doc.metaRaw.remotes;
 		if (!rawRemotes || typeof rawRemotes !== "object" || Array.isArray(rawRemotes)) return false;
@@ -315,13 +308,12 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	});
 	const mintedBridgeRepoDoc = !knowsItself;
 	if (mintedBridgeRepoDoc) {
-		written.push(dirname(mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io)));
+		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
 	}
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
 		io.log(`Wrote ${formatPath(write.path)}`);
-		written.push(write.path);
 	}
 
 	if (mintedBridgeRepoDoc) {
@@ -332,14 +324,13 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		io.log(
 			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${settings.homeBranch} has to exist before work can be scoped to it`,
 		);
-		const addPaths = [...new Set(written.map((path) => formatPath(path)))].sort();
-		io.log(`git add ${addPaths.join(" ")}`);
+		// `-A` is safe here and only here: seed never creates `workspace/`, so
+		// nothing a hydrated worktree could hide under it exists yet, and this
+		// branch runs once. The same advice on a working bridge would stage another
+		// repo's checkout, which is land's hazard to carry.
+		io.log("git add -A");
 		io.log('git commit -m "seed nosedive"');
-		if (remotes.length > 0) {
-			io.log(`git push -u origin ${settings.homeBranch}`);
-		} else {
-			io.log("a remote has to be added and pushed before work can be scoped to the bridge");
-		}
+		io.log(`git push -u origin ${settings.homeBranch}`);
 	}
 
 	io.log(`nosedive pitch "<what you want to build>"`);

@@ -261,6 +261,9 @@ export function createBridge(tmp, name, options) {
 	const bridgeDir = join(tmp, name);
 	mkdirSync(bridgeDir, { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridgeDir);
+	runTool("git", ["config", "user.name", "Nosedive Test"], bridgeDir);
+	runTool("git", ["config", "user.email", "test@nosedive.invalid"], bridgeDir);
+	giveOrigin(tmp, bridgeDir, name);
 	writeBridgeConfig(bridgeDir, options);
 	return bridgeDir;
 }
@@ -271,6 +274,18 @@ export function createBridge(tmp, name, options) {
 // bare remote to publish to, an implementation repo with history, and a seeded
 // bridge that can push. Written once here so a test reads as the workflow it is
 // exercising rather than as its own setup.
+
+/**
+ * A bare `origin` already carrying `main`, for a bridge a fixture built by hand.
+ * `seed` refuses a bridge with no `origin`, and trunk resolution needs that
+ * remote to have a HEAD, which an empty bare repo does not. Requires a git
+ * identity on `bridgeDir`, since it commits there.
+ */
+export function giveOrigin(tmp, bridgeDir, name) {
+	runTool("git", ["remote", "add", "origin", bareRepo(tmp, `${name}-origin.git`)], bridgeDir);
+	runTool("git", ["commit", "--allow-empty", "-m", "base"], bridgeDir);
+	runTool("git", ["push", "-u", "origin", "main"], bridgeDir);
+}
 
 /** An empty bare repository, for use as a remote. */
 export function bareRepo(tmp, name) {
@@ -331,12 +346,10 @@ export function seededBridge(tmp, name, diver) {
 	runTool("git", ["config", "user.name", "Nosedive Test"], bridge);
 	runTool("git", ["config", "user.email", diver], bridge);
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	const origin = bareRepo(tmp, `${name}-origin.git`);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "seed bridge");
-	runTool("git", ["remote", "add", "origin", origin], bridge);
 	runTool("git", ["push", "-u", "origin", "main"], bridge);
-	return { bridge, origin };
+	return { bridge, origin: join(tmp, `${name}-origin.git`) };
 }
 
 /** Pitches a feat and returns where it landed, for fixtures that then edit it. */

@@ -33,7 +33,7 @@ import {
 	renderedSurfaceDigest,
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
-import { loadKbDocs } from "../lib/kbDocs.js";
+import { loadKbDocs, readKbDocById } from "../lib/kbDocs.js";
 import { localTrunk, portableLocalPath, renderRepoDoc } from "../lib/recordRepo.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
@@ -194,12 +194,7 @@ function bridgeRemoteUrls(bridgeDir: string): string[] {
  * only. The name is the bridge directory's basename, which is what the L1
  * migration's `ensureBridgeRepoDoc` also uses.
  */
-function mintBridgeRepoDoc(
-	bridgeDir: string,
-	kbDir: string,
-	homeBranch: string,
-	io: CommandIo,
-): void {
+function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): string {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -210,15 +205,15 @@ function mintBridgeRepoDoc(
 			id,
 			name,
 			workspacePath: BRIDGE_SELF_WORKSPACE_PATH,
-			// A bridge with no commits yet has no resolvable HEAD, and its
-			// configured home branch is the branch it is about to have.
-			trunk: localTrunk(bridgeDir) ?? homeBranch,
+			// The literal is the last resort for a repo with no resolvable HEAD.
+			trunk: localTrunk(bridgeDir) ?? "main",
 			cloud: bridgeRemoteUrls(bridgeDir)[0],
 			local: portableLocalPath(bridgeDir, bridgeDir),
 			registeredBy: "seed",
 		}),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
+	return id;
 }
 
 async function seed(args: string[], io: CommandIo): Promise<void> {
@@ -262,7 +257,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 			settings.workspace = await promptScalar(io, "workspace", settings.workspace);
 			settings.backlog = await promptScalar(io, "backlog", settings.backlog);
 			settings.kb = await promptScalar(io, "kb", settings.kb);
-			settings.homeBranch = await promptScalar(io, "home-branch", settings.homeBranch);
 			settings.workBranchPrefix = await promptScalar(
 				io,
 				"work-branch-prefix",
@@ -285,18 +279,14 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		settings.backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
 	}
 
-	const basePath = baseConfigPath(bridgeDir);
-	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
-	writeNosediveDirGitignore(bridgeDir);
-	io.log(`Wrote ${formatPath(basePath)}`);
-
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
-	// test the L1 migration's `ensureBridgeRepoDoc` applies.
+	// test the L1 migration's `ensureBridgeRepoDoc` applies. This sweep also
+	// backfills `bridge:` for bridges seeded before that config key existed.
 	const kbDir = resolveFrom(bridgeDir, settings.kb);
 	const docs = existsSync(kbDir) ? loadKbDocs(kbDir, bridgeDir) : [];
 	const remotes = bridgeRemoteUrls(bridgeDir);
-	const knowsItself = docs.some((doc) => {
+	const selfDoc = docs.find((doc) => {
 		if (doc.kind !== "repo") return false;
 		// Recognises the bridge's own repo doc even after its remote URL has
 		// changed, which matching on `cloud` alone would not.
@@ -306,10 +296,16 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		const cloud = (rawRemotes as Record<string, unknown>).cloud;
 		return typeof cloud === "string" && remotes.includes(cloud);
 	});
-	const mintedBridgeRepoDoc = !knowsItself;
-	if (mintedBridgeRepoDoc) {
-		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
+	const mintedBridgeRepoDoc = !selfDoc;
+	if (selfDoc && !selfDoc.id) {
+		throw new Error(`bridge repo document ${formatPath(selfDoc.path)} has no id`);
 	}
+	settings.bridge = selfDoc?.id ?? mintBridgeRepoDoc(bridgeDir, kbDir, io);
+
+	const basePath = baseConfigPath(bridgeDir);
+	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
+	writeNosediveDirGitignore(bridgeDir);
+	io.log(`Wrote ${formatPath(basePath)}`);
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
@@ -317,12 +313,13 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	if (mintedBridgeRepoDoc) {
+		const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 		// Says what is true whether the bridge was cloned or `git init`ed. A clone
 		// already carries commits, so "the remote needs a commit" is false there --
 		// what still has to hold either way is that scopes resolve against origin,
 		// so the home branch has to exist on it.
 		io.log(
-			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${settings.homeBranch} has to exist before work can be scoped to it`,
+			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${bridgeBranch} has to exist before work can be scoped to it`,
 		);
 		// `-A` is safe here and only here: seed never creates `workspace/`, so
 		// nothing a hydrated worktree could hide under it exists yet, and this
@@ -330,7 +327,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		// repo's checkout, which is land's hazard to carry.
 		io.log("git add -A");
 		io.log('git commit -m "seed nosedive"');
-		io.log(`git push -u origin ${settings.homeBranch}`);
+		io.log(`git push -u origin ${bridgeBranch}`);
 	}
 
 	io.log(`nosedive pitch "<what you want to build>"`);

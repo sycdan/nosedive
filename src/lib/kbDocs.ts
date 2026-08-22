@@ -124,7 +124,6 @@ export interface BridgeConfig {
 	workspaceDir?: string;
 	backlogDir?: string;
 	kbDir: string;
-	homeBranch?: string;
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
@@ -259,8 +258,8 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 		// ownership, gate feats, repo-feat scoping) works with bridges that still
 		// spell it the old way.
 		kind: fm.scalars.kind === "effort" ? "feat" : fm.scalars.kind,
-		// A doc with no `gist:` has no gist, not the four-character string
-		// `undefined`: the field is typed as present, so every reader would
+		// A doc with no `gist:` has no gist, not the string `undefined`:
+		// the field is typed as present, so every reader would
 		// otherwise have to guard a value the type says cannot happen.
 		gist: fm.scalars.gist ?? "",
 		hasBrief: DIVE_BRIEF_HEADING_PATTERN.test(text),
@@ -289,6 +288,22 @@ export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
 	return readdirSync(kbDir, { withFileTypes: true })
 		.filter((e) => e.isFile() && e.name.endsWith(".md"))
 		.map((e) => readKbDoc(join(kbDir, e.name), bridgeDir));
+}
+
+/**
+ * A kb document's filename is its id, so a quid is a direct address: one file
+ * read instead of parsing every document in the bridge. The id assertion is
+ * what keeps that convention honest -- `readKbDoc` takes whatever `id:` the
+ * frontmatter holds, and nothing else enforces the filename.
+ */
+export function readKbDocById(kbDir: string, bridgeDir: string, id: string): KbDoc | undefined {
+	const path = join(kbDir, `${id}.md`);
+	if (!existsSync(path) || !statSync(path).isFile()) return undefined;
+	const doc = readKbDoc(path, bridgeDir);
+	if (doc.id !== id) {
+		throw new Error(`kb document ${formatPath(path)} declares id ${doc.id ?? "(none)"}`);
+	}
+	return doc;
 }
 
 export function parseRawFrontmatterObject(text: string, label: string): Record<string, unknown> {

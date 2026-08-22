@@ -91,7 +91,6 @@ export const DEFAULT_RC = {
 	workspace: "./workspace",
 	backlog: "./backlog",
 	kb: "./kb",
-	"home-branch": "main",
 	"work-branch-prefix": "work/",
 };
 
@@ -107,7 +106,7 @@ export const BASE_CONFIG_KNOWN_KEYS = [
 	"workspace",
 	"backlog",
 	"kb",
-	"home-branch",
+	"bridge",
 	"work-branch-prefix",
 ] as const;
 

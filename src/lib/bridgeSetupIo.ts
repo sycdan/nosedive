@@ -59,7 +59,7 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		workspace: base.scalars.workspace ?? DEFAULT_RC.workspace,
 		backlog: base.scalars.backlog ?? DEFAULT_RC.backlog,
 		kb: base.scalars.kb ?? DEFAULT_RC.kb,
-		homeBranch: base.scalars["home-branch"] ?? DEFAULT_RC["home-branch"],
+		bridge: base.scalars.bridge ?? "",
 		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
 		pilotName: "",
 		pilotEmail: "",
@@ -73,6 +73,9 @@ const SEEDED_CONFIG_KEYS = new Set([
 	"workspace",
 	"backlog",
 	"kb",
+	"bridge",
+	// Seed rewrites the whole config, so keeping this old key owned deletes it
+	// instead of preserving it forever through `unownedConfigScalars`.
 	"home-branch",
 	"work-branch-prefix",
 ]);
@@ -91,7 +94,7 @@ export function renderBaseConfig(settings: RcSettings, compatibilityLevel: numbe
 		`workspace: ${toPosixPath(settings.workspace)}`,
 		`backlog: ${toPosixPath(settings.backlog)}`,
 		`kb: ${toPosixPath(settings.kb)}`,
-		`home-branch: ${settings.homeBranch}`,
+		`bridge: ${settings.bridge}`,
 		`work-branch-prefix: ${settings.workBranchPrefix}`,
 		...Object.entries(settings.extra).map(([key, value]) => `${key}: ${value}`),
 		"",

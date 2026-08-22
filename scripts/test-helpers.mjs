@@ -278,12 +278,29 @@ export function createBridge(tmp, name, options) {
 /**
  * A bare `origin` already carrying `main`, for a bridge a fixture built by hand.
  * `seed` refuses a bridge with no `origin`, and trunk resolution needs that
- * remote to have a HEAD, which an empty bare repo does not. Requires a git
- * identity on `bridgeDir`, since it commits there.
+ * remote to have a HEAD, which an empty bare repo does not.
+ *
+ * The base commit carries its own identity via `-c` rather than reading the
+ * one on `bridgeDir`, so this can be called before a fixture configures the
+ * identity it wants to assert on. Depending on that ordering passed on a
+ * machine with a global `user.name` and failed on CI, which has none.
  */
 export function giveOrigin(tmp, bridgeDir, name) {
 	runTool("git", ["remote", "add", "origin", bareRepo(tmp, `${name}-origin.git`)], bridgeDir);
-	runTool("git", ["commit", "--allow-empty", "-m", "base"], bridgeDir);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Test",
+			"-c",
+			"user.email=test@nosedive.invalid",
+			"commit",
+			"--allow-empty",
+			"-m",
+			"base",
+		],
+		bridgeDir,
+	);
 	runTool("git", ["push", "-u", "origin", "main"], bridgeDir);
 }
 

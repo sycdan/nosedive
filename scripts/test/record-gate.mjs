@@ -139,10 +139,7 @@ test("record.gate falls back to a timestamp name when a derived slug collides on
 test("record.gate defaults --action to test.gate", () => {
 	const { bridge, featPath } = setup("action-default");
 
-	const recorded = run(
-		["record.gate", "Defaults stay test.gate.", "--feat", "honesty"],
-		bridge,
-	);
+	const recorded = run(["record.gate", "Defaults stay test.gate.", "--feat", "honesty"], bridge);
 	assertOk(recorded, "record.gate failed");
 	const gateId = recordedGateId(recorded.stdout);
 

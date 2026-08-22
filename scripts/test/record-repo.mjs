@@ -31,6 +31,14 @@ function repoFiles(bridge) {
 		.filter((filename) => /^kind: repo$/m.test(readFileSync(join(bridge, "kb", filename), "utf8")));
 }
 
+function repoDocPath(bridge, name) {
+	for (const filename of repoFiles(bridge)) {
+		const doc = readFileSync(join(bridge, "kb", filename), "utf8");
+		if (new RegExp(`^name: ${name}$`, "m").test(doc)) return join(bridge, "kb", filename);
+	}
+	assert.fail(`repo doc ${name} not found`);
+}
+
 function sourceRepo(name) {
 	const path = join(tmp, name);
 	mkdirSync(path, { recursive: true });
@@ -68,9 +76,9 @@ test("record.repo registers a local repository in backlog scopes", () => {
 	const recorded = run(["record.repo", source], bridge);
 	assertOk(recorded, "record.repo local path failed");
 	assert.match(recorded.stdout, /Added alpha-service to backlog scopes/);
-	assert.equal(repoFiles(bridge).length, 1);
+	assert.equal(repoFiles(bridge).length, 2);
 
-	const repoPath = join(bridge, "kb", repoFiles(bridge)[0]);
+	const repoPath = repoDocPath(bridge, "alpha-service");
 	const repo = readFileSync(repoPath, "utf8");
 	const repoId = /^id: (\S+)$/m.exec(repo)?.[1];
 	assert.ok(repoId, "repo doc has no id");
@@ -85,7 +93,7 @@ test("record.repo registers a local repository in backlog scopes", () => {
 	const duplicate = run(["record.repo", source], bridge);
 	assert.notEqual(duplicate.status, 0, "duplicate repository unexpectedly registered");
 	assert.match(duplicate.stderr, /already registered/);
-	assert.equal(repoFiles(bridge).length, 1, "duplicate left a second repo doc");
+	assert.equal(repoFiles(bridge).length, 2, "duplicate left a second repo doc");
 	assert.equal(
 		readFileSync(backlogPath(bridge), "utf8"),
 		backlogBeforeDuplicate,
@@ -104,7 +112,7 @@ test("record.repo validates a clone URL and accepts explicit identity", () => {
 		bridge,
 	);
 	assertOk(recorded, "record.repo clone URL failed");
-	const repo = readFileSync(join(bridge, "kb", repoFiles(bridge)[0]), "utf8");
+	const repo = readFileSync(repoDocPath(bridge, "api-service"), "utf8");
 	assert.match(repo, /^name: api-service$/m);
 	assert.match(
 		repo,

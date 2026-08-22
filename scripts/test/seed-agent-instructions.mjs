@@ -62,7 +62,9 @@ test("seed-agent-instructions", () => {
 		/<!-- BEGIN nosedive managed instructions -->/,
 	);
 	assert.equal(existsSync(join(bareBridge, ".nosedive", ".gitignore")), true);
-	const backlogMemos = readdirSync(join(bareBridge, "kb")).filter((entry) => entry.endsWith(".md"));
+	const backlogMemos = readdirSync(join(bareBridge, "kb"))
+		.filter((entry) => entry.endsWith(".md"))
+		.filter((entry) => /^kind: memo$/m.test(readFileSync(join(bareBridge, "kb", entry), "utf8")));
 	assert.equal(backlogMemos.length, 1, "fresh seed should mint exactly one backlog memo");
 	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Backlog$/m);
 	assert.equal(existsSync(join(bareBridge, "CLAUDE.md")), false);

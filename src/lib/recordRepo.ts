@@ -110,7 +110,7 @@ function remoteHead(remote: string, cwd: string): string | undefined {
 	return /^ref:\s+refs\/heads\/(.+?)\s+HEAD$/m.exec(result.stdout)?.[1];
 }
 
-function localTrunk(path: string): string | undefined {
+export function localTrunk(path: string): string | undefined {
 	const originHead = gitOutput(path, [
 		"symbolic-ref",
 		"--quiet",
@@ -121,7 +121,7 @@ function localTrunk(path: string): string | undefined {
 	return gitOutput(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
 }
 
-function portableLocalPath(path: string, bridgeDir: string): string {
+export function portableLocalPath(path: string, bridgeDir: string): string {
 	if (resolve(path) === resolve(bridgeDir)) return ".";
 	if (isInsideDir(bridgeDir, path)) return gitRelPath(bridgeDir, path);
 	const userHome = resolve(homedir());
@@ -147,13 +147,15 @@ function sameRemote(a: string, b: string, bridgeDir: string): boolean {
 	return resolveRemoteForGit(a, bridgeDir) === resolveRemoteForGit(b, bridgeDir);
 }
 
-function renderRepoDoc(options: {
+export function renderRepoDoc(options: {
 	id: string;
 	name: string;
 	workspacePath: string;
 	trunk: string;
 	cloud?: string;
 	local?: string;
+	/** What minted the doc. `seed` mints one too, and a doc that names the wrong command is drift. */
+	registeredBy?: string;
 }): string {
 	const remotes = [
 		options.cloud ? `    cloud: ${quoteYamlString(options.cloud)}` : undefined,
@@ -174,7 +176,7 @@ function renderRepoDoc(options: {
 		"",
 		`# ${titleFromSlug(options.name)}`,
 		"",
-		"Registered by `nosedive record.repo`. Run `nosedive scan` when this repository needs a sourced workload and quality-gate brief.",
+		`Registered by \`nosedive ${options.registeredBy ?? "record.repo"}\`. Run \`nosedive scan\` when this repository needs a sourced workload and quality-gate brief.`,
 		"",
 	].join("\n");
 }

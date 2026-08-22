@@ -27,6 +27,8 @@ import {
 	renderTopLevelHelp,
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
+import { loadKbDocs } from "../lib/kbDocs.js";
+import { localTrunk, portableLocalPath, renderRepoDoc } from "../lib/recordRepo.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
@@ -35,6 +37,7 @@ const MANAGED_BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const MANAGED_END = "<!-- END nosedive managed instructions -->";
 const MARKER_PAIR = [`  ${MANAGED_BEGIN}`, `  ${MANAGED_END}`].join("\n");
 const NEW_FILE_HEADING = "# Agent Instructions";
+const BRIDGE_SELF_WORKSPACE_PATH = "workspace/__self";
 
 /** Instruction files seed picks up on its own when no `--file` is given. It never creates these. */
 const KNOWN_INSTRUCTION_FILES = [
@@ -166,6 +169,60 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 	return id;
 }
 
+/**
+ * Every remote URL the bridge has, `origin` first. Order decides which one is
+ * recorded as `cloud`, and `git remote` sorts by remote name, so without this
+ * an alphabetically earlier remote would outrank the one the pilot pushes to.
+ */
+function bridgeRemoteUrls(bridgeDir: string): string[] {
+	const names = (gitOutput(bridgeDir, ["remote"]) ?? "").split(/\r?\n/).filter(Boolean);
+	const ordered = names.includes("origin")
+		? ["origin", ...names.filter((name) => name !== "origin")]
+		: names;
+	const urls = ordered
+		.map((name) => gitOutput(bridgeDir, ["remote", "get-url", name]))
+		.filter((url): url is string => Boolean(url));
+	return [...new Set(urls)];
+}
+
+/**
+ * The bridge as one of its own repos, so a fresh bridge has something to scope a
+ * dive to without the pilot discovering `record.repo` first. Rendered by
+ * `record.repo`'s own renderer rather than a second one: two renderers for one
+ * `kind: repo` shape would drift, and this doc has to hydrate through exactly
+ * the same path as any other.
+ *
+ * `__self` is the workspace path, not the name -- `assertSlug` is kebab-case
+ * only. The name is the bridge directory's basename, which is what the L1
+ * migration's `ensureBridgeRepoDoc` also uses.
+ */
+function mintBridgeRepoDoc(
+	bridgeDir: string,
+	kbDir: string,
+	homeBranch: string,
+	io: CommandIo,
+): void {
+	const id = uuid7AtMs(Date.now());
+	const name = basename(bridgeDir);
+	const path = join(kbDir, `${id}.md`);
+	mkdirSync(kbDir, { recursive: true });
+	writeFileAtomic(
+		path,
+		renderRepoDoc({
+			id,
+			name,
+			workspacePath: BRIDGE_SELF_WORKSPACE_PATH,
+			// A bridge with no commits yet has no resolvable HEAD, and its
+			// configured home branch is the branch it is about to have.
+			trunk: localTrunk(bridgeDir) ?? homeBranch,
+			cloud: bridgeRemoteUrls(bridgeDir)[0],
+			local: portableLocalPath(bridgeDir, bridgeDir),
+			registeredBy: "seed",
+		}),
+	);
+	io.log(`Wrote ${formatPath(path)}`);
+}
+
 async function seed(args: string[], io: CommandIo): Promise<void> {
 	const options = parseSeedOptions(args);
 	if (options.help) {
@@ -221,6 +278,27 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
 	io.log(`Wrote ${formatPath(basePath)}`);
+
+	// Seed runs at the start of every session, so this has to be a no-op on a
+	// bridge that already knows itself. Matching on the cloud remote is the same
+	// test the L1 migration's `ensureBridgeRepoDoc` applies.
+	const kbDir = resolveFrom(bridgeDir, settings.kb);
+	const docs = existsSync(kbDir) ? loadKbDocs(kbDir, bridgeDir) : [];
+	const remotes = bridgeRemoteUrls(bridgeDir);
+	const knowsItself = docs.some((doc) => {
+		if (doc.kind !== "repo") return false;
+		// A bridge with no remote has no cloud URL to match on, and would
+		// otherwise mint a fresh doc on every run. The workspace path is what it
+		// can be recognised by instead.
+		if (doc.metaScalars.path === BRIDGE_SELF_WORKSPACE_PATH) return true;
+		const rawRemotes = doc.metaRaw.remotes;
+		if (!rawRemotes || typeof rawRemotes !== "object" || Array.isArray(rawRemotes)) return false;
+		const cloud = (rawRemotes as Record<string, unknown>).cloud;
+		return typeof cloud === "string" && remotes.includes(cloud);
+	});
+	if (!knowsItself) {
+		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
+	}
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);

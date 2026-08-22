@@ -256,7 +256,7 @@ test("land refuses a dirty scoped worktree before running gates or pushing", () 
 
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "land unexpectedly accepted a dirty scoped worktree");
-	assert.match(result.stderr, /land refuses: scoped worktree\(s\) are dirty/);
+	assert.match(result.stderr, /land refused because scoped worktree\(s\) are dirty/);
 	assert.match(result.stderr, new RegExp(`scope ${repoId}`));
 	assert.match(result.stderr, /M README\.md/);
 	assert.match(result.stderr, /Suggested git commands:/);
@@ -358,7 +358,7 @@ test("land silently accepts a scope whose HEAD matches its pin and names no work
 	write(divePath, readFileSync(divePath, "utf8").replace(/^      work-branch: .*\n/m, ""));
 	const result = run(["land"], bridge);
 	assertOk(result, "land unexpectedly refused a scope that matches its pin");
-	assert.doesNotMatch(result.stderr, /land refuses: scope .* is (ahead|behind) pinned ref/);
+	assert.doesNotMatch(result.stderr, /land refused because scope .* is (ahead|behind) pinned ref/);
 	assert.doesNotMatch(result.stderr, /names no work branch/);
 });
 
@@ -425,8 +425,75 @@ test("plain land still refuses a head the remote work branch does not descend fr
 
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "plain land unexpectedly published a rewritten head");
-	assert.match(result.stderr, /failed to push/);
+	assert.match(result.stderr, new RegExp(`scope ${repoId} does not descend from`));
+	assert.match(result.stderr, new RegExp(escapeRegExp(workBranch)));
+	assert.match(result.stderr, /land --hard/, "the rewrite case names the flag that publishes it");
+	assert.doesNotMatch(result.stderr, /land: no land gates selected/, "refused before gates");
 	assert.equal(remoteWorkBranch(source), pin, "a refused plain land must not move the remote");
+});
+
+/**
+ * The second and every later dive of a feat: the previous land moved the work
+ * branch, so this dive's pin is behind it and the push cannot fast-forward.
+ * That was only discovered after a full gate run, and the recovery -- repin and
+ * replay -- was nowhere in the output.
+ */
+test("land refuses a scope whose work branch has moved past the pin, before running gates", () => {
+	const { bridge, worktree, diveId } = setup("branch-moved-past-pin");
+	const source = join(tmp, "branch-moved-past-pin-source");
+	const pin = scopePin(bridge, diveId);
+	write(join(source, "earlier-dive.txt"), "an earlier dive landed here\n");
+	runTool("git", ["add", "earlier-dive.txt"], source);
+	gitCommit(source, "an earlier dive's land");
+	const advanced = runTool("git", ["rev-parse", "HEAD"], source).stdout.trim();
+	runTool("git", ["branch", workBranch, advanced], source);
+	gitCommitEmpty(worktree, "landable work");
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly attempted a push that cannot fast-forward");
+	assert.match(result.stderr, new RegExp(`scope ${repoId} cannot fast-forward`));
+	assert.match(result.stderr, new RegExp(escapeRegExp(workBranch)), "name the branch");
+	assert.match(result.stderr, new RegExp(advanced), "name where the branch stands");
+	assert.match(result.stderr, new RegExp(pin), "and the pin this dive holds");
+	assert.match(
+		result.stderr,
+		new RegExp(`record\.dive --ref ${diveId} --repin`),
+		"name the repin that fixes it",
+	);
+	assert.match(result.stderr, / pack$/m, "and the pack that saves the work first");
+	assert.match(result.stderr, new RegExp(` jump ${diveId}$`, "m"), "and the replay");
+	assert.doesNotMatch(result.stderr, /land: no land gates selected/, "refused before gates");
+	assert.doesNotMatch(result.stderr, /land: pushing scope/);
+	assert.equal(remoteWorkBranch(source), advanced, "a refused land must not move the remote");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^kind: dive$/m,
+		"a refused land must leave the dive open",
+	);
+});
+
+test("land publishes a scope whose work branch it already contains", () => {
+	const { bridge, worktree, diveId } = setup("branch-already-contained");
+	const source = join(tmp, "branch-already-contained-source");
+	runTool("git", ["branch", workBranch, scopePin(bridge, diveId)], source);
+	gitCommitEmpty(worktree, "landable work");
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+
+	assertOk(run(["land"], bridge), "land refused a plain fast-forward");
+	assert.equal(remoteWorkBranch(source), head, "the fast-forward must publish");
+});
+
+test("land --hard refuses a moved work branch before running gates", () => {
+	const { bridge, worktree } = setup("hard-stale-lease-pregate");
+	const source = join(tmp, "hard-stale-lease-pregate-source");
+	gitCommitEmpty(source, "third-party work on the shared branch");
+	runTool("git", ["branch", workBranch, "HEAD"], source);
+	gitCommitEmpty(worktree, "landable work");
+
+	const result = run(["land", "--hard"], bridge);
+	assert.notEqual(result.status, 0, "land --hard unexpectedly replaced a branch that had moved");
+	assert.match(result.stderr, /moved since this dive was pinned/);
+	assert.doesNotMatch(result.stderr, /land: no land gates selected/, "refused before gates");
 });
 
 test("land --hard refuses when the remote work branch has moved away from the pin", () => {

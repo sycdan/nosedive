@@ -9,6 +9,7 @@ import { writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureSafeTargetPath,
 	gitRun,
+	normalizePathForComparison,
 	parseRepoMarkerStrict,
 	realpathStable,
 } from "./repoWorkspaceCore.js";
@@ -29,7 +30,9 @@ export function worktreeHasExpectedSource(targetPath: string, sourcePath: string
 
 	const sourceCommonPath = realpathStable(resolveFrom(sourcePath, sourceCommonRaw));
 	const targetCommonPath = realpathStable(resolveFrom(targetPath, targetCommonRaw));
-	return sourceCommonPath === targetCommonPath;
+	return (
+		normalizePathForComparison(sourceCommonPath) === normalizePathForComparison(targetCommonPath)
+	);
 }
 export function maybeFetchSource(sourcePath: string, repoId: string): void {
 	const remotes = gitOutput(sourcePath, ["remote"]);
@@ -149,7 +152,10 @@ export function resolveDehydrateTargetFromPath(
 	ensureSafeTargetPath(repoDoc.id, targetPath, workspaceDir);
 
 	const inputTargetPath = resolved.endsWith(".nosedive-ref") ? dirname(resolved) : resolved;
-	if (realpathStable(inputTargetPath) !== realpathStable(targetPath)) {
+	if (
+		normalizePathForComparison(realpathStable(inputTargetPath)) !==
+		normalizePathForComparison(realpathStable(targetPath))
+	) {
 		throw new Error(
 			`unsafe dehydrate target path: ${formatPath(inputTargetPath)} does not match configured workspace target ${formatPath(targetPath)} for repo ${repoDoc.id}`,
 		);

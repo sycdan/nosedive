@@ -302,6 +302,8 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		writeFileAtomic(write.path, write.content);
 		io.log(`Wrote ${formatPath(write.path)}`);
 	}
+
+	io.log(`nosedive pitch "<what you want to build>"`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

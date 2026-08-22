@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { test } from "node:test";
 
 import { createTmp, run, runTool, write, writeBridgeConfig } from "../test-helpers.mjs";
 
+const repoRoot = join(import.meta.dirname, "..", "..");
 const tmp = createTmp("into");
 
 test("into warns and delegates to the plan prompt", () => {
@@ -96,4 +97,37 @@ test("into distinguishes own, foreign, and unheld marked dives", () => {
 	assert.match(freeResult.stdout, new RegExp(`unheld marked dive ${free.diveId}`));
 	assert.match(freeResult.stdout, /Held test dive.*1 patch chain/);
 	assert.match(freeResult.stdout, new RegExp(`record\.dive --ref ${free.diveId}`));
+});
+
+function walk(dir, out) {
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) walk(path, out);
+		else out.push(path);
+	}
+}
+
+test("no file under src/, scripts/, or README.md recommends running into", () => {
+	// into's own deprecation-warning source and its own test are allowed to
+	// name the word; every other place should point at `plan` instead.
+	const allowed = new Set(
+		["src/impl/i0995c54d2e345db7839c9268c38c3ab0.ts", "scripts/test/into.mjs"].map((rel) =>
+			join(repoRoot, rel),
+		),
+	);
+	const recommendationPattern =
+		/(run|start(?:ed|ing)? (?:it|one|a new one)) (?:it )?(?:with )?`?nosedive into\b|with `into`|start.{0,20}with `into`/i;
+
+	const files = [];
+	walk(join(repoRoot, "src"), files);
+	walk(join(repoRoot, "scripts"), files);
+	files.push(join(repoRoot, "README.md"));
+
+	const offenders = [];
+	for (const path of files) {
+		if (allowed.has(path)) continue;
+		const text = readFileSync(path, "utf8");
+		if (recommendationPattern.test(text)) offenders.push(relative(repoRoot, path));
+	}
+	assert.deepEqual(offenders, [], `these files recommend running into:\n${offenders.join("\n")}`);
 });

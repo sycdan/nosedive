@@ -200,6 +200,12 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 			"m",
 		),
 	);
+	const id = /^id: (\S+)$/m.exec(doc)[1];
+	assert.match(
+		result.stdout,
+		new RegExp(`^nosedive jump kb/${id}\\.md$`, "m"),
+		"record.dive should end by naming jump on the new dive",
+	);
 });
 
 test("record.dive accepts --effort as a compatibility alias", () => {
@@ -1351,5 +1357,5 @@ test("record.dive refuses contradictory or homeless scope edits", () => {
 
 	const homeless = run(["record.dive", "--ref", id, "--work-branch", "release/x"], bridge);
 	assert.notEqual(homeless.status, 0, "a branch with nothing to apply it to is a mistake");
-	assert.match(homeless.stderr, /--work-branch requires at least one --upscope/);
+	assert.match(homeless.stderr, /--upscope <repo>/);
 });

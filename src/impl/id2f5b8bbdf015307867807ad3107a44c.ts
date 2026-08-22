@@ -378,6 +378,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
+	io.log("nosedive preflight");
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

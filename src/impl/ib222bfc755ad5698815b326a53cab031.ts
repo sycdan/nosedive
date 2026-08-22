@@ -13,7 +13,9 @@ import {
 	mintFeatId,
 	parsePitchArgs,
 	renderPitchedFeat,
+	repoDocs,
 } from "../lib/kbDocs.js";
+import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { appendLinkToDoc, featDocs, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
@@ -40,8 +42,28 @@ function pitch(args: string[], io: CommandIo): void {
 
 	io.log(`Pitched ${formatPath(path)}`);
 	// The backlog renders from its own links, so an unparented feat is reachable
-	// from nothing until the memo names it.
-	if (!parent) io.log(`Add it to the backlog with: nosedive update-backlog --inject ${id}`);
+	// from nothing until something names it. A parented feat is already
+	// reachable through its parent, so only an unparented feat gets injected --
+	// otherwise the feat would hang off two roots at once.
+	if (!parent) {
+		const updatedKbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+		const featDoc = updatedKbDocs.find((doc) => doc.id === id);
+		if (!featDoc) throw new Error(`pitched doc not found after write: ${id}`);
+		try {
+			injectDocsIntoBacklogMemo(rc, updatedKbDocs, [featDoc], io);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			io.log(`Could not link it to the backlog: ${message}`);
+			io.log(`Finish it by hand with: nosedive update-backlog --inject ${id}`);
+		}
+	}
+
+	const repos = repoDocs(loadKbDocs(rc.kbDir, rc.bridgeDir));
+	const repoName = repos.length === 1 ? repos[0]!.name : "<repo>";
+	io.log(
+		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>" ` +
+			`--upscope ${repoName} --work-branch work/${name}`,
+	);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

@@ -410,17 +410,14 @@ test("a pitch under a linked parent reaches the backlog with no further step", (
 	);
 });
 
-test("a pitch with no parent says how to reach the backlog", () => {
+test("a pitch with no parent links itself into the backlog memo", () => {
 	const bridge = seeded("update-backlog-pitch-orphan");
 	const path = standardTree(bridge);
 
 	const pitched = run(["pitch", "Nobody's child.", "--name", "orphan"], bridge);
 	assertOk(pitched, "pitch failed");
-	const hint = /nosedive update-backlog --inject ([0-9a-f-]+)$/m.exec(pitched.stdout);
-	assert.ok(hint, `pitch did not point at --inject:\n${pitched.stdout}`);
+	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
-	assert.doesNotMatch(readFileSync(path, "utf8"), /Nobody's child/);
-	assertOk(run(["update-backlog", "--inject", hint[1]], bridge), "the printed --inject failed");
 	assert.match(readFileSync(path, "utf8"), /^- \[Orphan\]\(.*\.md\): Nobody's child\.$/m);
 });

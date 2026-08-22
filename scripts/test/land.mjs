@@ -186,6 +186,7 @@ test("land retains the worktree at the pushed HEAD commit", () => {
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
 	);
 	assert.equal((commitBody.match(/Co-Authored-By: nosedive/g) ?? []).length, 1);
+	assert.match(result.stdout, /^nosedive preflight$/m, "land should end by naming preflight");
 });
 
 /**

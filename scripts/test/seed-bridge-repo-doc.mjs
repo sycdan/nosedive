@@ -49,6 +49,11 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.match(doc, new RegExp(`^name: ${basename(bridgeDir)}$`, "m"));
 	assert.match(doc, /^  path: "workspace\/__self"$/m);
 	assert.match(doc, /^    cloud: "https:\/\/example\.com\/notes\.git"$/m);
+	assert.match(
+		seed.stdout,
+		/^nosedive pitch "<what you want to build>"$/m,
+		"seed should end by naming pitch",
+	);
 });
 
 test("seed does not mint a second bridge repo doc on a repeat run", () => {

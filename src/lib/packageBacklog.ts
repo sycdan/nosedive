@@ -68,6 +68,45 @@ export function renderedSurfaceDigest(): string {
 		.slice(0, 8);
 }
 
+function parseCalVer(version: string): [number, number, number] | undefined {
+	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+	if (!match) return undefined;
+	return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareCalVer(left: string, right: string): number | undefined {
+	const leftParts = parseCalVer(left);
+	const rightParts = parseCalVer(right);
+	if (!leftParts || !rightParts) return undefined;
+	for (let index = 0; index < leftParts.length; index += 1) {
+		const delta = leftParts[index] - rightParts[index];
+		if (delta !== 0) return delta;
+	}
+	return 0;
+}
+
+export function describeInstructionDrift(options: {
+	file: string;
+	stamped?: { version: string; digest: string };
+	installedVersion: string;
+	installedDigest: string;
+}): string | undefined {
+	if (options.stamped === undefined) {
+		return `nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}. Run: nosedive seed`;
+	}
+	if (options.stamped.digest === options.installedDigest) return undefined;
+	const comparison = compareCalVer(options.stamped.version, options.installedVersion);
+	if (comparison !== undefined) {
+		if (comparison > 0) {
+			return `nose: ${options.file}'s agent instructions come from nosedive ${options.stamped.version}; you have ${options.installedVersion}. Run: npm i -g nosedive@latest`;
+		}
+		if (comparison < 0) {
+			return `nose: your nosedive renders commands ${options.file}'s agent instructions do not list. Run: nosedive seed`;
+		}
+	}
+	return `nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}. Run: nosedive seed`;
+}
+
 export function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {
 	const kbDir = join(packageRoot(), "kb");
 	if (!existsSync(kbDir)) return [];

@@ -13,7 +13,12 @@ import {
 	promptScalar,
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
-import { CURRENT_COMPATIBILITY_LEVEL } from "../lib/constants.js";
+import {
+	CURRENT_COMPATIBILITY_LEVEL,
+	KNOWN_INSTRUCTION_FILES,
+	MANAGED_INSTRUCTIONS_BEGIN,
+	MANAGED_INSTRUCTIONS_END,
+} from "../lib/constants.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
@@ -34,19 +39,11 @@ import { gitOutput } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
 
-const MANAGED_BEGIN = "<!-- BEGIN nosedive managed instructions -->";
-const MANAGED_END = "<!-- END nosedive managed instructions -->";
+const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
+const MANAGED_END = MANAGED_INSTRUCTIONS_END;
 const MARKER_PAIR = [`  ${MANAGED_BEGIN}`, `  ${MANAGED_END}`].join("\n");
 const NEW_FILE_HEADING = "# Agent Instructions";
 const BRIDGE_SELF_WORKSPACE_PATH = "workspace/__self";
-
-/** Instruction files seed picks up on its own when no `--file` is given. It never creates these. */
-const KNOWN_INSTRUCTION_FILES = [
-	"AGENTS.md",
-	"CLAUDE.md",
-	"GEMINI.md",
-	".github/copilot-instructions.md",
-];
 
 interface InstructionWrite {
 	path: string;

@@ -429,6 +429,35 @@ test("preflight leaves a wired core.hooksPath hook untouched and reports", () =>
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
 });
 
+test("preflight stays silent for seeded instructions with the current digest", () => {
+	const bridge = createBridge(tmp, "instruction-silent-bridge");
+	setIdentity(bridge, "Silent Pilot", "silent-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight failed");
+	assert.doesNotMatch(preflight.stdout, /^nose: .*instructions/m);
+});
+
+test("preflight reports instruction drift without rewriting the file", () => {
+	const bridge = createBridge(tmp, "instruction-drift-bridge");
+	setIdentity(bridge, "Drift Pilot", "drift-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const instructionsPath = join(bridge, "AGENTS.md");
+	const before = readFileSync(instructionsPath, "utf8");
+	const altered = before.replace(/surface=([0-9a-f]{8})/, (match, digest) => {
+		const char = digest[7] === "0" ? "1" : "0";
+		return `surface=${digest.slice(0, 7)}${char}`;
+	});
+	write(instructionsPath, altered);
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight failed");
+	assert.match(preflight.stdout, /^nose: AGENTS\.md.*Run: nosedive seed$/m);
+	assert.equal(readFileSync(instructionsPath, "utf8"), altered);
+	assert.notEqual(readFileSync(instructionsPath, "utf8"), before);
+});
+
 test("preflight reports bridge status, pilot identity and the active dive, and no backlog", () => {
 	const bridge = createBridge(tmp, "report-bridge");
 	setIdentity(bridge, "Report Pilot", "report-pilot@example.invalid");

@@ -11,7 +11,9 @@ const tmp = createTmp("seed-agent-instructions");
 const BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const END = "<!-- END nosedive managed instructions -->";
 const require = createRequire(import.meta.url);
-const { renderedSurfaceDigest } = require(join(process.cwd(), "dist", "nosedive.js"));
+const { describeInstructionDrift, renderedSurfaceDigest } = require(
+	join(process.cwd(), "dist", "nosedive.js"),
+);
 
 function newBridge(name) {
 	const bridgeDir = join(tmp, name);
@@ -56,6 +58,62 @@ function assertManagedBlock(text, label) {
 		assert.match(useWhen, /^Use when: \S/, `${label} command ${command} has no Use when line`);
 	}
 }
+
+test("describeInstructionDrift handles comparative and digest-based drift", () => {
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.9.1", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12345",
+		}),
+		undefined,
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.9.1", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's agent instructions come from nosedive 2026.9.1; you have 2026.8.21. Run: npm i -g nosedive@latest",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.9", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: your nosedive renders commands AGENTS.md's agent instructions do not list. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.21", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.21", digest: "abc12345" },
+			installedVersion: "0.0.0-dev",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 0.0.0-dev. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
+	);
+});
 
 test("seed-agent-instructions", () => {
 	const digest = renderedSurfaceDigest();

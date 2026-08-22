@@ -17,6 +17,8 @@ export interface RecordGateOptions {
 	height?: number;
 	/** `test-is-flaky` on the minted link; a flaky gate reports but never blocks. */
 	flaky: boolean;
+	/** Which rel to mint on the feat: `test.gate` (default) or `land.gate`. */
+	action: "test" | "land";
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -31,6 +33,7 @@ export function parseRecordGateArgs(args: string[]): RecordGateOptions {
 	let name: string | undefined;
 	let height: number | undefined;
 	let flaky = false;
+	let action: "test" | "land" = "test";
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
@@ -38,7 +41,7 @@ export function parseRecordGateArgs(args: string[]): RecordGateOptions {
 			flaky = true;
 			continue;
 		}
-		const flag = ["--feat", "--name", "--height"].find(
+		const flag = ["--feat", "--name", "--height", "--action"].find(
 			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
 		);
 		if (!flag) {
@@ -52,17 +55,21 @@ export function parseRecordGateArgs(args: string[]): RecordGateOptions {
 		if (arg === flag) i += 1;
 		if (flag === "--feat") feat = value;
 		else if (flag === "--name") name = assertSlug(value, "--name");
-		else {
+		else if (flag === "--action") {
+			if (value !== "test" && value !== "land")
+				throw new Error(`--action must be test or land: ${value}`);
+			action = value;
+		} else {
 			if (!/^-?\d+$/.test(value.trim())) throw new Error(`--height must be an integer: ${value}`);
 			height = Number.parseInt(value.trim(), 10);
 		}
 	}
 
 	if (gist === undefined || !gist.trim()) throw new Error("record.gate requires a gist");
-	// A test.gate has to be declared where a feat is in context, or a failing
+	// A gate has to be declared where a feat is in context, or a failing
 	// backlog sweep has nothing to mint work against.
 	if (!feat) throw new Error("record.gate requires --feat");
-	return { gist: gist.trim(), feat, name, height, flaky };
+	return { gist: gist.trim(), feat, name, height, flaky, action };
 }
 
 /**
@@ -158,7 +165,7 @@ export function recordGate(args: string[], io: CommandIo): void {
 	// nothing usable, rather than refusing to mint a runnable gate at all.
 	const existingGateNames = new Set(
 		feat.links
-			.filter((link) => link.rel === "test.gate")
+			.filter((link) => link.rel === "test.gate" || link.rel === "land.gate")
 			.map((link) => kbDocs.find((doc) => doc.id === link.id)?.name)
 			.filter((docName): docName is string => docName !== undefined),
 	);
@@ -176,10 +183,16 @@ export function recordGate(args: string[], io: CommandIo): void {
 	mkdirSync(join(rc.kbDir, "artifacts"), { recursive: true });
 	writeFileAtomic(scriptPath, renderGateStub(scriptRel));
 	writeFileAtomic(docPath, renderGateDoc(id, name, options.gist, scriptRel));
-	appendLinkToDoc(feat.path, id, "test.gate", gateLinkAttrs(options));
+	appendLinkToDoc(feat.path, id, `${options.action}.gate`, gateLinkAttrs(options));
 
 	io.log(`Recorded ${formatPath(docPath)}`);
 	io.log(`Wrote ${formatPath(scriptPath)}`);
-	io.log(`Declared test.gate on ${formatPath(feat.path)}`);
-	io.log(`It fails until written. Run it with: nosedive test ${id}`);
+	if (options.action === "land") {
+		io.log(`Declared land.gate on ${formatPath(feat.path)}`);
+		io.log(`It blocks nosedive land until it passes.`);
+		io.log(`It fails until written. Run it with: nosedive test ${id}`);
+	} else {
+		io.log(`Declared test.gate on ${formatPath(feat.path)}`);
+		io.log(`It fails until written. Run it with: nosedive test ${id}`);
+	}
 }

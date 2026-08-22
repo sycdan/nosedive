@@ -136,6 +136,73 @@ test("record.gate falls back to a timestamp name when a derived slug collides on
 	assert.match(secondDoc, /^name: new-gate-\d{4}-\d{2}-\d{2}-\d{6}$/m);
 });
 
+test("record.gate defaults --action to test.gate", () => {
+	const { bridge, featPath } = setup("action-default");
+
+	const recorded = run(
+		["record.gate", "Defaults stay test.gate.", "--feat", "honesty"],
+		bridge,
+	);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+
+	assert.match(
+		readFileSync(featPath, "utf8"),
+		new RegExp(`- kb/${gateId}\\.md:\\n      rel: test\\.gate`),
+		"the default must declare test.gate",
+	);
+	assert.match(recorded.stdout, /Declared test\.gate on/);
+	assert.match(recorded.stdout, new RegExp(`Run it with: nosedive test ${gateId}`));
+});
+
+test("--action land declares land.gate on the feat, blocking nosedive land", () => {
+	const { bridge, featPath } = setup("action-land");
+
+	const recorded = run(
+		["record.gate", "Publication is conditional on this.", "--feat", "honesty", "--action", "land"],
+		bridge,
+	);
+	assertOk(recorded, "record.gate --action land failed");
+	const gateId = recordedGateId(recorded.stdout);
+
+	assert.match(
+		readFileSync(featPath, "utf8"),
+		new RegExp(`- kb/${gateId}\\.md:\\n      rel: land\\.gate`),
+		"--action land must declare land.gate",
+	);
+	assert.match(recorded.stdout, /Declared land\.gate on/);
+	assert.match(recorded.stdout, /blocks nosedive land/);
+	assert.match(recorded.stdout, new RegExp(`Run it with: nosedive test ${gateId}`));
+
+	// namedGate resolves a gate by uuid without filtering on rel, so the land
+	// gate runs the same way a test gate would.
+	const ran = run(["test", gateId], bridge);
+	assert.notEqual(ran.status, 0, "a freshly minted gate must fail");
+	assert.match(ran.stderr, new RegExp(`gate ${gateId} is unimplemented`));
+});
+
+test("--action=land also works, and an unknown --action value is refused", () => {
+	const { bridge, featPath } = setup("action-equals-and-refusal");
+
+	const recorded = run(
+		["record.gate", "Equals form.", "--feat", "honesty", "--action=land"],
+		bridge,
+	);
+	assertOk(recorded, "record.gate --action=land failed");
+	const gateId = recordedGateId(recorded.stdout);
+	assert.match(
+		readFileSync(featPath, "utf8"),
+		new RegExp(`- kb/${gateId}\\.md:\\n      rel: land\\.gate`),
+	);
+
+	const badAction = run(
+		["record.gate", "Bad action.", "--feat", "honesty", "--action", "publish"],
+		bridge,
+	);
+	assert.notEqual(badAction.status, 0);
+	assert.match(badAction.stderr, /--action must be test or land: publish/);
+});
+
 test("record.gate refuses what it cannot mint a runnable gate from", () => {
 	const { bridge, featId } = setup("refusals");
 	const noFeat = run(["record.gate", "Unowned."], bridge);

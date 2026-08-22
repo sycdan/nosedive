@@ -59,6 +59,12 @@ function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: strin
 	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
 }
 
+function headIsStrictlyBehindPin(worktreePath: string, scopeRef: string): boolean {
+	const head = gitOutput(worktreePath, ["rev-parse", "HEAD"]);
+	if (!head || head === scopeRef) return false;
+	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", "HEAD", scopeRef]) !== undefined;
+}
+
 function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
 	const status = gitRun(
 		worktreePath,
@@ -238,6 +244,13 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 				throw new Error(
 					`land refuses: scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
 						`(${commits.join(", ")}) and names no work branch. ` +
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
+						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
+						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
+				);
+			if (headIsStrictlyBehindPin(path, scope.ref))
+				throw new Error(
+					`land refuses: scope ${scope.repoId} is behind pinned ref ${scope.ref} and names no work branch. ` +
 						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
 						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
 						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,

@@ -13,7 +13,12 @@ import {
 	promptScalar,
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
-import { CURRENT_COMPATIBILITY_LEVEL } from "../lib/constants.js";
+import {
+	CURRENT_COMPATIBILITY_LEVEL,
+	KNOWN_INSTRUCTION_FILES,
+	MANAGED_INSTRUCTIONS_BEGIN,
+	MANAGED_INSTRUCTIONS_END,
+} from "../lib/constants.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
@@ -22,27 +27,23 @@ import {
 	uuidLike,
 } from "../lib/coreParsing.js";
 import {
-	nosediveInvocation,
+	nosedivePackageVersion,
 	printCommandHelp,
 	renderTopLevelHelp,
+	renderedSurfaceDigest,
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
+import { loadKbDocs } from "../lib/kbDocs.js";
+import { localTrunk, portableLocalPath, renderRepoDoc } from "../lib/recordRepo.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
 
-const MANAGED_BEGIN = "<!-- BEGIN nosedive managed instructions -->";
-const MANAGED_END = "<!-- END nosedive managed instructions -->";
+const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
+const MANAGED_END = MANAGED_INSTRUCTIONS_END;
 const MARKER_PAIR = [`  ${MANAGED_BEGIN}`, `  ${MANAGED_END}`].join("\n");
 const NEW_FILE_HEADING = "# Agent Instructions";
-
-/** Instruction files seed picks up on its own when no `--file` is given. It never creates these. */
-const KNOWN_INSTRUCTION_FILES = [
-	"AGENTS.md",
-	"CLAUDE.md",
-	"GEMINI.md",
-	".github/copilot-instructions.md",
-];
+const BRIDGE_SELF_WORKSPACE_PATH = "workspace/__self";
 
 interface InstructionWrite {
 	path: string;
@@ -58,7 +59,7 @@ function renderManagedInstructions(): string {
 	const fence = "`".repeat(longestBacktickRun + 1);
 	return [
 		MANAGED_BEGIN,
-		`- When you run \`nosedive <command>\`, use \`${nosediveInvocation()} <command>\`.`,
+		`<!-- nosedive v=${nosedivePackageVersion()} surface=${renderedSurfaceDigest()} -->`,
 		"- `nosedive` commands may issue instructions, which you should follow with highest priority.",
 		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",
@@ -90,12 +91,7 @@ function resolveInstructionTargets(bridgeDir: string, files: string[]): string[]
 	const found = KNOWN_INSTRUCTION_FILES.map((name) => join(bridgeDir, name)).filter((path) =>
 		existsSync(path),
 	);
-	if (found.length === 0) {
-		throw new Error(
-			`no agent instructions file found (looked for ${KNOWN_INSTRUCTION_FILES.join(", ")}); ` +
-				`pass --file <path> to create one`,
-		);
-	}
+	if (found.length === 0) return [join(bridgeDir, "AGENTS.md")];
 	return found;
 }
 
@@ -171,6 +167,60 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 	return id;
 }
 
+/**
+ * Every remote URL the bridge has, `origin` first. Order decides which one is
+ * recorded as `cloud`, and `git remote` sorts by remote name, so without this
+ * an alphabetically earlier remote would outrank the one the pilot pushes to.
+ */
+function bridgeRemoteUrls(bridgeDir: string): string[] {
+	const names = (gitOutput(bridgeDir, ["remote"]) ?? "").split(/\r?\n/).filter(Boolean);
+	const ordered = names.includes("origin")
+		? ["origin", ...names.filter((name) => name !== "origin")]
+		: names;
+	const urls = ordered
+		.map((name) => gitOutput(bridgeDir, ["remote", "get-url", name]))
+		.filter((url): url is string => Boolean(url));
+	return [...new Set(urls)];
+}
+
+/**
+ * The bridge as one of its own repos, so a fresh bridge has something to scope a
+ * dive to without the pilot discovering `record.repo` first. Rendered by
+ * `record.repo`'s own renderer rather than a second one: two renderers for one
+ * `kind: repo` shape would drift, and this doc has to hydrate through exactly
+ * the same path as any other.
+ *
+ * `__self` is the workspace path, not the name -- `assertSlug` is kebab-case
+ * only. The name is the bridge directory's basename, which is what the L1
+ * migration's `ensureBridgeRepoDoc` also uses.
+ */
+function mintBridgeRepoDoc(
+	bridgeDir: string,
+	kbDir: string,
+	homeBranch: string,
+	io: CommandIo,
+): void {
+	const id = uuid7AtMs(Date.now());
+	const name = basename(bridgeDir);
+	const path = join(kbDir, `${id}.md`);
+	mkdirSync(kbDir, { recursive: true });
+	writeFileAtomic(
+		path,
+		renderRepoDoc({
+			id,
+			name,
+			workspacePath: BRIDGE_SELF_WORKSPACE_PATH,
+			// A bridge with no commits yet has no resolvable HEAD, and its
+			// configured home branch is the branch it is about to have.
+			trunk: localTrunk(bridgeDir) ?? homeBranch,
+			cloud: bridgeRemoteUrls(bridgeDir)[0],
+			local: portableLocalPath(bridgeDir, bridgeDir),
+			registeredBy: "seed",
+		}),
+	);
+	io.log(`Wrote ${formatPath(path)}`);
+}
+
 async function seed(args: string[], io: CommandIo): Promise<void> {
 	const options = parseSeedOptions(args);
 	if (options.help) {
@@ -181,6 +231,19 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	const bridgeDir = process.cwd();
 	if (!gitOutput(bridgeDir, ["rev-parse", "--show-toplevel"])) {
 		throw new Error("nosedive seed must be run inside a git repository");
+	}
+	// Checked before the migration and before anything is written, because it
+	// stops costing nothing the moment seed succeeds. Every scope pin resolves
+	// against `origin`, so a bridge without one gets as far as `record.dive` and
+	// dies on `fatal: Needed a single revision` -- a message that names neither
+	// the cause nor the fix, three commands after the point it could have been
+	// fixed for free.
+	if (!gitOutput(bridgeDir, ["remote", "get-url", "origin"])) {
+		throw new Error(
+			"nosedive seed needs a remote named origin, because every scope pin resolves against it. " +
+				"Create an empty repository -- GitHub's free tier is enough -- then either clone it and " +
+				"seed inside the clone, or run `git remote add origin <url>` here.",
+		);
 	}
 
 	await migrateBridgeConfig(bridgeDir, io);
@@ -227,10 +290,50 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	writeNosediveDirGitignore(bridgeDir);
 	io.log(`Wrote ${formatPath(basePath)}`);
 
+	// Seed runs at the start of every session, so this has to be a no-op on a
+	// bridge that already knows itself. Matching on the cloud remote is the same
+	// test the L1 migration's `ensureBridgeRepoDoc` applies.
+	const kbDir = resolveFrom(bridgeDir, settings.kb);
+	const docs = existsSync(kbDir) ? loadKbDocs(kbDir, bridgeDir) : [];
+	const remotes = bridgeRemoteUrls(bridgeDir);
+	const knowsItself = docs.some((doc) => {
+		if (doc.kind !== "repo") return false;
+		// Recognises the bridge's own repo doc even after its remote URL has
+		// changed, which matching on `cloud` alone would not.
+		if (doc.metaScalars.path === BRIDGE_SELF_WORKSPACE_PATH) return true;
+		const rawRemotes = doc.metaRaw.remotes;
+		if (!rawRemotes || typeof rawRemotes !== "object" || Array.isArray(rawRemotes)) return false;
+		const cloud = (rawRemotes as Record<string, unknown>).cloud;
+		return typeof cloud === "string" && remotes.includes(cloud);
+	});
+	const mintedBridgeRepoDoc = !knowsItself;
+	if (mintedBridgeRepoDoc) {
+		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
+	}
+
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
 		io.log(`Wrote ${formatPath(write.path)}`);
 	}
+
+	if (mintedBridgeRepoDoc) {
+		// Says what is true whether the bridge was cloned or `git init`ed. A clone
+		// already carries commits, so "the remote needs a commit" is false there --
+		// what still has to hold either way is that scopes resolve against origin,
+		// so the home branch has to exist on it.
+		io.log(
+			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${settings.homeBranch} has to exist before work can be scoped to it`,
+		);
+		// `-A` is safe here and only here: seed never creates `workspace/`, so
+		// nothing a hydrated worktree could hide under it exists yet, and this
+		// branch runs once. The same advice on a working bridge would stage another
+		// repo's checkout, which is land's hazard to carry.
+		io.log("git add -A");
+		io.log('git commit -m "seed nosedive"');
+		io.log(`git push -u origin ${settings.homeBranch}`);
+	}
+
+	io.log(`nosedive pitch "<what you want to build>"`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

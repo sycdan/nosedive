@@ -14,6 +14,8 @@ import { KbDoc, LinkRef } from "./kbDocs.js";
 import { parseLinkRefs } from "./kbRefs.js";
 import { relParts } from "./relGrammar.js";
 import { titleFromSlug } from "./slugs.js";
+import { writeFileAtomic } from "./renderPlan.js";
+import { CommandIo } from "./bridgeSetupIo.js";
 import {
 	backlogDocTitle,
 	backlogEntryLine,
@@ -282,7 +284,57 @@ export function renderUpdatedBacklogMemo(
 	return ["---", ...scoped, "---", "", `${lines.join("\n")}\n`].join("\n");
 }
 
-/** The rendered body of the bridge's configured backlog memo. Shared by `dump-backlog` and `preflight`. */
+/**
+ * Inject already-resolved docs into the bridge's configured backlog memo,
+ * writing the result and logging what happened. Shared by `update-backlog
+ * --inject` and `pitch`, which calls this itself for an unparented feat so a
+ * pilot who never runs `update-backlog` by hand still gets a reachable feat.
+ */
+export function injectDocsIntoBacklogMemo(
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	targets: KbDoc[],
+	io: { log(message: string): void },
+): void {
+	const memoId = rc.backlog;
+	if (!memoId) throw new Error("update-backlog requires a configured backlog memo id");
+	if (!uuidLike(memoId))
+		throw new Error(`update-backlog requires a UUID-shaped backlog memo id: ${memoId}`);
+	if (!rc.kbDir) throw new Error("update-backlog requires a configured kb directory");
+
+	const memoPath = join(rc.kbDir, `${memoId}.md`);
+	if (!existsSync(memoPath)) throw new Error(`bridge backlog memo not found: ${memoId}`);
+	if (!statSync(memoPath).isFile()) throw new Error(`bridge backlog memo is not a file: ${memoId}`);
+
+	for (const target of targets) {
+		if (target.id === memoId) throw new Error("--inject cannot inject the backlog memo itself");
+		if (target.kind === "dive" || target.kind === "repo") {
+			throw new Error(`--inject names a kind: ${target.kind} doc, which is not work: ${target.id}`);
+		}
+	}
+
+	const memoText = readFileSync(memoPath, "utf8");
+	let yamlLines: string[] | undefined;
+	if (targets.length > 0) {
+		const existing = parseLinkRefs(
+			parseMarkdownDoc(memoText, formatPath(memoPath)).fm.raw.links,
+			memoPath,
+		);
+		const result = injectBacklogLinks(
+			splitMarkdownFrontmatter(memoText, formatPath(memoPath)).yaml.split(/\r?\n/),
+			rc.bridgeDir,
+			targets,
+			(doc) => backlogMemoHasWorkLink(existing, doc),
+		);
+		yamlLines = result.lines;
+		for (const doc of result.injected) io.log(`Injected ${doc.relPath}`);
+		for (const doc of result.skipped) io.log(`Already on the backlog: ${doc.relPath}`);
+	}
+
+	const content = renderUpdatedBacklogMemo(memoText, memoPath, kbDocs, yamlLines);
+	writeFileAtomic(memoPath, content);
+	io.log(`Updated backlog memo: ${posixRelPath(rc.bridgeDir, memoPath)}`);
+}
 export function bridgeBacklogMemoBody(rc: NosediveRc): string {
 	const id = rc.backlog;
 	if (!id) throw new Error("dump-backlog requires a configured backlog memo id");

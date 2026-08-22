@@ -10,6 +10,8 @@ import { collectPreflightDives } from "../lib/diveSelection.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import {
 	CURRENT_COMPATIBILITY_LEVEL,
+	KNOWN_INSTRUCTION_FILES,
+	MANAGED_INSTRUCTIONS_BEGIN,
 	PREFLIGHT_GUIDANCE,
 	PREFLIGHT_NO_DIVE_LINE,
 	prePushHook,
@@ -29,7 +31,13 @@ import {
 	readPilotIdentity,
 } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs, readActiveDiveId } from "../lib/kbDocs.js";
-import { bridgeCompatibilityLevel, nosediveInvocation } from "../lib/packageBacklog.js";
+import {
+	bridgeCompatibilityLevel,
+	describeInstructionDrift,
+	nosediveInvocation,
+	nosedivePackageVersion,
+	renderedSurfaceDigest,
+} from "../lib/packageBacklog.js";
 import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
@@ -38,7 +46,6 @@ import { writeFileAtomic } from "../lib/renderPlan.js";
 
 const STALE_BRIDGE_NOSE =
 	"nose: fix this^ first, by rebasing the bridge onto FETCH_HEAD before trusting the dives below";
-
 const MANAGED_HOOKS_DIRNAME = "nosedive-hooks";
 /**
  * Where the pilot's hooks lived before nosedive claimed `core.hooksPath`. The
@@ -321,6 +328,39 @@ function bridgeFreshnessLine(freshness: BridgeFreshness): string | undefined {
 	return `nosedive-bridge-freshness: HEAD ${head} matches ${trunk}`;
 }
 
+/**
+ * Whether each managed instruction file describes the commands this install
+ * actually has. Preflight is where this belongs and nowhere else: the file is
+ * checked in and shared, so the pilot who has to act on it is not the one who
+ * wrote it, and they find out at session start rather than when their agent
+ * invokes a command that does not exist.
+ *
+ * It reports and never rewrites. `seed` owns the span between the markers, and a
+ * preflight that quietly fixed the file would hide a version skew the pilot
+ * needs to resolve in their install, not in their working tree.
+ */
+function printInstructionDrift(rc: NosediveRc, io: CommandIo): void {
+	const installedDigest = renderedSurfaceDigest();
+	const installedVersion = nosedivePackageVersion();
+	for (const relativePath of KNOWN_INSTRUCTION_FILES) {
+		const path = join(rc.bridgeDir, relativePath);
+		if (!existsSync(path)) continue;
+		const lines = readFileSync(path, "utf8").split(/\r?\n/);
+		const beginIndex = lines.indexOf(MANAGED_INSTRUCTIONS_BEGIN);
+		if (beginIndex === -1) continue;
+		const stamp = /^<!-- nosedive v=(\S+) surface=([0-9a-f]{8}) -->$/.exec(
+			lines[beginIndex + 1] ?? "",
+		);
+		const line = describeInstructionDrift({
+			file: relativePath,
+			stamped: stamp ? { version: stamp[1]!, digest: stamp[2]! } : undefined,
+			installedVersion,
+			installedDigest,
+		});
+		if (line) io.log(line);
+	}
+}
+
 function printSessionReport(
 	rc: NosediveRc,
 	levelLine: string,
@@ -347,6 +387,8 @@ function printSessionReport(
 	if (freshness.behind > 0) io.log(STALE_BRIDGE_NOSE);
 	printCurrentDiveAndFeat(rc, kbDocs, io);
 	io.log("");
+
+	printInstructionDrift(rc, io);
 
 	io.log("== pilot identification ==");
 	io.writeOut(pilotIdentityLines(identity));

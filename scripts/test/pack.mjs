@@ -219,6 +219,11 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 		new RegExp(`reset repo=${repoId} path=workspace/full-repo ref=[0-9a-f]{40}`),
 	);
 	assert.equal(existsSync(worktree), true, "scoped repo should remain hydrated after pack");
+	assert.match(
+		result.stdout,
+		new RegExp(`^nosedive jump kb/${diveId}\\.md$`, "m"),
+		"pack should end by naming jump on the packed dive",
+	);
 	const pin = /^\s+ref: ([0-9a-f]{40})$/m.exec(
 		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
 	)?.[1];

@@ -14,6 +14,7 @@ import {
 	root,
 	run,
 	gitCommit,
+	giveOrigin,
 	runTool,
 	write,
 	writeBridgeConfig,
@@ -92,6 +93,8 @@ function freshGitBridge(name) {
 	const bridge = join(tmp, name);
 	mkdirSync(bridge, { recursive: true });
 	runTool("git", ["init", "-b", "main"], bridge);
+	setIdentity(bridge, "Nosedive Test", "test@nosedive.invalid");
+	giveOrigin(tmp, bridge, name);
 	return bridge;
 }
 
@@ -167,17 +170,16 @@ test("preflight streams its first line before the CLI exits", async () => {
 });
 
 test("preflight fetches trunk and blocks stale bridge knowledge without rebasing", () => {
-	const remote = join(tmp, "sync-remote.git");
-	mkdirSync(remote, { recursive: true });
 	const seed = freshGitBridge("sync-seed");
+	// The origin `freshGitBridge` already published `main` to. Cloned below, so
+	// the two checkouts diverge the way a pilot's and a teammate's do.
+	const remote = join(tmp, "sync-seed-origin.git");
 	setIdentity(seed, "Sync Pilot", "sync-pilot@example.invalid");
 	writeBridgeConfig(seed, { backlog: "./backlog" });
 	write(join(seed, "README.md"), "seed\n");
 	runTool("git", ["add", "--", "."], seed);
 	gitCommit(seed, "seed bridge");
-	runTool("git", ["init", "--bare", "-b", "main"], remote);
-	runTool("git", ["remote", "add", "origin", remote], seed);
-	runTool("git", ["push", "-u", "origin", "main"], seed);
+	runTool("git", ["push"], seed);
 
 	const bridge = join(tmp, "sync-bridge");
 	runTool("git", ["clone", remote, bridge], tmp);
@@ -427,6 +429,35 @@ test("preflight leaves a wired core.hooksPath hook untouched and reports", () =>
 	assert.equal(existsSync(join(bridge, ".git", "hooks", "pre-push")), false);
 	assert.doesNotMatch(preflight.stderr, /WARNING/);
 	assert.match(preflight.stdout, /^== bridge status ==$/m);
+});
+
+test("preflight stays silent for seeded instructions with the current digest", () => {
+	const bridge = createBridge(tmp, "instruction-silent-bridge");
+	setIdentity(bridge, "Silent Pilot", "silent-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight failed");
+	assert.doesNotMatch(preflight.stdout, /^nose: .*instructions/m);
+});
+
+test("preflight reports instruction drift without rewriting the file", () => {
+	const bridge = createBridge(tmp, "instruction-drift-bridge");
+	setIdentity(bridge, "Drift Pilot", "drift-pilot@example.invalid");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const instructionsPath = join(bridge, "AGENTS.md");
+	const before = readFileSync(instructionsPath, "utf8");
+	const altered = before.replace(/surface=([0-9a-f]{8})/, (match, digest) => {
+		const char = digest[7] === "0" ? "1" : "0";
+		return `surface=${digest.slice(0, 7)}${char}`;
+	});
+	write(instructionsPath, altered);
+
+	const preflight = run(["preflight"], bridge);
+	assertOk(preflight, "preflight failed");
+	assert.match(preflight.stdout, /^nose: AGENTS\.md.*Run: nosedive seed$/m);
+	assert.equal(readFileSync(instructionsPath, "utf8"), altered);
+	assert.notEqual(readFileSync(instructionsPath, "utf8"), before);
 });
 
 test("preflight reports bridge status, pilot identity and the active dive, and no backlog", () => {

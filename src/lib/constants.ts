@@ -110,3 +110,19 @@ export const BASE_CONFIG_KNOWN_KEYS = [
 	"home-branch",
 	"work-branch-prefix",
 ] as const;
+
+/**
+ * Agent instruction files nosedive knows about. `seed` picks these up when no
+ * `--file` names one, and `preflight` reads the same set back to check them for
+ * drift -- one list, because two would eventually disagree about which files
+ * are managed and preflight would go quiet on a file seed writes.
+ */
+export const KNOWN_INSTRUCTION_FILES = [
+	"AGENTS.md",
+	"CLAUDE.md",
+	"GEMINI.md",
+	".github/copilot-instructions.md",
+] as const;
+
+export const MANAGED_INSTRUCTIONS_BEGIN = "<!-- BEGIN nosedive managed instructions -->";
+export const MANAGED_INSTRUCTIONS_END = "<!-- END nosedive managed instructions -->";

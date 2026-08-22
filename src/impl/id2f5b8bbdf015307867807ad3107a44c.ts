@@ -19,6 +19,7 @@ import {
 	toPosixPath,
 } from "../lib/coreParsing.js";
 import {
+	DiveWipScope,
 	hydratedScopedRepoPath,
 	readWorkspaceDiveMarker,
 	uniqueDiveWipScopes,
@@ -37,6 +38,8 @@ import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
+
+const refusalPrefix = "land refused because ";
 
 /** The explicit expected value of a `--hard` push, plus what a refusal must name. */
 interface LandLease {
@@ -74,6 +77,25 @@ function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
 	return status.split(/\r?\n/).filter(Boolean);
 }
 
+function originUrl(worktreePath: string): string {
+	return gitRun(
+		worktreePath,
+		["config", "--get", "remote.origin.url"],
+		`failed to resolve origin URL for ${formatPath(worktreePath)}`,
+	);
+}
+
+/** Shared by the pre-gate check and the push itself, so both refusals read alike. */
+function leaseRefusal(branch: string, lease: LandLease): string {
+	return (
+		`${refusalPrefix}scope ${lease.repoId} could not replace ${branch} under a lease expecting ` +
+		`${lease.pin} -- the branch moved since this dive was pinned, or does not exist. ` +
+		`Repin the dive at the new branch head (\`${lease.cli} record.dive --ref ${lease.diveId} ` +
+		`--repin\`) and rebase again; do not force-push past it, which would discard whatever ` +
+		`moved it`
+	);
+}
+
 /**
  * Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own
  * cloud remote (read-only scopes never reach here).
@@ -92,24 +114,93 @@ function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
  * a non-empty expected value against a ref that is not there.
  */
 function landRepoScope(worktreePath: string, branch: string, lease?: LandLease): string {
-	const url = gitRun(
-		worktreePath,
-		["config", "--get", "remote.origin.url"],
-		`failed to resolve origin URL for ${formatPath(worktreePath)}`,
-	);
+	const url = originUrl(worktreePath);
 	const force = lease ? [`--force-with-lease=refs/heads/${branch}:${lease.pin}`] : [];
 	gitRun(
 		worktreePath,
 		["push", url, ...force, `HEAD:refs/heads/${branch}`],
-		lease
-			? `land refuses: scope ${lease.repoId} could not replace ${branch} under a lease expecting ` +
-					`${lease.pin} -- the branch moved since this dive was pinned, or does not exist. ` +
-					`Repin the dive at the new branch head (\`${lease.cli} record.dive --ref ${lease.diveId} ` +
-					`--repin\`) and rebase again; do not force-push past it, which would discard whatever ` +
-					`moved it`
-			: `failed to push ${formatPath(worktreePath)} to ${branch}`,
+		lease ? leaseRefusal(branch, lease) : `failed to push ${formatPath(worktreePath)} to ${branch}`,
 	);
 	return branch;
+}
+
+/** The published head of `branch` on the scope's own remote, or undefined when it has none. */
+function remoteBranchHead(
+	worktreePath: string,
+	branch: string,
+	repoId: string,
+): string | undefined {
+	const line = gitRun(
+		worktreePath,
+		["ls-remote", originUrl(worktreePath), `refs/heads/${branch}`],
+		`${refusalPrefix}the published head of ${branch} on scope ${repoId}'s remote could not be read`,
+	);
+	return line ? line.split(/\s+/)[0] : undefined;
+}
+
+/**
+ * Whether this worktree's HEAD already contains `sha`. A commit the worktree
+ * does not have cannot be an ancestor of its HEAD, so a `merge-base` that fails
+ * on a missing object answers the same question correctly.
+ */
+function headContains(worktreePath: string, sha: string): boolean {
+	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", sha, "HEAD"]) !== undefined;
+}
+
+/**
+ * Every writable scope's push is decided before a single gate runs.
+ *
+ * The push is the last thing land does and the first thing that can be refused
+ * for a reason nothing local knows about: the work branch moved. On the second
+ * and every later dive of a feat that is not an edge case but the norm -- the
+ * previous dive's land moved the branch past this dive's pin -- so the ordinary
+ * path was to spend the whole gate suite before learning the push could never
+ * have worked. One `ls-remote` per scope buys that answer up front, and the
+ * refusal names the recovery instead of leaving the pilot to know it.
+ */
+function assertScopesCanPublish(
+	writableScopes: { scope: DiveWipScope; path: string }[],
+	hard: boolean,
+	dive: KbDoc,
+	cli: string,
+): void {
+	for (const { scope, path } of writableScopes) {
+		const branch = scope.workBranch!;
+		const pin = scope.ref!;
+		const published = remoteBranchHead(path, branch, scope.repoId);
+
+		if (hard) {
+			// The lease expects the branch to stand exactly where this dive pinned it;
+			// an absent branch fails it too, which is what keeps --hard from creating one.
+			if (published !== pin)
+				throw new Error(leaseRefusal(branch, { repoId: scope.repoId, pin, diveId: dive.id, cli }));
+			continue;
+		}
+
+		// An absent branch is created by the push; a branch HEAD already contains
+		// is a fast-forward. Everything else is refused here rather than after gates.
+		if (published === undefined || headContains(path, published)) continue;
+
+		if (published === pin) {
+			throw new Error(
+				`${refusalPrefix}scope ${scope.repoId} does not descend from ${branch}, which still stands ` +
+					`at this dive's pin ${pin} -- this dive rewrote that history rather than building on it. ` +
+					`Nothing was pushed and no gates ran. Publish the rewrite under a lease with ` +
+					`\`${cli} land --hard\`, or rebase onto ${pin} to land as a fast-forward.`,
+			);
+		}
+
+		throw new Error(
+			`${refusalPrefix}scope ${scope.repoId} cannot fast-forward ${branch}: the branch is at ` +
+				`${published} and this dive's work does not contain it (pinned at ${pin}). ` +
+				`Nothing was pushed and no gates ran. Repin onto the published head and replay this ` +
+				`dive's work onto it:\n` +
+				`  ${cli} pack\n` +
+				`  ${cli} record.dive --ref ${dive.id} --repin\n` +
+				`  ${cli} jump ${dive.id}\n` +
+				`then land again.`,
+		);
+	}
 }
 
 function stashExceptStaged(bridgeDir: string): boolean {
@@ -217,23 +308,24 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
-		throw new Error(`land refuses: ${failures.map((f) => f.reasons.join("; ")).join(" | ")}`);
+		throw new Error(`${refusalPrefix}${failures.map((f) => f.reasons.join("; ")).join(" | ")}`);
 	}
 	for (const scope of scopes) {
-		if (!scope.ref) throw new Error(`land refuses: scoped repo ${scope.repoId} has no pinned ref`);
+		if (!scope.ref)
+			throw new Error(`${refusalPrefix}scoped repo ${scope.repoId} has no pinned ref`);
 	}
 
 	const pushed: string[] = [];
 	const hydratedWorktrees: { scope: (typeof scopes)[number]; path: string }[] = [];
 	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
-		if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+		if (!rc.workspaceDir) throw new Error("no workspace is configured; run nosedive seed");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
-		if (failure) throw new Error(`land refuses: ${failure.reasons.join("; ")}`);
+		if (failure) throw new Error(`${refusalPrefix}${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
 		hydratedWorktrees.push({ scope, path });
 		if (!scope.workBranch) {
-			if (!scope.ref) throw new Error(`land refuses: scope ${scope.repoId} has no pinned ref`);
+			if (!scope.ref) throw new Error(`${refusalPrefix}scope ${scope.repoId} has no pinned ref`);
 			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
 			/**
 			 * Work with nowhere to go. Naming the fix matters more than naming the
@@ -242,7 +334,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			 */
 			if (commits.length > 0)
 				throw new Error(
-					`land refuses: scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
+					`${refusalPrefix}scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
 						`(${commits.join(", ")}) and names no work branch. ` +
 						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
 						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
@@ -250,7 +342,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 				);
 			if (headIsStrictlyBehindPin(path, scope.ref))
 				throw new Error(
-					`land refuses: scope ${scope.repoId} is behind pinned ref ${scope.ref} and names no work branch. ` +
+					`${refusalPrefix}scope ${scope.repoId} is behind pinned ref ${scope.ref} and names no work branch. ` +
 						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
 						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
 						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
@@ -275,9 +367,11 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			)
 			.join("\n\n");
 		throw new Error(
-			`land refuses: scoped worktree(s) are dirty; commit, pack, or stash changes before landing.\n${detail}`,
+			`${refusalPrefix}scoped worktree(s) are dirty; commit, pack, or stash changes before landing.\n${detail}`,
 		);
 	}
+
+	assertScopesCanPublish(writableScopes, hard, dive, cli);
 
 	/**
 	 * Gates run before anything is published, and all of them run: a dive that
@@ -327,7 +421,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			appendGateReportToDive(dive.path, report);
 			attachFailedGatesToDive(dive.path, dive.links, outcome.runs);
 			io.err(
-				`land refuses: gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,
+				`${refusalPrefix}gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,
 			);
 			io.setExitCode(1);
 			return;
@@ -378,6 +472,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
+	io.log("nosedive preflight");
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

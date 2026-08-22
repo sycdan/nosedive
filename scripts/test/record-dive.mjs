@@ -9,7 +9,6 @@ import {
 	createTmp,
 	gitCommit,
 	run,
-	runGit,
 	runTool,
 	write,
 } from "../test-helpers.mjs";
@@ -199,6 +198,12 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
 			"m",
 		),
+	);
+	const id = /^id: (\S+)$/m.exec(doc)[1];
+	assert.match(
+		result.stdout,
+		new RegExp(`^nosedive jump kb/${id}\\.md$`, "m"),
+		"record.dive should end by naming jump on the new dive",
 	);
 });
 
@@ -1224,12 +1229,13 @@ test("record.dive --repin writes the dive and touches nothing else", () => {
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
 	const originRefs = runTool("git", ["show-ref"], repo).stdout;
+	const bridgeHead = runTool("git", ["rev-parse", "HEAD"], bridge).stdout;
 	assertOk(run(["record.dive", "--ref", id, "--repin"], bridge), "record.dive --repin failed");
 	assert.equal(runTool("git", ["show-ref"], repo).stdout, originRefs, "a repin publishes nothing");
-	assert.notEqual(
-		runGit(["rev-parse", "--verify", "HEAD"], bridge, { expectOk: false }).status,
-		0,
-		"the bridge still has no commits: a repin commits nothing",
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout,
+		bridgeHead,
+		"a repin commits nothing to the bridge",
 	);
 });
 
@@ -1351,5 +1357,5 @@ test("record.dive refuses contradictory or homeless scope edits", () => {
 
 	const homeless = run(["record.dive", "--ref", id, "--work-branch", "release/x"], bridge);
 	assert.notEqual(homeless.status, 0, "a branch with nothing to apply it to is a mistake");
-	assert.match(homeless.stderr, /--work-branch requires at least one --upscope/);
+	assert.match(homeless.stderr, /--upscope <repo>/);
 });

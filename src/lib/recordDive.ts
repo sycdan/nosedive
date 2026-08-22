@@ -168,7 +168,10 @@ export function parseRecordDiveArgs(args: string[]): RecordDiveOptions {
 		throw new Error(`--upscope and --unscope name the same repo: ${contested.join(", ")}`);
 	}
 	if (options.workBranch !== undefined && options.upscopes.length === 0) {
-		throw new Error("--work-branch requires at least one --upscope");
+		throw new Error(
+			"--work-branch names the branch a scope pushes to, so it needs a scope:\n" +
+				'  nosedive record.dive --feat <feat> --gist "<one line>" --upscope <repo> --work-branch <branch>',
+		);
 	}
 	// There is no pin to move on a dive that does not exist yet: a create already
 	// resolves current trunk for every scope it writes.
@@ -298,6 +301,7 @@ function recordFreeDive(
 	// is told what is missing here rather than having to run preflight to find out.
 	const tags = diveTags(readKbDoc(path, rc.bridgeDir), localOnlyKbDocIds(rc.bridgeDir, kbDir));
 	if (tags.length > 0) io.log(`needs: ${tags.join(", ")}`);
+	io.log(`nosedive jump kb/${id}.md`);
 }
 
 function replaceTitle(body: string, title: string): string {
@@ -358,6 +362,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
+		io.log(`nosedive jump kb/${id}.md`);
 		return;
 	}
 
@@ -458,4 +463,5 @@ export function recordDive(args: string[], io: CommandIo): void {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 	}
 	io.log(`Recorded ${formatPath(dive.path)}`);
+	io.log(`nosedive jump kb/${dive.id}.md`);
 }

@@ -19,7 +19,7 @@ export function runPlanningPrompt(args: string[], io: CommandIo): void {
 		if (diver) {
 			const next =
 				diver === readPilotIdentity(rc.bridgeDir).email
-					? "run nosedive pack, bail, or land first"
+					? "in progress; run nosedive pack, bail, or land first"
 					: `held by ${diver}; take it over with \`nosedive record.dive --ref ${marker.id} --takeover\``;
 			throw new Error(`dive ${marker.id} (${activeDive.gist}) is ${next}`);
 		}

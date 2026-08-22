@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, run, runTool, write } from "../test-helpers.mjs";
+import { assertOk, createTmp, giveOrigin, run, runTool, write } from "../test-helpers.mjs";
+import { createRequire } from "node:module";
 
 const tmp = createTmp("seed-agent-instructions");
 
 const BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const END = "<!-- END nosedive managed instructions -->";
+const require = createRequire(import.meta.url);
+const { describeInstructionDrift, renderedSurfaceDigest } = require(
+	join(process.cwd(), "dist", "nosedive.js"),
+);
 
 function newBridge(name) {
 	const bridgeDir = join(tmp, name);
@@ -16,15 +21,20 @@ function newBridge(name) {
 	runTool("git", ["init", "-b", "main"], bridgeDir);
 	runTool("git", ["config", "user.name", "Instructions Person"], bridgeDir);
 	runTool("git", ["config", "user.email", "instructions@example.invalid"], bridgeDir);
+	giveOrigin(tmp, bridgeDir, name);
 	return bridgeDir;
 }
 
 function assertManagedBlock(text, label) {
 	assert.match(text, new RegExp(`^${BEGIN}$`, "m"), `${label} is missing the begin marker`);
 	assert.match(text, new RegExp(`^${END}$`, "m"), `${label} is missing the end marker`);
-	// The invocation names the nosedive that wrote the block: a published
-	// install pins its version, this test's local checkout points at its cli.
-	assert.match(text, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
+	assert.doesNotMatch(text, /npx -y nosedive@/);
+	assert.doesNotMatch(text, /dist[\\/]cli\.js/);
+	assert.match(
+		text,
+		/^<!-- nosedive v=\S+ surface=[0-9a-f]{8} -->$/m,
+		`${label} is missing the stamped version and digest line`,
+	);
 	assert.match(
 		text,
 		/^- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work\.$/m,
@@ -50,29 +60,114 @@ function assertManagedBlock(text, label) {
 	}
 }
 
+test("describeInstructionDrift handles comparative and digest-based drift", () => {
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.9.1", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12345",
+		}),
+		undefined,
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.9.1", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's agent instructions come from nosedive 2026.9.1; you have 2026.8.21. Run: npm i -g nosedive@latest",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.9", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: your nosedive renders commands AGENTS.md's agent instructions do not list. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.21", digest: "abc12345" },
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			stamped: { version: "2026.8.21", digest: "abc12345" },
+			installedVersion: "0.0.0-dev",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 0.0.0-dev. Run: nosedive seed",
+	);
+	assert.equal(
+		describeInstructionDrift({
+			file: "AGENTS.md",
+			installedVersion: "2026.8.21",
+			installedDigest: "abc12346",
+		}),
+		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
+	);
+});
+
 test("seed-agent-instructions", () => {
-	// Nothing to manage and nothing named: seed refuses to invent a file.
+	const digest = renderedSurfaceDigest();
+	assert.match(digest, /^[0-9a-f]{8}$/);
+	assert.equal(digest, renderedSurfaceDigest());
+
+	// Nothing to manage and nothing named: seed creates AGENTS.md for the new bridge.
 	const bareBridge = newBridge("bare-bridge");
 	const bare = run(["seed", "--headless"], bareBridge, "");
-	assert.notEqual(bare.status, 0, "seed without any instructions file unexpectedly succeeded");
-	for (const candidate of [
-		"AGENTS.md",
-		"CLAUDE.md",
-		"GEMINI.md",
-		".github/copilot-instructions.md",
-	]) {
-		assert.match(bare.stderr, new RegExp(candidate.replace(".", "\\.")));
-	}
-	assert.equal(existsSync(join(bareBridge, ".nosedive", "config.yaml")), false);
+	assertOk(bare, "seed without any instructions file failed");
+	assert.match(bare.stdout, /Wrote AGENTS\.md/);
+	assert.equal(existsSync(join(bareBridge, ".nosedive", "config.yaml")), true);
+	assert.match(
+		readFileSync(join(bareBridge, "AGENTS.md"), "utf8"),
+		/<!-- BEGIN nosedive managed instructions -->/,
+	);
+	assert.equal(existsSync(join(bareBridge, ".nosedive", ".gitignore")), true);
+	const seededInstructions = readFileSync(join(bareBridge, "AGENTS.md"), "utf8");
+	const managedBlock =
+		/<!-- BEGIN nosedive managed instructions -->([\s\S]*?)<!-- END nosedive managed instructions -->/m.exec(
+			seededInstructions,
+		)?.[1];
+	assert.ok(managedBlock, "seeded AGENTS.md has no managed block");
+	assert.equal(
+		managedBlock.split("\n")[1],
+		`<!-- nosedive v=${require(join(process.cwd(), "package.json")).version} surface=${digest} -->`,
+	);
+	assert.doesNotMatch(managedBlock, /npx -y nosedive@/);
+	assert.doesNotMatch(managedBlock, /dist[\\/]cli\.js/);
+	// Seed runs at the start of every session. A block that differs run to run
+	// would show up as a diff in every pilot's working tree, so the stamp has to
+	// be a function of the package alone.
+	assertOk(run(["seed", "--headless"], bareBridge, ""), "second seed failed");
+	assert.equal(readFileSync(join(bareBridge, "AGENTS.md"), "utf8"), seededInstructions);
+	const backlogMemos = readdirSync(join(bareBridge, "kb"))
+		.filter((entry) => entry.endsWith(".md"))
+		.filter((entry) => /^kind: memo$/m.test(readFileSync(join(bareBridge, "kb", entry), "utf8")));
+	assert.equal(backlogMemos.length, 1, "fresh seed should mint exactly one backlog memo");
+	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Backlog$/m);
+	assert.equal(existsSync(join(bareBridge, "CLAUDE.md")), false);
+	assert.equal(existsSync(join(bareBridge, "GEMINI.md")), false);
+	assert.equal(existsSync(join(bareBridge, ".github", "copilot-instructions.md")), false);
 
-	// A named file that does not exist is created whole.
+	// A named file that does not exist is created whole and no AGENTS.md is created.
 	const createdBridge = newBridge("created-bridge");
 	const created = run(["seed", "--headless", "--file", "NOTES.md"], createdBridge, "");
 	assertOk(created, "seed with a missing --file failed");
 	assert.match(created.stdout, /Wrote NOTES\.md/);
+	assert.doesNotMatch(created.stdout, /Wrote AGENTS\.md/);
 	const createdText = readFileSync(join(createdBridge, "NOTES.md"), "utf8");
 	assert.equal(createdText.startsWith("# Agent Instructions\n\n"), true);
 	assertManagedBlock(createdText, "NOTES.md");
+	assert.equal(existsSync(join(createdBridge, "AGENTS.md")), false);
 
 	// Autodetected, and only the span between the markers is rewritten.
 	const detectedBridge = newBridge("detected-bridge");

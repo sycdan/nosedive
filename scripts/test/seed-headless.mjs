@@ -23,6 +23,7 @@ import {
 	createTmp,
 	escapeRegExp,
 	gitCommit,
+	giveOrigin,
 	gitCommonDir,
 	handoffRunbookId,
 	lib,
@@ -68,6 +69,7 @@ test("seed-headless", () => {
 	runTool("git", ["init", "-b", "main"], headlessFreshBridge);
 	runTool("git", ["config", "user.name", "Headless Person"], headlessFreshBridge);
 	runTool("git", ["config", "user.email", "headless@example.invalid"], headlessFreshBridge);
+	giveOrigin(tmp, headlessFreshBridge, "headless-fresh-bridge");
 
 	const initHeadlessFresh = run(
 		["seed", "--headless", "--file", "AGENTS.md"],
@@ -130,6 +132,7 @@ test("seed-headless", () => {
 	runTool("git", ["init", "-b", "main"], headlessExistingBridge);
 	runTool("git", ["config", "user.name", "Detected Name"], headlessExistingBridge);
 	runTool("git", ["config", "user.email", "detected@example.invalid"], headlessExistingBridge);
+	giveOrigin(tmp, headlessExistingBridge, "headless-existing-bridge");
 	write(
 		join(headlessExistingBridge, ".nosediverc"),
 		`workspace: ./custom-workspace

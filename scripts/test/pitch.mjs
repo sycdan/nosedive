@@ -22,8 +22,8 @@ test("pitch writes a feat doc from a bare gist", () => {
 	assert.match(doc, /^kind: feat$/m);
 	assert.match(doc, /^id: [0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/m);
 	assert.match(doc, /^gist: "Exercise the L1 pitch contract\."$/m);
-	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);
-	assert.match(doc, /^# New Effort \d{4} \d{2} \d{2} \d{6}$/m);
+	assert.match(doc, /^name: exercise-the-l1-pitch-contract$/m);
+	assert.match(doc, /^# Exercise The L1 Pitch Contract$/m);
 	assert.doesNotMatch(doc, /^links:/m);
 	assert.doesNotMatch(doc, /## /m, "a fresh pitch should carry no body sections");
 });
@@ -36,6 +36,27 @@ test("pitch names a feat with --name", () => {
 	const doc = effortDoc(bridge, pitched.stdout);
 	assert.match(doc, /^name: auth-refactor$/m);
 	assert.match(doc, /^# Auth Refactor$/m);
+});
+
+test("--name still wins over a gist that would otherwise be derived", () => {
+	const bridge = createBridge(tmp, "pitch-name-wins-bridge");
+
+	const pitched = run(
+		["pitch", "This gist would derive a totally different slug.", "--name", "picked-by-hand"],
+		bridge,
+	);
+	assertOk(pitched, "named pitch over a derivable gist failed");
+	const doc = effortDoc(bridge, pitched.stdout);
+	assert.match(doc, /^name: picked-by-hand$/m);
+});
+
+test("pitch falls back to a timestamp name when the gist yields no usable slug", () => {
+	const bridge = createBridge(tmp, "pitch-fallback-bridge");
+
+	const pitched = run(["pitch", "!!! --- ???"], bridge);
+	assertOk(pitched, "pitch with an unslugable gist failed");
+	const doc = effortDoc(bridge, pitched.stdout);
+	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);
 });
 
 test("pitch nests under a parent and links both ways", () => {
@@ -113,13 +134,65 @@ test("a pitched feat reaches the backlog memo", () => {
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	const pitched = run(["pitch", "Indexed effort.", "--name", "indexed"], bridge);
 	assertOk(pitched, "pitch failed");
-	const inject = /nosedive update-backlog --inject (\S+)$/m.exec(pitched.stdout);
-	assert.ok(inject, `pitch did not name the inject command:\n${pitched.stdout}`);
+	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
 
-	assertOk(run(["update-backlog", "--inject", inject[1]], bridge), "update-backlog failed");
 	const dumped = run(["dump-backlog"], bridge);
 	assertOk(dumped, "dump-backlog failed");
 	assert.match(dumped.stdout, /Indexed effort\./);
+});
+
+test("an unparented pitch links the backlog memo in the same run, with no second command", () => {
+	const bridge = createBridge(tmp, "pitch-backlog-self-link-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const backlogId = /^backlog: (.+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+
+	const pitched = run(["pitch", "Self-linked effort.", "--name", "self-linked"], bridge);
+	assertOk(pitched, "pitch failed");
+	const doc = effortDoc(bridge, pitched.stdout);
+	const id = /^id: (\S+)$/m.exec(doc)[1];
+
+	const memo = readFileSync(backlogPath, "utf8");
+	assert.match(
+		memo,
+		new RegExp(`- kb/${id}\\.md:\\n\\s+rel: injected\\.feat`),
+		"the backlog memo should already link the new feat, with no update-backlog run",
+	);
+});
+
+test("a --parent pitch is reachable only through its parent, not also injected", () => {
+	const bridge = createBridge(tmp, "pitch-backlog-parented-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const backlogId = /^backlog: (.+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+
+	const parent = run(["pitch", "Parent effort.", "--name", "parented"], bridge);
+	assertOk(parent, "parent pitch failed");
+	const parentId = /^id: (\S+)$/m.exec(effortDoc(bridge, parent.stdout))[1];
+
+	const child = run(
+		["pitch", "Child effort.", "--name", "child-of-parented", "--parent", "parented"],
+		bridge,
+	);
+	assertOk(child, "child pitch failed");
+	const childId = /^id: (\S+)$/m.exec(effortDoc(bridge, child.stdout))[1];
+	assert.doesNotMatch(
+		child.stdout,
+		/^Updated backlog memo: /m,
+		"a --parent pitch must not also touch the backlog memo",
+	);
+
+	const memo = readFileSync(backlogPath, "utf8");
+	assert.doesNotMatch(
+		memo,
+		new RegExp(`- kb/${childId}\\.md:`),
+		"the child must not be linked directly from the backlog memo",
+	);
+	assert.match(memo, new RegExp(`- kb/${parentId}\\.md:`), "the parent should still be linked");
 });
 
 test("update-backlog rewrites the memo's scopes from its feats", () => {
@@ -184,9 +257,7 @@ test("update-backlog leaves scopes alone when the rendered tree scopes no repo",
 
 	const pitched = run(["pitch", "Unscoped effort."], bridge);
 	assertOk(pitched, "pitch failed");
-	const inject = /nosedive update-backlog --inject (\S+)$/m.exec(pitched.stdout);
-	assert.ok(inject, `pitch did not name the inject command:\n${pitched.stdout}`);
-	assertOk(run(["update-backlog", "--inject", inject[1]], bridge), "update-backlog failed");
+	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
 
 	const memo = readFileSync(backlogPath, "utf8");
 	assert.match(memo, new RegExp(`^scopes:\n  - ${heldRepo}$`, "m"));

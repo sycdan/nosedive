@@ -199,10 +199,17 @@ meta: { parser-fixture: { nested: { values: [ { ok: true } ] } } }
   const input = await ctx.fs.readText(repo.resolve("file.txt"));
   ctx.assert.match(input, /proof input/);
 
+  // seed refuses a bridge with no origin, and the preflight below resolves trunk
+  // against it, so the sandbox gets a bare remote already carrying main.
+  const origin = await ctx.sandbox.create(ctx.assertion.name + "-origin");
+  await ctx.exec("git", ["init", "--bare", "-b", "main"], { cwd: origin.root });
   const sandbox = await ctx.sandbox.create(ctx.assertion.name);
   await ctx.exec("git", ["init", "-b", "main"], { cwd: sandbox.root });
   await ctx.exec("git", ["config", "user.email", "direct-cli@example.invalid"], { cwd: sandbox.root });
   await ctx.exec("git", ["config", "user.name", "Direct CLI"], { cwd: sandbox.root });
+  await ctx.exec("git", ["remote", "add", "origin", origin.root], { cwd: sandbox.root });
+  await ctx.exec("git", ["commit", "--allow-empty", "-m", "base"], { cwd: sandbox.root });
+  await ctx.exec("git", ["push", "-u", "origin", "main"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "seed", "--headless", "--file", "AGENTS.md"], { cwd: sandbox.root });
   await ctx.exec(process.execPath, [${JSON.stringify(cli)}, "preflight"], { cwd: sandbox.root });
   const hookPath = ctx.path.join(sandbox.root, ".git", "nosedive-hooks", "pre-push");

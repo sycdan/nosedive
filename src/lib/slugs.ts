@@ -18,3 +18,32 @@ export function assertSlug(slug: string, label: string): string {
 	}
 	return slug;
 }
+
+/**
+ * A slug derived from a free-text gist, for a name minted with no `--name`: a
+ * pilot's first pitch or gate is announced by what it checks rather than by a
+ * clock. Truncated at a word boundary so the result reads as an identifier
+ * rather than a clipped sentence, and undefined when the gist yields nothing
+ * usable (all punctuation, all stopword-length noise, or empty) -- callers
+ * fall back to a timestamp name rather than failing to mint at all.
+ */
+export function slugFromGist(gist: string, maxLen = 40): string | undefined {
+	const words = gist
+		.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.filter(Boolean);
+	if (words.length === 0) return undefined;
+
+	const picked: string[] = [];
+	let length = 0;
+	for (const word of words) {
+		const nextLength = length === 0 ? word.length : length + 1 + word.length;
+		if (nextLength > maxLen) break;
+		picked.push(word);
+		length = nextLength;
+	}
+	// Nothing fit within maxLen (e.g. a single very long word): fall back to
+	// nothing usable rather than emitting a slug the caller did not ask for.
+	if (picked.length === 0) return undefined;
+	return picked.join("-");
+}

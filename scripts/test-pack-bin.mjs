@@ -90,6 +90,10 @@ try {
 	run("git", ["init", "-b", "main"], seedBridge);
 	run("git", ["config", "user.name", "Packed Pilot"], seedBridge);
 	run("git", ["config", "user.email", "packed@example.invalid"], seedBridge);
+	// `seed` refuses a bridge with no `origin`. A URL that resolves to nothing is
+	// enough: seed only asks git whether the remote is configured, and keeping it
+	// unreachable keeps this script offline.
+	run("git", ["remote", "add", "origin", "https://example.com/packed-notes.git"], seedBridge);
 	const seed = runPackedNpm(
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless --file AGENTS.md"],
 		seedBridge,
@@ -99,19 +103,24 @@ try {
 	// The packed bin resolves its own version and command surface from the
 	// installed package, which only a real install exercises.
 	const seededInstructions = readFileSync(join(seedBridge, "AGENTS.md"), "utf8");
-	assert.match(seededInstructions, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
+	assert.match(seededInstructions, /^<!-- nosedive v=\S+ surface=[0-9a-f]{8} -->$/m);
 	assert.match(seededInstructions, /^Usage: nosedive <command>$/m);
 	assert.match(seededInstructions, /^<!-- END nosedive managed instructions -->$/m);
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
-	// A fresh seed writes exactly one kb doc: the backlog memo `backlog:` names.
+	// A fresh seed writes exactly two kb docs: the backlog memo `backlog:` names,
+	// and the bridge's own `kind: repo` doc, so a new pilot has something to
+	// scope a dive to without first finding `record.repo`.
 	const seededKb = readdirSync(join(seedBridge, "kb"));
-	assert.equal(seededKb.length, 1, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
-	assert.match(
-		readFileSync(join(seedBridge, "kb", seededKb[0]), "utf8"),
-		/^kind: memo$/m,
-		"the one seeded kb doc should be the backlog memo",
+	assert.equal(seededKb.length, 2, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	const seededKinds = seededKb
+		.map((entry) => /^kind: (\w+)$/m.exec(readFileSync(join(seedBridge, "kb", entry), "utf8"))?.[1])
+		.sort();
+	assert.deepEqual(
+		seededKinds,
+		["memo", "repo"],
+		"seed should write one backlog memo and one repo",
 	);
 	assert.equal(
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),

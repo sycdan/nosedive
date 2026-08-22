@@ -294,13 +294,27 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		const cloud = (rawRemotes as Record<string, unknown>).cloud;
 		return typeof cloud === "string" && remotes.includes(cloud);
 	});
-	if (!knowsItself) {
+	const mintedBridgeRepoDoc = !knowsItself;
+	if (mintedBridgeRepoDoc) {
 		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
 	}
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
 		io.log(`Wrote ${formatPath(write.path)}`);
+	}
+
+	if (mintedBridgeRepoDoc) {
+		io.log(
+			"nose: this bridge is now one of its own repos, so scoped work cannot resolve until its remote has a commit",
+		);
+		io.log("git add -A");
+		io.log('git commit -m "seed nosedive"');
+		if (remotes.length > 0) {
+			io.log(`git push -u origin ${settings.homeBranch}`);
+		} else {
+			io.log("a remote has to be added and pushed before work can be scoped to the bridge");
+		}
 	}
 
 	io.log(`nosedive pitch "<what you want to build>"`);

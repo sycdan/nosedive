@@ -14,6 +14,7 @@ import {
 	renderTopLevelHelpText,
 } from "./contracts.js";
 export { collectDiveGates, collectFeatGates, collectReachableGates } from "./lib/landGates.js";
+export { renderedSurfaceDigest } from "./lib/packageBacklog.js";
 // The one reader of a section heading. Exported so the shapes it accepts can be
 // asserted directly -- what a heading decomposes *into* reaches no command's
 // output, so nothing else could tell a mangled label from a good one.

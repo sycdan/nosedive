@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +48,24 @@ export function nosedivePackageVersion(): string {
 		version: string;
 	};
 	return version;
+}
+
+/**
+ * A fingerprint of the command surface `seed` renders into an agent instruction
+ * block, so `preflight` can tell whether an instruction file describes commands
+ * the installed nosedive actually has.
+ *
+ * The version is deliberately not part of the input. A shared `AGENTS.md` is
+ * checked in, and a pilot whose install is older but whose surface is identical
+ * has no problem to report -- warning them anyway is how a warning stops being
+ * read. The version is compared separately, and only once the digests already
+ * disagree, to say which side is stale.
+ */
+export function renderedSurfaceDigest(): string {
+	return createHash("sha256")
+		.update(renderTopLevelHelp({ agents: true }).trim())
+		.digest("hex")
+		.slice(0, 8);
 }
 
 export function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {

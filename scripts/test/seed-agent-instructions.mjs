@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { assertOk, createTmp, run, runTool, write } from "../test-helpers.mjs";
+import { createRequire } from "node:module";
 
 const tmp = createTmp("seed-agent-instructions");
 
 const BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const END = "<!-- END nosedive managed instructions -->";
+const require = createRequire(import.meta.url);
+const { renderedSurfaceDigest } = require(join(process.cwd(), "dist", "nosedive.js"));
 
 function newBridge(name) {
 	const bridgeDir = join(tmp, name);
@@ -22,9 +25,13 @@ function newBridge(name) {
 function assertManagedBlock(text, label) {
 	assert.match(text, new RegExp(`^${BEGIN}$`, "m"), `${label} is missing the begin marker`);
 	assert.match(text, new RegExp(`^${END}$`, "m"), `${label} is missing the end marker`);
-	// The invocation names the nosedive that wrote the block: a published
-	// install pins its version, this test's local checkout points at its cli.
-	assert.match(text, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
+	assert.doesNotMatch(text, /npx -y nosedive@/);
+	assert.doesNotMatch(text, /dist[\\/]cli\.js/);
+	assert.match(
+		text,
+		/^<!-- nosedive v=\S+ surface=[0-9a-f]{8} -->$/m,
+		`${label} is missing the stamped version and digest line`,
+	);
 	assert.match(
 		text,
 		/^- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work\.$/m,
@@ -51,6 +58,10 @@ function assertManagedBlock(text, label) {
 }
 
 test("seed-agent-instructions", () => {
+	const digest = renderedSurfaceDigest();
+	assert.match(digest, /^[0-9a-f]{8}$/);
+	assert.equal(digest, renderedSurfaceDigest());
+
 	// Nothing to manage and nothing named: seed creates AGENTS.md for the new bridge.
 	const bareBridge = newBridge("bare-bridge");
 	const bare = run(["seed", "--headless"], bareBridge, "");
@@ -62,6 +73,23 @@ test("seed-agent-instructions", () => {
 		/<!-- BEGIN nosedive managed instructions -->/,
 	);
 	assert.equal(existsSync(join(bareBridge, ".nosedive", ".gitignore")), true);
+	const seededInstructions = readFileSync(join(bareBridge, "AGENTS.md"), "utf8");
+	const managedBlock =
+		/<!-- BEGIN nosedive managed instructions -->([\s\S]*?)<!-- END nosedive managed instructions -->/m.exec(
+			seededInstructions,
+		)?.[1];
+	assert.ok(managedBlock, "seeded AGENTS.md has no managed block");
+	assert.equal(
+		managedBlock.split("\n")[1],
+		`<!-- nosedive v=${require(join(process.cwd(), "package.json")).version} surface=${digest} -->`,
+	);
+	assert.doesNotMatch(managedBlock, /npx -y nosedive@/);
+	assert.doesNotMatch(managedBlock, /dist[\\/]cli\.js/);
+	// Seed runs at the start of every session. A block that differs run to run
+	// would show up as a diff in every pilot's working tree, so the stamp has to
+	// be a function of the package alone.
+	assertOk(run(["seed", "--headless"], bareBridge, ""), "second seed failed");
+	assert.equal(readFileSync(join(bareBridge, "AGENTS.md"), "utf8"), seededInstructions);
 	const backlogMemos = readdirSync(join(bareBridge, "kb"))
 		.filter((entry) => entry.endsWith(".md"))
 		.filter((entry) => /^kind: memo$/m.test(readFileSync(join(bareBridge, "kb", entry), "utf8")));

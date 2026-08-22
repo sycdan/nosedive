@@ -99,7 +99,7 @@ try {
 	// The packed bin resolves its own version and command surface from the
 	// installed package, which only a real install exercises.
 	const seededInstructions = readFileSync(join(seedBridge, "AGENTS.md"), "utf8");
-	assert.match(seededInstructions, /^- When you run `nosedive <command>`, use `.+ <command>`\.$/m);
+	assert.match(seededInstructions, /^<!-- nosedive v=\S+ surface=[0-9a-f]{8} -->$/m);
 	assert.match(seededInstructions, /^Usage: nosedive <command>$/m);
 	assert.match(seededInstructions, /^<!-- END nosedive managed instructions -->$/m);
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);

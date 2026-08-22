@@ -8,8 +8,8 @@ import {
 	listedDive,
 	walkDeckDives,
 } from "./diveListing.js";
-import { gitOutput } from "./gitProcess.js";
 import { KbDoc } from "./kbDocs.js";
+import { readGitAuthorIdentity } from "./gitProcess.js";
 
 export interface PilotDiveSelection {
 	/** Dives this pilot may claim: unheld, or already held by this pilot. */
@@ -39,7 +39,7 @@ const FINISHED_DIVE_ROLES = new Set(["bailed", "landed"]);
  * that cannot say who is flying has no standing to take work off anyone.
  */
 function pilotEmail(rc: NosediveRc): string | undefined {
-	const email = (gitOutput(rc.bridgeDir, ["config", "user.email"]) ?? "").trim();
+	const email = readGitAuthorIdentity(rc.bridgeDir).email.trim();
 	return email || undefined;
 }
 

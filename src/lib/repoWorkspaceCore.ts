@@ -197,6 +197,43 @@ export function parseRepoMarkerStrict(markerPath: string): { id: string } {
 	return { id: idValue };
 }
 
+let cachedCaseInsensitiveFs: boolean | undefined;
+
+/**
+ * Detects whether the current filesystem folds path case, instead of assuming
+ * it from `process.platform`: a case-insensitive volume can be mounted on
+ * Linux (and a case-sensitive one on macOS), so branching on the OS name
+ * alone would mis-detect those setups. Probes with the running node
+ * executable's own path, which is guaranteed to exist, by checking whether an
+ * inverted-case variant of it still resolves. Do NOT replace this with an
+ * unconditional lowercase of compared paths: on a case-sensitive filesystem,
+ * two paths that differ only in case are genuinely different directories, and
+ * treating them as equal would silently accept a worktree pointed at the
+ * wrong source repository instead of refusing it.
+ */
+export function isCaseInsensitiveFileSystem(): boolean {
+	if (cachedCaseInsensitiveFs !== undefined) return cachedCaseInsensitiveFs;
+	try {
+		const probe = process.execPath;
+		const inverted = probe === probe.toLowerCase() ? probe.toUpperCase() : probe.toLowerCase();
+		cachedCaseInsensitiveFs = inverted !== probe && existsSync(inverted);
+	} catch {
+		cachedCaseInsensitiveFs = process.platform === "win32";
+	}
+	return cachedCaseInsensitiveFs;
+}
+
+/**
+ * Normalizes a path for comparison purposes only (never for display or for
+ * passing back to the filesystem): lowercases it when the filesystem folds
+ * case, so two paths that resolve to the same directory but differ only in
+ * segment case compare equal. Left as-is on a case-sensitive filesystem,
+ * where case is significant and must keep distinguishing real paths.
+ */
+export function normalizePathForComparison(path: string): string {
+	return isCaseInsensitiveFileSystem() ? path.toLowerCase() : path;
+}
+
 export function realpathStable(path: string): string {
 	if (existsSync(path)) return realpathSync(path);
 
@@ -220,7 +257,12 @@ export function ensureSafeTargetPath(
 ): void {
 	const canonicalWorkspace = realpathStable(workspaceDir);
 	const canonicalTarget = realpathStable(targetPath);
-	if (!isInsideDir(canonicalWorkspace, canonicalTarget)) {
+	if (
+		!isInsideDir(
+			normalizePathForComparison(canonicalWorkspace),
+			normalizePathForComparison(canonicalTarget),
+		)
+	) {
 		throw new Error(
 			`unsafe target path for repo ${repoId}: ${formatPath(targetPath)} resolves outside workspace ${formatPath(workspaceDir)}`,
 		);

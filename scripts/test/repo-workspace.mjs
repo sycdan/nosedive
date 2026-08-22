@@ -1022,3 +1022,149 @@ meta:
 		"in-workspace unowned file should remain untouched",
 	);
 });
+
+/**
+ * Detects case-insensitivity by creating a file and reaching it through a
+ * differently-cased name, rather than assuming from `process.platform`: a
+ * case-insensitive volume can be mounted on Linux (and vice versa on macOS),
+ * so the platform alone would mis-detect those setups.
+ */
+function detectCaseInsensitiveFs(scratchDir) {
+	const probeDir = join(scratchDir, "case-sensitivity-probe");
+	mkdirSync(probeDir, { recursive: true });
+	const probeFile = join(probeDir, "CaseProbe.txt");
+	writeFileSync(probeFile, "probe\n");
+	const alteredCaseFile = join(probeDir, "caseprobe.txt");
+	return existsSync(alteredCaseFile);
+}
+
+test("repo-workspace re-hydrate tolerates a case-only path difference on a case-insensitive filesystem", (t) => {
+	if (!detectCaseInsensitiveFs(tmp)) {
+		t.skip("filesystem is case-sensitive; case-only path differences cannot occur here");
+		return;
+	}
+
+	const caseRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda5";
+	const bridgeName = "CaseBridge";
+	const caseBridgeUpper = join(tmp, bridgeName);
+	const caseBridgeLower = join(tmp, bridgeName.toLowerCase());
+
+	mkdirSync(join(caseBridgeUpper, "kb"), { recursive: true });
+	mkdirSync(join(caseBridgeUpper, "workspace"), { recursive: true });
+	mkdirSync(join(caseBridgeUpper, "repos", "source"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], caseBridgeUpper);
+	runTool("git", ["config", "user.email", "case@example.invalid"], caseBridgeUpper);
+	runTool("git", ["config", "user.name", "Case Dev"], caseBridgeUpper);
+
+	const caseSourceRepo = join(caseBridgeUpper, "repos", "source");
+	runTool("git", ["init", "-b", "main"], caseSourceRepo);
+	runTool("git", ["config", "user.email", "case@example.invalid"], caseSourceRepo);
+	runTool("git", ["config", "user.name", "Case Dev"], caseSourceRepo);
+	write(join(caseSourceRepo, "README.md"), "case main\n");
+	runTool("git", ["add", "README.md"], caseSourceRepo);
+	runTool("git", ["commit", "-m", "case main commit"], caseSourceRepo);
+
+	writeBridgeConfig(caseBridgeUpper, { backlog: "./backlog" });
+	write(
+		join(caseBridgeUpper, "kb", "repo-case.md"),
+		`---
+kind: repo
+id: ${caseRepoId}
+name: case-repo
+gist: "Case-only path difference fixture"
+meta:
+  path: workspace/case-target
+  remotes:
+    local: repos/source
+---
+`,
+	);
+
+	// Hydrate once through the upper-cased bridge path. This is the "hydrate,
+	// pack" half of the reported cycle: the worktree is created and its git
+	// metadata stores the source path with this path's case baked in.
+	const firstHydrate = run(["hydrate-repo.workspace", caseRepoId], caseBridgeUpper);
+	assertOk(firstHydrate, "initial hydrate through the upper-cased bridge path failed");
+	assert.equal(existsSync(join(caseBridgeLower, "workspace", "case-target", ".git")), true);
+
+	// Re-hydrate ("jump" back in) through the same physical bridge, but
+	// reached via a differently-cased path segment. Before the fix, this
+	// failed with "is a git worktree for a different source repository"
+	// purely because of path case, even though nothing about the repository
+	// itself changed.
+	const secondHydrate = run(["hydrate-repo.workspace", caseRepoId], caseBridgeLower);
+	assertOk(
+		secondHydrate,
+		"re-hydrate through a differently-cased bridge path should not be refused as a different source repository",
+	);
+});
+
+test("repo-workspace refuses a target attached to a genuinely different source repository", () => {
+	const mismatchRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda6";
+	const mismatchBridge = join(tmp, "mismatch-bridge");
+
+	mkdirSync(join(mismatchBridge, "kb"), { recursive: true });
+	mkdirSync(join(mismatchBridge, "workspace"), { recursive: true });
+	mkdirSync(join(mismatchBridge, "repos", "source-a"), { recursive: true });
+	mkdirSync(join(mismatchBridge, "repos", "source-b"), { recursive: true });
+	runTool("git", ["init", "-b", "main"], mismatchBridge);
+	runTool("git", ["config", "user.email", "mismatch@example.invalid"], mismatchBridge);
+	runTool("git", ["config", "user.name", "Mismatch Dev"], mismatchBridge);
+
+	const sourceA = join(mismatchBridge, "repos", "source-a");
+	runTool("git", ["init", "-b", "main"], sourceA);
+	runTool("git", ["config", "user.email", "mismatch@example.invalid"], sourceA);
+	runTool("git", ["config", "user.name", "Mismatch Dev"], sourceA);
+	write(join(sourceA, "README.md"), "source a\n");
+	runTool("git", ["add", "README.md"], sourceA);
+	runTool("git", ["commit", "-m", "source a commit"], sourceA);
+
+	const sourceB = join(mismatchBridge, "repos", "source-b");
+	runTool("git", ["init", "-b", "main"], sourceB);
+	runTool("git", ["config", "user.email", "mismatch@example.invalid"], sourceB);
+	runTool("git", ["config", "user.name", "Mismatch Dev"], sourceB);
+	write(join(sourceB, "README.md"), "source b\n");
+	runTool("git", ["add", "README.md"], sourceB);
+	runTool("git", ["commit", "-m", "source b commit"], sourceB);
+
+	writeBridgeConfig(mismatchBridge, { backlog: "./backlog" });
+	write(
+		join(mismatchBridge, "kb", "repo-mismatch.md"),
+		`---
+kind: repo
+id: ${mismatchRepoId}
+name: mismatch-repo
+gist: "Genuinely different source repository fixture"
+meta:
+  path: workspace/mismatched-target
+  remotes:
+    local: repos/source-a
+---
+`,
+	);
+
+	// Build a target that is a real git worktree, owned by this repo's
+	// marker, but whose git metadata is attached to an entirely unrelated
+	// repository (source-b via its own cache) rather than source-a's managed
+	// cache. This is a real difference, not a case-only one, so the refusal
+	// must still fire after the case-insensitive comparison fix.
+	const otherCache = join(mismatchBridge, ".nosedive", "cache", "unrelated-other-repo");
+	mkdirSync(dirname(otherCache), { recursive: true });
+	runTool("git", ["clone", "--bare", sourceB, otherCache], mismatchBridge);
+	const mismatchedTarget = join(mismatchBridge, "workspace", "mismatched-target");
+	runTool("git", ["worktree", "add", "--detach", mismatchedTarget, "main"], otherCache);
+	write(join(mismatchedTarget, ".nosedive-ref"), `id: ${mismatchRepoId}\n`);
+
+	const mismatchHydrate = run(["hydrate-repo.workspace", mismatchRepoId], mismatchBridge);
+	assert.notEqual(
+		mismatchHydrate.status,
+		0,
+		"hydrate onto a target attached to a different source repository unexpectedly succeeded",
+	);
+	assert.match(
+		mismatchHydrate.stderr,
+		new RegExp(
+			`unsafe target path for repo ${mismatchRepoId}: .*is a git worktree for a different source repository`,
+		),
+	);
+});

@@ -59,7 +59,7 @@ screen rather than this page.
 ```
 npm i -g nosedive
 
-cd ~/notes && git init
+cd ~/BASE && git init
 git add -A && git commit -m "start"           # the bridge needs one commit
 git remote add origin <your remote>
 git push -u origin main                       # and that commit on the remote

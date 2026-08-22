@@ -50,7 +50,11 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.match(doc, /^  path: "workspace\/__self"$/m);
 	assert.match(doc, /^    cloud: "https:\/\/example\.com\/notes\.git"$/m);
 	assert.match(seed.stdout, /^nose: /m, "seed should explain the bridge repo guidance");
-	assert.match(seed.stdout, /^git add -A$/m, "seed should print the add step");
+	assert.match(
+		seed.stdout,
+		/^git add \.nosedive AGENTS\.md kb$/m,
+		"seed should add only the paths it wrote, never -A",
+	);
 	assert.match(
 		seed.stdout,
 		/^git commit -m "seed nosedive"$/m,
@@ -79,11 +83,7 @@ test("seed does not mint a second bridge repo doc on a repeat run", () => {
 		/^nose: /m,
 		"repeat seed should not print bridge repo guidance",
 	);
-	assert.doesNotMatch(
-		secondSeed.stdout,
-		/^git add -A$/m,
-		"repeat seed should not print the add step",
-	);
+	assert.doesNotMatch(secondSeed.stdout, /^git add /m, "repeat seed should not print the add step");
 	assert.doesNotMatch(
 		secondSeed.stdout,
 		/^git commit -m "seed nosedive"$/m,
@@ -107,7 +107,11 @@ test("seed mints a bridge repo doc without a cloud remote", () => {
 	assert.doesNotMatch(doc, /^    cloud:/m);
 	assert.doesNotMatch(doc, /^  url:/m);
 	assert.match(seed.stdout, /^nose: /m, "seed should explain the bridge repo guidance");
-	assert.match(seed.stdout, /^git add -A$/m, "seed should print the add step");
+	assert.match(
+		seed.stdout,
+		/^git add \.nosedive AGENTS\.md kb$/m,
+		"seed should add only the paths it wrote, never -A",
+	);
 	assert.match(
 		seed.stdout,
 		/^git commit -m "seed nosedive"$/m,

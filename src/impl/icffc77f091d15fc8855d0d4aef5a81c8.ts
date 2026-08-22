@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { captureCommand } from "./commandAdapter.js";
 
@@ -14,6 +14,7 @@ import {
 	renderBaseConfig,
 } from "../lib/bridgeSetupIo.js";
 import {
+	BRIDGE_STATE_DIRNAME,
 	CURRENT_COMPATIBILITY_LEVEL,
 	KNOWN_INSTRUCTION_FILES,
 	MANAGED_INSTRUCTIONS_BEGIN,
@@ -136,7 +137,11 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 	return writes;
 }
 
-function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): string {
+function mintBacklogMemo(
+	bridgeDir: string,
+	kbDir: string,
+	io: CommandIo,
+): { id: string; path: string } {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -164,7 +169,7 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 		].join("\n"),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
-	return id;
+	return { id, path };
 }
 
 /**
@@ -199,7 +204,7 @@ function mintBridgeRepoDoc(
 	kbDir: string,
 	homeBranch: string,
 	io: CommandIo,
-): void {
+): string {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -219,6 +224,7 @@ function mintBridgeRepoDoc(
 		}),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
+	return path;
 }
 
 async function seed(args: string[], io: CommandIo): Promise<void> {
@@ -265,17 +271,30 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	// own workspace is not worth half-creating.
 	assertWorkspaceInsideBridge(bridgeDir, settings.workspace);
 
+	// Where this run wrote, so the guidance below can name those paths instead of
+	// telling the pilot to `git add -A`. A bridge's untracked entries include its
+	// hydrated worktrees, and staging one of those commits another repo's checkout
+	// into the bridge. Minted documents collapse to their directory: the pilot
+	// wants their whole kb staged, and a line of uuid filenames that grows with
+	// every mint is one nobody reads.
+	const written: string[] = [];
+
 	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
 	// L0 already carries the memo its migration minted; a fresh one does not,
 	// and without this update-backlog and dump-backlog have nothing to read.
 	if (!uuidLike(settings.backlog)) {
-		settings.backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
+		const backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
+		settings.backlog = backlog.id;
+		written.push(dirname(backlog.path));
 	}
 
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
 	io.log(`Wrote ${formatPath(basePath)}`);
+	// The directory, not the two files: it holds config.yaml and the ignore rules
+	// that keep its cache out of the commit, and nothing else that is not ours.
+	written.push(join(bridgeDir, BRIDGE_STATE_DIRNAME));
 
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
@@ -296,19 +315,25 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	});
 	const mintedBridgeRepoDoc = !knowsItself;
 	if (mintedBridgeRepoDoc) {
-		mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io);
+		written.push(dirname(mintBridgeRepoDoc(bridgeDir, kbDir, settings.homeBranch, io)));
 	}
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
 		io.log(`Wrote ${formatPath(write.path)}`);
+		written.push(write.path);
 	}
 
 	if (mintedBridgeRepoDoc) {
+		// Says what is true whether the bridge was cloned or `git init`ed. A clone
+		// already carries commits, so "the remote needs a commit" is false there --
+		// what still has to hold either way is that scopes resolve against origin,
+		// so the home branch has to exist on it.
 		io.log(
-			"nose: this bridge is now one of its own repos, so scoped work cannot resolve until its remote has a commit",
+			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${settings.homeBranch} has to exist before work can be scoped to it`,
 		);
-		io.log("git add -A");
+		const addPaths = [...new Set(written.map((path) => formatPath(path)))].sort();
+		io.log(`git add ${addPaths.join(" ")}`);
 		io.log('git commit -m "seed nosedive"');
 		if (remotes.length > 0) {
 			io.log(`git push -u origin ${settings.homeBranch}`);

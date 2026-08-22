@@ -105,13 +105,18 @@ try {
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
-	// A fresh seed writes exactly one kb doc: the backlog memo `backlog:` names.
+	// A fresh seed writes exactly two kb docs: the backlog memo `backlog:` names,
+	// and the bridge's own `kind: repo` doc, so a new pilot has something to
+	// scope a dive to without first finding `record.repo`.
 	const seededKb = readdirSync(join(seedBridge, "kb"));
-	assert.equal(seededKb.length, 1, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
-	assert.match(
-		readFileSync(join(seedBridge, "kb", seededKb[0]), "utf8"),
-		/^kind: memo$/m,
-		"the one seeded kb doc should be the backlog memo",
+	assert.equal(seededKb.length, 2, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	const seededKinds = seededKb
+		.map((entry) => /^kind: (\w+)$/m.exec(readFileSync(join(seedBridge, "kb", entry), "utf8"))?.[1])
+		.sort();
+	assert.deepEqual(
+		seededKinds,
+		["memo", "repo"],
+		"seed should write one backlog memo and one repo",
 	);
 	assert.equal(
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),

@@ -285,8 +285,12 @@ export function createBridge(tmp, name, options) {
  * identity it wants to assert on. Depending on that ordering passed on a
  * machine with a global `user.name` and failed on CI, which has none.
  */
-export function giveOrigin(tmp, bridgeDir, name) {
-	runTool("git", ["remote", "add", "origin", bareRepo(tmp, `${name}-origin.git`)], bridgeDir);
+export function giveOrigin(tmp, bridgeDir, name, branch = "main") {
+	runTool(
+		"git",
+		["remote", "add", "origin", bareRepo(tmp, `${name}-origin.git`, branch)],
+		bridgeDir,
+	);
 	runTool(
 		"git",
 		[
@@ -301,14 +305,15 @@ export function giveOrigin(tmp, bridgeDir, name) {
 		],
 		bridgeDir,
 	);
-	runTool("git", ["push", "-u", "origin", "main"], bridgeDir);
+	runTool("git", ["push", "-u", "origin", branch], bridgeDir);
+	runTool("git", ["remote", "set-head", "origin", branch], bridgeDir);
 }
 
 /** An empty bare repository, for use as a remote. */
-export function bareRepo(tmp, name) {
+export function bareRepo(tmp, name, branch = "main") {
 	const path = join(tmp, name);
 	mkdirSync(path, { recursive: true });
-	runTool("git", ["init", "--bare", "-b", "main"], path);
+	runTool("git", ["init", "--bare", "-b", branch], path);
 	return path;
 }
 

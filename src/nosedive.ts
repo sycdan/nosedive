@@ -23,6 +23,9 @@ export { decomposeSectionHeading, hasLoggedSection } from "./lib/kbSections.js";
 // build `ctx.resolve`. It is public surface because a spawned child has no
 // other way in, not because callers outside nosedive are expected to use it.
 export { createGateResolver } from "./lib/gateResolve.js";
+// Exported so tests can exercise the id assertion directly: it alone keeps
+// filename-is-the-id honest, and going through `seed` would obscure that fact.
+export { readKbDocById } from "./lib/kbDocs.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

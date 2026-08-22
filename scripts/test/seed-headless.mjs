@@ -41,9 +41,10 @@ import {
 	writeBridgeConfig,
 } from "../test-helpers.mjs";
 
-const { readNosediveRc } = await import(libUrl);
+const { readKbDocById, readNosediveRc } = await import(libUrl);
 const tmp = createTmp("seed-headless");
 const noBridge = createNoBridge(tmp);
+const quidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 test("seed-headless", () => {
 	const seedHelp = run(["seed", "--help"], noBridge);
@@ -85,11 +86,9 @@ test("seed-headless", () => {
 	// rather than a directory the way it was at L0.
 	const freshConfig = readFileSync(join(headlessFreshBridge, ".nosedive", "config.yaml"), "utf8");
 	const freshMemoId = /^backlog: (\S+)$/m.exec(freshConfig)?.[1];
-	assert.match(
-		freshMemoId ?? "",
-		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-		"fresh seed should mint a backlog memo id",
-	);
+	const freshBridgeId = /^bridge: (\S+)$/m.exec(freshConfig)?.[1];
+	assert.match(freshMemoId ?? "", quidPattern, "fresh seed should mint a backlog memo id");
+	assert.match(freshBridgeId ?? "", quidPattern, "fresh seed should mint a bridge repo id");
 	assert.equal(
 		freshConfig,
 		[
@@ -97,7 +96,7 @@ test("seed-headless", () => {
 			"workspace: ./workspace",
 			`backlog: ${freshMemoId}`,
 			"kb: ./kb",
-			"home-branch: main",
+			`bridge: ${freshBridgeId}`,
 			"work-branch-prefix: work/",
 			"",
 		].join("\n"),
@@ -169,11 +168,13 @@ current:
 		"utf8",
 	);
 	const existingMemoId = /^backlog: (\S+)$/m.exec(existingConfig)?.[1];
+	const existingBridgeId = /^bridge: (\S+)$/m.exec(existingConfig)?.[1];
 	assert.match(
 		existingMemoId ?? "",
-		/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+		quidPattern,
 		"seed should mint a backlog memo id when migration produced none",
 	);
+	assert.match(existingBridgeId ?? "", quidPattern, "seed should mint a bridge repo id");
 	assert.equal(
 		existingConfig,
 		[
@@ -181,7 +182,7 @@ current:
 			"workspace: ./custom-workspace",
 			`backlog: ${existingMemoId}`,
 			"kb: ./custom-kb",
-			"home-branch: main",
+			`bridge: ${existingBridgeId}`,
 			"work-branch-prefix: work/",
 			"",
 		].join("\n"),
@@ -213,4 +214,85 @@ current:
 	);
 	assertOk(initHeadlessAgain, "second headless init on migrated bridge failed");
 	assert.doesNotMatch(initHeadlessAgain.stdout, /Running migration/);
+});
+
+test("seed prints the trunk resolved from git", () => {
+	const bridge = join(tmp, "master-bridge");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "master"], bridge);
+	giveOrigin(tmp, bridge, "master-bridge", "master");
+
+	const result = run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
+	assertOk(result, "seed on master failed");
+	assert.match(result.stdout, /^git push -u origin master$/m);
+	assert.doesNotMatch(result.stdout, /^git push -u origin main$/m);
+});
+
+test("seed removes home-branch and preserves unowned config", () => {
+	const bridge = join(tmp, "old-home-branch");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	giveOrigin(tmp, bridge, "old-home-branch");
+	const runnerId = "019ff32a-d05f-77d7-ad63-5da2c22d0418";
+	write(
+		join(bridge, ".nosedive", "config.yaml"),
+		[
+			"compatibility-level: 2",
+			"workspace: ./workspace",
+			"backlog: ./backlog",
+			"kb: ./kb",
+			"home-branch: main",
+			"work-branch-prefix: work/",
+			`agent-runner: ${runnerId}`,
+			"",
+		].join("\n"),
+	);
+
+	const result = run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
+	assertOk(result, "re-seed with home-branch failed");
+	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	assert.doesNotMatch(config, /^home-branch:/m);
+	assert.match(/^bridge: (\S+)$/m.exec(config)?.[1] ?? "", quidPattern);
+	assert.match(config, new RegExp(`^agent-runner: ${runnerId}$`, "m"));
+});
+
+test("re-seed reuses the bridge repo document", () => {
+	const bridge = join(tmp, "reseed-bridge");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	giveOrigin(tmp, bridge, "reseed-bridge");
+
+	const firstSeed = run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
+	assertOk(firstSeed, "first seed for re-seed test failed");
+	const firstConfig = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	const firstBridgeId = /^bridge: (\S+)$/m.exec(firstConfig)?.[1];
+	assert.match(firstBridgeId ?? "", quidPattern, "first seed should record a bridge repo id");
+
+	const secondSeed = run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
+	assertOk(secondSeed, "second seed for re-seed test failed");
+	const secondConfig = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	assert.equal(/^bridge: (\S+)$/m.exec(secondConfig)?.[1], firstBridgeId);
+
+	const selfRepoDocs = readdirSync(join(bridge, "kb"))
+		.filter((name) => name.endsWith(".md"))
+		.map((name) => readFileSync(join(bridge, "kb", name), "utf8"))
+		.filter((text) => /^kind: repo$/m.test(text) && /^\s+path: "workspace\/__self"$/m.test(text));
+	assert.equal(selfRepoDocs.length, 1);
+});
+
+test("readKbDocById refuses a filename whose document declares another id", () => {
+	const bridge = join(tmp, "lying-kb-doc");
+	const requestedId = "019ff32a-d05f-77d7-ad63-5da2c22d0418";
+	const declaredId = "01a02ae5-b7e9-7124-aaeb-ce8bca36564e";
+	const path = join(bridge, "kb", `${requestedId}.md`);
+	write(path, `---\nkind: memo\nid: ${declaredId}\n---\n`);
+
+	assert.throws(
+		() => readKbDocById(join(bridge, "kb"), bridge, requestedId),
+		(error) => {
+			assert.match(error.message, new RegExp(`${requestedId}\\.md`));
+			assert.match(error.message, new RegExp(`declares id ${declaredId}`));
+			return true;
+		},
+	);
 });

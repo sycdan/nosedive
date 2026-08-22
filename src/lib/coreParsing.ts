@@ -70,7 +70,8 @@ export interface NosediveRc {
 	workspaceDir?: string;
 	backlog?: string;
 	kbDir?: string;
-	homeBranch?: string;
+	/** `bridge`: id of the bridge's own `kind: repo` doc. */
+	bridge?: string;
 	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
@@ -357,7 +358,7 @@ export function readNosediveRc(start: string): NosediveRc {
 		workspaceDir: workspace ? resolveFrom(bridgeDir, workspace) : undefined,
 		backlog,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
-		homeBranch: rc.scalars["home-branch"],
+		bridge: rc.scalars.bridge,
 		workBranchPrefix: rc.scalars["work-branch-prefix"],
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
@@ -400,7 +401,7 @@ export interface RcSettings {
 	workspace: string;
 	backlog: string;
 	kb: string;
-	homeBranch: string;
+	bridge: string;
 	workBranchPrefix: string;
 	pilotName: string;
 	pilotEmail: string;

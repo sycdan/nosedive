@@ -90,6 +90,10 @@ try {
 	run("git", ["init", "-b", "main"], seedBridge);
 	run("git", ["config", "user.name", "Packed Pilot"], seedBridge);
 	run("git", ["config", "user.email", "packed@example.invalid"], seedBridge);
+	// `seed` refuses a bridge with no `origin`. A URL that resolves to nothing is
+	// enough: seed only asks git whether the remote is configured, and keeping it
+	// unreachable keeps this script offline.
+	run("git", ["remote", "add", "origin", "https://example.com/packed-notes.git"], seedBridge);
 	const seed = runPackedNpm(
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless --file AGENTS.md"],
 		seedBridge,

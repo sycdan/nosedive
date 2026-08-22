@@ -6,7 +6,7 @@ import { formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { appendLinkToDoc, resolveFeatDoc } from "./repoFeatScopes.js";
-import { assertSlug, titleFromSlug } from "./slugs.js";
+import { assertSlug, slugFromGist, titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 export interface RecordGateOptions {
@@ -151,7 +151,20 @@ export function recordGate(args: string[], io: CommandIo): void {
 	const feat = featForGate(kbDocs, rc, options.feat);
 
 	const id = uuid7AtMs(Date.now());
-	const name = options.name ?? defaultGateName();
+	// An explicit --name wins outright. Otherwise derive a slug from the gist,
+	// so the first thing a pilot sees named is what the gate checks rather than
+	// a clock -- but fall back to the timestamp name if the derived slug
+	// collides with a gate already declared on this feat, or the gist yields
+	// nothing usable, rather than refusing to mint a runnable gate at all.
+	const existingGateNames = new Set(
+		feat.links
+			.filter((link) => link.rel === "test.gate")
+			.map((link) => kbDocs.find((doc) => doc.id === link.id)?.name)
+			.filter((docName): docName is string => docName !== undefined),
+	);
+	const derived = slugFromGist(options.gist);
+	const name =
+		options.name ?? (derived && !existingGateNames.has(derived) ? derived : defaultGateName());
 	const docPath = join(rc.kbDir, `${id}.md`);
 	const scriptRel = `kb/artifacts/${id}.mjs`;
 	const scriptPath = join(rc.kbDir, "artifacts", `${id}.mjs`);

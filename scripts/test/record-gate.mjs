@@ -36,7 +36,7 @@ test("record.gate mints a gate, its stub, and the feat link, and the gate fails 
 	const doc = readFileSync(join(bridge, "kb", `${gateId}.md`), "utf8");
 	assert.match(doc, /^kind: gate$/m);
 	assert.match(doc, /^gist: "The command surface stays in step with the docs\."$/m);
-	assert.match(doc, /^name: new-gate-\d{4}-\d{2}-\d{2}-\d{6}$/m);
+	assert.match(doc, /^name: the-command-surface-stays-in-step-with$/m);
 	assert.match(doc, new RegExp(`^  test-script: kb/artifacts/${gateId}\\.mjs$`, "m"));
 	// An absent scopes key inherits the declaring doc's; an empty one would say
 	// the opposite and pin the gate to no repo at all.
@@ -92,9 +92,52 @@ test("record.gate puts the name on the doc and height and flakiness on the link"
 	);
 });
 
+test("--name still wins over a gist that would otherwise be derived", () => {
+	const { bridge } = setup("name-wins");
+
+	const recorded = run(
+		[
+			"record.gate",
+			"This gist would derive a totally different slug.",
+			"--feat",
+			"honesty",
+			"--name",
+			"picked-by-hand",
+		],
+		bridge,
+	);
+	assertOk(recorded, "record.gate with an explicit name over a derivable gist failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const doc = readFileSync(join(bridge, "kb", `${gateId}.md`), "utf8");
+	assert.match(doc, /^name: picked-by-hand$/m);
+});
+
+test("record.gate falls back to a timestamp name when the gist yields no usable slug", () => {
+	const { bridge } = setup("gate-fallback");
+
+	const recorded = run(["record.gate", "!!! --- ???", "--feat", "honesty"], bridge);
+	assertOk(recorded, "record.gate with an unslugable gist failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const doc = readFileSync(join(bridge, "kb", `${gateId}.md`), "utf8");
+	assert.match(doc, /^name: new-gate-\d{4}-\d{2}-\d{2}-\d{6}$/m);
+});
+
+test("record.gate falls back to a timestamp name when a derived slug collides on the feat", () => {
+	const { bridge } = setup("gate-collision");
+
+	const first = run(["record.gate", "Builds cleanly.", "--feat", "honesty"], bridge);
+	assertOk(first, "first record.gate failed");
+	const firstDoc = readFileSync(join(bridge, "kb", `${recordedGateId(first.stdout)}.md`), "utf8");
+	assert.match(firstDoc, /^name: builds-cleanly$/m);
+
+	const second = run(["record.gate", "Builds cleanly.", "--feat", "honesty"], bridge);
+	assertOk(second, "second record.gate failed");
+	const secondDoc = readFileSync(join(bridge, "kb", `${recordedGateId(second.stdout)}.md`), "utf8");
+	assert.match(secondDoc, /^name: new-gate-\d{4}-\d{2}-\d{2}-\d{6}$/m);
+});
+
 test("record.gate refuses what it cannot mint a runnable gate from", () => {
 	const { bridge, featId } = setup("refusals");
-
 	const noFeat = run(["record.gate", "Unowned."], bridge);
 	assert.notEqual(noFeat.status, 0);
 	assert.match(noFeat.stderr, /record\.gate requires --feat/);

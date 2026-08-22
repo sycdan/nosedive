@@ -22,8 +22,8 @@ test("pitch writes a feat doc from a bare gist", () => {
 	assert.match(doc, /^kind: feat$/m);
 	assert.match(doc, /^id: [0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/m);
 	assert.match(doc, /^gist: "Exercise the L1 pitch contract\."$/m);
-	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);
-	assert.match(doc, /^# New Effort \d{4} \d{2} \d{2} \d{6}$/m);
+	assert.match(doc, /^name: exercise-the-l1-pitch-contract$/m);
+	assert.match(doc, /^# Exercise The L1 Pitch Contract$/m);
 	assert.doesNotMatch(doc, /^links:/m);
 	assert.doesNotMatch(doc, /## /m, "a fresh pitch should carry no body sections");
 });
@@ -36,6 +36,27 @@ test("pitch names a feat with --name", () => {
 	const doc = effortDoc(bridge, pitched.stdout);
 	assert.match(doc, /^name: auth-refactor$/m);
 	assert.match(doc, /^# Auth Refactor$/m);
+});
+
+test("--name still wins over a gist that would otherwise be derived", () => {
+	const bridge = createBridge(tmp, "pitch-name-wins-bridge");
+
+	const pitched = run(
+		["pitch", "This gist would derive a totally different slug.", "--name", "picked-by-hand"],
+		bridge,
+	);
+	assertOk(pitched, "named pitch over a derivable gist failed");
+	const doc = effortDoc(bridge, pitched.stdout);
+	assert.match(doc, /^name: picked-by-hand$/m);
+});
+
+test("pitch falls back to a timestamp name when the gist yields no usable slug", () => {
+	const bridge = createBridge(tmp, "pitch-fallback-bridge");
+
+	const pitched = run(["pitch", "!!! --- ???"], bridge);
+	assertOk(pitched, "pitch with an unslugable gist failed");
+	const doc = effortDoc(bridge, pitched.stdout);
+	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);
 });
 
 test("pitch nests under a parent and links both ways", () => {

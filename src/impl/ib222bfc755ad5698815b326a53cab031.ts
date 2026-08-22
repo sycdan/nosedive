@@ -18,6 +18,7 @@ import {
 import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { appendLinkToDoc, featDocs, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { slugFromGist } from "../lib/slugs.js";
 
 function pitch(args: string[], io: CommandIo): void {
 	const options = parsePitchArgs(args);
@@ -28,7 +29,16 @@ function pitch(args: string[], io: CommandIo): void {
 
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const parent = options.parent ? resolveFeatDoc(kbDocs, rc, options.parent) : undefined;
-	const leaf = options.name ?? defaultFeatName();
+	const existingNames = new Set(featDocs(kbDocs).map((doc) => doc.name));
+	// An explicit --name wins outright. Otherwise derive a slug from the gist,
+	// the way `pitch` always has for the leaf's title -- but fall back to the
+	// timestamp name if the derived slug collides or the gist yields nothing
+	// usable, rather than refusing to mint a feat at all.
+	const derived = options.name ?? slugFromGist(options.gist);
+	const derivedCombined = derived && (parent ? `${derived}.${parent.name}` : derived);
+	const leaf =
+		options.name ??
+		(derivedCombined && !existingNames.has(derivedCombined) ? derived! : defaultFeatName());
 	const name = parent ? `${leaf}.${parent.name}` : leaf;
 
 	const clash = featDocs(kbDocs).find((doc) => doc.name === name);

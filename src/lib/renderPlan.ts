@@ -13,7 +13,19 @@ export function writeFileAtomic(path: string, content: string): void {
 		`.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
 	);
 	writeFileSync(tmp, content, "utf8");
-	renameSync(tmp, path);
+	// Windows can briefly hold temp-file handles while scanners or indexers run.
+	// A transient rename failure here usually succeeds on the next try.
+	for (let attempt = 0; attempt < 5; attempt++) {
+		try {
+			renameSync(tmp, path);
+			return;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			const shouldRetry = code === "EPERM" || code === "EACCES" || code === "EBUSY";
+			if (!shouldRetry || attempt === 4) throw error;
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 * 2 ** attempt);
+		}
+	}
 }
 
 export function gitOk(cwd: string, args: string[]): boolean {

@@ -66,9 +66,6 @@ git clone <your-notes-repo> ~/BASE && cd ~/BASE
 
 nosedive seed                                 # bridge config, AGENTS.md, and
                                               # the bridge itself as a repo doc
-git add -A
-git commit -m "seed nosedive"
-git push -u origin main
 
 nosedive pitch "Add a hello note"
 nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..." \
@@ -82,16 +79,13 @@ nosedive jump                                 # picks the same dive back up
 nosedive land                                 # pushes work/add-a-hello-note
 ```
 
-Three things worth knowing before you start:
+Two things worth knowing before you start:
 
-- **The bridge is scoped against `origin`.** Its `main` has to exist there, so
-  push once after `seed`; until it does, `record.dive` and `jump` both fail
-  resolving a ref. Cloning an empty repo is fine -- that push creates it.
 - **You do not need `record.repo`.** `seed` registers the bridge itself, named
   after its own directory -- `BASE` above -- and hydrates it at
   `workspace/__self`. Add other repos when you need them.
-- **You do not have to commit the bridge between steps.** The kb documents each
-  command writes are read off disk; `land` commits and pushes them for you.
+- **You do not have to commit or push the bridge between steps.** Nosedive does
+  it for you.
 
 Made a wrong turn? `nosedive bail --reason "<why>"` abandons the active dive.
 The reason is always required, so it never fires by accident.

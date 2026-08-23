@@ -18,6 +18,7 @@ import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
 	assertOk,
+	bareRepo,
 	cli,
 	createNoBridge,
 	createTmp,
@@ -56,11 +57,8 @@ test("seed-migration", () => {
 	runTool("git", ["init", "-b", "main"], backlogBridge);
 	runTool("git", ["config", "user.name", "Backlog Person"], backlogBridge);
 	runTool("git", ["config", "user.email", "backlog@example.invalid"], backlogBridge);
-	runTool(
-		"git",
-		["remote", "add", "origin", "https://example.com/dan/backlog-bridge.git"],
-		backlogBridge,
-	);
+	const backlogOrigin = bareRepo(tmp, "backlog-bridge-origin.git");
+	runTool("git", ["remote", "add", "origin", backlogOrigin], backlogBridge);
 	write(
 		join(backlogBridge, "kb", `${bridgeRepoId}.md`),
 		`---
@@ -71,7 +69,7 @@ gist: Existing bridge repo doc.
 meta:
   path: workspace/__self
   remotes:
-    cloud: https://example.com/dan/backlog-bridge.git
+    cloud: ${JSON.stringify(backlogOrigin)}
 ---
 
 # Bridge Existing

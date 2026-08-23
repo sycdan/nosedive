@@ -80,6 +80,7 @@ assert.equal(
 );
 const packedPath = resolve(packed.filename);
 const seedBridge = mkdtempSync(join(tmpdir(), "nosedive-pack-seed-"));
+const seedOrigin = mkdtempSync(join(tmpdir(), "nosedive-pack-origin-"));
 try {
 	const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
 	assert.match(help.stdout, /Usage: nosedive <command>/);
@@ -88,12 +89,12 @@ try {
 	assert.match(help.stdout, /add-repo/);
 
 	run("git", ["init", "-b", "main"], seedBridge);
+	run("git", ["init", "--bare", "-b", "main"], seedOrigin);
 	run("git", ["config", "user.name", "Packed Pilot"], seedBridge);
 	run("git", ["config", "user.email", "packed@example.invalid"], seedBridge);
-	// `seed` refuses a bridge with no `origin`. A URL that resolves to nothing is
-	// enough: seed only asks git whether the remote is configured, and keeping it
-	// unreachable keeps this script offline.
-	run("git", ["remote", "add", "origin", "https://example.com/packed-notes.git"], seedBridge);
+	// A local bare origin keeps the packed install proof offline while exercising
+	// seed's first publish.
+	run("git", ["remote", "add", "origin", seedOrigin], seedBridge);
 	const seed = runPackedNpm(
 		["exec", "--yes", "--package", packedPath, "-c", "nosedive seed --headless --file AGENTS.md"],
 		seedBridge,
@@ -142,4 +143,5 @@ try {
 } finally {
 	rmSync(packed.filename, { force: true });
 	rmSync(seedBridge, { recursive: true, force: true });
+	rmSync(seedOrigin, { recursive: true, force: true });
 }

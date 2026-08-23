@@ -367,10 +367,7 @@ export function seededBridge(tmp, name, diver) {
 	const bridge = createBridge(tmp, name);
 	runTool("git", ["config", "user.name", "Nosedive Test"], bridge);
 	runTool("git", ["config", "user.email", diver], bridge);
-	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "seed bridge");
-	runTool("git", ["push", "-u", "origin", "main"], bridge);
+	assertOk(run(["seed", "--headless"], bridge, ""), "seed failed");
 	return { bridge, origin: join(tmp, `${name}-origin.git`) };
 }
 

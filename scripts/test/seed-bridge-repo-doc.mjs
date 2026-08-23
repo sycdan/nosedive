@@ -3,14 +3,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, run, runTool, write } from "../test-helpers.mjs";
+import { assertOk, bareRepo, createTmp, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("seed-bridge-repo-doc");
 
-function newBridge(name) {
+function newBridge(name, trunk = "main") {
 	const bridgeDir = join(tmp, name);
 	mkdirSync(bridgeDir, { recursive: true });
-	runTool("git", ["init", "-b", "main"], bridgeDir);
+	runTool("git", ["init", "-b", trunk], bridgeDir);
 	runTool("git", ["config", "user.name", "Seed Person"], bridgeDir);
 	runTool("git", ["config", "user.email", "seed@example.invalid"], bridgeDir);
 	return bridgeDir;
@@ -41,22 +41,16 @@ function repoDoc(bridgeDir) {
 
 test("seed creates a bridge repo doc from an origin remote", () => {
 	const bridgeDir = newBridge("fresh-origin");
-	runTool("git", ["remote", "add", "origin", "https://example.com/notes.git"], bridgeDir);
+	const origin = bareRepo(tmp, "fresh-origin.git");
+	runTool("git", ["remote", "add", "origin", origin], bridgeDir);
 	const seed = run(["seed", "--headless", "--file", "AGENTS.md"], bridgeDir, "");
 	assertOk(seed, "seed failed");
 	const doc = repoDoc(bridgeDir);
 	assert.match(doc, /^kind: repo$/m);
 	assert.match(doc, new RegExp(`^name: ${basename(bridgeDir)}$`, "m"));
 	assert.match(doc, /^  path: "workspace\/__self"$/m);
-	assert.match(doc, /^    cloud: "https:\/\/example\.com\/notes\.git"$/m);
-	assert.match(seed.stdout, /^nose: /m, "seed should explain the bridge repo guidance");
-	assert.match(seed.stdout, /^git add -A$/m, "seed should print the add step");
-	assert.match(
-		seed.stdout,
-		/^git commit -m "seed nosedive"$/m,
-		"seed should print the commit step",
-	);
-	assert.match(seed.stdout, /^git push -u origin main$/m, "seed should print the push step");
+	assert.ok(doc.includes(`    cloud: ${JSON.stringify(origin)}\n`));
+	assert.doesNotMatch(seed.stdout, /^git /m, "successful seed should not name a git command");
 	assert.match(
 		seed.stdout,
 		/^nosedive pitch "<what you want to build>"$/m,
@@ -66,7 +60,7 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 
 test("seed does not mint a second bridge repo doc on a repeat run", () => {
 	const bridgeDir = newBridge("repeat-origin");
-	runTool("git", ["remote", "add", "origin", "https://example.com/notes.git"], bridgeDir);
+	runTool("git", ["remote", "add", "origin", bareRepo(tmp, "repeat-origin.git")], bridgeDir);
 	const firstSeed = run(["seed", "--headless", "--file", "AGENTS.md"], bridgeDir, "");
 	assertOk(firstSeed, "first seed failed");
 	const before = kbDocs(bridgeDir);
@@ -108,8 +102,10 @@ test("seed refuses a bridge with no origin remote", () => {
 
 test("seed skips minting when a matching bridge repo doc already exists", () => {
 	const bridgeDir = newBridge("existing-repo-doc");
+	// nose: this seems wrong... shared id for backlog memo and repo doc?
 	writeConfig(bridgeDir, "019f52b7-75a0-7965-93a8-e6b08500eb21");
-	runTool("git", ["remote", "add", "origin", "https://example.com/notes.git"], bridgeDir);
+	const origin = bareRepo(tmp, "existing-repo-doc.git");
+	runTool("git", ["remote", "add", "origin", origin], bridgeDir);
 	write(
 		join(bridgeDir, "kb", "existing-repo.md"),
 		[
@@ -121,7 +117,7 @@ test("seed skips minting when a matching bridge repo doc already exists", () => 
 			"meta:",
 			"  path: workspace/__self",
 			"  remotes:",
-			"    cloud: https://example.com/notes.git",
+			`    cloud: ${origin.replaceAll("\\", "/")}`,
 			"    local: /tmp/existing-repo-doc",
 			"---",
 			"",
@@ -129,7 +125,7 @@ test("seed skips minting when a matching bridge repo doc already exists", () => 
 			"",
 		].join("\n"),
 	);
-	const seed = run(["seed", "--headless", "--file", "AGENTS.md"], bridgeDir, "");
+	const seed = run(["seed", "--headless"], bridgeDir, "");
 	assertOk(seed, "seed failed");
 	assert.deepEqual(readdirSync(join(bridgeDir, "kb")).sort(), ["existing-repo.md"]);
 });

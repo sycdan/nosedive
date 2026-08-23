@@ -817,7 +817,7 @@ test("jump refuses a worktree carrying a commit no ref contains", () => {
 	assert.match(result.stderr, /path=workspace\/unpublished-repo/);
 	assert.match(result.stderr, new RegExp(`head=${unpublished}`));
 	assert.match(result.stderr, new RegExp(`pin=${pinnedRef}`));
-	assert.match(result.stderr, /kb\/019fcb35-d660-7318-ac4c-3d5aeed3a81e/);
+	assert.match(result.stderr, /nosedive render 019fcb35-d660-7318-ac4c-3d5aeed3a81e/);
 	assert.equal(
 		worktreeHead(bridge, "unpublished"),
 		unpublished,

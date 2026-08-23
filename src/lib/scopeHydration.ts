@@ -162,7 +162,7 @@ export function refuseUnmovableScopes(hydrated: HydratedScope[], repinCommand: s
 	throw new Error(
 		`refusing to move ${unmovable.length} hydrated worktree${unmovable.length === 1 ? "" : "s"} ` +
 			`off commits no local or remote ref contains; no scope was moved:\n${lines}\n` +
-			`see kb/${HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID} for the recourses. ` +
+			`nosedive render ${HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID} for the recourses. ` +
 			`A worktree \`land\` has just pushed reads as unpublished until a fetch records it, ` +
 			`so in a stacked chain run \`${repinCommand}\` before jumping.`,
 	);

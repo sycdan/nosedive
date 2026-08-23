@@ -37,9 +37,9 @@ actions through explicit commands that compose safely for a human or an agent.
 _nosedive_ organizes work around two core concepts:
 
 - **Feat**: a KB document for a unit of potentially cross-repository work.
-  `scopes:` declares its repositories and its body describes its goals.
+  `scopes` declares its repositories and its body describes its goals.
   The generated backlog memo lists open feats.
-- **Dive** — one concrete iteration on a feat. Dives are KB docs that record
+- **Dive**: one concrete iteration on a feat. Dives are KB docs that record
   who is actively working and from which commits, a brief, and progress notes.
 
 The working arc is `preflight` to **orient**: prepare the bridge and list

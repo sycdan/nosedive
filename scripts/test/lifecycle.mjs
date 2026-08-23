@@ -359,7 +359,8 @@ meta:
 	const mintedPath = join(bridge, "kb", `${mintedId}.md`);
 	const mintedDoc = readFileSync(mintedPath, "utf8");
 	assert.match(mintedDoc, /^gist: "triage work-loop-gate failure"$/m);
-	assert.match(mintedDoc, new RegExp(`kb/${workLoopGateId}\\.md:\\n      rel: test\\.gate`));
+	/** @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green */
+	assert.match(mintedDoc, new RegExp(`kb/${workLoopGateId}\\.md:\\n      rel: land\\.gate`));
 	assert.match(
 		mintedDoc,
 		new RegExp(`Gate: ${workLoopGateId}`),
@@ -391,8 +392,16 @@ meta:
 	assertOk(run(["jump"], bridge), "jump failed");
 	const worktree = join(bridge, "workspace", repo.name);
 
-	// 6. The dive selects the gate it was minted for, with no --full needed.
-	const onDive = run(["test"], bridge);
+	/**
+	 * 6. The focused form selects nothing and names the flag that widens the
+	 * search; `--full` finds the gate on the feat that declared it.
+	 *
+	 * @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green
+	 */
+	const focused = run(["test"], bridge);
+	assert.equal(focused.status, 1, "a dive claiming no test.gate must not report a pass");
+	assert.match(focused.stderr, /selects no test.gate gates/);
+	const onDive = run(["test", "--full"], bridge);
 	assert.equal(onDive.status, 1, "the dive's own gate must still fail before the fix");
 	assert.match(onDive.stderr + onDive.stdout, new RegExp(`${marker} is missing`));
 	assert.match(readFileSync(mintedPath, "utf8"), /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
@@ -402,7 +411,7 @@ meta:
 	runTool("git", ["add", marker], worktree);
 	gitCommit(worktree, "add the work loop feature");
 
-	const fixed = run(["test"], bridge);
+	const fixed = run(["test", "--full"], bridge);
 	assertOk(fixed, "the gate must pass once the repo carries the marker");
 	assert.match(fixed.stdout, /work-loop gate passed/);
 

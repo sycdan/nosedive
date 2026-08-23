@@ -261,7 +261,8 @@ test("a blocking backlog failure mints one unclaimed linked dive and backlog sti
 	assert.match(dives[0].text, new RegExp(`^  feat: ${featId}$`, "m"));
 	assert.match(dives[0].text, /^  diver: null$/m);
 	assert.match(dives[0].text, /^## Brief$/m);
-	assert.match(dives[0].text, new RegExp(`kb/${failId}\\.md:\n      rel: test\\.gate`));
+	/** @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green */
+	assert.match(dives[0].text, new RegExp(`kb/${failId}\\.md:\n      rel: land\\.gate`));
 	assert.match(dives[0].text, /failed gate/);
 	assert.equal(existsSync(markerPath), false, "minting must not activate the dive");
 	const featText = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");

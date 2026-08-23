@@ -8,7 +8,7 @@ import { assertOk, createBridge, createTmp, run, write } from "../test-helpers.m
 const tmp = createTmp("note");
 
 function seedBridge(bridge) {
-	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	assertOk(run(["seed", "--headless"], bridge, ""), "seed failed");
 }
 
 function notedDoc(bridge, stdout) {
@@ -76,8 +76,8 @@ test("note feat mints a feat doc and prints the backlog injection command", () =
 test("note records explicit scopes and body from stdin", () => {
 	const bridge = createBridge(tmp, "note-scoped-bridge");
 	seedBridge(bridge);
-	const repoA = "019fc623-0000-7000-8000-0000000000a1";
-	const repoB = "019fc623-0000-7000-8000-0000000000a2";
+	const repoA = "01a02f1a-7a59-74c0-888b-8d1be760c67c";
+	const repoB = "01a02f1a-7a5a-7aa1-bb09-b46667e8f8fd";
 	write(
 		join(bridge, "kb", `${repoA}.md`),
 		`---\nkind: repo\nid: ${repoA}\nname: apple\ngist: "Apple repo"\n---\n`,

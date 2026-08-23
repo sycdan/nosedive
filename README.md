@@ -63,8 +63,8 @@ npm i -g nosedive
 
 git clone <your-notes-repo> ~/BASE && cd ~/BASE
 
-nosedive seed                                 # bridge config, AGENTS.md, and
-                                              # the bridge itself as a repo doc
+nosedive seed                                 # will commit and push bridge config,
+                                              # AGENTS.md, and a repo doc for the bridge
 
 nosedive pitch "Add a hello note"
 nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..." \

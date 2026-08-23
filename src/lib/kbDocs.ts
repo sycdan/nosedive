@@ -98,7 +98,6 @@ export function renderPitchedFeat(options: {
 	gist: string;
 	parentId?: string;
 }): string {
-	const leaf = options.name.split(".")[0]!;
 	const lines = [
 		"---",
 		"kind: feat",
@@ -109,8 +108,13 @@ export function renderPitchedFeat(options: {
 	if (options.parentId) {
 		lines.push("links:", `  - kb/${options.parentId}.md:`, "      rel: parent.feat");
 	}
-	lines.push("---", "", `# ${titleFromSlug(leaf)}`, "");
+	lines.push("---", "", renderKbDocTitle(options.name), "");
 	return lines.join("\n");
+}
+
+export function renderKbDocTitle(name: string): string {
+	const leaf = name.split(".")[0]!;
+	return `# ${titleFromSlug(leaf)}`;
 }
 
 export function mintFeatId(): string {

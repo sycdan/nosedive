@@ -386,7 +386,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	);
 
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
-	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked work$/);
+	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked 3 artifacts$/);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Feat: ${featId}`));
 	assert.match(
@@ -702,6 +702,7 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 	write(join(worktree, "untracked.txt"), "untracked\n");
 
 	packByHand(bridge, "corrupt", repoId, diveId, pinnedRef);
+	const headBefore = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
 
 	// Simulate the real `pack` bug (gitRun trims format-patch stdout, which can
 	// strip a trailing whitespace-only context line, not just a newline): drop
@@ -725,10 +726,15 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(diveText, /rel: patch/, "the failed chain's link should remain for retry");
 	assert.match(diveText, /diver: "jump@example\.test"/);
-	assert.match(
+	assert.doesNotMatch(
 		diveText,
 		/^## jumped \d{4}-\d{2}-\d{2}T[\d:.]+Z\s*$/im,
-		"a partial-success run still hydrated a usable workspace, so the section is still appended",
+		"a run that could not finish unpacking has no jump to record",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
+		headBefore,
+		"a failed chain must not be committed under a subject naming work it did not take on",
 	);
 
 	for (const suffix of ["a", "b", "c"]) {
@@ -1408,4 +1414,34 @@ test("repeated bare jumps on the same-pilot dive remain idempotent", () => {
 		firstJumpHead,
 		"the second hydration should not create a bridge commit",
 	);
+});
+
+/**
+ * Four things make `jump` commit and only one of them unpacks anything, so a
+ * fixed subject described the rarest case and misdescribed the rest -- the
+ * quickstart gate's history read as five unpacks that never happened.
+ */
+test("the commit subject names which jump this was", () => {
+	const { bridge, diveId } = deckSetup("deck-subject", { claimed: false });
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const subject = () => runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
+
+	assertOk(run(["jump", diveId], bridge), "first jump failed");
+	assert.match(subject(), /: picked up$/, "a dive nobody had jumped was picked up");
+
+	// A pack hands the dive back by moving its diver into `meta.packer`, so the
+	// next pilot to jump it claims a dive that has already been jumped before.
+	unclaim(bridge, diveId);
+	commitBridge(bridge, "hand the jumped dive back");
+	assertOk(run(["jump", diveId], bridge), "jump failed to reclaim a released dive");
+	assert.match(subject(), /: claimed$/, "an already-jumped dive nobody held was claimed");
+
+	const oldStamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8").replace(/^## jumped .*$/gim, `## Jumped ${oldStamp}`),
+	);
+	commitBridge(bridge, "age the latest dive log");
+	assertOk(run(["jump", diveId], bridge), "jump failed on a stale log");
+	assert.match(subject(), /: resumed$/, "the same pilot's stale dive was resumed");
 });

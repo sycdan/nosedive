@@ -333,6 +333,32 @@ function renderJumpedSection(
 	return lines ? `${lead}\n\n${lines}` : lead;
 }
 
+/**
+ * What the run did, worth one commit subject, or nothing when it did nothing.
+ *
+ * Ordered most concrete first, and only the winner is named: a jump that
+ * unpacked artifacts also picked the dive up, and saying so twice tells the
+ * reader nothing the dive's own `## Jumped` section does not.
+ *
+ * `picked up` outranks `claimed` because a first jump always claims -- claiming
+ * is what picking up means. `claimed` is left to name what it uniquely is: a
+ * dive somebody had already jumped, released by a `pack`, and now picked back up.
+ */
+function jumpSubject(
+	appliedCount: number,
+	alreadyJumped: boolean,
+	claimed: boolean,
+	hasRecentLog: boolean,
+): string | undefined {
+	if (appliedCount > 0) {
+		return `unpacked ${appliedCount} artifact${appliedCount === 1 ? "" : "s"}`;
+	}
+	if (!alreadyJumped) return "picked up";
+	if (claimed) return "claimed";
+	if (!hasRecentLog) return "resumed";
+	return undefined;
+}
+
 export function jump(args: string[], io: CommandIo): void {
 	const ref = parseJumpArgs(args);
 
@@ -456,11 +482,15 @@ export function jump(args: string[], io: CommandIo): void {
 	const latestLog = latestLoggedSection(readFileSync(dive.path, "utf8"));
 	const hasRecentLog = latestLog !== undefined && Date.now() - latestLog.at <= JUMP_LOG_FRESH_MS;
 	// A recent re-hydration of the same pilot's already-jumped dive is the one
-	// true no-op. Claims, phase transitions, stale/missing logs, and every patch
-	// result are events worth committing even when hydration itself moved no ref.
-	const shouldRecord =
-		selection.claim || !alreadyJumped || !hasRecentLog || appliedCount > 0 || failedChains > 0;
-	if (shouldRecord) {
+	// true no-op. Claims, phase transitions, stale/missing logs, and applied
+	// patches are events worth committing even when hydration itself moved no ref.
+	//
+	// A failed chain is not one of them. The run has left the dive half-unpacked
+	// -- some links stripped, some artifacts deleted -- and nothing about that
+	// half-state is worth its own commit; the retry that finally applies the rest
+	// commits the whole thing under one honest subject.
+	const subject = jumpSubject(appliedCount, alreadyJumped, selection.claim, hasRecentLog);
+	if (failedChains === 0 && subject) {
 		appendTimestampedSection(
 			dive.path,
 			renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),
@@ -475,7 +505,7 @@ export function jump(args: string[], io: CommandIo): void {
 			rc.bridgeDir,
 			dive.path,
 			[...appliedFileAbsPaths, feat.path],
-			`jump(${dive.name}): unpacked work`,
+			`jump(${dive.name}): ${subject}`,
 			feat.id,
 		);
 	}

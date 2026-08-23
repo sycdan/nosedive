@@ -18,6 +18,7 @@ import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
 	assertOk,
+	bareRepo,
 	cli,
 	createNoBridge,
 	createTmp,
@@ -32,6 +33,7 @@ import {
 	packageMigrationDoc,
 	packageMigrationScript,
 	packageNonFoundationDoc,
+	packageVersionPattern,
 	root,
 	run,
 	runGit,
@@ -45,6 +47,111 @@ const { readKbDocById, readNosediveRc } = await import(libUrl);
 const tmp = createTmp("seed-headless");
 const noBridge = createNoBridge(tmp);
 const quidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function emptyOriginBridge(name) {
+	const bridge = join(tmp, name);
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	runTool("git", ["config", "user.name", "Seed Person"], bridge);
+	runTool("git", ["config", "user.email", "seed@example.invalid"], bridge);
+	const origin = bareRepo(tmp, `${name}-origin.git`);
+	runTool("git", ["remote", "add", "origin", origin], bridge);
+	return { bridge, origin };
+}
+
+function seedBridge(bridge) {
+	return run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
+}
+
+test("first seed publishes an empty origin and sets upstream", () => {
+	const { bridge, origin } = emptyOriginBridge("first-publish");
+	const seeded = seedBridge(bridge);
+	assertOk(seeded, "first seed failed");
+	assert.equal(runGit(["rev-list", "--count", "main"], origin).stdout.trim(), "1");
+	assert.equal(
+		runGit(["rev-parse", "--abbrev-ref", "@{upstream}"], bridge).stdout.trim(),
+		"origin/main",
+	);
+	assert.match(
+		seeded.stdout,
+		new RegExp(
+			`^Committed seed\\(nosedive@${packageVersionPattern}\\): surface changed to [0-9a-f]+$`,
+			"m",
+		),
+	);
+	assert.match(seeded.stdout, /^Pushed to origin\/main$/m);
+	assert.doesNotMatch(seeded.stdout, /^git /m);
+});
+
+test("seed commits only its own files", () => {
+	const { bridge } = emptyOriginBridge("only-seed-files");
+	write(join(bridge, "notes.md"), "committed\n");
+	runTool("git", ["add", "notes.md"], bridge);
+	gitCommit(bridge, "pilot base");
+	write(join(bridge, "notes.md"), "dirty\n");
+	write(join(bridge, "draft.md"), "untracked\n");
+
+	assertOk(seedBridge(bridge), "seed with unrelated work failed");
+	const committedPaths = runGit(["show", "--pretty=format:", "--name-only", "HEAD"], bridge).stdout;
+	assert.doesNotMatch(committedPaths, /^notes\.md$/m);
+	assert.doesNotMatch(committedPaths, /^draft\.md$/m);
+	assert.match(runGit(["status", "--short"], bridge).stdout, /^ M notes\.md$/m);
+	assert.match(runGit(["status", "--short"], bridge).stdout, /^\?\? draft\.md$/m);
+});
+
+test("unchanged re-seed is silent and does not publish a commit", () => {
+	const { bridge, origin } = emptyOriginBridge("unchanged-reseed");
+	assertOk(seedBridge(bridge), "first seed failed");
+	const before = runGit(["rev-parse", "main"], origin).stdout.trim();
+	const reseeded = seedBridge(bridge);
+	assertOk(reseeded, "unchanged re-seed failed");
+	assert.equal(runGit(["rev-parse", "main"], origin).stdout.trim(), before);
+	assert.match(reseeded.stdout, /^Bridge was already up to date; nothing was committed$/m);
+	assert.doesNotMatch(reseeded.stdout, /^git /m);
+});
+
+test("managed instruction drift commits and pushes a changed surface", () => {
+	const { bridge, origin } = emptyOriginBridge("surface-drift");
+	assertOk(seedBridge(bridge), "first seed failed");
+	const preflight = run(["preflight"], bridge, "");
+	assertOk(preflight, "preflight failed to install the pre-push hook");
+	const instructionsPath = join(bridge, "AGENTS.md");
+	writeFileSync(
+		instructionsPath,
+		readFileSync(instructionsPath, "utf8").replace(
+			"- `nosedive` commands may issue instructions",
+			"- drifted instructions may issue instructions",
+		),
+		"utf8",
+	);
+	runTool("git", ["add", "AGENTS.md"], bridge);
+	gitCommit(bridge, "simulate published instruction drift");
+	runTool("git", ["push"], bridge);
+	const before = runGit(["rev-parse", "main"], origin).stdout.trim();
+
+	const reseeded = seedBridge(bridge);
+	assertOk(reseeded, "re-seed after instruction drift failed");
+	const subject = runGit(["log", "-1", "--pretty=%s"], bridge).stdout.trim();
+	assert.match(
+		subject,
+		new RegExp(`^seed\\(nosedive@${packageVersionPattern}\\): surface changed to [0-9a-f]+$`),
+	);
+	assert.notEqual(runGit(["rev-parse", "main"], origin).stdout.trim(), before);
+	assert.equal(reseeded.stderr, "");
+});
+
+test("seed preserves a pilot's staged work", () => {
+	const { bridge } = emptyOriginBridge("staged-pilot-work");
+	write(join(bridge, "notes.md"), "committed\n");
+	runTool("git", ["add", "notes.md"], bridge);
+	gitCommit(bridge, "pilot base");
+	write(join(bridge, "notes.md"), "staged\n");
+	runTool("git", ["add", "notes.md"], bridge);
+
+	assertOk(seedBridge(bridge), "seed with staged pilot work failed");
+	assert.match(runGit(["diff", "--cached", "--name-only"], bridge).stdout, /^notes\.md$/m);
+	assert.equal(runGit(["show", "HEAD:notes.md"], bridge).stdout, "committed\n");
+});
 
 test("seed-headless", () => {
 	const seedHelp = run(["seed", "--help"], noBridge);
@@ -216,7 +323,7 @@ current:
 	assert.doesNotMatch(initHeadlessAgain.stdout, /Running migration/);
 });
 
-test("seed prints the trunk resolved from git", () => {
+test("seed pushes the trunk resolved from git", () => {
 	const bridge = join(tmp, "master-bridge");
 	mkdirSync(bridge, { recursive: true });
 	runTool("git", ["init", "-b", "master"], bridge);
@@ -224,8 +331,10 @@ test("seed prints the trunk resolved from git", () => {
 
 	const result = run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
 	assertOk(result, "seed on master failed");
-	assert.match(result.stdout, /^git push -u origin master$/m);
-	assert.doesNotMatch(result.stdout, /^git push -u origin main$/m);
+	assert.equal(
+		runGit(["rev-parse", "--abbrev-ref", "@{upstream}"], bridge).stdout.trim(),
+		"origin/master",
+	);
 });
 
 test("seed removes home-branch and preserves unowned config", () => {

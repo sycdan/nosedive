@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	cpSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -8,6 +9,7 @@ import {
 	realpathSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -18,6 +20,7 @@ import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
 	assertOk,
+	bareRepo,
 	cli,
 	createNoBridge,
 	createTmp,
@@ -56,11 +59,8 @@ test("seed-migration", () => {
 	runTool("git", ["init", "-b", "main"], backlogBridge);
 	runTool("git", ["config", "user.name", "Backlog Person"], backlogBridge);
 	runTool("git", ["config", "user.email", "backlog@example.invalid"], backlogBridge);
-	runTool(
-		"git",
-		["remote", "add", "origin", "https://example.com/dan/backlog-bridge.git"],
-		backlogBridge,
-	);
+	const backlogOrigin = bareRepo(tmp, "backlog-bridge-origin.git");
+	runTool("git", ["remote", "add", "origin", backlogOrigin], backlogBridge);
 	write(
 		join(backlogBridge, "kb", `${bridgeRepoId}.md`),
 		`---
@@ -71,7 +71,7 @@ gist: Existing bridge repo doc.
 meta:
   path: workspace/__self
   remotes:
-    cloud: https://example.com/dan/backlog-bridge.git
+    cloud: ${JSON.stringify(backlogOrigin)}
 ---
 
 # Bridge Existing
@@ -379,33 +379,43 @@ gist: Solo gist
 	runTool("git", ["config", "user.email", "migration@example.invalid"], scriptFailureBridge);
 	giveOrigin(tmp, scriptFailureBridge, "script-failure-bridge");
 	write(join(scriptFailureBridge, ".nosediverc"), "workspace: ./workspace\nkb: ./kb\n");
-	const migrationScriptPath = join(root, "kb", "artifacts", packageMigrationScript);
-	const originalMigrationScript = readFileSync(migrationScriptPath, "utf8");
-	try {
-		writeFileSync(
-			migrationScriptPath,
-			'export function migrate() { throw new Error("simulated migration failure"); }\n',
-			"utf8",
-		);
-		const initScriptFailure = run(["seed", "--headless"], scriptFailureBridge, "");
-		assert.notEqual(
-			initScriptFailure.status,
-			0,
-			"init with a failing migration script unexpectedly succeeded",
-		);
-		assert.match(
-			initScriptFailure.stderr,
-			/migration '.*' \(L0->L1\) failed: simulated migration failure/,
-		);
-		assert.match(initScriptFailure.stderr, /Migrates a compatibility level 0 bridge into L1/);
-		assert.match(initScriptFailure.stderr, /# Seed L1 Bridge/);
-		assert.match(initScriptFailure.stderr, /## Clean Gate/);
-		assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
-		assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);
-		assert.equal(existsSync(join(scriptFailureBridge, ".nosedive", "config.yaml")), false);
-	} finally {
-		writeFileSync(migrationScriptPath, originalMigrationScript, "utf8");
-	}
+	// The migration script belongs to the package, not to this fixture, so
+	// sabotaging the installed one breaks any other test file running a migration
+	// at the same moment -- `node --test` runs files in parallel. Sabotage a copy.
+	const sabotagedPackage = join(tmp, "sabotaged-package");
+	cpSync(join(root, "dist"), join(sabotagedPackage, "dist"), { recursive: true });
+	cpSync(join(root, "kb"), join(sabotagedPackage, "kb"), { recursive: true });
+	cpSync(join(root, "package.json"), join(sabotagedPackage, "package.json"));
+	cpSync(join(root, ".nosedive-ref"), join(sabotagedPackage, ".nosedive-ref"));
+	// The bundle imports `yaml` at runtime, so the copy needs the same modules the
+	// package resolves against. A link, not a copy: nothing here writes to them.
+	symlinkSync(join(root, "node_modules"), join(sabotagedPackage, "node_modules"), "junction");
+	writeFileSync(
+		join(sabotagedPackage, "kb", "artifacts", packageMigrationScript),
+		'export function migrate() { throw new Error("simulated migration failure"); }\n',
+		"utf8",
+	);
+	const initScriptFailure = run(
+		["seed", "--headless"],
+		scriptFailureBridge,
+		"",
+		join(sabotagedPackage, "dist", "cli.js"),
+	);
+	assert.notEqual(
+		initScriptFailure.status,
+		0,
+		"init with a failing migration script unexpectedly succeeded",
+	);
+	assert.match(
+		initScriptFailure.stderr,
+		/migration '.*' \(L0->L1\) failed: simulated migration failure/,
+	);
+	assert.match(initScriptFailure.stderr, /Migrates a compatibility level 0 bridge into L1/);
+	assert.match(initScriptFailure.stderr, /# Seed L1 Bridge/);
+	assert.match(initScriptFailure.stderr, /## Clean Gate/);
+	assert.equal(existsSync(join(scriptFailureBridge, "kb", packageMigrationDoc)), false);
+	assert.equal(existsSync(join(scriptFailureBridge, ".nosediverc")), true);
+	assert.equal(existsSync(join(scriptFailureBridge, ".nosedive", "config.yaml")), false);
 });
 
 test("seed migrates an L1 backlog body tree into L2 feat-role links", () => {

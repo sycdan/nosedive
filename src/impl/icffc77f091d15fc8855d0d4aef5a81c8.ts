@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import { captureCommand } from "./commandAdapter.js";
 
@@ -19,11 +19,13 @@ import {
 	MANAGED_INSTRUCTIONS_BEGIN,
 	MANAGED_INSTRUCTIONS_END,
 } from "../lib/constants.js";
+import { commitMessage } from "../lib/commitProvenance.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
 	formatPath,
 	resolveFrom,
+	toPosixPath,
 	uuidLike,
 } from "../lib/coreParsing.js";
 import {
@@ -35,8 +37,9 @@ import {
 } from "../lib/packageBacklog.js";
 import { loadKbDocs, readKbDocById } from "../lib/kbDocs.js";
 import { localTrunk, portableLocalPath, renderRepoDoc } from "../lib/recordRepo.js";
-import { gitOutput } from "../lib/gitProcess.js";
+import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
+import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
 
 const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
@@ -48,6 +51,12 @@ const BRIDGE_SELF_WORKSPACE_PATH = "workspace/__self";
 interface InstructionWrite {
 	path: string;
 	content: string;
+	changed: boolean;
+}
+
+interface MintedDoc {
+	id: string;
+	path: string;
 }
 
 function renderManagedInstructions(): string {
@@ -108,15 +117,16 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 
 	for (const path of paths) {
 		if (!existsSync(path)) {
-			writes.push({ path, content: `${NEW_FILE_HEADING}\n\n${block}\n` });
+			writes.push({ path, content: `${NEW_FILE_HEADING}\n\n${block}\n`, changed: true });
 			continue;
 		}
-		const updated = replaceManagedInstructions(readFileSync(path, "utf8"), block);
+		const existing = readFileSync(path, "utf8");
+		const updated = replaceManagedInstructions(existing, block);
 		if (updated === undefined) {
 			skipped.push(path);
 			continue;
 		}
-		writes.push({ path, content: updated });
+		writes.push({ path, content: updated, changed: updated !== existing });
 	}
 
 	// A capturing io drops its buffered output when a command throws, so the
@@ -136,7 +146,7 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 	return writes;
 }
 
-function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): string {
+function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -164,7 +174,7 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): strin
 		].join("\n"),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
-	return id;
+	return { id, path };
 }
 
 /**
@@ -194,7 +204,7 @@ function bridgeRemoteUrls(bridgeDir: string): string[] {
  * only. The name is the bridge directory's basename, which is what the L1
  * migration's `ensureBridgeRepoDoc` also uses.
  */
-function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): string {
+function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -213,7 +223,85 @@ function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): str
 		}),
 	);
 	io.log(`Wrote ${formatPath(path)}`);
-	return id;
+	return { id, path };
+}
+
+function commitAndPushSeed(
+	bridgeDir: string,
+	paths: string[],
+	bridgeBranch: string,
+	surfaceChanged: boolean,
+	io: CommandIo,
+): void {
+	const pathspecs = paths.map((path) => toPosixPath(relative(bridgeDir, path)));
+	const hasHead = Boolean(gitOutput(bridgeDir, ["rev-parse", "--verify", "HEAD"]));
+	const diff = hasHead
+		? runGit(bridgeDir, ["diff", "--quiet", "HEAD", "--", ...pathspecs])
+		: undefined;
+	if (diff && diff.status !== 0 && diff.status !== 1) {
+		const detail = diff.stderr.trim() || diff.stdout.trim() || "unknown git error";
+		throw new Error(`failed to inspect seed changes: ${detail}`);
+	}
+	const trackedChanged = diff?.status === 1;
+	const untracked = gitRun(
+		bridgeDir,
+		["ls-files", "--others", "--exclude-standard", "--", ...pathspecs],
+		"failed to inspect untracked seed paths",
+	);
+	if (!trackedChanged && !untracked) {
+		io.log("Bridge was already up to date; nothing was committed");
+		return;
+	}
+
+	gitRun(bridgeDir, ["add", "--", ...pathspecs], "failed to stage seed files");
+	const subject = surfaceChanged
+		? `seed(nosedive@${nosedivePackageVersion()}): surface changed to ${renderedSurfaceDigest()}`
+		: `seed(nosedive@${nosedivePackageVersion()}): surface did not change`;
+	// A pathspec commit takes only seed's files and leaves the pilot's unrelated index entries staged.
+	gitRun(
+		bridgeDir,
+		["commit", "-m", commitMessage(subject), "--", ...pathspecs],
+		"failed to commit seed files",
+	);
+	io.log(`Committed ${subject}`);
+
+	const upstream = gitOutput(bridgeDir, [
+		"rev-parse",
+		"--abbrev-ref",
+		"--symbolic-full-name",
+		"@{upstream}",
+	]);
+	if (!upstream) {
+		try {
+			gitRun(
+				bridgeDir,
+				["push", "-u", "origin", bridgeBranch],
+				"failed to push seeded bridge; seed files are committed locally",
+			);
+		} catch (error) {
+			throw new Error(
+				`${error instanceof Error ? error.message : String(error)}\ngit push -u origin ${bridgeBranch}`,
+			);
+		}
+		io.log(`Pushed to origin/${bridgeBranch}`);
+		return;
+	}
+	const [remote, ...branchParts] = upstream.split("/");
+	const branch = branchParts.join("/");
+	// Fetch + merge --ff-only instead of `git pull --ff-only`: a pilot with
+	// pull.rebase set globally would otherwise have that override --ff-only.
+	gitRun(bridgeDir, ["fetch", remote!], "failed to fetch bridge remote before seed push");
+	gitRun(
+		bridgeDir,
+		["merge", "--ff-only", upstream],
+		"failed to fast-forward bridge before seed push; resolve manually and retry",
+	);
+	try {
+		gitRun(bridgeDir, ["push"], "failed to push seeded bridge; seed files are committed locally");
+	} catch (error) {
+		throw new Error(`${error instanceof Error ? error.message : String(error)}\ngit push`);
+	}
+	io.log(`Pushed to ${remote}/${branch}`);
 }
 
 async function seed(args: string[], io: CommandIo): Promise<void> {
@@ -275,9 +363,10 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
 	// L0 already carries the memo its migration minted; a fresh one does not,
 	// and without this update-backlog and dump-backlog have nothing to read.
-	if (!uuidLike(settings.backlog)) {
-		settings.backlog = mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io);
-	}
+	const mintedBacklogMemo = !uuidLike(settings.backlog)
+		? mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io)
+		: undefined;
+	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
 
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
@@ -296,15 +385,17 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		const cloud = (rawRemotes as Record<string, unknown>).cloud;
 		return typeof cloud === "string" && remotes.includes(cloud);
 	});
-	const mintedBridgeRepoDoc = !selfDoc;
 	if (selfDoc && !selfDoc.id) {
 		throw new Error(`bridge repo document ${formatPath(selfDoc.path)} has no id`);
 	}
-	settings.bridge = selfDoc?.id ?? mintBridgeRepoDoc(bridgeDir, kbDir, io);
+	const mintedBridgeRepoDoc = selfDoc ? undefined : mintBridgeRepoDoc(bridgeDir, kbDir, io);
+	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
+	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
+	const nosediveGitignorePath = join(bridgeDir, ".nosedive", ".gitignore");
 	io.log(`Wrote ${formatPath(basePath)}`);
 
 	for (const write of instructionWrites) {
@@ -312,23 +403,19 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		io.log(`Wrote ${formatPath(write.path)}`);
 	}
 
-	if (mintedBridgeRepoDoc) {
-		const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
-		// Says what is true whether the bridge was cloned or `git init`ed. A clone
-		// already carries commits, so "the remote needs a commit" is false there --
-		// what still has to hold either way is that scopes resolve against origin,
-		// so the home branch has to exist on it.
-		io.log(
-			`nose: this bridge is now one of its own repos, and scopes resolve against origin, so origin/${bridgeBranch} has to exist before work can be scoped to it`,
-		);
-		// `-A` is safe here and only here: seed never creates `workspace/`, so
-		// nothing a hydrated worktree could hide under it exists yet, and this
-		// branch runs once. The same advice on a working bridge would stage another
-		// repo's checkout, which is land's hazard to carry.
-		io.log("git add -A");
-		io.log('git commit -m "seed nosedive"');
-		io.log(`git push -u origin ${bridgeBranch}`);
-	}
+	commitAndPushSeed(
+		bridgeDir,
+		[
+			basePath,
+			nosediveGitignorePath,
+			...(mintedBacklogMemo ? [mintedBacklogMemo.path] : []),
+			...(mintedBridgeRepoDoc ? [mintedBridgeRepoDoc.path] : []),
+			...instructionWrites.map((write) => write.path),
+		],
+		bridgeBranch,
+		instructionWrites.some((write) => write.changed),
+		io,
+	);
 
 	io.log(`nosedive pitch "<what you want to build>"`);
 }

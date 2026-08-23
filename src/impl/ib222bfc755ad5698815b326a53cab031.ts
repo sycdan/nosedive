@@ -12,6 +12,7 @@ import {
 	loadKbDocs,
 	mintFeatId,
 	parsePitchArgs,
+	readKbDocById,
 	renderPitchedFeat,
 	repoDocs,
 } from "../lib/kbDocs.js";
@@ -56,11 +57,13 @@ function pitch(args: string[], io: CommandIo): void {
 	// reachable through its parent, so only an unparented feat gets injected --
 	// otherwise the feat would hang off two roots at once.
 	if (!parent) {
-		const updatedKbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-		const featDoc = updatedKbDocs.find((doc) => doc.id === id);
+		const featDoc = readKbDocById(rc.kbDir, rc.bridgeDir, id);
 		if (!featDoc) throw new Error(`pitched doc not found after write: ${id}`);
+		// The memo renders from the docs it is handed, and the one file written
+		// since the sweep above is this feat -- the parented branch, which also
+		// touches the parent doc, does not reach here.
 		try {
-			injectDocsIntoBacklogMemo(rc, updatedKbDocs, [featDoc], io);
+			injectDocsIntoBacklogMemo(rc, [...kbDocs, featDoc], [featDoc], io);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			io.log(`Could not link it to the backlog: ${message}`);

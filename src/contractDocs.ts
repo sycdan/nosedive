@@ -71,7 +71,6 @@ function parsePackageContractDoc(path: string, content: string): ContractDoc {
 		featRef: undefined,
 		// Body facts about dives; a command doc has neither.
 		hasBrief: false,
-		hasLog: false,
 		metaScalars: parsed.fm.nested.meta ?? {},
 		metaLists: parsed.fm.nestedLists.meta ?? {},
 		metaRaw:

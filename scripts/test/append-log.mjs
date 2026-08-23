@@ -125,10 +125,10 @@ test("append-log.dive strips carriage returns out of a piped body", () => {
  * sits -- so every shape on this bridge reads as one, the hand-written one
  * included, and `## Brief` and `## Outcome` read as neither by carrying none.
  *
- * Each shape is asserted twice: through `never-jumped`, which is what `hasLog`
- * decides and therefore where the rule is actually consulted, and against the
- * decomposer directly, because what a heading decomposes *into* reaches no
- * command's output and a mangled label would otherwise go unnoticed.
+ * Each shape is asserted twice: through the rendered listing segment, where
+ * the newest parsed heading and its label are surfaced, and against the
+ * decomposer directly, so a locator that only half-matches a stamp cannot
+ * spill part of it into the label unnoticed.
  */
 for (const [name, heading, logged, expectedLabel] of [
 	// Every dive jumped before `jump` took a label carries this shape, so it
@@ -167,24 +167,20 @@ for (const [name, heading, logged, expectedLabel] of [
 		const { bridge, divePath } = setup(`shape-${slug}`);
 		writeFileSync(divePath, `${readFileSync(divePath, "utf8")}\n${heading}\n\nBody.\n`);
 
-		const listed = run(["list-dives", "--json"], bridge);
+		const listed = run(["list-dives"], bridge);
 		assertOk(listed, "list-dives failed");
-		// The report groups dives by rel, so the dive is looked up across groups.
-		const dive = Object.values(JSON.parse(listed.stdout))
-			.filter(Array.isArray)
-			.flat()
-			.find((entry) => entry.id === diveId);
-		assert.ok(dive, `the dive should be listed:\n${listed.stdout}`);
-		assert.equal(
-			!dive.tags.includes("never-jumped"),
-			logged,
-			`${heading} should ${logged ? "" : "not "}count as a progress section`,
-		);
+		const diveLine = listed.stdout.split(/\r?\n/).find((line) => line.includes(diveId));
+		assert.ok(diveLine, `the dive should be listed:\n${listed.stdout}`);
+		if (logged) {
+			assert.match(
+				diveLine,
+				new RegExp(` ${expectedLabel ?? "logged"} (?:just now|\\d+ \\w+ ago)(?: -|$)`),
+				`${heading} should surface its label and age`,
+			);
+		} else {
+			assert.doesNotMatch(diveLine, / (?:just now|\d+ \w+ ago)(?: -|$)/);
+		}
 
-		// What it decomposes *into* reaches no command's output, so the label is
-		// asserted here or nowhere. A stamp shape the locator only half-matches
-		// still counts as progress while spilling its own tail into the label,
-		// which is the failure this half catches and the tags half cannot.
 		const decomposed = decomposeSectionHeading(heading);
 		assert.equal(decomposed !== undefined, logged);
 		if (logged) {

@@ -61,27 +61,27 @@ export function decomposeSectionHeading(heading: string): SectionHeading | undef
 	return label ? { label, stamp: match[0] } : { stamp: match[0] };
 }
 
-/** Whether a document carries any section a command or a hand logged progress in. */
-export function hasLoggedSection(text: string): boolean {
-	return text.split(/\r?\n/).some((line) => decomposeSectionHeading(line) !== undefined);
+export interface LoggedSection {
+	label?: string;
+	at: number;
 }
 
 /**
- * The newest parseable progress-section timestamp, in epoch milliseconds.
+ * The newest parseable progress section.
  *
  * `decomposeSectionHeading` deliberately recognizes malformed, date-shaped
  * stamps as progress. Time comparisons cannot do that, so malformed stamps are
  * ignored here; a caller that needs proof of recent activity will consequently
  * treat a document carrying only malformed stamps as stale.
  */
-export function latestLoggedSectionTime(text: string): number | undefined {
-	let latest: number | undefined;
+export function latestLoggedSection(text: string): LoggedSection | undefined {
+	let latest: LoggedSection | undefined;
 	for (const line of text.split(/\r?\n/)) {
 		const heading = decomposeSectionHeading(line);
 		if (!heading) continue;
 		const parsed = Date.parse(heading.stamp);
 		if (!Number.isFinite(parsed)) continue;
-		if (latest === undefined || parsed > latest) latest = parsed;
+		if (!latest || parsed > latest.at) latest = { label: heading.label, at: parsed };
 	}
 	return latest;
 }

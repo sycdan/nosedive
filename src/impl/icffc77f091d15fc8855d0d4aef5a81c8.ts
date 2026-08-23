@@ -417,7 +417,9 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		io,
 	);
 
-	io.log(`nosedive pitch "<what you want to build>"`);
+	io.log("nosedive preflight -- what needs attention now");
+	io.log("nosedive help -- what else nosedive can do");
+	io.log(`or ask your agent "What's next?"`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

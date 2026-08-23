@@ -12,17 +12,6 @@ export interface EffortRange {
 	maximum: number;
 }
 
-export function readAgentGuidance(commandDocPath: string | undefined): string[] {
-	if (!commandDocPath) throw new Error("preflight has no command doc");
-	const label = formatPath(commandDocPath);
-	const doc = parseMarkdownDoc(readFileSync(commandDocPath, "utf8"), label);
-	const guidance = (doc.fm.nestedLists.meta?.["agent-guidance"] ?? []).filter((line) =>
-		line.trim(),
-	);
-	if (guidance.length === 0) throw new Error(`command ${label} has no meta.agent-guidance`);
-	return guidance;
-}
-
 function effortScalar(meta: Record<string, string>, key: string, label: string): number {
 	const raw = (meta[key] ?? "").trim();
 	if (!raw) throw new Error(`command ${label} has no meta.${key}`);

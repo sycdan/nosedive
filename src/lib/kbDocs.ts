@@ -152,7 +152,7 @@ export interface KbDoc {
 	repoPath?: string;
 	repoBaseBranch?: string;
 	featRef?: string;
-	/** Body facts, kept separately so the body itself never has to be carried. */
+	/** Body facts, reduced on read so the body itself never has to be carried. */
 	hasBrief: boolean;
 	lastLog?: LoggedSection;
 	metaScalars: Record<string, string>;

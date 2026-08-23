@@ -173,17 +173,17 @@ export function listedDive(
 	};
 }
 
+const AGE_BUCKETS = [
+	[365 * 24 * 60 * 60_000, "year"],
+	[30 * 24 * 60 * 60_000, "month"],
+	[7 * 24 * 60 * 60_000, "week"],
+	[24 * 60 * 60_000, "day"],
+	[60 * 60_000, "hour"],
+	[60_000, "minute"],
+] as const;
+
 function humanizeAge(ms: number): string {
-	if (ms < 60_000) return "just now";
-	const buckets = [
-		[365 * 24 * 60 * 60_000, "year"],
-		[30 * 24 * 60 * 60_000, "month"],
-		[7 * 24 * 60 * 60_000, "week"],
-		[24 * 60 * 60_000, "day"],
-		[60 * 60_000, "hour"],
-		[60_000, "minute"],
-	] as const;
-	for (const [size, unit] of buckets) {
+	for (const [size, unit] of AGE_BUCKETS) {
 		if (ms < size) continue;
 		const count = Math.floor(ms / size);
 		return `${count} ${unit}${count === 1 ? "" : "s"} ago`;
@@ -191,9 +191,15 @@ function humanizeAge(ms: number): string {
 	return "just now";
 }
 
-function formatLastLog(lastLog: ListedDive["lastLog"]): string {
-	if (!lastLog) return "";
-	return ` ${lastLog.label ?? "logged"} ${humanizeAge(Math.max(0, Date.now() - lastLog.at))}`;
+/**
+ * What last happened to the dive, and when. The label is the section's own
+ * heading text, printed as it was written: rewording it here would leave the
+ * line and the section it names disagreeing. A clock that has gone backwards
+ * since the section was written reads as "just now" rather than a negative age.
+ */
+function formatLastLog(lastLog: ListedDive["lastLog"]): string | undefined {
+	if (!lastLog) return undefined;
+	return `${lastLog.label ?? "logged"} ${humanizeAge(Math.max(0, Date.now() - lastLog.at))}`;
 }
 
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
@@ -393,7 +399,8 @@ export function formatListedDive(dive: ListedDive): string {
 	const needsPart =
 		needs.length > 0 ? ` needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}` : "";
 	const statePart = states.length > 0 ? ` ${states.join(" ")}` : "";
-	const lastLogPart = formatLastLog(dive.lastLog);
+	const lastLog = formatLastLog(dive.lastLog);
+	const lastLogPart = lastLog ? ` ${lastLog}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
 	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${lastLogPart}${gist}`;
 }
@@ -450,20 +457,18 @@ export function groupDivesByFeat(dives: ListedDive[]): FeatDiveGroup[] {
 export function formatJumpableDive(dive: ListedDive, notes = false): string {
 	const gist = dive.gist.trim() ? `: ${dive.gist.trim()}` : "";
 	const line = `- ${dive.source}${gist}`;
+	if (!notes) return line;
 	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
 	const states = dive.tags.filter((tag) => !tag.startsWith("needs-"));
+	const lastLog = formatLastLog(dive.lastLog);
 	const parts = [
-		...(notes && dive.diver ? [`diver=${dive.diver}`] : []),
-		...(notes && needs.length > 0
+		...(dive.diver ? [`diver=${dive.diver}`] : []),
+		...(needs.length > 0
 			? [`needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}`]
 			: []),
-		...(notes ? states : []),
+		...states,
+		...(lastLog ? [lastLog] : []),
 	];
-	if (dive.lastLog) {
-		parts.push(
-			`${dive.lastLog.label ?? "logged"} ${humanizeAge(Math.max(0, Date.now() - dive.lastLog.at))}`,
-		);
-	}
 	return parts.length > 0 ? `${line} -- ${parts.join(" ")}` : line;
 }
 

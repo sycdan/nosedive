@@ -22,7 +22,7 @@ import {
 	resolveFrom,
 	toPosixPath,
 } from "../lib/coreParsing.js";
-import { readAgentGuidance } from "../lib/dropPrompt.js";
+import { readAgentGuidance } from "../lib/commandGuidance.js";
 import { GIT_HOOK_NAMES, proxyHook } from "../lib/commitProvenance.js";
 import {
 	gitCommonDir,

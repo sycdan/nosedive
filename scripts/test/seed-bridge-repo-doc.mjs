@@ -53,8 +53,8 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.doesNotMatch(seed.stdout, /^git /m, "successful seed should not name a git command");
 	assert.match(
 		seed.stdout,
-		/nosedive preflight -- what needs attention now\nnosedive help -- what else nosedive can do\nor ask your agent "What's next\?"\n$/,
-		"seed should end with three next steps",
+		/\nNext steps:\nnosedive preflight -- what needs attention now\nnosedive help -- what else nosedive can do\nor ask your agent "What's next\?"\n$/,
+		"seed should end with three headed next steps",
 	);
 	assert.doesNotMatch(seed.stdout, /nosedive pitch/);
 });

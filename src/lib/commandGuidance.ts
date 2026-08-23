@@ -7,7 +7,7 @@ const AGENT_GUIDANCE_KEY = "agent-guidance";
 /**
  * Returns the closing lines a command prints, read from the command doc the router
  * actually resolved rather than from a constant beside the code.
- * 
+ *
  * Two copies of the same text can drift, so we store guidance in the command doc rather
  * than in a constant. This allows the command to be versioned separately from the code.
  */

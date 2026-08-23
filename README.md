@@ -56,8 +56,7 @@ Turn a notes repo into a bridge and take one change all the way to a pushed
 branch. Every command after `seed` prints the next one, so you can follow the
 screen rather than this page.
 
-Start from a clone of a repo you control -- `seed` refuses a bridge with no
-`origin` -- an empty GitHub repo is enough.
+Start from a clone of a repo you control -- an empty GitHub repo (free tier) is enough.
 
 ```
 npm i -g nosedive

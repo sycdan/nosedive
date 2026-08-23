@@ -44,7 +44,7 @@ import { uuid7AtMs } from "../lib/uuid7.js";
 
 const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
 const MANAGED_END = MANAGED_INSTRUCTIONS_END;
-const MARKER_PAIR = [`  ${MANAGED_BEGIN}`, `  ${MANAGED_END}`].join("\n");
+const MARKER_PAIR = ["```md", MANAGED_BEGIN, MANAGED_END, "```"].join("\n");
 const NEW_FILE_HEADING = "# Agent Instructions";
 const BRIDGE_SELF_WORKSPACE_PATH = "workspace/__self";
 

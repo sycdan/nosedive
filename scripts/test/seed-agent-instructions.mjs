@@ -10,6 +10,7 @@ const tmp = createTmp("seed-agent-instructions");
 
 const BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const END = "<!-- END nosedive managed instructions -->";
+const MARKER_PAIR = ["```md", BEGIN, END, "```"].join("\n");
 const require = createRequire(import.meta.url);
 const { describeInstructionDrift, renderedSurfaceDigest } = require(
 	join(process.cwd(), "dist", "nosedive.js"),
@@ -194,8 +195,7 @@ test("seed-agent-instructions", () => {
 	assert.match(mixed.stdout, /Wrote AGENTS\.md/);
 	assert.doesNotMatch(mixed.stdout, /Wrote CLAUDE\.md/);
 	assert.match(mixed.stderr, /skipped CLAUDE\.md: no nosedive managed instructions block/);
-	assert.match(mixed.stderr, new RegExp(`^ {2}${BEGIN}$`, "m"));
-	assert.match(mixed.stderr, new RegExp(`^ {2}${END}$`, "m"));
+	assert.ok(mixed.stderr.includes(MARKER_PAIR), "mixed stderr is missing the fenced marker pair");
 	assert.equal(readFileSync(join(mixedBridge, "CLAUDE.md"), "utf8"), untouched);
 	assertManagedBlock(readFileSync(join(mixedBridge, "AGENTS.md"), "utf8"), "AGENTS.md");
 
@@ -205,7 +205,10 @@ test("seed-agent-instructions", () => {
 	const unmarked = run(["seed", "--headless"], unmarkedBridge, "");
 	assert.notEqual(unmarked.status, 0, "seed with no seedable file unexpectedly succeeded");
 	assert.match(unmarked.stderr, /no agent instructions file could be seeded: AGENTS\.md/);
-	assert.match(unmarked.stderr, new RegExp(`^ {2}${BEGIN}$`, "m"));
+	assert.ok(
+		unmarked.stderr.includes(MARKER_PAIR),
+		"unmarked stderr is missing the fenced marker pair",
+	);
 	assert.equal(readFileSync(join(unmarkedBridge, "AGENTS.md"), "utf8"), untouched);
 	assert.equal(existsSync(join(unmarkedBridge, ".nosedive", "config.yaml")), false);
 

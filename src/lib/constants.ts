@@ -24,18 +24,6 @@ export const DIVE_BRIEF_HEADING_PATTERN = /^##\s+Brief\s*$/m;
 export const PREFLIGHT_NO_DIVE_LINE =
 	"nose: no dive to pick up; run `record.dive --free` before acting on the pilot's first instruction";
 
-/**
- * The tail of the session-start report. It is guidance, not a document the
- * pilot goes and reads, so it lives here rather than in a kb doc -- and it is
- * deliberately not a prompt fed to a subprocess, which is what the `.prompt`
- * convention exists for.
- */
-export const PREFLIGHT_GUIDANCE = [
-	"If the pilot wants to work on something specific, start with `nosedive jump <doc-path>`.",
-	"Otherwise, suggest they address something that has `needs`.",
-	"If nothing needs to be done right now, start a free dive with `nosedive record.dive --free`, then help the pilot pitch a feat and record it on the dive.",
-].join("\n");
-
 /** Quotes a value for a `/bin/sh` hook body. */
 export function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;

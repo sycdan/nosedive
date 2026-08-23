@@ -22,7 +22,7 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("preflight");
-const { nosediveInvocationFor } = await import(libUrl);
+const { nosediveInvocationFor, readAgentGuidance } = await import(libUrl);
 
 const NOSEDIVE_INVOCATION = nosediveInvocationFor(packageVersion, root);
 const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
@@ -497,6 +497,14 @@ test("preflight reports bridge status, pilot identity and the active dive, and n
 	// The backlog is a document to ask for, not one every session pays for.
 	assert.doesNotMatch(preflight.stdout, /^== open work/m);
 	assert.match(preflight.stdout, /start with `nosedive jump <doc-path>`/);
+	const noseGuidance =
+		"If any line above starts with `nose:`, alert the pilot before taking action.";
+	assert.match(preflight.stdout, new RegExp(`^${escapeRegExp(noseGuidance)}$`, "m"));
+	assert.ok(
+		preflight.stdout.indexOf(noseGuidance) <
+			preflight.stdout.indexOf("If the pilot wants to work on something specific"),
+		"nose guidance should lead the contract guidance",
+	);
 
 	const workspaceLine = /^nosedive-workspace: (.+)$/m.exec(preflight.stdout)?.[1];
 	assert.ok(workspaceLine, `missing nosedive-workspace line:\n${preflight.stdout}`);
@@ -613,7 +621,7 @@ function writeDiveDoc(bridge, id, name, { diver = null, effort = TOP_FEAT_ID, lo
 			...(log
 				? [
 						"",
-						"## 2026-08-09T05:02:49.670Z",
+						`## ${typeof log === "string" ? `${log} ` : ""}2020-08-09T05:02:49.670Z`,
 						"",
 						"- repo=nosedive path=workspace/nosedive mode=rw ref=deadbee",
 					]
@@ -653,7 +661,7 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 
 	writeDiveDoc(bridge, PLANNED_DIVE_ID, "planned-dive");
 	writeDiveDoc(bridge, PENDING_DIVE_ID, "pending-dive");
-	writeDiveDoc(bridge, WORKING_PACKED_DIVE_ID, "working-packed-dive", { log: true });
+	writeDiveDoc(bridge, WORKING_PACKED_DIVE_ID, "working-packed-dive", { log: "Jumped" });
 	writeDiveDoc(bridge, JUMPED_PACKED_DIVE_ID, "jumped-packed-dive", { log: true });
 	writeDiveDoc(bridge, PACKED_DIVE_ID, "packed-dive", { log: true });
 	writeDiveDoc(bridge, REVIEWING_DIVE_ID, "reviewing-dive", {
@@ -698,6 +706,12 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		);
 	}
 	assert.doesNotMatch(preflight.stdout, /rel=/, "a rel is not something to jump by");
+	assert.match(preflight.stdout, /working-packed-dive\. -- needs=diver Jumped \d+ years ago/);
+	assert.doesNotMatch(
+		preflight.stdout.split(/\r?\n/).find((line) => line.includes("planned-dive")),
+		/(?:just now|\d+ \w+ ago)/,
+	);
+	assert.doesNotMatch(preflight.stdout, /never-jumped/);
 
 	// Each dive sits under the feat whose links reached it, and the header
 	// carries the feat's path but not its gist.
@@ -971,6 +985,26 @@ test("preflight fails like whoami when git identity is incomplete", () => {
 	assert.match(preflight.stderr, /missing git config: user\.email/);
 	// The hook still installs -- identity is a session-report concern, not a hook-wiring one.
 	assert.equal(readFileSync(managedHook(bridge), "utf8"), MANAGED_HOOK);
+});
+
+test("preflight guidance is required by its command contract", () => {
+	const path = join(tmp, "preflight-without-guidance.md");
+	write(
+		path,
+		[
+			"---",
+			"kind: command",
+			"name: preflight@2",
+			"meta:",
+			"  usage: nosedive preflight",
+			"---",
+			"",
+		].join("\n"),
+	);
+	assert.throws(
+		() => readAgentGuidance(path),
+		(error) => error instanceof Error && /has no meta\.agent-guidance$/.test(error.message),
+	);
 });
 
 /**

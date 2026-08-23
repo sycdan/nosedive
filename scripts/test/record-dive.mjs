@@ -524,7 +524,7 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	// is told what is missing without having to run preflight to find out.
 	assert.match(
 		result.stdout,
-		/^needs: needs-name, needs-gist, needs-brief, needs-diver, never-jumped, local-only$/m,
+		/^needs: needs-name, needs-gist, needs-brief, needs-diver, local-only$/m,
 	);
 });
 

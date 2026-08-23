@@ -9,6 +9,10 @@ meta:
   agents-use-when: you need to prepare the bridge for a work session or learn the current bridge state, pilot identity, or open work.
   adapter: kb/artifacts/019fadf5-e087-7e53-b112-bb9402598e6b.mjs
   entrypoint: L1__preflight
+  agent-guidance:
+    - 'If the pilot wants to work on something specific, start with `nosedive jump <doc-path>`.'
+    - 'Otherwise, suggest they address something that has `needs`.'
+    - 'If nothing needs to be done right now, start a free dive with `nosedive record.dive --free`, then help the pilot pitch a feat and record it on the dive.'
 ---
 
 # Preflight

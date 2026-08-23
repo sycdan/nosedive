@@ -21,7 +21,7 @@ import {
 } from "../lib/coreParsing.js";
 import { DiveWipScope, uniqueDiveWipScopes } from "../lib/gitState.js";
 import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
-import { appendTimestampedSection, latestLoggedSectionTime } from "../lib/kbSections.js";
+import { appendTimestampedSection, latestLoggedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
@@ -453,8 +453,8 @@ export function jump(args: string[], io: CommandIo): void {
 	const alreadyJumped = feat.links.some(
 		(link) => link.id === dive.id && link.rel === "jumped.dive",
 	);
-	const latestLogAt = latestLoggedSectionTime(readFileSync(dive.path, "utf8"));
-	const hasRecentLog = latestLogAt !== undefined && Date.now() - latestLogAt <= JUMP_LOG_FRESH_MS;
+	const latestLog = latestLoggedSection(readFileSync(dive.path, "utf8"));
+	const hasRecentLog = latestLog !== undefined && Date.now() - latestLog.at <= JUMP_LOG_FRESH_MS;
 	// A recent re-hydration of the same pilot's already-jumped dive is the one
 	// true no-op. Claims, phase transitions, stale/missing logs, and every patch
 	// result are events worth committing even when hydration itself moved no ref.

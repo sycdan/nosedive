@@ -3,7 +3,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
-import { hasLoggedSection } from "./kbSections.js";
+import { latestLoggedSection, type LoggedSection } from "./kbSections.js";
 import {
 	formatPath,
 	gitRelPath,
@@ -152,9 +152,9 @@ export interface KbDoc {
 	repoPath?: string;
 	repoBaseBranch?: string;
 	featRef?: string;
-	/** Body facts, kept as booleans so the body itself never has to be carried. */
+	/** Body facts, reduced on read so the body itself never has to be carried. */
 	hasBrief: boolean;
-	hasLog: boolean;
+	lastLog?: LoggedSection;
 	metaScalars: Record<string, string>;
 	metaLists: Record<string, string[]>;
 	metaRaw: Record<string, unknown>;
@@ -267,7 +267,7 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 		// otherwise have to guard a value the type says cannot happen.
 		gist: fm.scalars.gist ?? "",
 		hasBrief: DIVE_BRIEF_HEADING_PATTERN.test(text),
-		hasLog: hasLoggedSection(text),
+		lastLog: latestLoggedSection(text),
 		repoPath: kbMetaPath(fm.nested.meta?.path),
 		repoBaseBranch:
 			fm.nested.meta?.trunk ??

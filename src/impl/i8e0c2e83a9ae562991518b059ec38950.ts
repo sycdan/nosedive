@@ -12,7 +12,6 @@ import {
 	CURRENT_COMPATIBILITY_LEVEL,
 	KNOWN_INSTRUCTION_FILES,
 	MANAGED_INSTRUCTIONS_BEGIN,
-	PREFLIGHT_GUIDANCE,
 	PREFLIGHT_NO_DIVE_LINE,
 	prePushHook,
 } from "../lib/constants.js";
@@ -23,6 +22,7 @@ import {
 	resolveFrom,
 	toPosixPath,
 } from "../lib/coreParsing.js";
+import { readAgentGuidance } from "../lib/commandGuidance.js";
 import { GIT_HOOK_NAMES, proxyHook } from "../lib/commitProvenance.js";
 import {
 	gitCommonDir,
@@ -365,6 +365,7 @@ function printSessionReport(
 	rc: NosediveRc,
 	levelLine: string,
 	freshness: BridgeFreshness,
+	agentGuidance: string[],
 	io: CommandIo,
 ): void {
 	if (!rc.workspaceDir) throw new Error("preflight requires a configured workspace directory");
@@ -400,7 +401,7 @@ function printSessionReport(
 	// than one every session pays for whether or not it is read.
 	printDives(rc, kbDocs, io);
 	io.log("");
-	io.log(PREFLIGHT_GUIDANCE);
+	io.log(agentGuidance.join("\n"));
 }
 
 /**
@@ -411,7 +412,8 @@ function printSessionReport(
  * contracted command is refusing already, so preflight fails too; it just
  * fails better.
  */
-function preflight(_args: string[], io: CommandIo): void {
+function preflight(_args: string[], commandDocPath: string | undefined, io: CommandIo): void {
+	const agentGuidance = readAgentGuidance(commandDocPath);
 	const rc = readNosediveRc(process.cwd());
 	ensurePrePushHook(rc, io);
 	const freshness = fetchBridgeTrunk(rc.bridgeDir);
@@ -423,10 +425,13 @@ function preflight(_args: string[], io: CommandIo): void {
 		io.setExitCode(1);
 		return;
 	}
-	printSessionReport(rc, drift.line, freshness, io);
+	printSessionReport(rc, drift.line, freshness, agentGuidance, io);
 	if (freshness.behind > 0) io.setExitCode(1);
 }
 
-export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
-	return captureCommand(preflight, args);
+export function run(args: string[], runtime: ImplRuntime): Promise<ImplCommandOutput> {
+	return captureCommand(
+		(preflightArgs, io) => preflight(preflightArgs, runtime.commandDoc?.path, io),
+		args,
+	);
 }

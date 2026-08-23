@@ -417,7 +417,13 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		io,
 	);
 
-	io.log(`nosedive pitch "<what you want to build>"`);
+	// Headed, because these follow a run of `Wrote <path>` lines and three bare
+	// commands under those read as more of the same rather than as a choice.
+	io.log("");
+	io.log("Next steps:");
+	io.log("nosedive preflight -- what needs attention now");
+	io.log("nosedive help -- what else nosedive can do");
+	io.log(`or ask your agent "What's next?"`);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

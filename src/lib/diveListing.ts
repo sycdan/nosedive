@@ -32,6 +32,7 @@ export interface ListedDive {
 	source: string;
 	/** The feat whose links reached this dive, absent when nothing owns it. */
 	feat?: FeatRef;
+	lastLog?: { label?: string; at: number };
 }
 
 /** Dives that share a feat, in the order the walk first reached that feat. */
@@ -144,7 +145,6 @@ export function diveTags(doc: KbDoc, localOnlyIds: ReadonlySet<string>): string[
 	if (!doc.hasBrief) tags.push("needs-brief");
 	if (!doc.scopes.some((scope) => scope.repoId !== ".")) tags.push("needs-scopes");
 	if (!diveDiver(doc)) tags.push("needs-diver");
-	if (!doc.hasLog) tags.push("never-jumped");
 	if (localOnlyIds.has(doc.id)) tags.push("local-only");
 	return tags;
 }
@@ -169,7 +169,37 @@ export function listedDive(
 		// Only a feat owns a dive. A deck links dives directly too, and that is
 		// the one case a listing must not dress up as ownership.
 		feat: owner?.kind === "feat" ? { name: owner.name, source: owner.relPath } : undefined,
+		lastLog: doc.lastLog,
 	};
+}
+
+const AGE_BUCKETS = [
+	[365 * 24 * 60 * 60_000, "year"],
+	[30 * 24 * 60 * 60_000, "month"],
+	[7 * 24 * 60 * 60_000, "week"],
+	[24 * 60 * 60_000, "day"],
+	[60 * 60_000, "hour"],
+	[60_000, "minute"],
+] as const;
+
+function humanizeAge(ms: number): string {
+	for (const [size, unit] of AGE_BUCKETS) {
+		if (ms < size) continue;
+		const count = Math.floor(ms / size);
+		return `${count} ${unit}${count === 1 ? "" : "s"} ago`;
+	}
+	return "just now";
+}
+
+/**
+ * What last happened to the dive, and when. The label is the section's own
+ * heading text, printed as it was written: rewording it here would leave the
+ * line and the section it names disagreeing. A clock that has gone backwards
+ * since the section was written reads as "just now" rather than a negative age.
+ */
+function formatLastLog(lastLog: ListedDive["lastLog"]): string | undefined {
+	if (!lastLog) return undefined;
+	return `${lastLog.label ?? "logged"} ${humanizeAge(Math.max(0, Date.now() - lastLog.at))}`;
 }
 
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
@@ -369,8 +399,10 @@ export function formatListedDive(dive: ListedDive): string {
 	const needsPart =
 		needs.length > 0 ? ` needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}` : "";
 	const statePart = states.length > 0 ? ` ${states.join(" ")}` : "";
+	const lastLog = formatLastLog(dive.lastLog);
+	const lastLogPart = lastLog ? ` ${lastLog}` : "";
 	const gist = dive.gist ? ` - ${dive.gist}` : "";
-	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${gist}`;
+	return `  - [${dive.name}](${dive.source})${rel}${diver}${needsPart}${statePart}${lastLogPart}${gist}`;
 }
 
 export function appendDiveSection(lines: string[], label: string, dives: ListedDive[]): void {
@@ -428,12 +460,14 @@ export function formatJumpableDive(dive: ListedDive, notes = false): string {
 	if (!notes) return line;
 	const needs = dive.tags.filter((tag) => tag.startsWith("needs-"));
 	const states = dive.tags.filter((tag) => !tag.startsWith("needs-"));
+	const lastLog = formatLastLog(dive.lastLog);
 	const parts = [
 		...(dive.diver ? [`diver=${dive.diver}`] : []),
 		...(needs.length > 0
 			? [`needs=${needs.map((tag) => tag.slice("needs-".length)).join(",")}`]
 			: []),
 		...states,
+		...(lastLog ? [lastLog] : []),
 	];
 	return parts.length > 0 ? `${line} -- ${parts.join(" ")}` : line;
 }

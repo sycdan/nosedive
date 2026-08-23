@@ -36,19 +36,17 @@ actions through explicit commands that compose safely for a human or an agent.
 
 _nosedive_ organizes work around two core concepts:
 
-- **Feat** — a `kind: feat` KB document for a unit of potentially
-  cross-repository work. `scopes:` declares its repositories and `rel: parent`
-  links nest related feats. The generated backlog memo lists open feats.
-- **Dive** — one concrete iteration on a feat. Dives are `kind: dive` docs
-  that record who is actively working, the pinned scopes, a brief, and handoff
-  notes.
+- **Feat**: a KB document for a unit of potentially cross-repository work.
+  `scopes:` declares its repositories and its body describes its goals.
+  The generated backlog memo lists open feats.
+- **Dive** — one concrete iteration on a feat. Dives are KB docs that record
+  who is actively working and from which commits, a brief, and progress notes.
 
-The working arc is `preflight` to **orient**: read pilot identity, open work,
-and the backlog. `record.dive` to **claim**: choose or pitch a feat and mark a
-dive active. `jump` to **execute**: restore that dive's workspace and work its
-brief. `bail` to **undo**: abandon an attempt. `pack` to **switch**: capture WIP
-and release a dive for later. `land` to **deliver**: push writable scopes to
-their work branches and close the dive for review.
+The working arc is `preflight` to **orient**: prepare the bridge and list
+dives that can be jumped (worked on) now. Then `jump` to **execute**: hydrate that
+dive's workspace and work its brief. `bail` to **undo**: abandon an attempt.
+`pack` to **switch**: capture WIP and release a dive for later. `land` to
+**deliver**: push writable scopes to their work branches and close the dive for review.
 
 ## Quickstart
 

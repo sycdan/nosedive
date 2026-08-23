@@ -100,10 +100,10 @@ const testIdentityEnv = {
  * inherits GIT_DIR and friends, and every command the CLI shells out to reads
  * the hook's repository instead of the fixture the test just built.
  */
-export function run(args, cwd, input) {
+export function run(args, cwd, input, cliPath = cli) {
 	const env = { ...process.env, ...testIdentityEnv };
 	for (const key of gitLocalEnvKeys) delete env[key];
-	return spawnSync(process.execPath, [cli, ...args], {
+	return spawnSync(process.execPath, [cliPath, ...args], {
 		cwd,
 		encoding: "utf8",
 		input,

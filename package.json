@@ -12,6 +12,7 @@
 	],
 	"license": "MIT",
 	"author": "Dan Stace <dstace@gmail.com>",
+	"funding": "https://ko-fi.com/sycdan",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/sycdan/nosedive.git"

@@ -62,15 +62,15 @@ export function parsePitchArgs(args: string[]): PitchOptions {
 			if (!parent) throw new Error("--parent requires a value");
 			continue;
 		}
-		if (arg.startsWith("--")) throw new Error(`unknown pitch option: ${arg}`);
-		if (gist !== undefined) throw new Error(`unexpected pitch argument: ${arg}`);
+		if (arg.startsWith("--")) throw new Error(`unknown record.feat option: ${arg}`);
+		if (gist !== undefined) throw new Error(`unexpected record.feat argument: ${arg}`);
 		gist = arg;
 	}
 
-	if (gist === undefined) throw new Error("pitch requires a gist");
+	if (gist === undefined) throw new Error("record.feat requires a gist");
 	const trimmed = gist.trim();
 	if (!trimmed) throw new Error("gist cannot be empty");
-	if (name !== undefined) assertSlug(name, "pitch name");
+	if (name !== undefined) assertSlug(name, "record.feat name");
 	return { gist: trimmed, name, parent };
 }
 
@@ -84,7 +84,7 @@ export function defaultFeatName(now = new Date()): string {
 	return [
 		// The slug itself is written into the doc's `name`, so it keeps the old
 		// spelling: changing it would change what `pitch` writes.
-		"new-effort",
+		"new-feat",
 		now.getFullYear(),
 		pad(now.getMonth() + 1),
 		pad(now.getDate()),

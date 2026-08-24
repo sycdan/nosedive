@@ -10,9 +10,9 @@ const tmp = createTmp("record-gate");
 /** A bridge with one feat, returned with the feat's id and path. */
 function setup(name) {
 	const bridge = createBridge(tmp, name);
-	const pitched = run(["pitch", "Keep the thing honest.", "--name", "honesty"], bridge);
-	assertOk(pitched, "pitch failed");
-	const featPath = join(bridge, /^Pitched (.+)$/m.exec(pitched.stdout)[1]);
+	const pitched = run(["record.feat", "Keep the thing honest.", "--name", "honesty"], bridge);
+	assertOk(pitched, "record.feat failed");
+	const featPath = join(bridge, /^Recorded (.+)$/m.exec(pitched.stdout)[1]);
 	const featText = readFileSync(featPath, "utf8");
 	return { bridge, featPath, featId: /^id: (\S+)$/m.exec(featText)[1] };
 }

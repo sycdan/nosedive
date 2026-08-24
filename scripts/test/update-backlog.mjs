@@ -400,8 +400,11 @@ test("a pitch under a linked parent reaches the backlog with no further step", (
 	const path = standardTree(bridge);
 
 	assertOk(
-		run(["pitch", "Pitched under the root.", "--name", "pitched", "--parent", CURRENT], bridge),
-		"pitch failed",
+		run(
+			["record.feat", "Pitched under the root.", "--name", "pitched", "--parent", CURRENT],
+			bridge,
+		),
+		"record.feat failed",
 	);
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
 	assert.match(
@@ -414,8 +417,8 @@ test("a pitch with no parent links itself into the backlog memo", () => {
 	const bridge = seeded("update-backlog-pitch-orphan");
 	const path = standardTree(bridge);
 
-	const pitched = run(["pitch", "Nobody's child.", "--name", "orphan"], bridge);
-	assertOk(pitched, "pitch failed");
+	const pitched = run(["record.feat", "Nobody's child.", "--name", "orphan"], bridge);
+	assertOk(pitched, "record.feat failed");
 	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");

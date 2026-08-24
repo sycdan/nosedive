@@ -6,7 +6,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
-import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
+import { defaultWorkBranch, formatPath, readNosediveRc } from "../lib/coreParsing.js";
 import {
 	defaultFeatName,
 	loadKbDocs,
@@ -18,13 +18,18 @@ import {
 } from "../lib/kbDocs.js";
 import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { appendLinkToDoc, featDocs, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import {
+	appendLinkToDoc,
+	appendRepoScopeToFeat,
+	featDocs,
+	resolveFeatDoc,
+} from "../lib/repoFeatScopes.js";
 import { slugFromGist } from "../lib/slugs.js";
 
 function pitch(args: string[], io: CommandIo): void {
 	const options = parsePitchArgs(args);
 	const rc = readNosediveRc(process.cwd());
-	if (!rc.kbDir) throw new Error("pitch requires a configured kb directory");
+	if (!rc.kbDir) throw new Error("record.feat requires a configured kb directory");
 	// A freshly seeded bridge has no kb directory until something writes to it.
 	if (!existsSync(rc.kbDir)) mkdirSync(rc.kbDir, { recursive: true });
 
@@ -51,14 +56,27 @@ function pitch(args: string[], io: CommandIo): void {
 	writeFileAtomic(path, renderPitchedFeat({ id, name, gist: options.gist, parentId: parent?.id }));
 	if (parent) appendLinkToDoc(parent.path, id, "child.feat");
 
-	io.log(`Pitched ${formatPath(path)}`);
+	io.log(`Recorded ${formatPath(path)}`);
+	// A feat that scopes nothing hands every gate declared on it an empty repo
+	// set, so such a gate can never pass under `test`. Where the bridge registers
+	// exactly one repo there is only one set it could have meant, and naming the
+	// branch is what makes that scope writable. With several there is no
+	// defensible guess, and a parented feat is left alone because it already
+	// inherits its parent's scopes -- writing here would be a second source.
+	const repos = repoDocs(kbDocs);
+	const soleRepo = !parent && repos.length === 1 ? repos[0]! : undefined;
+	if (soleRepo) {
+		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch: defaultWorkBranch(rc, name) });
+		io.log(`Scoped feat to the only registered repo: ${soleRepo.name} (${soleRepo.id})`);
+	}
+
 	// The backlog renders from its own links, so an unparented feat is reachable
 	// from nothing until something names it. A parented feat is already
 	// reachable through its parent, so only an unparented feat gets injected --
 	// otherwise the feat would hang off two roots at once.
 	if (!parent) {
 		const featDoc = readKbDocById(rc.kbDir, rc.bridgeDir, id);
-		if (!featDoc) throw new Error(`pitched doc not found after write: ${id}`);
+		if (!featDoc) throw new Error(`recorded doc not found after write: ${id}`);
 		// The memo renders from the docs it is handed, and the one file written
 		// since the sweep above is this feat -- the parented branch, which also
 		// touches the parent doc, does not reach here.
@@ -71,11 +89,14 @@ function pitch(args: string[], io: CommandIo): void {
 		}
 	}
 
-	const repos = repoDocs(loadKbDocs(rc.kbDir, rc.bridgeDir));
-	const repoName = repos.length === 1 ? repos[0]!.name : "<repo>";
+	// A scoped feat has answered both flags already, so a pilot who typed them
+	// would be choosing a repo and a branch that are no longer open questions.
+	const upscope = soleRepo
+		? ""
+		: ` --upscope ${repos.length === 1 ? repos[0]!.name : "<repo>"} --work-branch work/${name}`;
 	io.log(
-		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>" ` +
-			`--upscope ${repoName} --work-branch work/${name}`,
+		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>"` +
+			upscope,
 	);
 }
 

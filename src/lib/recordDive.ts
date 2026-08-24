@@ -19,6 +19,7 @@ import {
 	editScopes,
 	featWorkBranch,
 	inheritedScopes,
+	pinnedScope,
 	renderScopeEntry,
 	renderScopes,
 	repinScopes,
@@ -336,17 +337,26 @@ export function recordDive(args: string[], io: CommandIo): void {
 		 * where the feat has said. A feat that has not said hands down a pinned but
 		 * unpushable scope, so where the work goes stays a decision the pilot makes
 		 * with `--upscope` rather than a branch nobody chose.
+		 *
+		 * The pin follows that branch: a dive recorded after a sibling landed starts
+		 * on top of what the sibling published rather than behind it. A feat with no
+		 * branch for the repo, and the first dive on one that has yet to publish,
+		 * both start at trunk.
 		 */
 		const inherited = options.clearScopes
 			? []
-			: inheritedScopes(feat, kbDocs).scopes.map((scope) => ({
-					...cachedScope(
-						resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-						rc.bridgeDir,
-						workspaceDir,
-					),
-					...inheritedBranch(scope.repoId, rc, kbDocs, feat),
-				}));
+			: inheritedScopes(feat, kbDocs).scopes.map((scope) => {
+					const branch = inheritedBranch(scope.repoId, rc, kbDocs, feat);
+					return {
+						...pinnedScope(
+							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+							rc.bridgeDir,
+							workspaceDir,
+							branch.workBranch,
+						),
+						...branch,
+					};
+				});
 		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");

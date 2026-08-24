@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
 import { setCommandIoFactory } from "./impl/commandAdapter.js";
 import {
+	deprecatedContractNotice,
 	isContractedCommand,
 	packageContractDoc,
 	printCommandHelp,
@@ -264,6 +265,8 @@ export async function maybeRunContractCommand(
 		const warning = aheadOfBridgeWarning(parsed.name, explicitLevel, bridgeLevel);
 		if (warning) process.stderr.write(warning);
 	}
+	const deprecation = deprecatedContractNotice(contract);
+	if (deprecation) process.stderr.write(deprecation);
 	await runPromptCommand(contract, args, targetLevel);
 	return true;
 }

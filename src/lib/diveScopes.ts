@@ -107,7 +107,7 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 }
 
 /**
- * Where a repin puts one scope: the head of the first named branch origin has,
+ * Where a branch puts one scope: the head of the first named branch origin has,
  * and trunk when it has none of them.
  *
  * Origin is the only place a branch may answer from. The managed cache is a bare
@@ -116,21 +116,21 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
  * reach. A branch origin does not have is skipped rather than raised: the first
  * dive on a feat has pushed nothing yet, and trunk is the honest answer for it.
  *
- * `cachedScope` resolves trunk even when a branch goes on to answer, because it
- * is also what runs the target-path and workspace-marker checks, and its fetch
- * is what puts origin's current heads in the cache for the probe below to read.
- * That fetch is load-bearing past the pin itself: `land` publishes to the origin
- * URL rather than the remote name, so a stacked dive only sees its predecessor's
- * landed commits once a repin has fetched them.
+ * The base scope is `cachedScope`'s answer, taken as an argument rather than
+ * resolved here because making that call is what earns the right to ask this
+ * question at all. `cachedScope` runs the target-path and workspace-marker
+ * checks, and its fetch is what puts origin's current heads in the cache for the
+ * probe below to read. That fetch is load-bearing past the pin itself: `land`
+ * publishes to the origin URL rather than the remote name, so a stacked dive
+ * only sees its predecessor's landed commits once something has fetched them.
+ * The base carries trunk too, so no caller can spell the fallback differently.
  */
-function repinnedRef(
+function pinnedRef(
 	repo: KbDoc,
 	bridgeDir: string,
-	workspaceDir: string,
+	base: ScopeRef,
 	candidates: [source: string, branch: string | undefined][],
 ): { ref: string | undefined; source: string } {
-	const trunk = repo.repoBaseBranch ?? "main";
-	const trunkRef = cachedScope(repo, bridgeDir, workspaceDir).ref;
 	const cache = ensureManagedRepoCache(repo, bridgeDir);
 	for (const [source, branch] of candidates) {
 		if (!branch) continue;
@@ -141,7 +141,31 @@ function repinnedRef(
 		]);
 		if (head) return { ref: head, source: `${source} ${branch}` };
 	}
-	return { ref: trunkRef, source: `trunk ${trunk}` };
+	return { ref: base.ref, source: `trunk ${repo.repoBaseBranch ?? "main"}` };
+}
+
+/**
+ * A repo entering a dive's scopes for the first time, pinned where the branch it
+ * will publish to already stands rather than at trunk.
+ *
+ * The second dive on a feat is the case this exists for. The first dive's `land`
+ * pushed the feat's branch past trunk, so a scope pinned at trunk is born behind
+ * the branch it is going to publish to, and `land` can only refuse it -- for a
+ * state nothing the pilot did caused, and at the cost of a repin round trip to
+ * undo. Pinning where the branch stands is what makes the second dive stack on
+ * the first, which is what everyone already assumed it did.
+ *
+ * Trunk is still the answer when origin does not have the branch: the first dive
+ * on a feat, and any scope handed down with no branch at all.
+ */
+export function pinnedScope(
+	repo: KbDoc,
+	bridgeDir: string,
+	workspaceDir: string,
+	workBranch: string | undefined,
+): ScopeRef {
+	const base = cachedScope(repo, bridgeDir, workspaceDir);
+	return { ...base, ref: pinnedRef(repo, bridgeDir, base, [["work-branch", workBranch]]).ref };
 }
 
 /**
@@ -286,7 +310,7 @@ export function repinScopes(
 			const inherited = featWorkBranch(scope.repoId, rc, kbDocs, feat);
 			const resolved = target.ref
 				? explicitPin(repo, rc, kbDocs, workspaceDir, target.ref)
-				: repinnedRef(repo, rc.bridgeDir, workspaceDir, [
+				: pinnedRef(repo, rc.bridgeDir, cachedScope(repo, rc.bridgeDir, workspaceDir), [
 						["work-branch", scope.workBranch],
 						["feat branch", inherited],
 					]);
@@ -410,16 +434,19 @@ export function editScopes(
 
 	for (const ref of edits.upscopes) {
 		const repo = resolveScopeRepo(rc.bridgeDir, kbDocs, ref);
-		// The pin is the dive's business, so an already-scoped repo keeps the one it
-		// has: upscoping decides where work goes, never which commit it started at.
-		const existing = scopes.find((scope) => scope.repoId === repo.id);
-		const base = existing ?? cachedScope(repo, rc.bridgeDir, workspaceDir);
 		const workBranch = upscopeBranch(repo.id, edits.workBranch, rc, kbDocs, feat);
 		if (!workBranch) {
 			throw new Error(
 				`--upscope ${ref} needs a branch: this dive names no feat, so pass --work-branch`,
 			);
 		}
+		// The pin is the dive's business, so an already-scoped repo keeps the one it
+		// has: upscoping decides where work goes, never which commit it started at.
+		// A repo the dive was not scoping has no pin to keep, and starts where the
+		// branch it is joining already stands -- which is why the branch is resolved
+		// before the scope rather than after it.
+		const existing = scopes.find((scope) => scope.repoId === repo.id);
+		const base = existing ?? pinnedScope(repo, rc.bridgeDir, workspaceDir, workBranch);
 		const upscoped: ScopeRef = { ...base, readOnly: false, workBranch };
 		if (existing) scopes[scopes.indexOf(existing)] = upscoped;
 		else scopes.push(upscoped);

@@ -876,13 +876,17 @@ function commitOnBranch(repo, branch, label) {
  */
 test("record.dive --repin pins a scope at its own work branch on origin", () => {
 	const { bridge, repo, repoCommit } = setup("repin-scope-branch");
-	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
-	const scopeHead = commitOnBranch(repo, "work/scope-own", "scope-work");
-	assert.notEqual(scopeHead, featHead, "the two branches must differ or the pin proves nothing");
 	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Both branches are pushed after the dive is recorded, so the dive starts at
+	// trunk and the repin has a move to make. A dive records at the head of the
+	// branch it will publish to when one is already there, which is covered
+	// elsewhere -- what is under test here is which branch answers the repin.
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const scopeHead = commitOnBranch(repo, "work/scope-own", "scope-work");
+	assert.notEqual(scopeHead, featHead, "the two branches must differ or the pin proves nothing");
 	assertOk(
 		run(
 			["record.dive", "--ref", id, "--upscope", repoId, "--work-branch", "work/scope-own"],
@@ -911,11 +915,13 @@ test("record.dive --repin pins a scope at its own work branch on origin", () => 
  */
 test("record.dive --repin falls back to the feat's branch for the repo", () => {
 	const { bridge, repo, repoCommit } = setup("repin-feat-branch");
-	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
 	const created = run(["record.dive", "--feat", featId], bridge);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// Pushed after the dive is recorded, so the dive starts at trunk and the feat
+	// branch is a move the repin has to make rather than one it inherited.
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
 	writeFileSync(
 		path,
 		readFileSync(path, "utf8").replace(/\n      work-branch: work\/record-dive\.nosedive$/m, ""),
@@ -986,6 +992,10 @@ test("record.dive --repin resolves a work branch on origin only", () => {
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// The branch is on origin when the dive is recorded, so the dive is born on
+	// it -- and that is what puts it in the cache for the deletion below to leave
+	// behind.
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${localOnly}$`, "m"));
 	runTool("git", ["branch", "-D", "work/record-dive.nosedive"], repo);
 	const cache = join(bridge, ".nosedive", "cache", repoId);
 	const local = runTool(
@@ -1003,10 +1013,7 @@ test("record.dive --repin resolves a work branch on origin only", () => {
 	const doc = readFileSync(path, "utf8");
 	assert.match(doc, new RegExp(`^      ref: ${repoCommit}$`, "m"));
 	assert.doesNotMatch(doc, new RegExp(localOnly), "a local-only branch must not answer");
-	assert.match(
-		repinned.stdout,
-		new RegExp(`repo: ${repoCommit} -> ${repoCommit} \\(trunk main\\)`),
-	);
+	assert.match(repinned.stdout, new RegExp(`repo: ${localOnly} -> ${repoCommit} \\(trunk main\\)`));
 });
 
 /** Records a dive under the fixture feat and hands back its path and id. */
@@ -1069,9 +1076,12 @@ test("record.dive --repin refuses a scope whose commits the new pin would strand
 test("record.dive --repin <ref> --scope pins at a merge that contains HEAD", () => {
 	const { bridge, repo, repoCommit } = setup("repin-merged");
 	const branch = "work/record-dive.nosedive";
-	const featHead = commitOnBranch(repo, branch, "feat-work");
+	// Pushed after the dive is recorded: a dive born on the branch would sit at
+	// its head with nothing ahead of its pin, and a worktree ahead of its pin is
+	// the only state the guard has anything to say about.
 	const { path, id } = recordDive(bridge);
 	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	const featHead = commitOnBranch(repo, branch, "feat-work");
 	// The worktree sits on the work branch, ahead of its pin, and stays there:
 	// that is the only state the guard has anything to say about.
 	runTool("git", ["checkout", branch], repo);
@@ -1358,4 +1368,73 @@ test("record.dive refuses contradictory or homeless scope edits", () => {
 	const homeless = run(["record.dive", "--ref", id, "--work-branch", "release/x"], bridge);
 	assert.notEqual(homeless.status, 0, "a branch with nothing to apply it to is a mistake");
 	assert.match(homeless.stderr, /--upscope <repo>/);
+});
+
+/**
+ * A dive is born where the branch it will publish to already stands.
+ *
+ * The second dive on a feat is what this is for. Its predecessor's `land` moved
+ * the feat's branch past trunk, so a dive pinned at trunk is behind the branch
+ * it is about to push to before anybody has touched it, and `land` can only
+ * refuse. `scripts/test/lifecycle.mjs` proves the whole arc; this pins the rule.
+ */
+test("record.dive pins a new dive at its feat's branch on origin", () => {
+	const { bridge, repo, repoCommit } = setup("create-at-feat-branch");
+	const published = commitOnBranch(repo, "work/record-dive.nosedive", "landed-work");
+	assert.notEqual(published, repoCommit, "the fixture must move the branch off trunk");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	assert.match(
+		readFileSync(recordedPath(bridge, created.stdout), "utf8"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${published}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
+/**
+ * The first dive on a feat has published nothing, so there is no branch to read
+ * and trunk is the only honest answer -- unchanged, and the case nearly every
+ * other test in this file runs through.
+ */
+test("record.dive pins a new dive at trunk when its feat's branch is unpublished", () => {
+	const { bridge, repoCommit } = setup("create-at-trunk");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	assert.match(
+		readFileSync(recordedPath(bridge, created.stdout), "utf8"),
+		new RegExp(
+			`^  - ${repoId}:\n      ref: ${repoCommit}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+	);
+});
+
+/**
+ * A repo joining a dive mid-flight is the same question as a repo joining it at
+ * create: it has no pin to keep, so it starts where the branch it is joining
+ * stands. An already-scoped repo keeps its pin, which the test above this one
+ * covers.
+ */
+test("record.dive --upscope pins a newly scoped repo at its branch on origin", () => {
+	const { bridge } = setup("upscope-at-branch");
+	const other = join(bridge, "workspace", "other");
+	const otherCommit = createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const published = commitOnBranch(other, "work/shared", "other-work");
+	assert.notEqual(published, otherCommit, "the fixture must move the branch off trunk");
+	const { id } = recordDive(bridge);
+	const edited = run(
+		["record.dive", "--ref", id, "--upscope", unrelatedRepoId, "--work-branch", "work/shared"],
+		bridge,
+	);
+	assertOk(edited, "record.dive --upscope failed");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${id}.md`), "utf8"),
+		new RegExp(
+			`^  - ${unrelatedRepoId}:\n      ref: ${published}\n      work-branch: work/shared$`,
+			"m",
+		),
+	);
 });

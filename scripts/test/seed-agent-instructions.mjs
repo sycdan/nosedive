@@ -37,8 +37,7 @@ function newBridge(name) {
 function assertManagedBlock(text, label) {
 	assert.match(text, new RegExp(`^${BEGIN}$`, "m"), `${label} is missing the begin marker`);
 	assert.match(text, new RegExp(`^${END}$`, "m"), `${label} is missing the end marker`);
-	assert.doesNotMatch(text, /npx -y nosedive@/);
-	assert.doesNotMatch(text, /dist[\\/]cli\.js/);
+	assert.match(text, /If `nosedive` is not in your env/);
 	assert.match(text, SURFACE_STAMP_PATTERN, `${label} is missing the surface stamp line`);
 	assert.match(
 		text,
@@ -203,8 +202,7 @@ test("seed-agent-instructions", () => {
 		true,
 		`unexpected stamped commit: ${stampedCommit}`,
 	);
-	assert.doesNotMatch(managedBlock, /npx -y nosedive@/);
-	assert.doesNotMatch(managedBlock, /dist[\\/]cli\.js/);
+	assert.match(managedBlock, /If `nosedive` is not in your env/);
 	// Seed runs at the start of every session. A block that differs run to run
 	// would show up as a diff in every pilot's working tree, so the stamp has to
 	// be a function of the package alone.

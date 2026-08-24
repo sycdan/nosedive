@@ -29,6 +29,7 @@ import {
 	uuidLike,
 } from "../lib/coreParsing.js";
 import {
+	nosediveInvocation,
 	nosedivePackageVersion,
 	packageCommit,
 	printCommandHelp,
@@ -75,6 +76,7 @@ function renderManagedInstructions(): string {
 		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",
 		"- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown.",
+		`- If \`nosedive\` is not in your env, call it with \`${nosediveInvocation()}\` instead.`,
 		"",
 		"These commands are available to you:",
 		"",

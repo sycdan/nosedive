@@ -418,13 +418,24 @@ test("a legacy gate edge refuses rather than silently skipping the gate", () => 
 });
 
 test("land runs a passing gate and publishes", () => {
-	const { bridge, worktree } = setup("passing", [
+	const { bridge, worktree, diveId } = setup("passing", [
 		gate("019fd471-0000-7000-8000-00000000000a", "builds", GATE_PASS),
 	]);
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assertOk(result, "land with a passing gate should push");
 	assert.match(result.stdout, /builds .*: passed/);
+
+	// A dive that landed green must say what it was checked against. Recording
+	// only refusals leaves the closed dive carrying nothing but complaints, which
+	// reads as a dive that landed red.
+	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
+	assert.match(diveText, /## Land report /, "a passing land should report into the dive too");
+	assert.match(diveText, /builds .*: passed/);
+	assert.ok(
+		diveText.indexOf("## Land report ") < diveText.indexOf("## Outcome"),
+		"the report should sit above the outcome it allowed",
+	);
 });
 
 test("a gate with passing node:test tests passes", () => {

@@ -51,12 +51,24 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.match(doc, /^  path: "workspace\/__self"$/m);
 	assert.ok(doc.includes(`    cloud: ${JSON.stringify(origin)}\n`));
 	assert.doesNotMatch(seed.stdout, /^git /m, "successful seed should not name a git command");
+	assert.match(seed.stdout, /^Next steps:/m, "seed should include a next-steps heading");
+	for (const step of [
+		/nosedive preflight -- what needs attention now/,
+		/nosedive record\.feat -- start something new/,
+		/nosedive help -- what else nosedive can do/,
+	]) {
+		assert.match(seed.stdout, step, "seed should include each next-step command");
+	}
 	assert.match(
 		seed.stdout,
-		/\nNext steps:\nnosedive preflight -- what needs attention now\nnosedive help -- what else nosedive can do\nor ask your agent "What's next\?"\n$/,
-		"seed should end with three headed next steps",
+		/or ask your agent "What's next\?"/,
+		"seed should end with a natural-language next step",
 	);
-	assert.doesNotMatch(seed.stdout, /nosedive pitch/);
+	assert.doesNotMatch(
+		seed.stdout,
+		/nosedive pitch/,
+		"seed should not mention pitch as it is deprecated",
+	);
 });
 
 test("seed does not mint a second bridge repo doc on a repeat run", () => {

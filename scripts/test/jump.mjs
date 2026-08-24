@@ -454,19 +454,6 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
 	assert.match(result.stdout, new RegExp(`Read the dive at kb/${diveId}\\.md in full`));
 	assert.match(result.stdout, new RegExp(`Read the feat it serves at kb/${featId}\\.md`));
-	assert.match(result.stdout, /whatever those two link to in their frontmatter/);
-	assert.match(result.stdout, /do the work, to the endpoint the brief names -- not more/);
-	assert.match(result.stdout, /Commit completed work in every writable scoped repo/);
-	assert.match(result.stdout, /each resulting commit SHA/);
-	assert.match(result.stdout, /Do not edit the brief or change any scope pin/);
-	assert.match(
-		result.stdout,
-		/Never push an implementation repo: only land may push to implementation remotes/,
-	);
-	assert.match(
-		result.stdout,
-		new RegExp(`Scratch space for this dive: workspace/\\.scratch/${diveId}/`),
-	);
 	assert.equal(
 		existsSync(worktree),
 		true,

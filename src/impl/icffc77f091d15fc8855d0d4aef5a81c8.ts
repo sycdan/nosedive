@@ -422,6 +422,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	io.log("");
 	io.log("Next steps:");
 	io.log("nosedive preflight -- what needs attention now");
+	io.log("nosedive record.feat -- start something new");
 	io.log("nosedive help -- what else nosedive can do");
 	io.log(`or ask your agent "What's next?"`);
 }

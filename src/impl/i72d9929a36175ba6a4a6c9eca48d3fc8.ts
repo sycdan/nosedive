@@ -276,7 +276,7 @@ function printWorkDirective(
 	io.log("");
 	io.log(
 		`Read the dive at ${divePath} in full -- its "${DIVE_BRIEF_HEADING}" section is your brief, ` +
-			`and any notes below it are what earlier divers did and left undone.`,
+			"and any notes below it are what earlier divers did and left undone.",
 	);
 	if (feat) {
 		io.log(
@@ -285,11 +285,12 @@ function printWorkDirective(
 		);
 	}
 	io.log(
-		`Then do the work, to the endpoint the brief names -- not more. ` +
-			`Commit completed work in every writable scoped repo. ` +
-			`Append a timestamped section to the dive summary saying what you did, each resulting commit SHA, and what you think is next. ` +
-			`Do not edit the brief or change any scope pin. ` +
-			`Never push an implementation repo: only land may push to implementation remotes.`,
+		"Then do only the requested work, not more. " +
+			"Commit completed work in every scoped repo with a work branch. " +
+			"As you progress, use `nosedive append-log.dive` to record what you did, and what you think is next. " +
+			"Do not edit the brief or change any scopes. " +
+			"When done, run `nosedive pack` to capture your work and release the dive." +
+			"Do not run `nosedive land` unless you have been directly instructed to.",
 	);
 	io.log(renderDiveScratchHandoff(bridgeDir, workspaceDir, dive.id));
 }

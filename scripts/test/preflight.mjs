@@ -455,7 +455,17 @@ test("preflight reports instruction drift without rewriting the file", () => {
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight failed");
-	assert.match(preflight.stdout, /^nose: AGENTS\.md.*Run: nosedive seed$/m);
+	// Which reseed line comes back depends on what this build can prove. From a
+	// source checkout both sides read the dev version, so the reachable stamped
+	// commit is the only thing that shows this build is the newer one, and the
+	// mismatch is the pilot's own local state. A published build compares
+	// versions instead, and calls attention.
+	assert.match(
+		preflight.stdout,
+		/^\d+\.\d+\.\d+$/.test(packageVersion)
+			? /^nose: AGENTS\.md's managed instructions do not match nosedive \S+\. Run: nosedive seed$/m
+			: /^AGENTS\.md's managed instructions describe an earlier commit of this checkout\. Run: nosedive seed$/m,
+	);
 	assert.equal(readFileSync(instructionsPath, "utf8"), altered);
 	assert.notEqual(readFileSync(instructionsPath, "utf8"), before);
 });

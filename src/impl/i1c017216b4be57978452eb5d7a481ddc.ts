@@ -6,6 +6,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { commitBridgeDocs } from "../lib/commitBridgeDocs.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
 import { resolveScopeRepo } from "../lib/diveScopes.js";
 import { loadKbDocs, renderKbDocTitle } from "../lib/kbDocs.js";
@@ -157,6 +158,7 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 
 	const id = uuid7AtMs(Date.now());
 	const slug = noteSlug(options.gist);
+	const name = `${slug}-${id.replaceAll("-", "").slice(-6)}`;
 	const path = join(rc.kbDir, `${id}.md`);
 	if (existsSync(path)) throw new Error(`kb doc already exists: ${formatPath(path)}`);
 	writeFileAtomic(
@@ -164,7 +166,7 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 		renderNoteDoc({
 			id,
 			kind: options.kind,
-			name: `${slug}-${id.replaceAll("-", "").slice(-6)}`,
+			name,
 			slug,
 			gist: options.gist,
 			scopes: scopeDocs.map((doc) => doc.id),
@@ -175,6 +177,12 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 	for (const repo of scopeDocs) appendLinkToDoc(repo.path, id, `${options.kind}.note`);
 
 	io.log(`Noted ${formatPath(path)}`);
+	commitBridgeDocs(
+		rc.bridgeDir,
+		`note(${name}): created`,
+		[path, ...scopeDocs.map((doc) => doc.path)],
+		io,
+	);
 	if (options.kind === "feat") io.log(`nosedive update-backlog --inject ${id}`);
 }
 

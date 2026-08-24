@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run, write } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("pitch");
 
@@ -107,7 +107,7 @@ test("record.feat rejects bad input", () => {
 
 	const noGist = run(["record.feat"], bridge, "");
 	assert.notEqual(noGist.status, 0, "record.feat without a gist unexpectedly succeeded");
-	assert.match(noGist.stderr, /record.feat requires a gist/);
+	assert.match(noGist.stderr, /record.feat requires --gist/);
 
 	const blankGist = run(["record.feat", "   "], bridge, "");
 	assert.notEqual(blankGist.status, 0, "record.feat with a blank gist unexpectedly succeeded");
@@ -131,7 +131,7 @@ test("record.feat rejects bad input", () => {
 		0,
 		"record.feat with a second positional unexpectedly succeeded",
 	);
-	assert.match(extraArgument.stderr, /unexpected record.feat argument: extra/);
+	assert.match(extraArgument.stderr, /record.feat gist given twice: extra/);
 
 	const missingParent = run(["record.feat", "Gist.", "--parent", "nope"], bridge, "");
 	assert.notEqual(
@@ -370,4 +370,30 @@ test("the deprecated pitch spelling still records a feat", () => {
 	const doc = featDoc(bridge, pitched.stdout);
 	assert.match(doc, /^kind: feat$/m);
 	assert.match(doc, /^name: old-spelling$/m);
+});
+
+test("record.feat commits the doc it wrote and leaves unrelated staged work alone", () => {
+	const bridge = createBridge(tmp, "pitch-commit-bridge");
+	write(join(bridge, "unrelated.md"), "mine\n");
+	runTool("git", ["add", "--", "unrelated.md"], bridge);
+
+	const result = run(["record.feat", "Add a hello note"], bridge);
+	assertOk(result, "record.feat failed");
+	assert.ok(result.stdout.includes("Committed feat(add-a-hello-note): created"), result.stdout);
+
+	// Nothing else ever commits a feat doc: jump and land stage their own paths
+	// and stash the rest, so an uncommitted feat reaches no other checkout.
+	const committed = runTool("git", ["show", "--pretty=format:", "--name-only", "HEAD"], bridge);
+	const files = committed.stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	assert.ok(
+		files.some((file) => file.startsWith("kb/")),
+		`the feat doc should be in the commit: ${committed.stdout}`,
+	);
+	// A pathspec commit, so the pilot keeps whatever they had staged.
+	assert.ok(!files.includes("unrelated.md"), `unrelated work was swept in: ${committed.stdout}`);
+	const staged = runTool("git", ["diff", "--cached", "--name-only"], bridge);
+	assert.ok(staged.stdout.includes("unrelated.md"), staged.stdout);
 });

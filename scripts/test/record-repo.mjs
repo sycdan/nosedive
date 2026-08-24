@@ -60,7 +60,7 @@ test("record.repo help is available without a bridge", () => {
 	assertOk(help, "record.repo --help failed");
 	assert.match(
 		help.stdout,
-		/Usage: nosedive record\.repo <clone-url-or-local-path> \[--name <slug>\] \[--base-branch <branch>\]/,
+		/Usage: nosedive record\.repo \[<repo>\] \[--url <clone-url-or-local-path>\]/,
 	);
 });
 
@@ -134,4 +134,19 @@ test("record.repo refuses invalid input before writing either document", () => {
 	assert.match(invalid.stderr, /does not exist or is not a directory/);
 	assert.deepEqual(readdirSync(join(bridge, "kb")).sort(), beforeFiles);
 	assert.equal(readFileSync(backlogPath(bridge), "utf8"), backlogBefore);
+});
+
+test("record.repo commits the repo doc and the backlog it scoped", () => {
+	const bridge = seededBridge("record-commit");
+	const source = sourceRepo("Gamma_Service");
+	const recorded = run(["record.repo", source], bridge);
+	assertOk(recorded, "record.repo failed");
+	assert.ok(recorded.stdout.includes("Committed repo(gamma-service): created"), recorded.stdout);
+
+	const committed = runTool("git", ["show", "--pretty=format:", "--name-only", "HEAD"], bridge);
+	const files = committed.stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	assert.equal(files.length, 2, `the repo doc and the backlog memo: ${committed.stdout}`);
 });

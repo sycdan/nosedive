@@ -481,7 +481,7 @@ test("record.dive --packer takes no value and requires --ref", () => {
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
 	const valued = run(["record.dive", "--ref", id, "--packer", "pilot@example.test"], bridge);
 	assert.notEqual(valued.status, 0, "--packer <email> unexpectedly succeeded");
-	assert.match(valued.stderr, /unexpected record\.dive argument: pilot@example\.test/);
+	assert.match(valued.stderr, /record\.dive found no document at: pilot@example\.test/);
 	const bare = run(["record.dive", "--packer"], bridge, "");
 	assert.notEqual(bare.status, 0, "--packer without --ref unexpectedly succeeded");
 	assert.match(bare.stderr, /--packer requires --ref/);
@@ -522,10 +522,10 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
 	// The agent that just made the dive is the one that has to fill it in, so it
 	// is told what is missing without having to run preflight to find out.
-	assert.match(
-		result.stdout,
-		/^needs: needs-name, needs-gist, needs-brief, needs-diver, local-only$/m,
-	);
+	// `local-only` is absent because the command committed the doc it wrote, and
+	// that tag reports the absence of exactly that commit.
+	assert.match(result.stdout, /^needs: needs-name, needs-gist, needs-brief, needs-diver$/m);
+	assert.ok(result.stdout.includes(`Committed dive(${id}): created`), result.stdout);
 });
 
 test("record.dive --free warns when the backlog scopes no repos", () => {

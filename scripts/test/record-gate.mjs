@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, runTool } from "../test-helpers.mjs";
 
 const tmp = createTmp("record-gate");
 
@@ -208,7 +208,7 @@ test("record.gate refuses what it cannot mint a runnable gate from", () => {
 
 	const noGist = run(["record.gate", "--feat", "honesty"], bridge);
 	assert.notEqual(noGist.status, 0);
-	assert.match(noGist.stderr, /record\.gate requires a gist/);
+	assert.match(noGist.stderr, /record\.gate requires --gist/);
 
 	const badName = run(
 		["record.gate", "Fine gist.", "--feat", "honesty", "--name", "Not A Slug"],
@@ -232,4 +232,26 @@ test("record.gate refuses what it cannot mint a runnable gate from", () => {
 	const onAGate = run(["record.gate", "Nested.", "--feat", gateId], bridge);
 	assert.notEqual(onAGate.status, 0);
 	assert.match(onAGate.stderr, /--feat does not resolve to a kind: feat doc/);
+});
+
+test("record.gate commits the gate, its script, and the feat that declares it", () => {
+	const { bridge } = setup("commits");
+	const recorded = run(["record.gate", "The goodbye note exists.", "--feat", "honesty"], bridge);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+	assert.ok(
+		recorded.stdout.includes("Committed gate(the-goodbye-note-exists): created"),
+		recorded.stdout,
+	);
+
+	// The script matters as much as the doc: a gate whose script never reached
+	// the clone resolves to nothing and hard-fails whatever selects it.
+	const committed = runTool("git", ["show", "--pretty=format:", "--name-only", "HEAD"], bridge);
+	const files = committed.stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	assert.ok(files.includes(`kb/${gateId}.md`), committed.stdout);
+	assert.ok(files.includes(`kb/artifacts/${gateId}.mjs`), committed.stdout);
+	assert.equal(files.length, 3, `the feat should be the third file: ${committed.stdout}`);
 });

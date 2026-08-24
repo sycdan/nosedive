@@ -79,8 +79,8 @@ test("contract help", () => {
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
-		["record.dive", /Usage: nosedive record\.dive \[--ref <dive-ref>\]/],
-		["record.feat", /Usage: nosedive record\.feat "<gist>"/],
+		["record.dive", /Usage: nosedive record\.dive \[<dive>\]/],
+		["record.feat", /Usage: nosedive record\.feat \[<feat>\]/],
 		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],
@@ -264,7 +264,9 @@ test("a deprecated command names its replacement on stderr, and nothing else cha
 	);
 	assert.doesNotMatch(deprecated.stdout, /deprecated/i, "the notice must not reach stdout");
 
-	const live = run(["record.feat", "Reached by the live spelling."], bridge);
+	// `--gist` rather than a positional: this is about a command being announced
+	// dead, and a positional gist earns its own deprecation notice these days.
+	const live = run(["record.feat", "--gist", "Reached by the live spelling."], bridge);
 	assertOk(live, "record.feat failed");
 	assert.doesNotMatch(live.stderr, /is deprecated/, "a live command must not be announced dead");
 

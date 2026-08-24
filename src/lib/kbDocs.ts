@@ -18,103 +18,26 @@ import {
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { LinkRef, parseLinkRefs, parseScopeRefs, ScopeRef } from "./kbRefs.js";
-import { quoteYamlString } from "./renderPlan.js";
-import { assertSlug, titleFromSlug } from "./slugs.js";
+import { titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 export type { LinkRef, ScopeRef } from "./kbRefs.js";
 
-// --- pitch -----------------------------------------------------------------
-
-export interface PitchOptions {
-	gist: string;
-	name?: string;
-	parent?: string;
-}
-
-function pitchOptionValue(args: string[], index: number, flag: string): string {
-	const value = args[index];
-	if (!value) throw new Error(`${flag} requires a value`);
-	return value;
-}
-
-export function parsePitchArgs(args: string[]): PitchOptions {
-	let gist: string | undefined;
-	let name: string | undefined;
-	let parent: string | undefined;
-
-	for (let i = 0; i < args.length; i += 1) {
-		const arg = args[i]!;
-		if (arg === "--name" || arg === "--parent") {
-			const value = pitchOptionValue(args, i + 1, arg);
-			if (arg === "--name") name = value;
-			else parent = value;
-			i += 1;
-			continue;
-		}
-		if (arg.startsWith("--name=")) {
-			name = arg.slice("--name=".length);
-			if (!name) throw new Error("--name requires a value");
-			continue;
-		}
-		if (arg.startsWith("--parent=")) {
-			parent = arg.slice("--parent=".length);
-			if (!parent) throw new Error("--parent requires a value");
-			continue;
-		}
-		if (arg.startsWith("--")) throw new Error(`unknown record.feat option: ${arg}`);
-		if (gist !== undefined) throw new Error(`unexpected record.feat argument: ${arg}`);
-		gist = arg;
-	}
-
-	if (gist === undefined) throw new Error("record.feat requires a gist");
-	const trimmed = gist.trim();
-	if (!trimmed) throw new Error("gist cannot be empty");
-	if (name !== undefined) assertSlug(name, "record.feat name");
-	return { gist: trimmed, name, parent };
-}
-
-/**
- * An unnamed feat still needs a stable slug, and the pitch time is the only
- * thing that distinguishes it. Seconds resolution is enough: two pitches in
- * the same second would collide on name, and the duplicate check catches that.
- */
-export function defaultFeatName(now = new Date()): string {
-	const pad = (value: number, width = 2) => String(value).padStart(width, "0");
-	return [
-		// The slug itself is written into the doc's `name`, so it keeps the old
-		// spelling: changing it would change what `pitch` writes.
-		"new-feat",
-		now.getFullYear(),
-		pad(now.getMonth() + 1),
-		pad(now.getDate()),
-		`${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`,
-	].join("-");
-}
-
-export function renderPitchedFeat(options: {
-	id: string;
-	name: string;
-	gist: string;
-	parentId?: string;
-}): string {
-	const lines = [
-		"---",
-		"kind: feat",
-		`id: ${options.id}`,
-		`name: ${options.name}`,
-		`gist: ${quoteYamlString(options.gist)}`,
-	];
-	if (options.parentId) {
-		lines.push("links:", `  - kb/${options.parentId}.md:`, "      rel: parent.feat");
-	}
-	lines.push("---", "", renderKbDocTitle(options.name), "");
-	return lines.join("\n");
-}
-
 export function renderKbDocTitle(name: string): string {
 	const leaf = name.split(".")[0]!;
 	return `# ${titleFromSlug(leaf)}`;
+}
+
+/**
+ * Carry a rename into the body's title, but only where the title is still the
+ * one the mint generated. A pilot who wrote their own heading meant it, and
+ * changing a slug is not a reason to throw their words away.
+ */
+export function retitleGeneratedHeading(body: string, oldName: string, newName: string): string {
+	const generated = renderKbDocTitle(oldName);
+	const heading = /^#\s+.*$/m.exec(body)?.[0];
+	if (heading?.trim() !== generated) return body;
+	return body.replace(/^#\s+.*$/m, renderKbDocTitle(newName));
 }
 
 export function mintFeatId(): string {

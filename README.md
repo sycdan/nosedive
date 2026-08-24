@@ -40,7 +40,7 @@ git clone <your-notes-repo> ~/BASE && cd ~/BASE
 nosedive seed                                 # will commit and push bridge config,
                                               # AGENTS.md, and a repo doc for the bridge
 
-nosedive record.feat "Add a hello note"
+nosedive record.feat --gist "Add a hello note"
 nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..."
 nosedive jump                                 # hydrates workspace/__self
 
@@ -68,7 +68,7 @@ A branch you can push is not what nosedive is for. Gates are: you say once what
 done looks like, and nosedive refuses to publish work that does not meet it.
 
 ```sh
-nosedive record.gate "A goodbye note sits beside the hello note" \
+nosedive record.gate --gist "A goodbye note sits beside the hello note" \
   --feat add-a-hello-note --name goodbye-note-exists
 
 nosedive test                       # no dive on deck: sweeps the backlog,
@@ -184,10 +184,10 @@ Invoked directly by humans, or indirectly via agents.
 | [`plan@2`](kb/162068fe-62ff-5f56-945a-76b24ffeb439.md) | `npx nosedive plan [<context>]` | Help the pilot choose a feat, then shape it into gated vertical dives small enough to land in half a day. |
 | [`preflight@2`](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md) | `npx nosedive preflight` | Reconcile the bridge pre-push hook, fetch bridge trunk, then print the session-start report -- bridge status, pilot identity, and open work. |
 | [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits. |
-| [`record.dive@2`](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md) | `npx nosedive record.dive [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]` | Create or patch a feat-owned dive record while preserving omitted update fields. |
-| [`record.feat@2`](kb/fb3d90e6-9dbf-5f1c-9919-6653d12fe085.md) | `npx nosedive record.feat "<gist>" [--name <slug>] [--parent <feat>]` | Create a new `kind: feat` KB doc, optionally nested under a parent feat. |
-| [`record.gate@2`](kb/2c678acb-b4b8-5623-a900-12939da5d472.md) | `npx nosedive record.gate "<gist>" --feat <feat-ref> [--name <slug>] [--height <n>] [--flaky] [--action <test\|land>]` | Mint a gate -- its doc, its stub script, and the link declaring it on a feat -- ready to fail until somebody writes the check. |
-| [`record.repo@2`](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md) | `npx nosedive record.repo <clone-url-or-local-path> [--name <slug>] [--base-branch <branch>]` | Register a Git repository with the bridge and make it visible through the backlog. |
+| [`record.dive@2`](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md) | `npx nosedive record.dive [<dive>] [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]` | Create or patch a feat-owned dive record while preserving omitted update fields. |
+| [`record.feat@2`](kb/fb3d90e6-9dbf-5f1c-9919-6653d12fe085.md) | `npx nosedive record.feat [<feat>] [--gist <gist>] [--name <slug>] [--parent <feat>] [--no-parent]` | Create a new `kind: feat` KB doc, optionally nested under a parent feat. |
+| [`record.gate@2`](kb/2c678acb-b4b8-5623-a900-12939da5d472.md) | `npx nosedive record.gate [<gate>] [--gist <gist>] [--feat <feat-ref>] [--name <slug>] [--height <n>] [--flaky] [--no-flaky] [--action <test\|land>]` | Mint a gate -- its doc, its stub script, and the link declaring it on a feat -- ready to fail until somebody writes the check. |
+| [`record.repo@2`](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md) | `npx nosedive record.repo [<repo>] [--url <clone-url-or-local-path>] [--name <slug>] [--base-branch <branch>]` | Register a Git repository with the bridge and make it visible through the backlog. |
 | [`render@1`](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md) | `npx nosedive render <uuid> [--gist]` | Print the markdown body, or with --gist the gist line, of a packaged nosedive KB document by uuid. |
 | [`scan@1`](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md) | `npx nosedive scan --repo <repo-id-or-name>` | Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions. |
 | [`seed@1`](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md) | `npx nosedive seed [--file <path>]... [--headless]` | Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level. |

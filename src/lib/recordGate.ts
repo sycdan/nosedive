@@ -1,24 +1,39 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseDocument } from "yaml";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
-import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { commitBridgeDocs } from "./commitBridgeDocs.js";
+import {
+	formatPath,
+	NosediveRc,
+	parseMarkdownDoc,
+	readNosediveRc,
+	stringifyYaml,
+} from "./coreParsing.js";
+import { resolveBridgeDocRef } from "./diveScopes.js";
+import { KbDoc, loadKbDocs, retitleGeneratedHeading } from "./kbDocs.js";
+import { LinkRef } from "./kbRefs.js";
+import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
-import { appendLinkToDoc, resolveFeatDoc } from "./repoFeatScopes.js";
+import { appendLinkToDoc, reconcileDocLink, resolveFeatDoc } from "./repoFeatScopes.js";
 import { assertSlug, slugFromGist, titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 export interface RecordGateOptions {
-	gist: string;
-	feat: string;
+	/** The gate to patch. Absent means mint a new one. */
+	ref?: string;
+	gist?: string;
+	feat?: string;
 	name?: string;
-	/** `gate-height` on the minted link; taller gates run first. */
+	/** `gate-height` on the declaring link; taller gates run first. */
 	height?: number;
-	/** `test-is-flaky` on the minted link; a flaky gate reports but never blocks. */
-	flaky: boolean;
-	/** Which rel to mint on the feat: `test.gate` (default) or `land.gate`. */
-	action: "test" | "land";
+	/** `test-is-flaky` on the declaring link; a flaky gate reports but never blocks. */
+	flaky?: boolean;
+	/** Which rel the declaring link carries: `test.gate` or `land.gate`. */
+	action?: "test" | "land";
+	/** The gist arrived as a positional, in the spelling this level deprecates. */
+	positionalGist: boolean;
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -27,54 +42,78 @@ function optionValue(args: string[], index: number, flag: string): string {
 	return value;
 }
 
-export function parseRecordGateArgs(args: string[]): RecordGateOptions {
-	let gist: string | undefined;
-	let feat: string | undefined;
-	let name: string | undefined;
-	let height: number | undefined;
-	let flaky = false;
-	let action: "test" | "land" = "test";
+export function parseRecordGateArgs(
+	args: string[],
+	isDocRef: (arg: string) => boolean,
+): RecordGateOptions {
+	const options: RecordGateOptions = { positionalGist: false };
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
-		if (arg === "--flaky") {
-			flaky = true;
+		// Two spellings because the flag is the only way to say either answer: a
+		// gate that could be marked flaky but never unmarked is a one-way door.
+		if (arg === "--flaky" || arg === "--no-flaky") {
+			options.flaky = arg === "--flaky";
 			continue;
 		}
-		const flag = ["--feat", "--name", "--height", "--action"].find(
+		const flag = ["--gist", "--feat", "--name", "--height", "--action"].find(
 			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
 		);
 		if (!flag) {
 			if (arg.startsWith("--")) throw new Error(`unknown record.gate option: ${arg}`);
-			if (gist !== undefined) throw new Error(`unexpected record.gate argument: ${arg}`);
-			gist = arg;
+			if (isDocRef(arg)) {
+				if (options.ref !== undefined) throw new Error(`unexpected record.gate argument: ${arg}`);
+				options.ref = arg;
+			} else {
+				if (options.gist !== undefined) throw new Error(`record.gate gist given twice: ${arg}`);
+				options.gist = arg;
+				options.positionalGist = true;
+			}
 			continue;
 		}
 		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
 		if (!value) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
-		if (flag === "--feat") feat = value;
-		else if (flag === "--name") name = assertSlug(value, "--name");
+		if (flag === "--gist") {
+			if (options.gist !== undefined) throw new Error("record.gate gist given twice");
+			options.gist = value;
+		} else if (flag === "--feat") options.feat = value;
+		else if (flag === "--name") options.name = assertSlug(value, "--name");
 		else if (flag === "--action") {
 			if (value !== "test" && value !== "land")
 				throw new Error(`--action must be test or land: ${value}`);
-			action = value;
+			options.action = value;
 		} else {
 			if (!/^-?\d+$/.test(value.trim())) throw new Error(`--height must be an integer: ${value}`);
-			height = Number.parseInt(value.trim(), 10);
+			options.height = Number.parseInt(value.trim(), 10);
 		}
 	}
 
-	if (gist === undefined || !gist.trim()) throw new Error("record.gate requires a gist");
-	// A gate has to be declared where a feat is in context, or a failing
-	// backlog sweep has nothing to mint work against.
-	if (!feat) throw new Error("record.gate requires --feat");
-	return { gist: gist.trim(), feat, name, height, flaky, action };
+	if (options.gist !== undefined) {
+		options.gist = options.gist.trim();
+		if (!options.gist) throw new Error("gist cannot be empty");
+	}
+	if (options.ref === undefined) {
+		if (options.gist === undefined) throw new Error('record.gate requires --gist "<one line>"');
+		// A gate has to be declared where a feat is in context, or a failing
+		// backlog sweep has nothing to mint work against.
+		if (!options.feat) throw new Error("record.gate requires --feat");
+	} else if (
+		options.gist === undefined &&
+		options.feat === undefined &&
+		options.name === undefined &&
+		options.height === undefined &&
+		options.flaky === undefined &&
+		options.action === undefined
+	) {
+		throw new Error(`record.gate ${options.ref} names a gate but changes nothing about it`);
+	}
+	return options;
 }
 
 /**
- * The same shape and the same reason as `pitch`'s default feat name: a gate can
- * be minted before anybody has a good name for it, and renamed later.
+ * The same shape and the same reason as a recorded feat's default name: a gate
+ * can be minted before anybody has a good name for it, and renamed later.
  */
 export function defaultGateName(now = new Date()): string {
 	const pad = (value: number) => String(value).padStart(2, "0");
@@ -134,10 +173,25 @@ export async function run(ctx) {
 `;
 }
 
-function gateLinkAttrs(options: RecordGateOptions): Record<string, string | number | boolean> {
+/**
+ * The attributes the declaring link should carry after this call. Attributes
+ * the command knows nothing about are carried through: they were written by
+ * somebody, and a height change is no reason to drop them.
+ */
+function gateLinkAttrs(
+	previous: Record<string, string> | undefined,
+	options: RecordGateOptions,
+): Record<string, string | number | boolean> {
 	const attrs: Record<string, string | number | boolean> = {};
+	for (const [key, value] of Object.entries(previous ?? {})) {
+		if (key === "rel") continue;
+		if (key === "gate-height") attrs[key] = Number(value);
+		else if (key === "test-is-flaky") attrs[key] = value === "true";
+		else attrs[key] = value;
+	}
 	if (options.height !== undefined) attrs["gate-height"] = options.height;
-	if (options.flaky) attrs["test-is-flaky"] = true;
+	if (options.flaky === true) attrs["test-is-flaky"] = true;
+	if (options.flaky === false) delete attrs["test-is-flaky"];
 	return attrs;
 }
 
@@ -150,12 +204,24 @@ function featForGate(kbDocs: KbDoc[], rc: NosediveRc, featRef: string): KbDoc {
 	return feat;
 }
 
-export function recordGate(args: string[], io: CommandIo): void {
-	const options = parseRecordGateArgs(args);
-	const rc = readNosediveRc(process.cwd());
-	if (!rc.kbDir) throw new Error("record.gate requires a configured kb directory");
-	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const feat = featForGate(kbDocs, rc, options.feat);
+function declaringFeat(
+	kbDocs: KbDoc[],
+	gateId: string,
+): { feat: KbDoc; link: LinkRef } | undefined {
+	for (const feat of kbDocs.filter((doc) => doc.kind === "feat")) {
+		const link = feat.links.find(
+			(candidate) =>
+				candidate.id === gateId && (candidate.rel === "test.gate" || candidate.rel === "land.gate"),
+		);
+		if (link) return { feat, link };
+	}
+	return undefined;
+}
+
+function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, io: CommandIo) {
+	const gist = options.gist!;
+	const feat = featForGate(kbDocs, rc, options.feat!);
+	const action = options.action ?? "test";
 
 	const id = uuid7AtMs(Date.now());
 	// An explicit --name wins outright. Otherwise derive a slug from the gist,
@@ -169,25 +235,93 @@ export function recordGate(args: string[], io: CommandIo): void {
 			.map((link) => kbDocs.find((doc) => doc.id === link.id)?.name)
 			.filter((docName): docName is string => docName !== undefined),
 	);
-	const derived = slugFromGist(options.gist);
+	const derived = slugFromGist(gist);
 	const name =
 		options.name ?? (derived && !existingGateNames.has(derived) ? derived : defaultGateName());
-	const docPath = join(rc.kbDir, `${id}.md`);
+	const docPath = join(rc.kbDir!, `${id}.md`);
 	const scriptRel = `kb/artifacts/${id}.mjs`;
-	const scriptPath = join(rc.kbDir, "artifacts", `${id}.mjs`);
+	const scriptPath = join(rc.kbDir!, "artifacts", `${id}.mjs`);
 	if (existsSync(docPath)) throw new Error(`kb doc already exists: ${formatPath(docPath)}`);
 
 	// The doc and the script are one thing: `resolveGateScript` hard-fails a gate
 	// whose script does not resolve, so a command that minted only the doc would
 	// produce something that breaks the moment anything selects it.
-	mkdirSync(join(rc.kbDir, "artifacts"), { recursive: true });
+	mkdirSync(join(rc.kbDir!, "artifacts"), { recursive: true });
 	writeFileAtomic(scriptPath, renderGateStub(scriptRel));
-	writeFileAtomic(docPath, renderGateDoc(id, name, options.gist, scriptRel));
-	appendLinkToDoc(feat.path, id, `${options.action}.gate`, gateLinkAttrs(options));
+	writeFileAtomic(docPath, renderGateDoc(id, name, gist, scriptRel));
+	appendLinkToDoc(feat.path, id, `${action}.gate`, gateLinkAttrs(undefined, options));
 
 	io.log(`Recorded ${formatPath(docPath)}`);
 	io.log(`Wrote ${formatPath(scriptPath)}`);
-	io.log(`Declared ${options.action}.gate on ${formatPath(feat.path)}`);
-	if (options.action === "land") io.log("It blocks nosedive land until it passes.");
+	io.log(`Declared ${action}.gate on ${formatPath(feat.path)}`);
+	commitBridgeDocs(
+		rc.bridgeDir,
+		`gate(${name}): created`,
+		[docPath, scriptPath, feat.path],
+		io,
+		feat.id,
+	);
+	if (action === "land") io.log("It blocks nosedive land until it passes.");
 	io.log(`It fails until written. Run it with: nosedive test ${id}`);
+}
+
+function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, io: CommandIo) {
+	const gate = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref!);
+	if (gate.kind !== "gate") throw new Error(`does not resolve to a kind: gate doc: ${options.ref}`);
+
+	if (options.gist !== undefined || options.name !== undefined) {
+		const text = readFileSync(gate.path, "utf8");
+		const parsed = parseMarkdownDoc(text, formatPath(gate.path));
+		const doc = parseDocument(text.slice(4, text.indexOf("\n---", 4)));
+		if (doc.errors.length > 0)
+			throw new Error(`invalid YAML in frontmatter in ${formatPath(gate.path)}`);
+		if (options.gist !== undefined) doc.set("gist", options.gist);
+		const body =
+			options.name === undefined
+				? parsed.body
+				: retitleGeneratedHeading(parsed.body, gate.name, options.name);
+		if (options.name !== undefined) doc.set("name", options.name);
+		writeFileAtomic(gate.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
+	}
+
+	const declared = declaringFeat(kbDocs, gate.id);
+	const feat = options.feat ? featForGate(kbDocs, rc, options.feat) : declared?.feat;
+	const redeclaring =
+		options.feat !== undefined ||
+		options.action !== undefined ||
+		options.height !== undefined ||
+		options.flaky !== undefined;
+	if (redeclaring) {
+		// Height, flakiness and action all live on the link rather than the doc, so
+		// there is nowhere to put them until some feat declares the gate.
+		if (!feat)
+			throw new Error(`gate ${gate.name} is declared on no feat; name one with --feat <feat-ref>`);
+		const rel = `${options.action ?? (declared?.link.rel === "land.gate" ? "land" : "test")}.gate`;
+		if (declared && declared.feat.id !== feat.id)
+			reconcileDocLink(declared.feat.path, gate.id, undefined);
+		reconcileDocLink(feat.path, gate.id, rel, gateLinkAttrs(declared?.link.attrs, options));
+		io.log(`Declared ${rel} on ${formatPath(feat.path)}`);
+	}
+
+	io.log(`Updated ${formatPath(gate.path)}`);
+	const name = options.name ?? gate.name;
+	commitBridgeDocs(
+		rc.bridgeDir,
+		`gate(${name}): updated`,
+		[gate.path, feat?.path, declared?.feat.path],
+		io,
+		feat?.id,
+	);
+}
+
+export function recordGate(args: string[], io: CommandIo): void {
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.kbDir) throw new Error("record.gate requires a configured kb directory");
+	// Before the parse, because whether the positional is a document is a
+	// question only the bridge can answer.
+	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const options = parseRecordGateArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
+	if (options.positionalGist) io.err(positionalGistNotice("record.gate"));
+	if (options.ref === undefined) createGate(rc, kbDocs, options, io);
+	else editGate(rc, kbDocs, options, io);
 }

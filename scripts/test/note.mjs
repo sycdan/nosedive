@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run, write } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("note");
 
@@ -157,4 +157,23 @@ test("--title replaces the derived heading and leaves the name alone", () => {
 
 	assert.match(doc.text, /^name: record-dive-renames-a-dive-that-[0-9a-f]{6}$/m);
 	assert.match(doc.text, /^# record\.dive renames a dive that did not move$/m);
+});
+
+test("note commits the note and the repos it back-linked", () => {
+	const bridge = createBridge(tmp, "note-commit-bridge");
+	seedBridge(bridge);
+	const noted = run(["note", "bug:", "the", "pin", "reads", "trunk"], bridge);
+	assertOk(noted, "note failed");
+	const { id } = notedDoc(bridge, noted.stdout);
+	assert.ok(noted.stdout.includes("Committed note(the-pin-reads-trunk-"), noted.stdout);
+
+	// The back-link is half the note: a note nobody can reach from the repo it is
+	// about is a note nobody finds, and an uncommitted link reaches no clone.
+	const committed = runTool("git", ["show", "--pretty=format:", "--name-only", "HEAD"], bridge);
+	const files = committed.stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	assert.ok(files.includes(`kb/${id}.md`), committed.stdout);
+	assert.equal(files.length, 2, `the scoped repo doc should be committed too: ${committed.stdout}`);
 });

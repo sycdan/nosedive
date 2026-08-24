@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url";
 
 import { CommandIo, Migration } from "./bridgeSetupIo.js";
+import { gitOutput, runGit } from "./gitProcess.js";
 import { BRIDGE_STATE_DIRNAME, MIGRATION_BACKUP_DIRNAME, shellQuote } from "./constants.js";
 import {
 	configCompatibilityLevel,
@@ -85,26 +86,134 @@ function compareCalVer(left: string, right: string): number | undefined {
 	return 0;
 }
 
+/**
+ * The commit the running build came from, when it came from a checkout at all.
+ *
+ * The toplevel check is not paranoia: a published install lives under some
+ * project's `node_modules`, and asking git about it there answers about the
+ * project, not about nosedive. Only a root that is its own repository is one.
+ */
+export function packageCommit(): string | undefined {
+	const root = packageRoot();
+	const toplevel = gitOutput(root, ["rev-parse", "--show-toplevel"]);
+	if (!toplevel || resolve(toplevel) !== resolve(root)) return undefined;
+	return gitOutput(root, ["rev-parse", "HEAD"]);
+}
+
+/** Whether `commit` is reachable from the running build's checkout. */
+export function packageCommitContains(commit: string): boolean | undefined {
+	const root = packageRoot();
+	if (packageCommit() === undefined) return undefined;
+	const result = runGit(root, ["merge-base", "--is-ancestor", commit, "HEAD"]);
+	if (result.status === 0) return true;
+	if (result.status === 1) return false;
+	return undefined;
+}
+
+/** The stamp `seed` writes and `preflight` reads back. */
+export function renderSurfaceStamp(version: string, digest: string, commit?: string): string {
+	const commitPart = commit ? ` commit=${commit}` : "";
+	return `<!-- nosedive v=${version}${commitPart} surface=${digest} -->`;
+}
+
+export const SURFACE_STAMP_PATTERN =
+	/^<!-- nosedive v=(\S+?)(?: commit=([0-9a-f]{7,40}))? surface=([0-9a-f]{8}) -->$/;
+
+/**
+ * Which side of a digest mismatch is stale, when that can be established.
+ *
+ * `unknown` is a real answer and the common one on a source checkout, where
+ * both sides read `0.0.0-dev` and the version carries no ordering at all.
+ */
+type StampOrder = "installed-newer" | "installed-older" | "same" | "unknown";
+
+function stampOrder(
+	stamped: { version: string; commit?: string },
+	installedVersion: string,
+	containsCommit: (commit: string) => boolean | undefined,
+): StampOrder {
+	const comparison = compareCalVer(stamped.version, installedVersion);
+	if (comparison !== undefined) {
+		if (comparison > 0) return "installed-older";
+		if (comparison < 0) return "installed-newer";
+		return "same";
+	}
+	// No CalVer on either side, so the only ordering left is the checkout's own
+	// history. Reachable means this build already contains whatever wrote the
+	// block; unreachable means a sibling branch, which proves nothing.
+	if (stamped.commit && containsCommit(stamped.commit) === true) return "installed-newer";
+	return "unknown";
+}
+
+/**
+ * What to say about an instruction block whose surface digest does not match the
+ * build reading it.
+ *
+ * The rule every branch here exists to keep: never order a reseed unless the
+ * installed side is provably at least as new. Seeding overwrites a file every
+ * pilot on the bridge reads, so ordering it from an older install silently
+ * removes commands the block listed correctly, and the next pilot is told to
+ * upgrade against a block that just got worse.
+ *
+ * A mismatch between two source checkouts is reported without the `nose:`
+ * prefix. It is real -- the pilot's own agents are reading a stale block -- but
+ * it is theirs alone, it is present through any session that touches the command
+ * surface, and a call to attention that never clears stops being read.
+ */
 export function describeInstructionDrift(options: {
 	file: string;
-	stamped?: { version: string; digest: string };
+	stamped?: { version: string; commit?: string; digest: string };
 	installedVersion: string;
 	installedDigest: string;
+	containsCommit?: (commit: string) => boolean | undefined;
 }): string | undefined {
 	if (options.stamped === undefined) {
-		return `nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}. Run: nosedive seed`;
+		return (
+			`nose: ${options.file}'s managed instructions carry no version stamp, so nosedive cannot ` +
+			`tell what surface they describe. Reseed with nosedive seed if this install is current.`
+		);
 	}
 	if (options.stamped.digest === options.installedDigest) return undefined;
-	const comparison = compareCalVer(options.stamped.version, options.installedVersion);
-	if (comparison !== undefined) {
-		if (comparison > 0) {
-			return `nose: ${options.file}'s agent instructions come from nosedive ${options.stamped.version}; you have ${options.installedVersion}. Run: npm i -g nosedive@latest`;
-		}
-		if (comparison < 0) {
-			return `nose: your nosedive renders commands ${options.file}'s agent instructions do not list. Run: nosedive seed`;
-		}
+
+	const order = stampOrder(
+		options.stamped,
+		options.installedVersion,
+		options.containsCommit ?? (() => undefined),
+	);
+	// Both sides, not either: a published install reading a block some checkout
+	// stamped is not the pilot's own local drift, and it will not clear on its own.
+	const devLocal =
+		parseCalVer(options.stamped.version) === undefined &&
+		parseCalVer(options.installedVersion) === undefined;
+
+	if (order === "installed-older") {
+		return (
+			`nose: ${options.file}'s agent instructions come from nosedive ${options.stamped.version}; ` +
+			`you have ${options.installedVersion}. Run: npm i -g nosedive@${options.stamped.version}`
+		);
 	}
-	return `nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}. Run: nosedive seed`;
+	if (order === "installed-newer" && !devLocal) {
+		return `nose: your nosedive renders commands ${options.file}'s agent instructions do not list. Run: nosedive seed`;
+	}
+	if (order === "installed-newer") {
+		return `${options.file}'s managed instructions describe an earlier commit of this checkout. Run: nosedive seed`;
+	}
+	// Equal CalVer with differing digests: the same version renders the same
+	// surface, so the block did not come from this build at all, and reseeding
+	// cannot lose anything this build would have listed.
+	if (order === "same") {
+		return `nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}. Run: nosedive seed`;
+	}
+	if (devLocal) {
+		return (
+			`${options.file}'s managed instructions do not match this build, and nosedive cannot tell ` +
+			`which is newer. Reseed only if this checkout is ahead of the one that wrote them.`
+		);
+	}
+	return (
+		`nose: ${options.file}'s managed instructions do not match nosedive ${options.installedVersion}, ` +
+		`and nosedive cannot tell which is newer. Reseed only if this install is current.`
+	);
 }
 
 export function packageDocsOfKind(kind: string): Array<{ filename: string; content: string }> {

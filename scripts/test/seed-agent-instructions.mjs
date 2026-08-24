@@ -11,6 +11,14 @@ const tmp = createTmp("seed-agent-instructions");
 const BEGIN = "<!-- BEGIN nosedive managed instructions -->";
 const END = "<!-- END nosedive managed instructions -->";
 const MARKER_PAIR = ["```md", BEGIN, END, "```"].join("\n");
+/**
+ * Mirrors `SURFACE_STAMP_PATTERN` in src/lib/packageBacklog.ts, which the
+ * library entry does not re-export. Asserting through the pattern rather than a
+ * literal keeps these tests from having to be rewritten every time the stamp
+ * grows a field -- the ` commit=<sha>` segment already cost that once.
+ */
+const SURFACE_STAMP_PATTERN =
+	/^<!-- nosedive v=(\S+?)(?: commit=([0-9a-f]{7,40}))? surface=([0-9a-f]{8}) -->$/m;
 const require = createRequire(import.meta.url);
 const { describeInstructionDrift, renderedSurfaceDigest } = require(
 	join(process.cwd(), "dist", "nosedive.js"),
@@ -31,11 +39,7 @@ function assertManagedBlock(text, label) {
 	assert.match(text, new RegExp(`^${END}$`, "m"), `${label} is missing the end marker`);
 	assert.doesNotMatch(text, /npx -y nosedive@/);
 	assert.doesNotMatch(text, /dist[\\/]cli\.js/);
-	assert.match(
-		text,
-		/^<!-- nosedive v=\S+ surface=[0-9a-f]{8} -->$/m,
-		`${label} is missing the stamped version and digest line`,
-	);
+	assert.match(text, SURFACE_STAMP_PATTERN, `${label} is missing the surface stamp line`);
 	assert.match(
 		text,
 		/^- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work\.$/m,
@@ -61,60 +65,106 @@ function assertManagedBlock(text, label) {
 	}
 }
 
-test("describeInstructionDrift handles comparative and digest-based drift", () => {
+const STAMPED_DIGEST = "abc12345";
+const INSTALLED_DIGEST = "abc12346";
+const SHA = "a".repeat(40);
+/** A drift question with the parts every case shares already filled in. */
+function drift(question) {
+	return describeInstructionDrift({
+		file: "AGENTS.md",
+		installedVersion: "2026.8.21",
+		installedDigest: INSTALLED_DIGEST,
+		...question,
+	});
+}
+
+test("describeInstructionDrift stays quiet when the digests agree", () => {
+	// A pilot whose install is older but whose surface is identical has nothing
+	// to report, so the version never gets a say once the digests match.
+	assert.equal(drift({ stamped: { version: "2026.9.1", digest: INSTALLED_DIGEST } }), undefined);
+	assert.equal(drift({ stamped: { version: "2026.8.9", digest: INSTALLED_DIGEST } }), undefined);
 	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			stamped: { version: "2026.9.1", digest: "abc12345" },
-			installedVersion: "2026.8.21",
-			installedDigest: "abc12345",
-		}),
+		drift({ stamped: { version: "0.0.0-dev", commit: SHA, digest: INSTALLED_DIGEST } }),
 		undefined,
 	);
-	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			stamped: { version: "2026.9.1", digest: "abc12345" },
-			installedVersion: "2026.8.21",
-			installedDigest: "abc12346",
-		}),
-		"nose: AGENTS.md's agent instructions come from nosedive 2026.9.1; you have 2026.8.21. Run: npm i -g nosedive@latest",
-	);
-	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			stamped: { version: "2026.8.9", digest: "abc12345" },
-			installedVersion: "2026.8.21",
-			installedDigest: "abc12346",
-		}),
-		"nose: your nosedive renders commands AGENTS.md's agent instructions do not list. Run: nosedive seed",
-	);
-	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			stamped: { version: "2026.8.21", digest: "abc12345" },
-			installedVersion: "2026.8.21",
-			installedDigest: "abc12346",
-		}),
-		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
-	);
-	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			stamped: { version: "2026.8.21", digest: "abc12345" },
-			installedVersion: "0.0.0-dev",
-			installedDigest: "abc12346",
-		}),
-		"nose: AGENTS.md's managed instructions do not match nosedive 0.0.0-dev. Run: nosedive seed",
-	);
-	assert.equal(
-		describeInstructionDrift({
-			file: "AGENTS.md",
-			installedVersion: "2026.8.21",
-			installedDigest: "abc12346",
-		}),
-		"nose: AGENTS.md's managed instructions do not match nosedive 2026.8.21. Run: nosedive seed",
-	);
+});
+
+test("describeInstructionDrift reports an unstamped block without ordering a reseed", () => {
+	const message = drift({});
+	assert.match(message, /^nose: /);
+	assert.match(message, /carry no version stamp/);
+	// An unstamped block could describe any surface, so the reseed is offered on
+	// a condition the pilot has to check, never ordered outright.
+	assert.doesNotMatch(message, /Run: nosedive seed/);
+});
+
+test("describeInstructionDrift names the stamped version when the install is older", () => {
+	const message = drift({ stamped: { version: "2026.9.1", digest: STAMPED_DIGEST } });
+	assert.match(message, /^nose: /);
+	assert.match(message, /Run: npm i -g nosedive@2026\.9\.1$/);
+	// `@latest` is a different version from the one that wrote the block, and
+	// seeding from this older install would drop commands the block lists right.
+	assert.doesNotMatch(message, /nosedive@latest/);
+	assert.doesNotMatch(message, /Run: nosedive seed/);
+});
+
+test("describeInstructionDrift orders a reseed when the install is newer", () => {
+	const message = drift({ stamped: { version: "2026.8.9", digest: STAMPED_DIGEST } });
+	assert.match(message, /^nose: /);
+	assert.match(message, /Run: nosedive seed$/);
+});
+
+test("describeInstructionDrift orders a reseed when the versions match and the digests do not", () => {
+	// The same version renders the same surface, so a differing digest proves the
+	// block came from somewhere else and reseeding cannot lose anything.
+	const message = drift({ stamped: { version: "2026.8.21", digest: STAMPED_DIGEST } });
+	assert.match(message, /^nose: /);
+	assert.match(message, /Run: nosedive seed$/);
+});
+
+test("describeInstructionDrift orders a reseed when the stamped commit is already in this checkout", () => {
+	const message = drift({
+		installedVersion: "0.0.0-dev",
+		stamped: { version: "0.0.0-dev", commit: SHA, digest: STAMPED_DIGEST },
+		containsCommit: () => true,
+	});
+	assert.match(message, /Run: nosedive seed$/);
+	// Two of the pilot's own checkouts disagreeing is real but never clears on
+	// its own, and a call to attention that is always there stops being read.
+	assert.doesNotMatch(message, /^nose: /);
+});
+
+test("describeInstructionDrift will not order a reseed from an unreachable commit", () => {
+	const message = drift({
+		installedVersion: "0.0.0-dev",
+		stamped: { version: "0.0.0-dev", commit: SHA, digest: STAMPED_DIGEST },
+		containsCommit: () => false,
+	});
+	// A sibling branch proves nothing about which side is newer, and seeding from
+	// the older one silently removes commands the block listed correctly.
+	assert.match(message, /nosedive cannot tell which is newer/);
+	assert.doesNotMatch(message, /Run: nosedive seed/);
+	assert.doesNotMatch(message, /^nose: /);
+});
+
+test("describeInstructionDrift will not order a reseed when the stamp carries no commit", () => {
+	const message = drift({
+		installedVersion: "0.0.0-dev",
+		stamped: { version: "0.0.0-dev", digest: STAMPED_DIGEST },
+	});
+	assert.match(message, /nosedive cannot tell which is newer/);
+	assert.doesNotMatch(message, /Run: nosedive seed/);
+	assert.doesNotMatch(message, /^nose: /);
+});
+
+test("describeInstructionDrift calls attention when only one side carries a version", () => {
+	// An install reading a block a source checkout stamped is not the pilot's own
+	// two checkouts disagreeing: it is someone else's state, it will not clear on
+	// its own, and nothing here can order the fix. That earns the `nose:` call.
+	const message = drift({ stamped: { version: "0.0.0-dev", digest: STAMPED_DIGEST } });
+	assert.match(message, /nosedive cannot tell which is newer/);
+	assert.doesNotMatch(message, /Run: nosedive seed/);
+	assert.match(message, /^nose: /);
 });
 
 test("seed-agent-instructions", () => {
@@ -139,9 +189,19 @@ test("seed-agent-instructions", () => {
 			seededInstructions,
 		)?.[1];
 	assert.ok(managedBlock, "seeded AGENTS.md has no managed block");
+	const stampLine = managedBlock.split("\n")[1];
+	const stamp = SURFACE_STAMP_PATTERN.exec(stampLine);
+	assert.ok(stamp, `unexpected surface stamp line: ${stampLine}`);
+	const [, stampedVersion, stampedCommit, stampedDigest] = stamp;
+	assert.equal(stampedVersion, require(join(process.cwd(), "package.json")).version);
+	assert.equal(stampedDigest, digest);
+	// Seeding from a checkout stamps the commit it rendered from; an install that
+	// is not its own repository stamps none, and scripts/test-pack-bin.mjs pins
+	// that side. Either is well-formed here, so only the shape is asserted.
 	assert.equal(
-		managedBlock.split("\n")[1],
-		`<!-- nosedive v=${require(join(process.cwd(), "package.json")).version} surface=${digest} -->`,
+		stampedCommit === undefined || /^[0-9a-f]{40}$/.test(stampedCommit),
+		true,
+		`unexpected stamped commit: ${stampedCommit}`,
 	);
 	assert.doesNotMatch(managedBlock, /npx -y nosedive@/);
 	assert.doesNotMatch(managedBlock, /dist[\\/]cli\.js/);

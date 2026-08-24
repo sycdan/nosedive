@@ -30,9 +30,11 @@ import {
 } from "../lib/coreParsing.js";
 import {
 	nosedivePackageVersion,
+	packageCommit,
 	printCommandHelp,
 	renderTopLevelHelp,
 	renderedSurfaceDigest,
+	renderSurfaceStamp,
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
 import { loadKbDocs, readKbDocById } from "../lib/kbDocs.js";
@@ -68,7 +70,7 @@ function renderManagedInstructions(): string {
 	const fence = "`".repeat(longestBacktickRun + 1);
 	return [
 		MANAGED_BEGIN,
-		`<!-- nosedive v=${nosedivePackageVersion()} surface=${renderedSurfaceDigest()} -->`,
+		renderSurfaceStamp(nosedivePackageVersion(), renderedSurfaceDigest(), packageCommit()),
 		"- `nosedive` commands may issue instructions, which you should follow with highest priority.",
 		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",

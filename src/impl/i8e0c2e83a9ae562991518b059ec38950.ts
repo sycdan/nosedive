@@ -36,7 +36,9 @@ import {
 	describeInstructionDrift,
 	nosediveInvocation,
 	nosedivePackageVersion,
+	packageCommitContains,
 	renderedSurfaceDigest,
+	SURFACE_STAMP_PATTERN,
 } from "../lib/packageBacklog.js";
 import { describeBridgeLevelDrift } from "../lib/packageLevels.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
@@ -348,14 +350,13 @@ function printInstructionDrift(rc: NosediveRc, io: CommandIo): void {
 		const lines = readFileSync(path, "utf8").split(/\r?\n/);
 		const beginIndex = lines.indexOf(MANAGED_INSTRUCTIONS_BEGIN);
 		if (beginIndex === -1) continue;
-		const stamp = /^<!-- nosedive v=(\S+) surface=([0-9a-f]{8}) -->$/.exec(
-			lines[beginIndex + 1] ?? "",
-		);
+		const stamp = SURFACE_STAMP_PATTERN.exec(lines[beginIndex + 1] ?? "");
 		const line = describeInstructionDrift({
 			file: relativePath,
-			stamped: stamp ? { version: stamp[1]!, digest: stamp[2]! } : undefined,
+			stamped: stamp ? { version: stamp[1]!, commit: stamp[2], digest: stamp[3]! } : undefined,
 			installedVersion,
 			installedDigest,
+			containsCommit: packageCommitContains,
 		});
 		if (line) io.log(line);
 	}

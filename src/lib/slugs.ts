@@ -47,3 +47,13 @@ export function slugFromGist(gist: string, maxLen = 40): string | undefined {
 	if (picked.length === 0) return undefined;
 	return picked.join("-");
 }
+
+/**
+ * A dive's name is managed: it is its feat's name plus enough of its own id to
+ * tell two dives on one feat apart. Shared because renaming a feat has to
+ * recompute every dive on it, and a second spelling of this rule would leave
+ * half the dives named after a feat that no longer exists.
+ */
+export function managedDiveName(featName: string, diveId: string): string {
+	return `${featName}.${diveId.replaceAll("-", "").slice(-6)}`;
+}

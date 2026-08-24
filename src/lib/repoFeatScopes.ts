@@ -119,7 +119,17 @@ function linkTarget(entry: unknown): string | undefined {
 	return isScalar(key) && typeof key.value === "string" ? key.value : undefined;
 }
 
-function reconcileDiveLink(path: string, diveId: string, rel: string | undefined): void {
+/**
+ * Make the document's link to `targetId` say exactly `rel`, or remove it when
+ * no rel is given. Unlike `appendLinkToDoc` this is idempotent: it replaces the
+ * entry rather than adding a second one, which is what an edit needs.
+ */
+export function reconcileDocLink(
+	path: string,
+	targetId: string,
+	rel: string | undefined,
+	attrs: Record<string, string | number | boolean> = {},
+): void {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const frontmatter = splitMarkdownFrontmatter(text, label);
@@ -130,14 +140,14 @@ function reconcileDiveLink(path: string, diveId: string, rel: string | undefined
 		);
 	}
 
-	const target = `kb/${diveId}.md`;
+	const target = `kb/${targetId}.md`;
 	const links = doc.get("links", true);
 	if (links !== undefined && links !== null && !isSeq(links)) {
 		throw new Error(`invalid links in ${label}: expected a YAML list`);
 	}
 	if (isSeq(links)) links.items = links.items.filter((entry) => linkTarget(entry) !== target);
 	if (rel) {
-		const entry = { [target]: { rel } };
+		const entry = { [target]: { rel, ...attrs } };
 		if (isSeq(links)) links.add(entry);
 		else doc.set("links", [entry]);
 	}
@@ -157,8 +167,8 @@ export function reconcileDiveFeatLinks(
 	rel: string,
 ): void {
 	if (previousFeat && previousFeat.id !== feat.id)
-		reconcileDiveLink(previousFeat.path, diveId, undefined);
-	reconcileDiveLink(feat.path, diveId, rel);
+		reconcileDocLink(previousFeat.path, diveId, undefined);
+	reconcileDocLink(feat.path, diveId, rel);
 }
 
 /**

@@ -1,8 +1,10 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
+import { CommandIo } from "./bridgeSetupIo.js";
+import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import {
 	formatPath,
 	gitRelPath,
@@ -14,23 +16,32 @@ import {
 	toPosixPath,
 	type NosediveRc,
 } from "./coreParsing.js";
+import { resolveBridgeDocRef } from "./diveScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
-import { loadKbDocs, repoDocs, type KbDoc } from "./kbDocs.js";
+import { editKbDoc } from "./kbDocEdit.js";
+import { loadKbDocs, repoDocs, retitleGeneratedHeading, type KbDoc } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
-import { quoteYamlString } from "./renderPlan.js";
+import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
+import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { remoteLooksLikeUrl, resolveRemoteForGit } from "./repoWorkspaceCore.js";
 import { assertSlug, titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 export interface RecordRepoOptions {
-	source: string;
+	/** The repo doc to patch. Absent means register a new repository. */
+	ref?: string;
+	/** The clone URL or local path the repository is reached at. */
+	url?: string;
 	name?: string;
 	baseBranch?: string;
+	/** The URL arrived as a positional, in the spelling this level deprecates. */
+	positionalUrl: boolean;
 }
 
 export interface RecordRepoPlan {
 	id: string;
 	name: string;
+	bridgeDir: string;
 	repoPath: string;
 	repoContent: string;
 	backlogPath: string;
@@ -43,41 +54,50 @@ function optionValue(args: string[], index: number, flag: string): string {
 	return value;
 }
 
-export function parseRecordRepoArgs(args: string[]): RecordRepoOptions {
-	let source: string | undefined;
-	let name: string | undefined;
-	let baseBranch: string | undefined;
+export function parseRecordRepoArgs(
+	args: string[],
+	isDocRef: (arg: string) => boolean,
+): RecordRepoOptions {
+	const options: RecordRepoOptions = { positionalUrl: false };
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
-		if (arg === "--name" || arg === "--base-branch") {
-			const value = optionValue(args, i + 1, arg);
-			if (arg === "--name") name = value;
-			else baseBranch = value;
-			i += 1;
+		const flag = ["--url", "--name", "--base-branch"].find(
+			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
+		);
+		if (!flag) {
+			if (arg.startsWith("--")) throw new Error(`unknown record.repo option: ${arg}`);
+			if (isDocRef(arg)) {
+				if (options.ref !== undefined) throw new Error(`unexpected record.repo argument: ${arg}`);
+				options.ref = arg;
+			} else {
+				if (options.url !== undefined) throw new Error(`record.repo url given twice: ${arg}`);
+				options.url = arg;
+				options.positionalUrl = true;
+			}
 			continue;
 		}
-		if (arg.startsWith("--name=")) {
-			name = arg.slice("--name=".length);
-			if (!name) throw new Error("--name requires a value");
-			continue;
-		}
-		if (arg.startsWith("--base-branch=")) {
-			baseBranch = arg.slice("--base-branch=".length);
-			if (!baseBranch) throw new Error("--base-branch requires a value");
-			continue;
-		}
-		if (arg.startsWith("--")) throw new Error(`unknown record.repo option: ${arg}`);
-		if (source !== undefined) throw new Error(`unexpected record.repo argument: ${arg}`);
-		source = arg;
+		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
+		if (!value.trim()) throw new Error(`${flag} requires a value`);
+		if (arg === flag) i += 1;
+		if (flag === "--url") {
+			if (options.url !== undefined) throw new Error("record.repo url given twice");
+			options.url = value;
+		} else if (flag === "--name") options.name = assertSlug(value, "record.repo name");
+		else options.baseBranch = value.trim();
 	}
 
-	if (!source?.trim()) throw new Error("record.repo requires a clone URL or local path");
-	if (name !== undefined) assertSlug(name, "record.repo name");
-	if (baseBranch !== undefined && !baseBranch.trim()) {
-		throw new Error("--base-branch requires a value");
+	options.url = options.url?.trim();
+	if (options.ref === undefined) {
+		if (!options.url) throw new Error("record.repo requires --url <clone-url-or-local-path>");
+	} else if (
+		options.url === undefined &&
+		options.name === undefined &&
+		options.baseBranch === undefined
+	) {
+		throw new Error(`record.repo ${options.ref} names a repo but changes nothing about it`);
 	}
-	return { source: source.trim(), name, baseBranch: baseBranch?.trim() };
+	return options;
 }
 
 function sourceLeaf(source: string): string {
@@ -220,8 +240,8 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 	if (!rc.kbDir) throw new Error("record.repo requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.repo requires a configured workspace directory");
 
-	const isRemote = remoteLooksLikeUrl(options.source);
-	const localPath = isRemote ? undefined : resolve(cwd, options.source);
+	const isRemote = remoteLooksLikeUrl(options.url!);
+	const localPath = isRemote ? undefined : resolve(cwd, options.url!);
 	let cloud: string | undefined;
 	let local: string | undefined;
 	let inferredBranch: string | undefined;
@@ -240,11 +260,11 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 		const origin = gitOutput(localPath, ["remote", "get-url", "origin"]);
 		if (origin && remoteLooksLikeUrl(origin)) cloud = origin;
 	} else {
-		cloud = options.source;
-		inferredBranch = remoteHead(options.source, rc.bridgeDir);
+		cloud = options.url!;
+		inferredBranch = remoteHead(options.url!, rc.bridgeDir);
 	}
 
-	const name = options.name ?? inferredRepoName(localPath ?? options.source);
+	const name = options.name ?? inferredRepoName(localPath ?? options.url!);
 	const branch = options.baseBranch ?? inferredBranch;
 	if (!branch) {
 		throw new Error(
@@ -274,9 +294,100 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 	return {
 		id,
 		name,
+		bridgeDir: rc.bridgeDir,
 		repoPath,
 		repoContent: renderRepoDoc({ id, name, workspacePath, trunk: branch, cloud, local }),
 		backlogPath,
 		backlogContent: renderBacklogRepoScope(backlogBefore, backlogPath, id),
 	};
+}
+/**
+ * `record.repo` writes two ways. Registering a repository is a plan the
+ * caller applies -- `seed` mints a repo doc through the same renderer -- and
+ * changing one is a patch that touches only the doc.
+ */
+function createRepo(options: RecordRepoOptions, io: CommandIo): void {
+	const plan = planRecordRepo(options);
+	writeFileAtomic(plan.repoPath, plan.repoContent);
+	try {
+		writeFileAtomic(plan.backlogPath, plan.backlogContent);
+	} catch (error) {
+		if (existsSync(plan.repoPath)) unlinkSync(plan.repoPath);
+		throw error;
+	}
+	io.log(`Recorded ${formatPath(plan.repoPath)}`);
+	io.log(`Added ${plan.name} to backlog scopes in ${formatPath(plan.backlogPath)}`);
+	commitBridgeDocs(
+		plan.bridgeDir,
+		`repo(${plan.name}): created`,
+		[plan.repoPath, plan.backlogPath],
+		io,
+	);
+}
+
+/**
+ * Where a repository is reached, read off what `--url` was given. A local path
+ * is checked for being a git repository here rather than trusted, because a
+ * repo doc naming a directory that is not one hands every later hydrate a
+ * failure with no explanation attached.
+ */
+function remoteFor(url: string, rc: NosediveRc): { key: "cloud" | "local"; value: string } {
+	if (remoteLooksLikeUrl(url)) return { key: "cloud", value: url };
+	const path = resolve(process.cwd(), url);
+	if (!existsSync(path) || !statSync(path).isDirectory())
+		throw new Error(`local repo path does not exist or is not a directory: ${formatPath(path)}`);
+	if (!gitOutput(path, ["rev-parse", "--git-dir"]))
+		throw new Error(`local repo path is not a git repository: ${formatPath(path)}`);
+	return { key: "local", value: portableLocalPath(path, rc.bridgeDir) };
+}
+
+function editRepo(
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	options: RecordRepoOptions,
+	io: CommandIo,
+): void {
+	const repo = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref!);
+	if (repo.kind !== "repo") throw new Error(`does not resolve to a kind: repo doc: ${options.ref}`);
+	if (options.name) {
+		const clash = repoDocs(kbDocs).find((doc) => doc.name === options.name && doc.id !== repo.id);
+		if (clash) throw new Error(`repo name is already registered: ${options.name} (${clash.id})`);
+	}
+	const remote = options.url ? remoteFor(options.url, rc) : undefined;
+	// A trunk that cannot be inferred is a create-time refusal, not an edit one:
+	// the doc already names one, and `--url` on its own is not a request to
+	// change it. Inferring silently would move the trunk nobody asked to move.
+	const trunk = options.baseBranch;
+
+	editKbDoc(repo.path, (doc, body) => {
+		if (options.name) doc.set("name", options.name);
+		if (trunk) doc.setIn(["meta", "trunk"], trunk);
+		if (remote) doc.setIn(["meta", "remotes", remote.key], remote.value);
+		return options.name ? retitleGeneratedHeading(body, repo.name, options.name) : body;
+	});
+
+	const name = options.name ?? repo.name;
+	if (options.name) {
+		// `meta.path` is left alone deliberately. It names a directory that may
+		// already be hydrated, and a rename is about how the pilot addresses the
+		// repository, not about moving a checkout out from under them.
+		io.log(`Renamed to ${name}; its workspace path is unchanged`);
+	}
+	if (remote) io.log(`Set meta.remotes.${remote.key}`);
+	if (trunk) io.log(`Set meta.trunk to ${trunk}`);
+	io.log(`Updated ${formatPath(repo.path)}`);
+	commitBridgeDocs(rc.bridgeDir, `repo(${name}): updated`, [repo.path], io);
+}
+
+export function recordRepo(args: string[], io: CommandIo): void {
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.kbDir) throw new Error("record.repo requires a configured kb directory");
+	// Before the parse, because whether the positional is a document is a
+	// question only the bridge can answer -- and a clone URL and a kb path are
+	// the same shape.
+	const kbDocs = existsSync(rc.kbDir) ? loadKbDocs(rc.kbDir, rc.bridgeDir) : [];
+	const options = parseRecordRepoArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
+	if (options.positionalUrl) io.err(positionalGistNotice("record.repo", "--url"));
+	if (options.ref === undefined) createRepo(options, io);
+	else editRepo(rc, kbDocs, options, io);
 }

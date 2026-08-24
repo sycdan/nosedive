@@ -44,12 +44,21 @@ function commitKb(bridge, message) {
 	runTool("git", ["push"], bridge);
 }
 
+/** Where a branch stands on the repo's cloud remote -- what `land` publishes to. */
+function cloudHead(repo, branch) {
+	return runTool(
+		"git",
+		["show-ref", "--verify", "--hash", `refs/heads/${branch}`],
+		repo.cloud,
+	).stdout.trim();
+}
+
 function plannedDiveIds(featPath) {
 	const pattern = /kb\/([0-9a-f-]{36})\.md:\n      rel: planned\.dive/g;
 	return [...readFileSync(featPath, "utf8").matchAll(pattern)].map((match) => match[1]);
 }
 
-test("a feat composes through packed, bailed, and landed dives", () => {
+test("a feat composes through packed, bailed and landed dives, and stacks the next on the last", () => {
 	const repo = implRepo(tmp, "lifecycle-repo");
 	const { bridge } = seededBridge(tmp, "bridge", diver);
 	writeImplRepoDoc(bridge, repoId, repo);
@@ -77,6 +86,15 @@ test("a feat composes through packed, bailed, and landed dives", () => {
 	assertOk(first, "first record.dive failed");
 	const firstId = recordedDiveId(first.stdout);
 	assertFeatDiveRel(featPath, firstId, "planned\\.dive");
+	// Nothing has published `work/lifecycle` yet, so trunk is the only pin there
+	// is to give the first dive on a feat. The third dive below is where that
+	// stops being true.
+	const trunkHead = cloudHead(repo, "main");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${firstId}.md`), "utf8"),
+		new RegExp(`^      ref: ${trunkHead}$`, "m"),
+		"the first dive on a feat pins at trunk",
+	);
 	assertOk(
 		run(["record.dive", "--ref", firstId, "--brief", "Test packing and reclaiming."], bridge),
 		"first brief failed",
@@ -212,12 +230,37 @@ meta:
 	assert.match(landed, /^kind: memo$/m);
 	assert.match(landed, /^## Outcome$/m);
 	assertFeatDiveRel(featPath, secondId, "landed\\.dive");
-	const published = runTool(
-		"git",
-		["show-ref", "--verify", "--hash", "refs/heads/work/lifecycle"],
-		repo.cloud,
-	).stdout.trim();
+	const published = cloudHead(repo, "work/lifecycle");
 	assert.match(published, /^[0-9a-f]{40}$/, "land should publish the work branch to cloud");
+	assert.notEqual(published, trunkHead, "the landed branch must stand ahead of trunk");
+
+	/**
+	 * The dive after a landing, which used to be the one thing a feat could not
+	 * do twice. Its branch now stands ahead of trunk, so a dive pinned at trunk
+	 * is born behind the branch it will publish to and `land` can only refuse it
+	 * -- for a state nothing the pilot did caused, recoverable only by packing,
+	 * repinning, jumping and landing again. Recording at the published head is
+	 * what makes the second dive stack on the first instead.
+	 */
+	const third = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
+	assertOk(third, "third record.dive failed");
+	const thirdId = recordedDiveId(third.stdout);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${thirdId}.md`), "utf8"),
+		new RegExp(`^      ref: ${published}$`, "m"),
+		"a dive recorded after a sibling landed pins at what the sibling published",
+	);
+	assertOk(
+		run(["record.dive", "--ref", thirdId, "--brief", "Stack on the landed dive."], bridge),
+		"third brief failed",
+	);
+	assertOk(run(["jump"], bridge), "third jump failed");
+	write(join(worktree, "stacked.txt"), "stacked work\n");
+	runTool("git", ["add", "stacked.txt"], worktree);
+	gitCommit(worktree, "add stacked work");
+	assertOk(run(["land"], bridge), "the dive after a landing must land without a repin");
+	const restacked = cloudHead(repo, "work/lifecycle");
+	assert.notEqual(restacked, published, "the second landing must carry the branch on");
 });
 
 /**
@@ -359,7 +402,8 @@ meta:
 	const mintedPath = join(bridge, "kb", `${mintedId}.md`);
 	const mintedDoc = readFileSync(mintedPath, "utf8");
 	assert.match(mintedDoc, /^gist: "triage work-loop-gate failure"$/m);
-	assert.match(mintedDoc, new RegExp(`kb/${workLoopGateId}\\.md:\\n      rel: test\\.gate`));
+	/** @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green */
+	assert.match(mintedDoc, new RegExp(`kb/${workLoopGateId}\\.md:\\n      rel: land\\.gate`));
 	assert.match(
 		mintedDoc,
 		new RegExp(`Gate: ${workLoopGateId}`),
@@ -391,8 +435,16 @@ meta:
 	assertOk(run(["jump"], bridge), "jump failed");
 	const worktree = join(bridge, "workspace", repo.name);
 
-	// 6. The dive selects the gate it was minted for, with no --full needed.
-	const onDive = run(["test"], bridge);
+	/**
+	 * 6. The focused form selects nothing and names the flag that widens the
+	 * search; `--full` finds the gate on the feat that declared it.
+	 *
+	 * @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green
+	 */
+	const focused = run(["test"], bridge);
+	assert.equal(focused.status, 1, "a dive claiming no test.gate must not report a pass");
+	assert.match(focused.stderr, /selects no test.gate gates/);
+	const onDive = run(["test", "--full"], bridge);
 	assert.equal(onDive.status, 1, "the dive's own gate must still fail before the fix");
 	assert.match(onDive.stderr + onDive.stdout, new RegExp(`${marker} is missing`));
 	assert.match(readFileSync(mintedPath, "utf8"), /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
@@ -402,7 +454,7 @@ meta:
 	runTool("git", ["add", marker], worktree);
 	gitCommit(worktree, "add the work loop feature");
 
-	const fixed = run(["test"], bridge);
+	const fixed = run(["test", "--full"], bridge);
 	assertOk(fixed, "the gate must pass once the repo carries the marker");
 	assert.match(fixed.stdout, /work-loop gate passed/);
 

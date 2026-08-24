@@ -85,7 +85,7 @@ try {
 	const help = runNpm(["exec", "--yes", "--package", packedPath, "-c", "nosedive --help"]);
 	assert.match(help.stdout, /Usage: nosedive <command>/);
 	assert.match(help.stdout, /dump-backlog/);
-	assert.match(help.stdout, /pitch/);
+	assert.match(help.stdout, /record.feat/);
 	assert.match(help.stdout, /add-repo/);
 
 	run("git", ["init", "-b", "main"], seedBridge);

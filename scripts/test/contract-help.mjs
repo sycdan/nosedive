@@ -79,7 +79,8 @@ test("contract help", () => {
 		["preflight", /Usage: nosedive preflight/],
 		["prove", /Usage: nosedive prove <assertion-ref>/],
 		["render", /Usage: nosedive render <uuid>/],
-		["record.dive", /Usage: nosedive record\.dive \[--ref <dive-ref>\]/],
+		["record.dive", /Usage: nosedive record\.dive \[<dive>\]/],
+		["record.feat", /Usage: nosedive record\.feat \[<feat>\]/],
 		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],
@@ -232,6 +233,8 @@ test("the command list omits a command whose latest doc is deprecated", () => {
 		!commands.has("add-repo.effort"),
 		"help should not list add-repo.effort: its latest doc is deprecated",
 	);
+	assert.ok(commands.has("record.feat"), "help should list record.feat");
+	assert.ok(!commands.has("pitch"), "help should not list pitch: its latest doc is deprecated");
 
 	for (const [command, { deprecated }] of latest) {
 		if (command.startsWith("_")) continue;
@@ -241,4 +244,35 @@ test("the command list omits a command whose latest doc is deprecated", () => {
 			assert.ok(commands.has(command), `help omits ${command}, which is not deprecated`);
 		}
 	}
+});
+
+/**
+ * A deprecation only the surface renderers know about is one the pilot who
+ * still types the old spelling never hears: the command keeps working and
+ * never mentions its replacement. The notice goes to stderr because stdout is
+ * parsed -- the quickstart reads the written doc's path out of it.
+ */
+test("a deprecated command names its replacement on stderr, and nothing else changes", () => {
+	const bridge = createBridge(tmp, "contract-help-deprecation-bridge");
+
+	const deprecated = run(["pitch", "Reached by the retired spelling."], bridge);
+	assertOk(deprecated, "the deprecated pitch spelling failed");
+	assert.match(
+		deprecated.stderr,
+		/^nosedive: warning: pitch is deprecated; use instead: .*record\.feat/m,
+		"a deprecated command must name itself and its replacement on stderr",
+	);
+	assert.doesNotMatch(deprecated.stdout, /deprecated/i, "the notice must not reach stdout");
+
+	// `--gist` rather than a positional: this is about a command being announced
+	// dead, and a positional gist earns its own deprecation notice these days.
+	const live = run(["record.feat", "--gist", "Reached by the live spelling."], bridge);
+	assertOk(live, "record.feat failed");
+	assert.doesNotMatch(live.stderr, /is deprecated/, "a live command must not be announced dead");
+
+	// The notice is advice, not a verdict: it neither rescues a failing run nor
+	// spoils a passing one.
+	const refused = run(["pitch"], bridge, "");
+	assert.notEqual(refused.status, 0, "pitch without a gist unexpectedly succeeded");
+	assert.match(refused.stderr, /^nosedive: warning: pitch is deprecated; /m);
 });

@@ -281,8 +281,9 @@ function parseLandArgs(args: string[]): { hard: boolean } {
 }
 
 /**
- * Appends the gate report to the dive without closing it, so a refused land
- * leaves the next agent everything it needs and the dive stays jumpable.
+ * Appends the gate report to the dive without closing it. A refused land leaves
+ * the next agent everything it needs and the dive stays jumpable; a passing one
+ * leaves the record of what was checked before the work was published.
  */
 function appendGateReportToDive(divePath: string, report: string): void {
 	appendTimestampedSection(divePath, report, "Land report");
@@ -412,13 +413,20 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 		});
 		const report = renderGateReport(gates, outcome);
 		io.log(report);
+		/**
+		 * Written whether or not the gates passed. Appending only on failure makes a
+		 * landed dive read as one that landed red: the refusal is the only gate
+		 * section left in it, and the run that actually cleared the way leaves
+		 * nothing behind. `## Outcome` is written afterwards from a re-read of the
+		 * file, so the report a land acted on sits above the push it allowed.
+		 */
+		appendGateReportToDive(dive.path, report);
 		if (outcome.failed) {
 			/**
 			 * Reported rather than thrown: a thrown command's buffered output is
 			 * discarded, and the report *is* the refusal. Exit code carries the
 			 * failure; the dive keeps the copy the next agent will read.
 			 */
-			appendGateReportToDive(dive.path, report);
 			attachFailedGatesToDive(dive.path, dive.links, outcome.runs);
 			io.err(
 				`${refusalPrefix}gates did not pass; nothing was pushed. Report appended to ${formatPath(dive.path)}`,

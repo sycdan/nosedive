@@ -465,9 +465,9 @@ test("preflight reports bridge status, pilot identity and the active dive, and n
 	setIdentity(bridge, "Report Pilot", "report-pilot@example.invalid");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 
-	const pitched = run(["pitch", "Report the dive.", "--name", "report-effort"], bridge);
-	assertOk(pitched, "pitch failed");
-	const effortPath = /^Pitched (.+)$/m.exec(pitched.stdout)[1];
+	const pitched = run(["record.feat", "Report the dive.", "--name", "report-effort"], bridge);
+	assertOk(pitched, "record.feat failed");
+	const effortPath = /^Recorded (.+)$/m.exec(pitched.stdout)[1];
 	const effortId = /^id: (\S+)$/m.exec(readFileSync(join(bridge, effortPath), "utf8"))[1];
 
 	const recorded = run(

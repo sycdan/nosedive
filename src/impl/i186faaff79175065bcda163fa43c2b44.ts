@@ -18,7 +18,7 @@ import {
 	resolveGateScript,
 } from "../lib/landGates.js";
 import { recordDive } from "../lib/recordDive.js";
-import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { appendLinkToDoc, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 interface TestArgs {
 	gateRefs: string[];
@@ -183,7 +183,9 @@ function mintFailedBacklogGates(
 		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 		const minted = kbDocs.find((doc) => doc.kind === "dive" && !before.has(doc.id));
 		if (!minted) throw new Error(`test failed to find the dive minted for gate ${run.gate.doc.id}`);
-		attachFailedGatesToDive(join(rc.bridgeDir, minted.relPath), [], [run]);
+		const mintedPath = join(rc.bridgeDir, minted.relPath);
+		/** @see kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md#red-to-green */
+		appendLinkToDoc(join(rc.bridgeDir, minted.relPath), run.gate.doc.id, "land.gate");
 		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 	}
 }

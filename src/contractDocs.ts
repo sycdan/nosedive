@@ -169,6 +169,17 @@ function isDeprecatedContract(contract: ContractDoc): boolean {
 }
 
 /**
+ * A deprecation that only a surface renderer knows about is one a pilot who
+ * already types the old spelling never hears: the command keeps working and
+ * never mentions its replacement. Say it where the command runs instead, on
+ * stderr, so it cannot corrupt stdout that callers parse.
+ */
+export function deprecatedContractNotice(contract: ContractDoc): string | undefined {
+	if (!isDeprecatedContract(contract)) return undefined;
+	return `nosedive: warning: ${contract.command} is deprecated; use instead: ${contract.useInstead.trim()}\n`;
+}
+
+/**
  * The pilot surface is a scanned table; the agent surface trades that density
  * for a block per command, so a command's `Use when:` trigger cannot be read
  * against the wrong command. A command with no `meta.agents-use-when` has no

@@ -3,37 +3,37 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run, write } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("pitch");
 
-function effortDoc(bridge, stdout) {
-	const match = /^Pitched (.+)$/m.exec(stdout);
-	assert.ok(match, `pitch did not report a written doc:\n${stdout}`);
+function featDoc(bridge, stdout) {
+	const match = /^Recorded (.+)$/m.exec(stdout);
+	assert.ok(match, `record.feat did not report a written doc:\n${stdout}`);
 	return readFileSync(join(bridge, match[1]), "utf8");
 }
 
-test("pitch writes a feat doc from a bare gist", () => {
+test("record.feat writes a feat doc from a bare gist", () => {
 	const bridge = createBridge(tmp, "pitch-bare-bridge");
 
-	const pitched = run(["pitch", "Exercise the L1 pitch contract."], bridge);
-	assertOk(pitched, "pitch with only a gist failed");
-	const doc = effortDoc(bridge, pitched.stdout);
+	const pitched = run(["record.feat", "Exercise the record.feat contract."], bridge);
+	assertOk(pitched, "record.feat with only a gist failed");
+	const doc = featDoc(bridge, pitched.stdout);
 	assert.match(doc, /^kind: feat$/m);
 	assert.match(doc, /^id: [0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/m);
-	assert.match(doc, /^gist: "Exercise the L1 pitch contract\."$/m);
-	assert.match(doc, /^name: exercise-the-l1-pitch-contract$/m);
-	assert.match(doc, /^# Exercise The L1 Pitch Contract$/m);
+	assert.match(doc, /^gist: "Exercise the record\.feat contract\."$/m);
+	assert.match(doc, /^name: exercise-the-record-feat-contract$/m);
+	assert.match(doc, /^# Exercise The Record Feat Contract$/m);
 	assert.doesNotMatch(doc, /^links:/m);
-	assert.doesNotMatch(doc, /## /m, "a fresh pitch should carry no body sections");
+	assert.doesNotMatch(doc, /## /m, "a freshly recorded feat should carry no body sections");
 });
 
-test("pitch names a feat with --name", () => {
+test("record.feat names a feat with --name", () => {
 	const bridge = createBridge(tmp, "pitch-named-bridge");
 
-	const pitched = run(["pitch", "Rework auth.", "--name", "auth-refactor"], bridge);
-	assertOk(pitched, "named pitch failed");
-	const doc = effortDoc(bridge, pitched.stdout);
+	const pitched = run(["record.feat", "Rework auth.", "--name", "auth-refactor"], bridge);
+	assertOk(pitched, "named record.feat failed");
+	const doc = featDoc(bridge, pitched.stdout);
 	assert.match(doc, /^name: auth-refactor$/m);
 	assert.match(doc, /^# Auth Refactor$/m);
 });
@@ -42,34 +42,37 @@ test("--name still wins over a gist that would otherwise be derived", () => {
 	const bridge = createBridge(tmp, "pitch-name-wins-bridge");
 
 	const pitched = run(
-		["pitch", "This gist would derive a totally different slug.", "--name", "picked-by-hand"],
+		["record.feat", "This gist would derive a totally different slug.", "--name", "picked-by-hand"],
 		bridge,
 	);
-	assertOk(pitched, "named pitch over a derivable gist failed");
-	const doc = effortDoc(bridge, pitched.stdout);
+	assertOk(pitched, "named record.feat over a derivable gist failed");
+	const doc = featDoc(bridge, pitched.stdout);
 	assert.match(doc, /^name: picked-by-hand$/m);
 });
 
-test("pitch falls back to a timestamp name when the gist yields no usable slug", () => {
+test("record.feat falls back to a timestamp name when the gist yields no usable slug", () => {
 	const bridge = createBridge(tmp, "pitch-fallback-bridge");
 
-	const pitched = run(["pitch", "!!! --- ???"], bridge);
-	assertOk(pitched, "pitch with an unslugable gist failed");
-	const doc = effortDoc(bridge, pitched.stdout);
-	assert.match(doc, /^name: new-effort-\d{4}-\d{2}-\d{2}-\d{6}$/m);
+	const pitched = run(["record.feat", "!!! --- ???"], bridge);
+	assertOk(pitched, "record.feat with an unslugable gist failed");
+	const doc = featDoc(bridge, pitched.stdout);
+	assert.match(doc, /^name: new-feat-\d{4}-\d{2}-\d{2}-\d{6}$/m);
 });
 
-test("pitch nests under a parent and links both ways", () => {
+test("record.feat nests under a parent and links both ways", () => {
 	const bridge = createBridge(tmp, "pitch-parent-bridge");
 
-	const parent = run(["pitch", "Parent effort.", "--name", "auth"], bridge);
-	assertOk(parent, "parent pitch failed");
-	const parentPath = join(bridge, /^Pitched (.+)$/m.exec(parent.stdout)[1]);
+	const parent = run(["record.feat", "Parent effort.", "--name", "auth"], bridge);
+	assertOk(parent, "parent record.feat failed");
+	const parentPath = join(bridge, /^Recorded (.+)$/m.exec(parent.stdout)[1]);
 	const parentId = /^id: (\S+)$/m.exec(readFileSync(parentPath, "utf8"))[1];
 
-	const child = run(["pitch", "Child effort.", "--name", "tokens", "--parent", "auth"], bridge);
-	assertOk(child, "child pitch failed");
-	const childPath = join(bridge, /^Pitched (.+)$/m.exec(child.stdout)[1]);
+	const child = run(
+		["record.feat", "Child effort.", "--name", "tokens", "--parent", "auth"],
+		bridge,
+	);
+	assertOk(child, "child record.feat failed");
+	const childPath = join(bridge, /^Recorded (.+)$/m.exec(child.stdout)[1]);
 	const childText = readFileSync(childPath, "utf8");
 	const childId = /^id: (\S+)$/m.exec(childText)[1];
 
@@ -82,66 +85,81 @@ test("pitch nests under a parent and links both ways", () => {
 		"parent should link back to the child",
 	);
 
-	const byId = run(["pitch", "Second child.", "--name", "scopes", "--parent", parentId], bridge);
-	assertOk(byId, "pitch --parent by uuid failed");
+	const byId = run(
+		["record.feat", "Second child.", "--name", "scopes", "--parent", parentId],
+		bridge,
+	);
+	assertOk(byId, "record.feat --parent by uuid failed");
 	assert.match(
-		readFileSync(join(bridge, /^Pitched (.+)$/m.exec(byId.stdout)[1]), "utf8"),
+		readFileSync(join(bridge, /^Recorded (.+)$/m.exec(byId.stdout)[1]), "utf8"),
 		/^name: scopes\.auth$/m,
 	);
 
 	const byPath = run(
-		["pitch", "Third child.", "--name", "rotation", "--parent", `kb/${parentId}.md`],
+		["record.feat", "Third child.", "--name", "rotation", "--parent", `kb/${parentId}.md`],
 		bridge,
 	);
-	assertOk(byPath, "pitch --parent by kb path failed");
+	assertOk(byPath, "record.feat --parent by kb path failed");
 });
 
-test("pitch rejects bad input", () => {
+test("record.feat rejects bad input", () => {
 	const bridge = createBridge(tmp, "pitch-reject-bridge");
 
-	const noGist = run(["pitch"], bridge, "");
-	assert.notEqual(noGist.status, 0, "pitch without a gist unexpectedly succeeded");
-	assert.match(noGist.stderr, /pitch requires a gist/);
+	const noGist = run(["record.feat"], bridge, "");
+	assert.notEqual(noGist.status, 0, "record.feat without a gist unexpectedly succeeded");
+	assert.match(noGist.stderr, /record.feat requires --gist/);
 
-	const blankGist = run(["pitch", "   "], bridge, "");
-	assert.notEqual(blankGist.status, 0, "pitch with a blank gist unexpectedly succeeded");
+	const blankGist = run(["record.feat", "   "], bridge, "");
+	assert.notEqual(blankGist.status, 0, "record.feat with a blank gist unexpectedly succeeded");
 	assert.match(blankGist.stderr, /gist cannot be empty/);
 
-	const badName = run(["pitch", "Bad name.", "--name", "Not A Slug"], bridge, "");
-	assert.notEqual(badName.status, 0, "pitch with a non-slug name unexpectedly succeeded");
-	assert.match(badName.stderr, /pitch name must be kebab-case: Not A Slug/);
+	const badName = run(["record.feat", "Bad name.", "--name", "Not A Slug"], bridge, "");
+	assert.notEqual(badName.status, 0, "record.feat with a non-slug name unexpectedly succeeded");
+	assert.match(badName.stderr, /record.feat name must be kebab-case: Not A Slug/);
 
-	const unknownOption = run(["pitch", "Gist.", "--bogus"], bridge, "");
-	assert.notEqual(unknownOption.status, 0, "pitch with an unknown option unexpectedly succeeded");
-	assert.match(unknownOption.stderr, /unknown pitch option: --bogus/);
+	const unknownOption = run(["record.feat", "Gist.", "--bogus"], bridge, "");
+	assert.notEqual(
+		unknownOption.status,
+		0,
+		"record.feat with an unknown option unexpectedly succeeded",
+	);
+	assert.match(unknownOption.stderr, /unknown record.feat option: --bogus/);
 
-	const extraArgument = run(["pitch", "Gist.", "extra"], bridge, "");
-	assert.notEqual(extraArgument.status, 0, "pitch with a second positional unexpectedly succeeded");
-	assert.match(extraArgument.stderr, /unexpected pitch argument: extra/);
+	const extraArgument = run(["record.feat", "Gist.", "extra"], bridge, "");
+	assert.notEqual(
+		extraArgument.status,
+		0,
+		"record.feat with a second positional unexpectedly succeeded",
+	);
+	assert.match(extraArgument.stderr, /record.feat gist given twice: extra/);
 
-	const missingParent = run(["pitch", "Gist.", "--parent", "nope"], bridge, "");
-	assert.notEqual(missingParent.status, 0, "pitch under a missing parent unexpectedly succeeded");
+	const missingParent = run(["record.feat", "Gist.", "--parent", "nope"], bridge, "");
+	assert.notEqual(
+		missingParent.status,
+		0,
+		"record.feat under a missing parent unexpectedly succeeded",
+	);
 	assert.match(missingParent.stderr, /feat not found: nope/);
 
-	assertOk(run(["pitch", "First.", "--name", "taken"], bridge), "first pitch failed");
-	const duplicate = run(["pitch", "Second.", "--name", "taken"], bridge, "");
+	assertOk(run(["record.feat", "First.", "--name", "taken"], bridge), "first record.feat failed");
+	const duplicate = run(["record.feat", "Second.", "--name", "taken"], bridge, "");
 	assert.notEqual(duplicate.status, 0, "duplicate feat name unexpectedly succeeded");
 	assert.match(duplicate.stderr, /feat already exists: taken/);
 });
 
-test("a pitched feat reaches the backlog memo", () => {
+test("a recorded feat reaches the backlog memo", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	const pitched = run(["pitch", "Indexed effort.", "--name", "indexed"], bridge);
-	assertOk(pitched, "pitch failed");
-	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
+	const pitched = run(["record.feat", "Indexed effort.", "--name", "indexed"], bridge);
+	assertOk(pitched, "record.feat failed");
+	assert.match(pitched.stdout, /^Updated backlog memo: /m, "record.feat should link it itself");
 
 	const dumped = run(["dump-backlog"], bridge);
 	assertOk(dumped, "dump-backlog failed");
 	assert.match(dumped.stdout, /Indexed effort\./);
 });
 
-test("an unparented pitch links the backlog memo in the same run, with no second command", () => {
+test("an unparented record.feat links the backlog memo in the same run, with no second command", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-self-link-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	const backlogId = /^backlog: (.+)$/m.exec(
@@ -149,9 +167,9 @@ test("an unparented pitch links the backlog memo in the same run, with no second
 	)[1];
 	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
 
-	const pitched = run(["pitch", "Self-linked effort.", "--name", "self-linked"], bridge);
-	assertOk(pitched, "pitch failed");
-	const doc = effortDoc(bridge, pitched.stdout);
+	const pitched = run(["record.feat", "Self-linked effort.", "--name", "self-linked"], bridge);
+	assertOk(pitched, "record.feat failed");
+	const doc = featDoc(bridge, pitched.stdout);
 	const id = /^id: (\S+)$/m.exec(doc)[1];
 
 	const memo = readFileSync(backlogPath, "utf8");
@@ -162,7 +180,7 @@ test("an unparented pitch links the backlog memo in the same run, with no second
 	);
 });
 
-test("a --parent pitch is reachable only through its parent, not also injected", () => {
+test("a --parent record.feat is reachable only through its parent, not also injected", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-parented-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
 	const backlogId = /^backlog: (.+)$/m.exec(
@@ -170,20 +188,20 @@ test("a --parent pitch is reachable only through its parent, not also injected",
 	)[1];
 	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
 
-	const parent = run(["pitch", "Parent effort.", "--name", "parented"], bridge);
-	assertOk(parent, "parent pitch failed");
-	const parentId = /^id: (\S+)$/m.exec(effortDoc(bridge, parent.stdout))[1];
+	const parent = run(["record.feat", "Parent effort.", "--name", "parented"], bridge);
+	assertOk(parent, "parent record.feat failed");
+	const parentId = /^id: (\S+)$/m.exec(featDoc(bridge, parent.stdout))[1];
 
 	const child = run(
-		["pitch", "Child effort.", "--name", "child-of-parented", "--parent", "parented"],
+		["record.feat", "Child effort.", "--name", "child-of-parented", "--parent", "parented"],
 		bridge,
 	);
-	assertOk(child, "child pitch failed");
-	const childId = /^id: (\S+)$/m.exec(effortDoc(bridge, child.stdout))[1];
+	assertOk(child, "child record.feat failed");
+	const childId = /^id: (\S+)$/m.exec(featDoc(bridge, child.stdout))[1];
 	assert.doesNotMatch(
 		child.stdout,
 		/^Updated backlog memo: /m,
-		"a --parent pitch must not also touch the backlog memo",
+		"a --parent record.feat must not also touch the backlog memo",
 	);
 
 	const memo = readFileSync(backlogPath, "utf8");
@@ -245,6 +263,13 @@ test("update-backlog leaves scopes alone when the rendered tree scopes no repo",
 	)[1];
 	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
 	const heldRepo = "019fc623-0000-7000-8000-0000000000c1";
+	// A second registered repo is what keeps the feat below unscoped: with one
+	// repo in the bridge, record.feat would pick it and the derivation would no longer
+	// be empty, which is the case this test exists to cover.
+	write(
+		join(bridge, "kb", "019fc623-0000-7000-8000-0000000000c2.md"),
+		`---\nkind: repo\nid: 019fc623-0000-7000-8000-0000000000c2\nname: second\ngist: "Test repo"\n---\n`,
+	);
 	// An empty derivation is no information, not a verdict: it must not clear
 	// what the pilot wrote.
 	write(
@@ -255,11 +280,120 @@ test("update-backlog leaves scopes alone when the rendered tree scopes no repo",
 		),
 	);
 
-	const pitched = run(["pitch", "Unscoped effort."], bridge);
-	assertOk(pitched, "pitch failed");
-	assert.match(pitched.stdout, /^Updated backlog memo: /m, "pitch should link it itself");
+	const pitched = run(["record.feat", "Unscoped effort."], bridge);
+	assertOk(pitched, "record.feat failed");
+	assert.match(pitched.stdout, /^Updated backlog memo: /m, "record.feat should link it itself");
 
 	const memo = readFileSync(backlogPath, "utf8");
 	assert.match(memo, new RegExp(`^scopes:\n  - ${heldRepo}$`, "m"));
 	assert.match(memo, /Unscoped effort\./);
+});
+
+/**
+ * A feat that scopes nothing hands every gate declared on it an empty repo set,
+ * so the gate cannot pass under `test`. Where the bridge registers exactly one
+ * repo, that set has only one candidate, and the generated work branch is what
+ * makes it writable.
+ */
+test("an unparented record.feat scopes the sole registered repo, on the generated work branch", () => {
+	const bridge = createBridge(tmp, "pitch-sole-repo-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	const repoId = /^bridge: (.+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const repoName = /^name: (.+)$/m.exec(
+		readFileSync(join(bridge, "kb", `${repoId}.md`), "utf8"),
+	)[1];
+
+	const pitched = run(["record.feat", "Add a hello note."], bridge);
+	assertOk(pitched, "record.feat failed");
+	assert.match(
+		featDoc(bridge, pitched.stdout),
+		new RegExp(`^scopes:\n  - ${repoId}:\n      work-branch: work/add-a-hello-note$`, "m"),
+		"the sole repo should be scoped on record.dive's generated default branch",
+	);
+	assert.ok(
+		pitched.stdout
+			.split("\n")
+			.includes(`Scoped feat to the only registered repo: ${repoName} (${repoId})`),
+		`record.feat must say it chose a scope rather than doing it silently:\n${pitched.stdout}`,
+	);
+	// The flags name decisions record.feat have already been taken; typing them again would
+	// re-open questions that are closed.
+	assert.doesNotMatch(pitched.stdout, /--upscope/);
+	assert.doesNotMatch(pitched.stdout, /--work-branch/);
+});
+
+test("a record.feat with several registered repos writes no scopes and still suggests --upscope", () => {
+	const bridge = createBridge(tmp, "pitch-many-repos-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	write(
+		join(bridge, "kb", "019fc623-0000-7000-8000-0000000000d1.md"),
+		`---\nkind: repo\nid: 019fc623-0000-7000-8000-0000000000d1\nname: other\ngist: "Test repo"\n---\n`,
+	);
+
+	const pitched = run(["record.feat", "Touch two repos."], bridge);
+	assertOk(pitched, "record.feat failed");
+	// With more than one candidate there is no defensible guess, so the feat
+	// keeps saying nothing and the pilot is told which flags say it.
+	assert.doesNotMatch(featDoc(bridge, pitched.stdout), /^scopes:/m);
+	assert.doesNotMatch(pitched.stdout, /^Scoped feat to /m);
+	assert.match(pitched.stdout, /--upscope <repo> --work-branch work\/touch-two-repos$/m);
+});
+
+test("a --parent record.feat writes no scopes, because it inherits its parent's", () => {
+	const bridge = createBridge(tmp, "pitch-parented-scopes-bridge");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
+	assertOk(
+		run(["record.feat", "Parent effort.", "--name", "roots"], bridge),
+		"parent record.feat failed",
+	);
+
+	const child = run(
+		["record.feat", "Child effort.", "--name", "shoots", "--parent", "roots"],
+		bridge,
+	);
+	assertOk(child, "child record.feat failed");
+	assert.doesNotMatch(featDoc(bridge, child.stdout), /^scopes:/m);
+	assert.doesNotMatch(child.stdout, /^Scoped feat to /m);
+});
+
+/**
+ * The old spelling is deprecated, not deleted: its doc stays so nothing pinned
+ * to it breaks, and the only way to know it still works is to run it.
+ */
+test("the deprecated pitch spelling still records a feat", () => {
+	const bridge = createBridge(tmp, "pitch-deprecated-spelling-bridge");
+
+	const pitched = run(["pitch", "Recorded by the old spelling.", "--name", "old-spelling"], bridge);
+	assertOk(pitched, "the deprecated pitch spelling failed");
+	const doc = featDoc(bridge, pitched.stdout);
+	assert.match(doc, /^kind: feat$/m);
+	assert.match(doc, /^name: old-spelling$/m);
+});
+
+test("record.feat commits the doc it wrote and leaves unrelated staged work alone", () => {
+	const bridge = createBridge(tmp, "pitch-commit-bridge");
+	write(join(bridge, "unrelated.md"), "mine\n");
+	runTool("git", ["add", "--", "unrelated.md"], bridge);
+
+	const result = run(["record.feat", "Add a hello note"], bridge);
+	assertOk(result, "record.feat failed");
+	assert.ok(result.stdout.includes("Committed feat(add-a-hello-note): created"), result.stdout);
+
+	// Nothing else ever commits a feat doc: jump and land stage their own paths
+	// and stash the rest, so an uncommitted feat reaches no other checkout.
+	const committed = runTool("git", ["show", "--pretty=format:", "--name-only", "HEAD"], bridge);
+	const files = committed.stdout
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	assert.ok(
+		files.some((file) => file.startsWith("kb/")),
+		`the feat doc should be in the commit: ${committed.stdout}`,
+	);
+	// A pathspec commit, so the pilot keeps whatever they had staged.
+	assert.ok(!files.includes("unrelated.md"), `unrelated work was swept in: ${committed.stdout}`);
+	const staged = runTool("git", ["diff", "--cached", "--name-only"], bridge);
+	assert.ok(staged.stdout.includes("unrelated.md"), staged.stdout);
 });

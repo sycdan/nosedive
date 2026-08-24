@@ -231,8 +231,18 @@ export function assertGeneratedFrontmatter(text, filename, fields = []) {
 
 const testIdentity = ["-c", "user.name=Nosedive Test", "-c", "user.email=nosedive@example.invalid"];
 
-/** `git commit` with a fixed identity, so fixtures do not depend on the developer's git config. */
+/**
+ * `git commit` with a fixed identity, so fixtures do not depend on the
+ * developer's git config.
+ *
+ * A staged-nothing commit is skipped rather than failed. Fixtures stage `kb`
+ * after a record command to reach the state a real bridge is in, and those
+ * commands commit their own documents now, so there is often nothing left --
+ * the fixture is asking for a state that already holds. A fixture that needed
+ * the commit still fails, downstream, on whatever it asserts about HEAD.
+ */
 export function gitCommit(cwd, message) {
+	if (runGit(["diff", "--cached", "--quiet"], cwd, { expectOk: false }).status === 0) return;
 	runTool("git", [...testIdentity, "commit", "-m", message], cwd);
 }
 
@@ -371,14 +381,14 @@ export function seededBridge(tmp, name, diver) {
 	return { bridge, origin: join(tmp, `${name}-origin.git`) };
 }
 
-/** Pitches a feat and returns where it landed, for fixtures that then edit it. */
+/** Records a feat and returns where it landed, for fixtures that then edit it. */
 export function pitchFeat(bridge, gist, name) {
-	const pitched = run(["pitch", gist, "--name", name], bridge);
-	assertOk(pitched, "pitch failed");
-	const featPath = join(bridge, /^Pitched (.+)$/m.exec(pitched.stdout)?.[1] ?? "");
+	const pitched = run(["record.feat", gist, "--name", name], bridge);
+	assertOk(pitched, "record.feat failed");
+	const featPath = join(bridge, /^Recorded (.+)$/m.exec(pitched.stdout)?.[1] ?? "");
 	const text = readFileSync(featPath, "utf8");
 	const id = /^id: (\S+)$/m.exec(text)?.[1];
-	assert.ok(id, `pitched feat has no id:\n${text}`);
+	assert.ok(id, `recorded feat has no id:\n${text}`);
 	return { featPath, featId: id, featText: text };
 }
 

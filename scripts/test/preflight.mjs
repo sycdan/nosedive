@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import {
 	assertOk,
+	bareRepo,
 	createBridge,
 	createTmp,
 	escapeRegExp,
@@ -167,6 +168,63 @@ test("preflight streams its first line before the CLI exits", async () => {
 		child.once("close", resolve);
 	});
 	assert.equal(firstLineBeforeExit, true, "preflight output arrived only after the CLI exited");
+});
+
+test("preflight reports an empty remote without failing and names the push step", () => {
+	const bridge = join(tmp, "empty-origin-bridge");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "main"], bridge);
+	setIdentity(bridge, "Fresh Pilot", "fresh-pilot@example.invalid");
+	runTool("git", ["remote", "add", "origin", bareRepo(tmp, "empty-origin.git")], bridge);
+	writeBridgeConfig(bridge, { backlog: "./backlog" });
+
+	const result = run(["preflight"], bridge);
+	assertOk(result, "preflight should survive an empty origin");
+	assert.match(
+		result.stdout,
+		/^nosedive-bridge-freshness: remote origin exists but has no published branch yet; run git push -u origin main$/m,
+	);
+	assert.match(result.stdout, /^== bridge status ==$/m);
+	assert.match(result.stdout, /^== pilot identification ==$/m);
+	assert.equal(result.status, 0, "empty remote should not force a failing exit");
+});
+
+// The push a bridge on `master` needs is not the push a bridge on `main` needs,
+// and preflight is printing it before anything has been published that could be
+// consulted. The branch comes from the bridge's own `kind: repo` doc, addressed
+// by the `bridge:` config key.
+test("preflight names the bridge's own trunk in the push it asks for", () => {
+	const bridge = join(tmp, "empty-origin-master-bridge");
+	mkdirSync(bridge, { recursive: true });
+	runTool("git", ["init", "-b", "master"], bridge);
+	setIdentity(bridge, "Master Pilot", "master-pilot@example.invalid");
+	runTool(
+		"git",
+		["remote", "add", "origin", bareRepo(tmp, "empty-origin-master.git", "master")],
+		bridge,
+	);
+	const bridgeRepoId = "019fbf74-9c6e-71a2-a3f2-f0c99be3eb01";
+	writeBridgeConfig(bridge, { bridge: bridgeRepoId });
+	write(
+		join(bridge, "kb", `${bridgeRepoId}.md`),
+		`---
+kind: repo
+id: ${bridgeRepoId}
+name: master-bridge
+gist: "The bridge's own repo doc."
+meta:
+  path: .
+  trunk: master
+---
+`,
+	);
+
+	const result = run(["preflight"], bridge);
+	assertOk(result, "preflight should survive an empty origin");
+	assert.match(
+		result.stdout,
+		/^nosedive-bridge-freshness: remote origin exists but has no published branch yet; run git push -u origin master$/m,
+	);
 });
 
 test("preflight fetches trunk and blocks stale bridge knowledge without rebasing", () => {

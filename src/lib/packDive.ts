@@ -20,6 +20,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { printNextSteps } from "./nextSteps.js";
 import {
 	CapturedPatch,
 	captureDirtyPatch,
@@ -425,5 +426,5 @@ export function packDive(args: string[], io: CommandIo): void {
 		resetHydratedWorktree(scope.repoId, resolved.path, `${ref}^{commit}`);
 		io.log(`reset repo=${scope.repoId} path=${formatPath(resolved.path)} ref=${ref}`);
 	}
-	io.log(`nosedive jump kb/${dive.id}.md`);
+	printNextSteps(io, [`nosedive jump kb/${dive.id}.md`]);
 }

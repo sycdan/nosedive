@@ -36,6 +36,7 @@ import {
 import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
+import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
@@ -491,7 +492,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
-	io.log("nosedive preflight");
+	printNextSteps(io, ["nosedive preflight"]);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

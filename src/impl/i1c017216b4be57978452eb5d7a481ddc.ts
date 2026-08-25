@@ -10,6 +10,7 @@ import { commitBridgeDocs } from "../lib/commitBridgeDocs.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
 import { resolveScopeRepo } from "../lib/diveScopes.js";
 import { loadKbDocs, renderKbDocTitle } from "../lib/kbDocs.js";
+import { printNextSteps } from "../lib/nextSteps.js";
 import { appendLinkToDoc } from "../lib/repoFeatScopes.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { assertSlug, slugFromGist } from "../lib/slugs.js";
@@ -183,7 +184,7 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 		[path, ...scopeDocs.map((doc) => doc.path)],
 		io,
 	);
-	if (options.kind === "feat") io.log(`nosedive update-backlog --inject ${id}`);
+	if (options.kind === "feat") printNextSteps(io, [`nosedive update-backlog --inject ${id}`]);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

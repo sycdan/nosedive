@@ -70,6 +70,7 @@ test("note feat mints a feat doc and prints the backlog injection command", () =
 	const doc = notedDoc(bridge, noted.stdout);
 
 	assert.match(doc.text, /^kind: feat$/m);
+	assert.match(noted.stdout, /^Next steps:$/m);
 	assert.match(noted.stdout, new RegExp(`^nosedive update-backlog --inject ${doc.id}$`, "m"));
 });
 

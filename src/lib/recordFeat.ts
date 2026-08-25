@@ -17,6 +17,7 @@ import {
 	retitleGeneratedHeading,
 } from "./kbDocs.js";
 import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
+import { printNextSteps } from "./nextSteps.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
 	appendLinkToDoc,
@@ -196,10 +197,10 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	const upscope = soleRepo
 		? ""
 		: ` --upscope ${repos.length === 1 ? repos[0]!.name : "<repo>"} --work-branch work/${name}`;
-	io.log(
+	printNextSteps(io, [
 		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>"` +
 			upscope,
-	);
+	]);
 }
 
 /** Link a root feat into the backlog memo, reporting the repair when it cannot. */

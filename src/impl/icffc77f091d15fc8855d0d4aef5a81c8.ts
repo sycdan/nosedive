@@ -39,6 +39,7 @@ import {
 	writeNosediveDirGitignore,
 } from "../lib/packageBacklog.js";
 import { loadKbDocs, readKbDocById } from "../lib/kbDocs.js";
+import { printNextSteps } from "../lib/nextSteps.js";
 import { localTrunk, portableLocalPath, renderRepoDoc } from "../lib/recordRepo.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
@@ -347,7 +348,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	if (!options.headless) {
 		try {
 			settings.workspace = await promptScalar(io, "workspace", settings.workspace);
-			settings.backlog = await promptScalar(io, "backlog", settings.backlog);
 			settings.kb = await promptScalar(io, "kb", settings.kb);
 			settings.workBranchPrefix = await promptScalar(
 				io,
@@ -421,14 +421,12 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		io,
 	);
 
-	// Headed, because these follow a run of `Wrote <path>` lines and three bare
-	// commands under those read as more of the same rather than as a choice.
-	io.log("");
-	io.log("Next steps:");
-	io.log("nosedive preflight -- what needs attention now");
-	io.log("nosedive record.feat -- start something new");
-	io.log("nosedive help -- what else nosedive can do");
-	io.log(`or ask your agent "What's next?"`);
+	printNextSteps(io, [
+		"nosedive preflight -- what needs attention now",
+		"nosedive record.feat -- start something new",
+		"nosedive help -- what else nosedive can do",
+		`or ask your agent "What's next?"`,
+	]);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

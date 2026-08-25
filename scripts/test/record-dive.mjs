@@ -200,6 +200,7 @@ test("record.dive accepts --feat as the canonical create flag", () => {
 		),
 	);
 	const id = /^id: (\S+)$/m.exec(doc)[1];
+	assert.match(result.stdout, /^Next steps:$/m);
 	assert.match(
 		result.stdout,
 		new RegExp(`^nosedive jump kb/${id}\\.md$`, "m"),

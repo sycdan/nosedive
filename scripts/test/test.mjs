@@ -6,10 +6,10 @@ import { test } from "node:test";
 import { createBridge, createTmp, gitCommit, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("test");
-const passId = "019fe100-0000-7000-8000-000000000001";
-const failId = "019fe100-0000-7000-8000-000000000002";
-const wrongKindId = "019fe100-0000-7000-8000-000000000003";
-const backlogId = "019fe100-0000-7000-8000-000000000004";
+const passId = "01a03aa9-0854-71fe-a9b6-8007f485259f";
+const failId = "01a03aa9-0855-7573-bf4a-2702698a8ded";
+const wrongKindId = "01a03aa9-0856-7447-bbca-1c24f5b6a6db";
+const backlogId = "01a03aa9-0857-7aee-b6f6-337af4615261";
 
 function gateDoc(
 	id,
@@ -59,9 +59,9 @@ test("test returns a failing gate status", () => {
 });
 
 test("test clearly rejects an unknown id", () => {
-	const result = run(["test", "019fe100-0000-7000-8000-000000000099"], setup("unknown"));
+	const result = run(["test", "01a03aa9-9d63-7184-bc17-c815faac0995"], setup("unknown"));
 	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /kb document not found: 019fe100-0000-7000-8000-000000000099/);
+	assert.match(result.stderr, /kb document not found: 01a03aa9-9d63-7184-bc17-c815faac0995/);
 });
 
 test("test clearly rejects a document with no test-script", () => {
@@ -70,12 +70,21 @@ test("test clearly rejects a document with no test-script", () => {
 	assert.match(result.stderr, /meta\.test-script is missing/);
 });
 
-const diveId = "019fe100-0000-7000-8000-000000000010";
-const featId = "019fe100-0000-7000-8000-000000000011";
-const featGateId = "019fe100-0000-7000-8000-000000000012";
+const diveId = "01a03aaa-1f10-7d71-bd9c-84d1cc04e7f4";
+const featId = "01a03aaa-1f11-742e-b456-aedc57539714";
+const featGateId = "01a03aaa-1f12-7425-b8a9-cbbbaab7b6fe";
 
 function gateLink(id) {
 	return `  - kb/${id}.md:\n      rel: test.gate\n`;
+}
+
+/** A failing gate with no `scopes:` of its own, so its declaring document answers for it. */
+function writeInheritingFailGate(bridge, id) {
+	write(join(bridge, "kb", `${id}.md`), gateDoc(id));
+	write(
+		join(bridge, "kb", "artifacts", `${id}.mjs`),
+		`export function run() { console.error("failed ${id}"); return false; }\n`,
+	);
 }
 
 function linkCount(text, id) {
@@ -356,11 +365,54 @@ test("test still runs a named gate without any dive on deck", () => {
 	assert.equal(result.stdout, "passed gate\n");
 });
 
-test("a named failing gate without a dive does not mint", () => {
-	const bridge = setupDive("named-failure-without-dive");
+test("a named failing gate no dive claims mints one", () => {
+	const inheritId = "01a03aa9-913d-7461-a75c-478fcc4b8d24";
+	const bridge = setupDive("named-failure-mints", { featGates: [inheritId] });
+	writeInheritingFailGate(bridge, inheritId);
 	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
-	assert.equal(run(["test", failId], bridge).status, 1);
+
+	assert.equal(run(["test", inheritId], bridge).status, 1);
+	const minted = mintedDives(bridge);
+	assert.equal(minted.length, 1, "a red gate nobody claims is work whichever form selected it");
+	/** @see kb/1e62a79d-6173-5527-b176-9b03e3c9d531.md#red-to-green */
+	assert.match(minted[0].text, new RegExp(`kb/${inheritId}\\.md:\n      rel: land\\.gate`));
+});
+
+/**
+ * The gate answers for its own scopes, so nothing declares it and there is no
+ * feat to mint against. Without a dive on deck to carry it either, saying so is
+ * all `test` can do.
+ */
+test("a named failing gate that declares its own scopes mints nothing and says why", () => {
+	const bridge = setupDive("named-failure-no-feat");
+	rmSync(join(bridge, "workspace", ".nosedive-ref"), { force: true });
+
+	const result = run(["test", failId], bridge);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /test\.gate needs a feat in context to mint against/);
 	assert.equal(mintedDives(bridge).length, 0);
+});
+
+test("a failing gate from another feat mints rather than joining the dive on deck", () => {
+	const otherFeatId = "01a03aa9-91b0-79f7-aae7-946138ac51be";
+	const inheritId = "01a03aa9-913d-7461-a75c-478fcc4b8d24";
+	const bridge = setupDive("foreign-failure");
+	writeInheritingFailGate(bridge, inheritId);
+	write(
+		join(bridge, "kb", `${otherFeatId}.md`),
+		`---\nkind: feat\nid: ${otherFeatId}\nname: other-selection.nosedive\ngist: "Foreign fixture"\n` +
+			`links:\n${gateLink(inheritId)}---\n`,
+	);
+
+	assert.equal(run(["test", inheritId], bridge).status, 1);
+	const minted = mintedDives(bridge);
+	assert.equal(minted.length, 1);
+	assert.match(minted[0].text, new RegExp(`^  feat: ${otherFeatId}$`, "m"));
+	assert.equal(
+		linkCount(readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"), inheritId),
+		0,
+		"another feat's failure is not the dive on deck's to carry",
+	);
 });
 
 test("every gate runs even after one fails, and all failures are reported once", () => {
@@ -407,8 +459,8 @@ test("a dive that links no gates is reported rather than called green", () => {
  * workspace is empty. Naming it is not an error and must not change the exit
  * code -- a bridge legitimately carries repo docs it has never hydrated.
  */
-const scopedRepoId = "019fe510-0000-7000-8000-0000000000f1";
-const unscopedRepoId = "019fe510-0000-7000-8000-0000000000f2";
+const scopedRepoId = "01a03aaa-dbaa-7a7c-9678-4dfaa90f80b7";
+const unscopedRepoId = "01a03aaa-dbab-78e5-a3b3-75b16aa7a310";
 
 function addRepo(bridge, id, name) {
 	const source = join(tmp, `${name}-source`);

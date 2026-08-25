@@ -123,6 +123,11 @@ function linkTarget(entry: unknown): string | undefined {
  * Make the document's link to `targetId` say exactly `rel`, or remove it when
  * no rel is given. Unlike `appendLinkToDoc` this is idempotent: it replaces the
  * entry rather than adding a second one, which is what an edit needs.
+ *
+ * A replacement keeps the position the entry already had. Appending instead
+ * would say the same thing, but every phase change on a dive would read as a
+ * line deleted from the middle of its feat and another added at the bottom,
+ * and the index would drift into last-touched order nobody chose.
  */
 export function reconcileDocLink(
 	path: string,
@@ -145,11 +150,18 @@ export function reconcileDocLink(
 	if (links !== undefined && links !== null && !isSeq(links)) {
 		throw new Error(`invalid links in ${label}: expected a YAML list`);
 	}
-	if (isSeq(links)) links.items = links.items.filter((entry) => linkTarget(entry) !== target);
-	if (rel) {
-		const entry = { [target]: { rel, ...attrs } };
-		if (isSeq(links)) links.add(entry);
-		else doc.set("links", [entry]);
+	const entry = rel ? { [target]: { rel, ...attrs } } : undefined;
+	if (!isSeq(links)) {
+		if (entry) doc.set("links", [entry]);
+	} else {
+		// Every occurrence goes, so a document that somehow carries the target
+		// twice comes back with one edge, as it did before.
+		const at = links.items.findIndex((item) => linkTarget(item) === target);
+		links.items = links.items.filter((item) => linkTarget(item) !== target);
+		if (entry) {
+			if (at === -1) links.add(entry);
+			else links.items.splice(at, 0, entry);
+		}
 	}
 
 	writeFileAtomic(path, ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n"));

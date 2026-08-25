@@ -6,6 +6,8 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
+import { resolveBridgeDocRef } from "../lib/diveScopes.js";
+import { declaringGateDocs } from "../lib/gateDeclarations.js";
 import { attachFailedGatesToDive, hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
 import { readWorkspaceDiveMarker } from "../lib/gitState.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
@@ -24,6 +26,7 @@ import { appendLinkToDoc, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 interface TestArgs {
 	gateRefs: string[];
 	full: boolean;
+	viaRef?: string;
 }
 
 /**
@@ -32,25 +35,34 @@ interface TestArgs {
  * it, so `test` runs `test.gate` and there is no verb to pass. Once nothing
  * widens by naming another command, the widening is an option like any other.
  *
- * A positional argument is therefore a gate uuid or a mistake, and `land` now
- * lands in the mistake branch by the same rule that catches any other stray
- * word.
+ * A positional argument is therefore a gate document reference. `land` now
+ * reaches document resolution and is rejected clearly when it names no path.
  */
 function parseTestArgs(args: string[]): TestArgs {
 	const gateRefs: string[] = [];
 	let full = false;
-	for (const arg of args) {
+	let viaRef: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index]!;
 		if (arg === "--full") {
 			full = true;
 			continue;
 		}
-		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
-		if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(arg)) {
-			throw new Error(`unrecognised test argument: ${arg}`);
+		if (arg === "--via") {
+			if (viaRef !== undefined) throw new Error("--via may be given only once");
+			viaRef = args[index + 1];
+			if (!viaRef || viaRef.startsWith("--"))
+				throw new Error("--via requires a document reference");
+			index += 1;
+			continue;
 		}
+		if (arg.startsWith("--")) throw new Error(`unknown test option: ${arg}`);
 		gateRefs.push(arg);
 	}
-	return { gateRefs, full };
+	if (viaRef !== undefined && gateRefs.length === 0) {
+		throw new Error("--via requires at least one gate reference");
+	}
+	return { gateRefs, full, viaRef };
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
@@ -58,7 +70,7 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 }
 
 async function test(args: string[], io: CommandIo): Promise<void> {
-	const { gateRefs, full } = parseTestArgs(args);
+	const { gateRefs, full, viaRef } = parseTestArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("test requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
@@ -77,7 +89,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	 */
 	const selected =
 		gateRefs.length > 0
-			? gateRefs.map((ref) => namedGate(ref, kbDocs, rc.bridgeDir))
+			? gateRefs.map((ref) => namedGate(ref, kbDocs, rc.bridgeDir, viaRef, dive))
 			: dive
 				? selectDiveGates(dive, kbDocs, rc, full)
 				: selectBacklogGates(kbDocs, rc);
@@ -201,17 +213,85 @@ function mintFailedBacklogGates(
 	}
 }
 
-function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
-	const doc = kbDocs.find((candidate) => candidate.id === id);
-	if (!doc) throw new Error(`gate not found: ${id}`);
+/**
+ * A gate carrying its own `scopes:` answers for itself, empty list included.
+ * Otherwise the document that declared it does, which is why naming a gate has
+ * to find that document rather than reading the gate's absent key as no repos.
+ *
+ * The active dive wins when it is one of the declaring documents. That is the
+ * order every other selection path walks -- dive, then feat, then repo -- and
+ * the red-to-green loop deliberately links the gate it mints work against as a
+ * `land.gate` on that dive, so a gate under work is normally declared twice.
+ * Refusing there would refuse the loop this command exists to run.
+ *
+ * `--via` narrows before any of that, because a pilot naming a root has said
+ * which declaration they mean and should not be overruled by the dive they
+ * happen to be on.
+ */
+function namedGate(
+	ref: string,
+	kbDocs: KbDoc[],
+	bridgeDir: string,
+	viaRef?: string,
+	dive?: KbDoc,
+): LandGate {
+	const doc = resolveBridgeDocRef(bridgeDir, kbDocs, ref);
+	let introducedBy = doc;
+	if (!doc.hasScopes) {
+		const via = viaRef ? resolveBridgeDocRef(bridgeDir, kbDocs, viaRef) : undefined;
+		const reachable = via ? reachableDocs(via, kbDocs) : kbDocs;
+		const declaring = declaringGateDocs(reachable, doc.id);
+		const active = dive ? declaring.find((candidate) => candidate.id === dive.id) : undefined;
+		if (active) return builtGate(doc, active, bridgeDir);
+		if (declaring.length === 0) {
+			const narrowed = via ? ` reachable from --via ${docLabel(via)}` : "";
+			throw new Error(
+				`gate ${docLabel(doc)} has no declaring document${narrowed}; ` +
+					`declare it on a feat with \`nosedive record.gate ${doc.id} --feat <feat-ref>\`, ` +
+					`or write \`scopes: []\` in ${doc.relPath} when it needs no repo`,
+			);
+		}
+		if (declaring.length > 1) {
+			throw new Error(
+				`gate ${docLabel(doc)} has several declaring documents: ` +
+					`${declaring.map(docLabel).join(", ")}; use \`--via <doc-ref>\` to pick one`,
+			);
+		}
+		introducedBy = declaring[0]!;
+	}
+	return builtGate(doc, introducedBy, bridgeDir);
+}
+
+function builtGate(doc: KbDoc, introducedBy: KbDoc, bridgeDir: string): LandGate {
 	return {
 		doc,
 		scriptPath: resolveGateScript(doc, bridgeDir),
 		gateHeight: 0,
 		flaky: false,
-		introducedBy: doc,
+		introducedBy,
 		shadowedBy: [],
 	};
+}
+
+function reachableDocs(root: KbDoc, kbDocs: KbDoc[]): KbDoc[] {
+	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const seen = new Set<string>();
+	const reachable: KbDoc[] = [];
+	const walk = (doc: KbDoc): void => {
+		if (seen.has(doc.id)) return;
+		seen.add(doc.id);
+		reachable.push(doc);
+		for (const link of doc.links) {
+			const target = byId.get(link.id);
+			if (target) walk(target);
+		}
+	};
+	walk(root);
+	return reachable;
+}
+
+function docLabel(doc: KbDoc): string {
+	return `${doc.relPath} (${doc.name || doc.id})`;
 }
 
 /**

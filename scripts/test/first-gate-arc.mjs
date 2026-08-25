@@ -146,8 +146,9 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 		stubPath,
 		"export async function run() {\n\tconsole.error('export list is honest');\n\treturn true;\n}\n",
 	);
-
-	// 6. nosedive test <gate-id> now passes.
+	// 6. nosedive test <gate-id> now passes. By this point the feat and the dive
+	// the sweep minted both declare the gate, so this also holds the rule that
+	// the active dive is the declaration a named gate inherits from.
 	const secondRun = run(["test", gateId], bridge);
 	assertOk(secondRun, "the rewritten gate should pass");
 

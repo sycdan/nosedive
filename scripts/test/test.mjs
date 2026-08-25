@@ -11,30 +11,38 @@ const failId = "019fe100-0000-7000-8000-000000000002";
 const wrongKindId = "019fe100-0000-7000-8000-000000000003";
 const backlogId = "019fe100-0000-7000-8000-000000000004";
 
-function gateDoc(id, kind = "assertion", { script = `kb/artifacts/${id}.mjs` } = {}) {
+function gateDoc(
+	id,
+	kind = "assertion",
+	{ script = `kb/artifacts/${id}.mjs`, scopes = false } = {},
+) {
 	const meta = script === null ? "meta:\n" : `meta:\n  test-script: ${script}\n`;
 	return `---
 kind: ${kind}
 id: ${id}
 name: ${id}
 gist: "Run gate fixture"
+${scopes ? "scopes: []\n" : ""}
 ${meta}---
 `;
 }
 
 function setup(name, options) {
 	const bridge = createBridge(tmp, name, options);
-	write(join(bridge, "kb", `${passId}.md`), gateDoc(passId));
+	write(join(bridge, "kb", `${passId}.md`), gateDoc(passId, "assertion", { scopes: true }));
 	write(
 		join(bridge, "kb", "artifacts", `${passId}.mjs`),
 		'export function run() { console.log("passed gate"); }\n',
 	);
-	write(join(bridge, "kb", `${failId}.md`), gateDoc(failId));
+	write(join(bridge, "kb", `${failId}.md`), gateDoc(failId, "assertion", { scopes: true }));
 	write(
 		join(bridge, "kb", "artifacts", `${failId}.mjs`),
 		'export function run() { console.error("failed gate"); return false; }\n',
 	);
-	write(join(bridge, "kb", `${wrongKindId}.md`), gateDoc(wrongKindId, "memo", { script: null }));
+	write(
+		join(bridge, "kb", `${wrongKindId}.md`),
+		gateDoc(wrongKindId, "memo", { script: null, scopes: true }),
+	);
 	return bridge;
 }
 
@@ -53,7 +61,7 @@ test("test returns a failing gate status", () => {
 test("test clearly rejects an unknown id", () => {
 	const result = run(["test", "019fe100-0000-7000-8000-000000000099"], setup("unknown"));
 	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /gate not found: 019fe100-0000-7000-8000-000000000099/);
+	assert.match(result.stderr, /kb document not found: 019fe100-0000-7000-8000-000000000099/);
 });
 
 test("test clearly rejects a document with no test-script", () => {
@@ -237,7 +245,7 @@ test("test runs every named gate in order and rejects the removed land argument"
 
 	const removed = run(["test", "land"], bridge);
 	assert.equal(removed.status, 1);
-	assert.match(removed.stderr, /unrecognised test argument: land/);
+	assert.match(removed.stderr, /path not found: land/);
 });
 
 test("test without an active dive sweeps test.gate links from the backlog memo", () => {
@@ -440,6 +448,124 @@ test("a gate inherits its declaring feat scopes and hydrates the named repo", ()
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /inherited .*inherited-repo/);
 	assert.match(result.stderr, /hydrated repo inherited-repo at [0-9a-f]{40}/);
+});
+
+test("a named gate inherits its declaring feat scopes and hydrates the named repo", () => {
+	const bridge = setupDive("named-inherited-scope", { diveGates: [], featGates: [featGateId] });
+	addRepo(bridge, scopedRepoId, "named-inherited-repo");
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}\nlinks:\n`,
+		),
+	);
+	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
+	setGateScript(bridge, featGateId, "named inherited ");
+
+	const result = run(["test", featGateId], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /named inherited .*named-inherited-repo/);
+	assert.match(result.stderr, /hydrated repo named-inherited-repo at [0-9a-f]{40}/);
+});
+
+test("a named gate with no scopes and no declaration is refused with both remedies", () => {
+	const bridge = setup("undeclared-inheritance");
+	write(join(bridge, "kb", `${passId}.md`), gateDoc(passId));
+
+	const result = run(["test", passId], bridge);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, new RegExp(`gate kb/${passId}\\.md.*has no declaring document`));
+	assert.match(result.stderr, new RegExp(`nosedive record\\.gate ${passId} --feat <feat-ref>`));
+	assert.match(result.stderr, /write `scopes: \[\]`/);
+});
+
+/** A second feat declaring `featGateId`, so two documents claim one gate. */
+function secondDeclaringFeat(bridge) {
+	const otherFeatId = "019fe100-0000-7000-8000-000000000013";
+	write(
+		join(bridge, "kb", `${otherFeatId}.md`),
+		`---\nkind: feat\nid: ${otherFeatId}\nname: other-selection.nosedive\ngist: "Second declarer"\n` +
+			`links:\n${gateLink(featGateId)}---\n`,
+	);
+	return otherFeatId;
+}
+
+test("a named gate with two declaring documents is refused and names both", () => {
+	const bridge = setupDive("ambiguous-declaration", { diveGates: [], featGates: [featGateId] });
+	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
+	const otherFeatId = secondDeclaringFeat(bridge);
+
+	const result = run(["test", featGateId], bridge);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /has several declaring documents/);
+	assert.match(result.stderr, new RegExp(`kb/${featId}\\.md \\(test-selection\\.nosedive\\)`));
+	assert.match(
+		result.stderr,
+		new RegExp(`kb/${otherFeatId}\\.md \\(other-selection\\.nosedive\\)`),
+	);
+	assert.match(result.stderr, /--via <doc-ref>/);
+});
+
+/**
+ * The red-to-green loop links a minted dive to the gate it was minted against,
+ * so the dive and its feat both declare it. That is the common case, not an
+ * ambiguity, and it resolves the way every other selection path walks: the
+ * dive first.
+ */
+test("the active dive wins over its feat when both declare a named gate", () => {
+	const bridge = setupDive("dive-declaration-wins", {
+		diveGates: [featGateId],
+		featGates: [featGateId],
+	});
+	addRepo(bridge, scopedRepoId, "feat-declared-repo");
+	addRepo(bridge, unscopedRepoId, "dive-declared-repo");
+	write(
+		join(bridge, "kb", `${featId}.md`),
+		readFileSync(join(bridge, "kb", `${featId}.md`), "utf8").replace(
+			"links:\n",
+			`scopes:\n  - ${scopedRepoId}\nlinks:\n`,
+		),
+	);
+	write(
+		join(bridge, "kb", `${diveId}.md`),
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8").replace(
+			"scopes: []\n",
+			`scopes:\n  - ${unscopedRepoId}\n`,
+		),
+	);
+	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
+	setGateScript(bridge, featGateId, "dive declared ");
+
+	const result = run(["test", featGateId], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /dive declared .*dive-declared-repo/);
+	assert.doesNotMatch(result.stdout, /feat-declared-repo/);
+});
+
+test("--via selects one of two declaring documents", () => {
+	const bridge = setupDive("via-declaration", { diveGates: [featGateId], featGates: [featGateId] });
+	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
+
+	const result = run(["test", featGateId, "--via", `kb/${featId}.md`], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /feat gate ran/);
+});
+
+test("--via follows links transitively to a declaring feat", () => {
+	const bridge = setupDive("via-transitive", { diveGates: [], featGates: [featGateId] });
+	write(join(bridge, "kb", `${featGateId}.md`), gateDoc(featGateId));
+
+	const result = run(["test", featGateId, "--via", `kb/${backlogId}.md`], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /feat gate ran/);
+});
+
+test("a gate kb path resolves the same as its uuid", () => {
+	const bridge = setup("gate-path");
+	const result = run(["test", `kb/${passId}.md`], bridge);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.stdout, "passed gate\n");
 });
 
 test("a gate's own scopes override the declaring feat scopes", () => {

@@ -121,6 +121,17 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 		"the failure should name the stub file to edit",
 	);
 
+	// The stub also dumps the ctx it was handed, so a gate author sees the shape
+	// they are writing against instead of taking a comment's word for it. The id
+	// is read back out of the dump rather than matched as a substring: a literal
+	// in the stub would satisfy that and prove nothing about what ran.
+	const dumped = /^ctx: (\{[\s\S]*?\n\})$/m.exec(firstRun.stderr);
+	assert.ok(dumped, `the stub should dump its ctx:\n${firstRun.stderr}`);
+	const ctx = JSON.parse(dumped[1]);
+	assert.equal(ctx.gateId, gateId, "the dump should carry the ctx the gate actually ran with");
+	assert.equal(ctx.diveId, diveId, "the dump should name the dive on deck");
+	assert.ok(ctx.bridgeRoot, "the dump should name the bridge root");
+
 	// 4. A failing gate attaches itself to the working dive, so the failure is on
 	// the record rather than only in a terminal that has scrolled away.
 	assert.match(

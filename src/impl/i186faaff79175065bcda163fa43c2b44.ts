@@ -15,6 +15,7 @@ import { appendTimestampedSection } from "../lib/kbSections.js";
 import {
 	collectDiveGates,
 	collectFeatGates,
+	type GateRun,
 	LandGate,
 	renderGateReport,
 	resolveGateScript,
@@ -132,30 +133,78 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		hydrated,
 		io,
 	);
-	if (dive && outcome.failed) {
-		const divePath = join(rc.bridgeDir, dive.relPath);
-		appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
-		attachFailedGatesToDive(divePath, dive.links, outcome.runs);
-	} else if (!dive && gateRefs.length === 0 && outcome.failed) {
-		mintFailedBacklogGates(outcome.runs, kbDocs, rc, io);
+	if (outcome.failed) {
+		const claimed: GateRun[] = [];
+		const unclaimed: GateRun[] = [];
+		for (const gateRun of outcome.runs) {
+			if (gateRun.status === 0 || gateRun.gate.flaky) continue;
+			(claimedByActiveDive(gateRun.gate, dive, feat, kbDocs, rc) ? claimed : unclaimed).push(
+				gateRun,
+			);
+		}
+		if (dive) {
+			const divePath = join(rc.bridgeDir, dive.relPath);
+			appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
+			attachFailedGatesToDive(divePath, dive.links, claimed);
+		}
+		mintUnclaimedFailures(unclaimed, kbDocs, rc, io);
 	}
 }
 
 /**
- * A backlog sweep has no active dive to receive a blocking failure, so each
- * unowned failure becomes claimable work. Reload after recording because
- * `recordDive` writes both docs and the next failure must deduplicate against
- * those writes too.
+ * The dive on deck answers for a failure its own feat declared, and for one
+ * whose gate carries its own `scopes:` -- such a gate names no feat, so there
+ * is no document to record work against but the dive already in hand.
+ *
+ * Everything else is unclaimed: another feat's gate reached by a wide walk, and
+ * every blocking failure at all when no dive is on deck. Which selection form
+ * found it does not enter into it. A gate is red and no dive owns it either way,
+ * and a pilot who ran the command `record.gate` printed should not have to know
+ * that the bare form is the one that hands them somewhere to start.
  */
-function mintFailedBacklogGates(
-	runs: Awaited<ReturnType<typeof runGateSession>>["runs"],
+function claimedByActiveDive(
+	gate: LandGate,
+	dive: KbDoc | undefined,
+	feat: KbDoc | undefined,
+	kbDocs: KbDoc[],
+	rc: ReturnType<typeof readNosediveRc>,
+): boolean {
+	if (!dive) return false;
+	const owner = owningFeat(gate.introducedBy, kbDocs, rc);
+	return !owner || owner.id === feat?.id;
+}
+
+/** The feat a gate's declaring document belongs to, if it resolves to one. */
+function owningFeat(
+	declaredBy: KbDoc,
+	kbDocs: KbDoc[],
+	rc: ReturnType<typeof readNosediveRc>,
+): KbDoc | undefined {
+	if (declaredBy.kind === "feat") return declaredBy;
+	if (!declaredBy.featRef) return undefined;
+	try {
+		const resolved = resolveFeatDoc(kbDocs, rc, declaredBy.featRef);
+		return resolved.kind === "feat" ? resolved : undefined;
+	} catch {
+		// The failed run already owns the exit status; the caller explains why no work was minted.
+		return undefined;
+	}
+}
+
+/**
+ * A blocking failure no dive claims is work nobody has started, so it becomes a
+ * dive. The caller has already dropped the passes and the flaky runs. Reload
+ * after recording because `recordDive` writes both docs and the next failure
+ * must deduplicate against those writes too.
+ */
+function mintUnclaimedFailures(
+	runs: GateRun[],
 	initialDocs: KbDoc[],
 	rc: ReturnType<typeof readNosediveRc>,
 	io: CommandIo,
 ): void {
 	let kbDocs = initialDocs;
 	for (const run of runs) {
-		if (run.status === 0 || run.gate.flaky) continue;
 		if (
 			kbDocs.some(
 				(doc) => doc.kind === "dive" && doc.links.some((link) => link.id === run.gate.doc.id),
@@ -165,15 +214,7 @@ function mintFailedBacklogGates(
 		}
 
 		const declaredBy = run.gate.introducedBy;
-		let feat = declaredBy.kind === "feat" ? declaredBy : undefined;
-		if (!feat && declaredBy.featRef) {
-			try {
-				const resolved = resolveFeatDoc(kbDocs, rc, declaredBy.featRef);
-				if (resolved.kind === "feat") feat = resolved;
-			} catch {
-				// The failed run already owns the exit status; the message below explains why no work was minted.
-			}
-		}
+		const feat = owningFeat(declaredBy, kbDocs, rc);
 		if (!feat) {
 			io.writeErr(
 				`test: gate ${run.gate.doc.name || run.gate.doc.id} (${run.gate.doc.id}), declared by ${declaredBy.relPath}: a test.gate needs a feat in context to mint against.\n`,

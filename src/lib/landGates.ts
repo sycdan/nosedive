@@ -562,24 +562,27 @@ export function renderGateReport(gates: LandGate[], outcome: GateOutcome): strin
 	if (gates.length === 0) lines.push("- (none declared)");
 	for (const gate of gates) {
 		const run = outcome.runs.find((entry) => entry.gate === gate);
+		const label = `[${gate.doc.name || gate.doc.id}](${gate.doc.relPath})`;
+		// Which edge won stays auditable whatever the verdict; everything else below
+		// is only worth keeping for a gate that did not pass.
+		const shadowed = gate.shadowedBy.length
+			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map((doc) => doc.relPath).join(", ")}`
+			: undefined;
+		if (run?.status === 0) {
+			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s`);
+			if (shadowed) lines.push(shadowed);
+			continue;
+		}
 		const verdict = !run
 			? "never ran"
-			: run.status === 0
-				? "passed"
-				: gate.flaky
-					? `failed (exit ${run.status}) -- flaky, not blocking`
-					: `FAILED (exit ${run.status})`;
-		lines.push(`- ${gateLabel(gate)}: ${verdict}`);
+			: gate.flaky
+				? `failed (exit ${run.status}) -- flaky, not blocking`
+				: `FAILED (exit ${run.status})`;
+		lines.push(`- ${label}: ${verdict}`);
 		lines.push(`  - script: ${gate.scriptPath}`);
 		lines.push(`  - gate-height: ${gate.gateHeight}, test-is-flaky: ${gate.flaky}`);
 		lines.push(`  - declared by: ${gate.introducedBy.relPath}`);
-		if (gate.shadowedBy.length > 0) {
-			lines.push(
-				`  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy
-					.map((doc) => doc.relPath)
-					.join(", ")}`,
-			);
-		}
+		if (shadowed) lines.push(shadowed);
 		if (run) {
 			lines.push(`  - ran: ${run.startedAt} -> ${run.endedAt} (${run.elapsedMs}ms)`);
 			const stderr = run.stderr.trim();

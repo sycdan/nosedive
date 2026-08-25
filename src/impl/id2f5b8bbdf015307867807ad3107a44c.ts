@@ -410,7 +410,8 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	if (gates.length > 0) {
 		const outcome = await runLandGates(gates, {
 			// Live gate output goes to stderr, where a gate's own progress already
-			// goes; the recorded report keeps its copy and still lands on stdout.
+			// goes. The report on stdout keeps a copy only for a gate that failed,
+			// so watching the run is the way to read a passing gate's chatter.
 			sink: { out: (text) => io.writeErr(text), err: (text) => io.writeErr(text) },
 			context: {
 				bridgeRoot: rc.bridgeDir,

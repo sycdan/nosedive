@@ -258,10 +258,11 @@ export function gitCommitEmpty(cwd, message) {
  */
 export function writeBridgeConfig(
 	bridgeDir,
-	{ workspace = "./workspace", kb = "./kb", backlog } = {},
+	{ workspace = "./workspace", kb = "./kb", backlog, bridge } = {},
 ) {
 	const lines = ["compatibility-level: 2", `workspace: ${workspace}`, `kb: ${kb}`];
 	if (backlog) lines.push(`backlog: ${backlog}`);
+	if (bridge) lines.push(`bridge: ${bridge}`);
 	lines.push("");
 	write(join(bridgeDir, ".nosedive", "config.yaml"), lines.join("\n"));
 }

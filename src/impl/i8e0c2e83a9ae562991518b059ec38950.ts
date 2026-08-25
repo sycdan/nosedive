@@ -30,7 +30,7 @@ import {
 	pilotIdentityLines,
 	readPilotIdentity,
 } from "../lib/gitState.js";
-import { KbDoc, loadKbDocs, readActiveDiveId } from "../lib/kbDocs.js";
+import { KbDoc, loadKbDocs, readActiveDiveId, readKbDocById } from "../lib/kbDocs.js";
 import {
 	bridgeCompatibilityLevel,
 	describeInstructionDrift,
@@ -180,19 +180,13 @@ function preferredBridgeRemote(bridgeDir: string): string | undefined {
 	return remotes.includes("origin") ? "origin" : remotes[0];
 }
 
-function bridgeTrunkBranch(bridgeDir: string, remote: string): string {
+function bridgeTrunkBranch(bridgeDir: string, remote: string): string | undefined {
 	const remoteHead = gitRun(
 		bridgeDir,
 		["ls-remote", "--symref", remote, "HEAD"],
 		`failed to resolve bridge trunk from remote ${remote}`,
 	);
-	const branch = /^ref:\s+refs\/heads\/(.+)\s+HEAD$/m.exec(remoteHead)?.[1]?.trim();
-	if (!branch) {
-		throw new Error(
-			`failed to resolve bridge trunk from remote ${remote}: remote HEAD does not name a branch`,
-		);
-	}
-	return branch;
+	return /^ref:\s+refs\/heads\/(.+)\s+HEAD$/m.exec(remoteHead)?.[1]?.trim();
 }
 
 interface BridgeFreshness {
@@ -217,6 +211,14 @@ function fetchBridgeTrunk(bridgeDir: string): BridgeFreshness {
 	const remote = preferredBridgeRemote(bridgeDir);
 	if (!remote) return { ahead: 0, behind: 0 };
 	const branch = bridgeTrunkBranch(bridgeDir, remote);
+	if (!branch) {
+		return {
+			remote,
+			branch: undefined,
+			ahead: 0,
+			behind: 0,
+		};
+	}
 	gitRun(
 		bridgeDir,
 		["fetch", "--prune", remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`],
@@ -314,8 +316,11 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 	for (const line of lines) io.log(line);
 }
 
-function bridgeFreshnessLine(freshness: BridgeFreshness): string | undefined {
-	if (!freshness.remote || !freshness.branch) return undefined;
+function bridgeFreshnessLine(freshness: BridgeFreshness, trunkBranch: string): string | undefined {
+	if (!freshness.remote) return undefined;
+	if (!freshness.branch) {
+		return `nosedive-bridge-freshness: remote ${freshness.remote} exists but has no published branch yet; run git push -u ${freshness.remote} ${trunkBranch}`;
+	}
 	const trunk = `${freshness.remote}/${freshness.branch}${freshness.trunk ? ` ${freshness.trunk}` : ""}`;
 	const head = freshness.head ?? "unknown";
 	if (freshness.behind > 0 && freshness.ahead > 0) {
@@ -384,7 +389,9 @@ function printSessionReport(
 	io.log("== bridge status ==");
 	io.log(`nosedive-workspace: ${toPosixPath(rc.workspaceDir)}`);
 	io.log(levelLine);
-	const freshnessLine = bridgeFreshnessLine(freshness);
+	const bridgeRepoDoc =
+		rc.bridge && rc.kbDir ? readKbDocById(rc.kbDir, rc.bridgeDir, rc.bridge) : undefined;
+	const freshnessLine = bridgeFreshnessLine(freshness, bridgeRepoDoc?.repoBaseBranch ?? "main");
 	if (freshnessLine) io.log(freshnessLine);
 	if (freshness.behind > 0) io.log(STALE_BRIDGE_NOSE);
 	printCurrentDiveAndFeat(rc, kbDocs, io);

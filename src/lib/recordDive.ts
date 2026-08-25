@@ -31,6 +31,7 @@ import { readGitAuthorIdentity } from "./gitProcess.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { bridgeDocRefPredicate } from "./recordArgs.js";
 import { parseRecordDiveArgs, type RecordDiveOptions } from "./recordDiveArgs.js";
+import { printNextSteps } from "./nextSteps.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
 	ensureReleasable,
@@ -144,7 +145,7 @@ function recordFreeDive(
 	commitBridgeDocs(rc.bridgeDir, `dive(${recorded.name}): created`, [path], io);
 	const tags = diveTags(recorded, localOnlyKbDocIds(rc.bridgeDir, kbDir));
 	if (tags.length > 0) io.log(`needs: ${tags.join(", ")}`);
-	io.log(`nosedive jump kb/${id}.md`);
+	printNextSteps(io, [`nosedive jump kb/${id}.md`]);
 }
 
 function replaceTitle(body: string, title: string): string {
@@ -223,7 +224,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 			io,
 			feat.id,
 		);
-		io.log(`nosedive jump kb/${id}.md`);
+		printNextSteps(io, [`nosedive jump kb/${id}.md`]);
 		return;
 	}
 
@@ -331,5 +332,5 @@ export function recordDive(args: string[], io: CommandIo): void {
 		io,
 		feat?.id,
 	);
-	io.log(`nosedive jump kb/${dive.id}.md`);
+	printNextSteps(io, [`nosedive jump kb/${dive.id}.md`]);
 }

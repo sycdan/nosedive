@@ -63,6 +63,18 @@ function seedBridge(bridge) {
 	return run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
 }
 
+test("interactive seed prompts only for configurable paths and branch prefix", () => {
+	const { bridge } = emptyOriginBridge("interactive-prompts");
+	const seeded = run(["seed", "--file", "AGENTS.md"], bridge, "\n\n\n");
+	assertOk(seeded, "interactive seed failed");
+	assert.deepEqual(seeded.stdout.match(/[a-z-]+ \[[^\]]+\]: /g), [
+		"workspace [./workspace]: ",
+		"kb [./kb]: ",
+		"work-branch-prefix [work/]: ",
+	]);
+	assert.doesNotMatch(seeded.stdout, /backlog \[/);
+});
+
 test("first seed publishes an empty origin and sets upstream", () => {
 	const { bridge, origin } = emptyOriginBridge("first-publish");
 	const seeded = seedBridge(bridge);

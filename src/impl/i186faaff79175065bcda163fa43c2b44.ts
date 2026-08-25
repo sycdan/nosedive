@@ -17,6 +17,7 @@ import {
 	renderGateReport,
 	resolveGateScript,
 } from "../lib/landGates.js";
+import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { recordDive } from "../lib/recordDive.js";
 import { appendLinkToDoc, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
@@ -95,6 +96,16 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		);
 		io.setExitCode(1);
 		return;
+	}
+
+	// A notice, never a refusal: `test` is the loop a gate gets written in, and
+	// the gate is uncommitted for most of it. `land` is where it has to be true.
+	const stale = dirtyGates(rc.bridgeDir, selected);
+	if (stale.length > 0) {
+		io.writeErr(`test: uncommitted gate source; land will refuse until it is published
+`);
+		io.writeErr(`${describeDirtyGates(stale)}
+`);
 	}
 
 	const { hydrated, reports } = hydrateGateRepos(selected, kbDocs, rc.bridgeDir, rc.workspaceDir);

@@ -93,13 +93,6 @@ export function parseRecordFeatArgs(
 	if (options.ref === undefined) {
 		if (options.gist === undefined) throw new Error('record.feat requires --gist "<one line>"');
 		if (options.unparent) throw new Error("--no-parent needs a feat to unparent");
-	} else if (
-		options.gist === undefined &&
-		options.name === undefined &&
-		options.parent === undefined &&
-		!options.unparent
-	) {
-		throw new Error(`record.feat ${options.ref} names a feat but changes nothing about it`);
 	}
 	return options;
 }
@@ -315,8 +308,7 @@ function editFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, i
 	}
 
 	for (const rename of renames) io.log(`Renamed ${formatPath(rename.doc.path)} to ${rename.name}`);
-	io.log(`Updated ${formatPath(feat.path)}`);
-	commitBridgeDocs(
+	const committed = commitBridgeDocs(
 		rc.bridgeDir,
 		`feat(${name}): updated`,
 		[
@@ -328,6 +320,9 @@ function editFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, i
 		],
 		io,
 		feat.id,
+	);
+	io.log(
+		committed ? `Updated ${formatPath(feat.path)}` : `Already published: ${formatPath(feat.path)}`,
 	);
 }
 

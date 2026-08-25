@@ -12,8 +12,8 @@ const tmp = createTmp("record-edit-forms");
  *
  * Kept together rather than split across the four per-command files because the
  * point being proved is that the four agree -- one positional meaning the
- * document, one named flag per field, and a refusal when a call names a
- * document but changes nothing about it.
+ * document, one named flag per field, and a bare ref with no fields meaning
+ * publish that document as it stands.
  */
 
 function recordedPath(stdout) {
@@ -99,7 +99,7 @@ test("record.feat re-homes a feat and moves its backlog link with it", () => {
 	assert.doesNotMatch(read(bridge, parent.relPath), new RegExp(`kb/${orphan.id}\\.md`));
 });
 
-test("record.feat refuses a cycle and a call that changes nothing", () => {
+test("record.feat refuses a cycle, and publishes a bare ref rather than refusing it", () => {
 	const bridge = createBridge(tmp, "feat-refusals");
 	const parent = feat(bridge, "The parent.", "--name", "parent");
 	const child = feat(bridge, "The child.", "--name", "child", "--parent", "parent");
@@ -108,9 +108,31 @@ test("record.feat refuses a cycle and a call that changes nothing", () => {
 	assert.notEqual(cycle.status, 0, "parenting an ancestor under its descendant succeeded");
 	assert.match(cycle.stderr, /would make a cycle/);
 
+	// A bare ref names no field because it changes none: it means publish this
+	// document as it stands. record.feat already committed this one, so there is
+	// nothing left to publish and nothing to complain about either.
 	const nothing = run(["record.feat", child.id], bridge, "");
-	assert.notEqual(nothing.status, 0, "a patch with no fields succeeded");
-	assert.match(nothing.stderr, /changes nothing about it/);
+	assertOk(nothing, "a bare ref should publish, not refuse");
+	assert.match(nothing.stdout, /Already published/);
+});
+
+test("a bare record.feat publishes a doc somebody edited by hand", () => {
+	const bridge = createBridge(tmp, "feat-bare-publish");
+	const recorded = feat(bridge, "A feat.", "--name", "handwritten");
+	const path = join(bridge, recorded.relPath);
+	write(path, `${readFileSync(path, "utf8")}\nWritten straight into the file.\n`);
+
+	const published = run(["record.feat", recorded.id], bridge, "");
+	assertOk(published, "bare record.feat failed");
+	assert.match(published.stdout, /Updated /);
+	assert.match(
+		runTool("git", ["show", `HEAD:kb/${recorded.id}.md`], bridge).stdout,
+		/Written straight into the file\./,
+	);
+	assert.equal(
+		runTool("git", ["status", "--porcelain", "--", `kb/${recorded.id}.md`], bridge).stdout,
+		"",
+	);
 });
 
 test("record.gate patches the doc and the link that declares it", () => {

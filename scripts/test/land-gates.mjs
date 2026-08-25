@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
 	assertOk,
 	cli,
+	createNoBridge,
 	createTmp,
 	gitCommit,
 	gitCommitEmpty,
@@ -839,4 +840,35 @@ test("unknown scalar link attributes are carried, non-scalar ones rejected", () 
 	const result = run(["land"], listValue.bridge);
 	assert.notEqual(result.status, 0, "a non-scalar link attribute must be rejected");
 	assert.match(result.stderr, /tags must be a scalar/);
+});
+
+/**
+ * A gate is two files and the pilot writes one of them by hand. If the check on
+ * disk is not the check in HEAD, the run proves nothing about what publication
+ * will carry -- so this is refused before the gate runs, and before the stash
+ * that would hide the difference from a pre-push hook.
+ */
+test("land refuses a gate whose source is unpublished, and lands once it is", () => {
+	const minted = run(["mint", "1"], createNoBridge(tmp));
+	assertOk(minted, "mint failed");
+	const gateId = minted.stdout.trim();
+	const { bridge, worktree } = setup("unpublished-gate", [
+		gate(gateId, "publishes-what-ran", GATE_PASS, undefined, { kind: "gate" }),
+	]);
+	gitCommitEmpty(worktree, "work");
+	// A modification rather than an addition: record.gate commits the stub when it
+	// mints the gate, so what a pilot leaves behind is an edit to a tracked file.
+	write(
+		join(bridge, "kb", "artifacts", `${gateId}.mjs`),
+		'export function run() {\n\tconsole.error("newly written check");\n}\n',
+	);
+
+	const refused = run(["land"], bridge);
+	assert.notEqual(refused.status, 0, "land ran a gate that would publish as something else");
+	assert.match(refused.stderr, /would publish as something other than what just ran/);
+	assert.match(refused.stderr, new RegExp(`publishes-what-ran: nosedive record\\.gate ${gateId}`));
+	assert.doesNotMatch(refused.stderr, /newly written check/, "the gate must not have run");
+
+	assertOk(run(["record.gate", gateId], bridge), "record.gate should publish the script");
+	assertOk(run(["land"], bridge), "land should proceed once the gate is published");
 });

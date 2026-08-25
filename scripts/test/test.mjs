@@ -558,3 +558,39 @@ test("an existing scoped worktree at another commit is reported and never moved"
 	);
 	assert.equal(runTool("git", ["rev-parse", "HEAD"], repo.worktree).stdout.trim(), ahead);
 });
+
+/**
+ * A notice rather than a refusal: `test` is the loop a gate gets written in, so
+ * it is uncommitted for most of its life. The point is that a pilot hears about
+ * it here rather than first from a land that refuses.
+ */
+test("test notices an unpublished gate without changing its verdict", () => {
+	const bridge = setup("unpublished-notice");
+
+	const passed = run(["test", passId], bridge);
+	assert.equal(passed.status, 0, passed.stderr);
+	assert.match(passed.stderr, /uncommitted gate source; land will refuse/);
+	assert.match(passed.stderr, new RegExp(`${passId}: nosedive record\\.gate ${passId}`));
+
+	const failed = run(["test", failId], bridge);
+	assert.notEqual(failed.status, 0, "the notice must not rescue a red gate");
+	assert.match(failed.stderr, /uncommitted gate source/);
+
+	runTool("git", ["add", "--", "kb"], bridge);
+	gitCommit(bridge, "publish the gates");
+	const quiet = run(["test", passId], bridge);
+	assert.equal(quiet.status, 0, quiet.stderr);
+	assert.doesNotMatch(quiet.stderr, /uncommitted gate source/);
+
+	// The case a pilot actually produces: the stub is committed and the check is
+	// written into it by hand, so the change is modified-not-staged rather than
+	// untracked. Worth its own leg -- git spells the two differently, and only
+	// this one has a status column that starts with a space.
+	write(
+		join(bridge, "kb", "artifacts", `${passId}.mjs`),
+		'export function run() { console.log("passed gate, edited"); }\n',
+	);
+	const edited = run(["test", passId], bridge);
+	assert.equal(edited.status, 0, edited.stderr);
+	assert.match(edited.stderr, /uncommitted gate source/);
+});

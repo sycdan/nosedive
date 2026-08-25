@@ -33,6 +33,7 @@ import {
 	renderGateReport,
 	runLandGates,
 } from "../lib/landGates.js";
+import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
@@ -392,6 +393,16 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
 	const gates = collectFeatGates("land", gateRoots, kbDocs, rc.bridgeDir);
+	// Before the run, not after: a gate whose source differs from what will be
+	// published has already made its own result meaningless, green or red. Before
+	// the stash too, which is why no pre-push hook can stand in for this.
+	const stale = dirtyGates(rc.bridgeDir, gates);
+	if (stale.length > 0) {
+		throw new Error(
+			`${refusalPrefix}a gate would publish as something other than what just ran:
+` + describeDirtyGates(stale),
+		);
+	}
 	io.err(
 		`land: ${gates.length === 0 ? "no land gates selected" : `running ${gates.length} land gate${gates.length === 1 ? "" : "s"}`}`,
 	);

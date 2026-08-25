@@ -90,12 +90,6 @@ export function parseRecordRepoArgs(
 	options.url = options.url?.trim();
 	if (options.ref === undefined) {
 		if (!options.url) throw new Error("record.repo requires --url <clone-url-or-local-path>");
-	} else if (
-		options.url === undefined &&
-		options.name === undefined &&
-		options.baseBranch === undefined
-	) {
-		throw new Error(`record.repo ${options.ref} names a repo but changes nothing about it`);
 	}
 	return options;
 }
@@ -375,8 +369,10 @@ function editRepo(
 	}
 	if (remote) io.log(`Set meta.remotes.${remote.key}`);
 	if (trunk) io.log(`Set meta.trunk to ${trunk}`);
-	io.log(`Updated ${formatPath(repo.path)}`);
-	commitBridgeDocs(rc.bridgeDir, `repo(${name}): updated`, [repo.path], io);
+	const committed = commitBridgeDocs(rc.bridgeDir, `repo(${name}): updated`, [repo.path], io);
+	io.log(
+		committed ? `Updated ${formatPath(repo.path)}` : `Already published: ${formatPath(repo.path)}`,
+	);
 }
 
 export function recordRepo(args: string[], io: CommandIo): void {

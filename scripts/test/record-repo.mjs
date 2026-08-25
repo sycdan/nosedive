@@ -150,3 +150,23 @@ test("record.repo commits the repo doc and the backlog it scoped", () => {
 		.filter(Boolean);
 	assert.equal(files.length, 2, `the repo doc and the backlog memo: ${committed.stdout}`);
 });
+
+test("a bare record.repo publishes a repo doc somebody edited by hand", () => {
+	const bridge = seededBridge("record-bare-publish");
+	assertOk(run(["record.repo", sourceRepo("Delta_Service")], bridge), "record.repo failed");
+	const repoPath = repoDocPath(bridge, "delta-service");
+	const repoId = /^id: (\S+)$/m.exec(readFileSync(repoPath, "utf8"))[1];
+	write(repoPath, `${readFileSync(repoPath, "utf8")}\nNotes no command wrote.\n`);
+
+	const published = run(["record.repo", repoId], bridge);
+	assertOk(published, "a bare record.repo failed");
+	assert.match(published.stdout, /Updated /);
+	assert.match(
+		runTool("git", ["show", `HEAD:kb/${repoId}.md`], bridge).stdout,
+		/Notes no command wrote\./,
+	);
+	assert.equal(
+		runTool("git", ["status", "--porcelain", "--", `kb/${repoId}.md`], bridge).stdout,
+		"",
+	);
+});

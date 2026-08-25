@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createBridge, createTmp, run, runTool } from "../test-helpers.mjs";
+import { assertOk, createBridge, createTmp, run, runTool, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("record-gate");
 
@@ -254,4 +254,54 @@ test("record.gate commits the gate, its script, and the feat that declares it", 
 	assert.ok(files.includes(`kb/${gateId}.md`), committed.stdout);
 	assert.ok(files.includes(`kb/artifacts/${gateId}.mjs`), committed.stdout);
 	assert.equal(files.length, 3, `the feat should be the third file: ${committed.stdout}`);
+});
+
+/**
+ * `test` and `land` call a document a gate when a `.gate` rel names it and its
+ * script resolves, whatever its kind. This command has to reach the same set:
+ * land's dirty-gate refusal names it as the fix, and a gate it cannot touch
+ * would leave that refusal unresolvable.
+ */
+test("record.gate patches a gate whose kind is not gate", () => {
+	const { bridge } = setup("other-kind");
+	const recorded = run(["record.gate", "Checks a thing.", "--feat", "honesty"], bridge);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const docPath = join(bridge, "kb", `${gateId}.md`);
+	write(docPath, readFileSync(docPath, "utf8").replace(/^kind: gate$/m, "kind: assertion"));
+
+	const published = run(["record.gate", gateId], bridge);
+	assertOk(published, "record.gate refused a gate that is not kind: gate");
+	assert.equal(runTool("git", ["status", "--porcelain", "--", "kb"], bridge).stdout, "");
+});
+
+test("a bare record.gate publishes the check a pilot wrote into the stub", () => {
+	const { bridge } = setup("publish-script");
+	const recorded = run(["record.gate", "The check is hand written.", "--feat", "honesty"], bridge);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const script = `kb/artifacts/${gateId}.mjs`;
+
+	// The stub is the one file of a gate a pilot writes, and nothing stages it:
+	// land stashes what is unstaged, so an unpublished check reaches no clone.
+	write(
+		join(bridge, script),
+		'export function run() {\n\tconsole.error("hand written check");\n}\n',
+	);
+
+	const published = run(["record.gate", gateId], bridge);
+	assertOk(published, "a bare record.gate failed");
+	assert.match(published.stdout, /Updated /);
+	assert.match(runTool("git", ["show", `HEAD:${script}`], bridge).stdout, /hand written check/);
+	assert.equal(runTool("git", ["status", "--porcelain", "--", script], bridge).stdout, "");
+
+	const head = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	const again = run(["record.gate", gateId], bridge);
+	assertOk(again, "a second bare record.gate failed");
+	assert.match(again.stdout, /Already published/);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(),
+		head,
+		"publishing an unchanged gate should commit nothing",
+	);
 });

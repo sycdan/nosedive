@@ -8,6 +8,9 @@ import { gitRun } from "./repoWorkspaceCore.js";
 /**
  * Commits the documents a record command just wrote, and nothing else.
  *
+ * Returns whether a commit was made, so a caller can report what it published
+ * rather than what it attempted.
+ *
  * Without this a minted feat, gate, gate script, repo or note lives only in the
  * pilot's working tree. `jump` and `land` stage their own pathspecs and stash
  * everything else around the push, so those files are carried from one command
@@ -28,10 +31,10 @@ export function commitBridgeDocs(
 	paths: (string | undefined)[],
 	io: { log(message: string): void },
 	featId?: string,
-): void {
+): boolean {
 	// A bridge that is not a git repository is not broken, it just has nowhere to
 	// record this; the document is written either way.
-	if (!gitOutput(bridgeDir, ["rev-parse", "--git-dir"])) return;
+	if (!gitOutput(bridgeDir, ["rev-parse", "--git-dir"])) return false;
 
 	const pathspecs = [
 		...new Set(
@@ -40,7 +43,7 @@ export function commitBridgeDocs(
 				.map((path) => toPosixPath(relative(bridgeDir, path))),
 		),
 	];
-	if (pathspecs.length === 0) return;
+	if (pathspecs.length === 0) return false;
 
 	gitRun(bridgeDir, ["add", "--", ...pathspecs], `failed to stage ${subject}`);
 	// An empty repository has no HEAD to diff against, and the first commit is
@@ -50,7 +53,7 @@ export function commitBridgeDocs(
 		hasHead &&
 		runGit(bridgeDir, ["diff", "--cached", "--quiet", "--", ...pathspecs]).status === 0
 	)
-		return;
+		return false;
 
 	gitRun(
 		bridgeDir,
@@ -58,4 +61,5 @@ export function commitBridgeDocs(
 		`failed to commit ${subject}`,
 	);
 	io.log(`Committed ${subject}`);
+	return true;
 }

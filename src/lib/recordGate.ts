@@ -13,6 +13,7 @@ import {
 } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { KbDoc, loadKbDocs, retitleGeneratedHeading } from "./kbDocs.js";
+import { resolveGateScript } from "./landGates.js";
 import { LinkRef } from "./kbRefs.js";
 import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
@@ -98,15 +99,6 @@ export function parseRecordGateArgs(
 		// A gate has to be declared where a feat is in context, or a failing
 		// backlog sweep has nothing to mint work against.
 		if (!options.feat) throw new Error("record.gate requires --feat");
-	} else if (
-		options.gist === undefined &&
-		options.feat === undefined &&
-		options.name === undefined &&
-		options.height === undefined &&
-		options.flaky === undefined &&
-		options.action === undefined
-	) {
-		throw new Error(`record.gate ${options.ref} names a gate but changes nothing about it`);
 	}
 	return options;
 }
@@ -267,7 +259,12 @@ function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions,
 
 function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, io: CommandIo) {
 	const gate = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref!);
-	if (gate.kind !== "gate") throw new Error(`does not resolve to a kind: gate doc: ${options.ref}`);
+	// A resolvable script, not a kind. `test` and `land` select a gate by a
+	// `.gate` rel and a script that resolves, deliberately, so an assertion doc a
+	// feat declares as a gate is one. Insisting on `kind: gate` here would leave
+	// land's dirty-gate refusal naming a command that cannot run on half the
+	// gates a bridge has.
+	const scriptPath = resolveGateScript(gate, rc.bridgeDir);
 
 	if (options.gist !== undefined || options.name !== undefined) {
 		const text = readFileSync(gate.path, "utf8");
@@ -303,14 +300,20 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 		io.log(`Declared ${rel} on ${formatPath(feat.path)}`);
 	}
 
-	io.log(`Updated ${formatPath(gate.path)}`);
 	const name = options.name ?? gate.name;
-	commitBridgeDocs(
+	// The script, not just the doc. A pilot writes the check by hand in the file
+	// the stub named, and every other command stashes it around a push, so a gate
+	// whose script never went in publishes as the stub it was minted as.
+	const committed = commitBridgeDocs(
 		rc.bridgeDir,
 		`gate(${name}): updated`,
-		[gate.path, feat?.path, declared?.feat.path],
+		[gate.path, scriptPath, feat?.path, declared?.feat.path],
 		io,
 		feat?.id,
+	);
+	// After the commit, because "updated" is a claim about what was published.
+	io.log(
+		committed ? `Updated ${formatPath(gate.path)}` : `Already published: ${formatPath(gate.path)}`,
 	);
 }
 

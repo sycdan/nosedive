@@ -256,6 +256,25 @@ test("record.gate commits the gate, its script, and the feat that declares it", 
 	assert.equal(files.length, 3, `the feat should be the third file: ${committed.stdout}`);
 });
 
+/**
+ * `test` and `land` call a document a gate when a `.gate` rel names it and its
+ * script resolves, whatever its kind. This command has to reach the same set:
+ * land's dirty-gate refusal names it as the fix, and a gate it cannot touch
+ * would leave that refusal unresolvable.
+ */
+test("record.gate patches a gate whose kind is not gate", () => {
+	const { bridge } = setup("other-kind");
+	const recorded = run(["record.gate", "Checks a thing.", "--feat", "honesty"], bridge);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const docPath = join(bridge, "kb", `${gateId}.md`);
+	write(docPath, readFileSync(docPath, "utf8").replace(/^kind: gate$/m, "kind: assertion"));
+
+	const published = run(["record.gate", gateId], bridge);
+	assertOk(published, "record.gate refused a gate that is not kind: gate");
+	assert.equal(runTool("git", ["status", "--porcelain", "--", "kb"], bridge).stdout, "");
+});
+
 test("a bare record.gate publishes the check a pilot wrote into the stub", () => {
 	const { bridge } = setup("publish-script");
 	const recorded = run(["record.gate", "The check is hand written.", "--feat", "honesty"], bridge);

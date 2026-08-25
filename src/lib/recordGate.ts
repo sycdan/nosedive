@@ -259,7 +259,12 @@ function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions,
 
 function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, io: CommandIo) {
 	const gate = resolveBridgeDocRef(rc.bridgeDir, kbDocs, options.ref!);
-	if (gate.kind !== "gate") throw new Error(`does not resolve to a kind: gate doc: ${options.ref}`);
+	// A resolvable script, not a kind. `test` and `land` select a gate by a
+	// `.gate` rel and a script that resolves, deliberately, so an assertion doc a
+	// feat declares as a gate is one. Insisting on `kind: gate` here would leave
+	// land's dirty-gate refusal naming a command that cannot run on half the
+	// gates a bridge has.
+	const scriptPath = resolveGateScript(gate, rc.bridgeDir);
 
 	if (options.gist !== undefined || options.name !== undefined) {
 		const text = readFileSync(gate.path, "utf8");
@@ -302,7 +307,7 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 	const committed = commitBridgeDocs(
 		rc.bridgeDir,
 		`gate(${name}): updated`,
-		[gate.path, resolveGateScript(gate, rc.bridgeDir), feat?.path, declared?.feat.path],
+		[gate.path, scriptPath, feat?.path, declared?.feat.path],
 		io,
 		feat?.id,
 	);

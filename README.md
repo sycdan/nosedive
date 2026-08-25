@@ -46,7 +46,7 @@ Upgrading to level-2 requires running a migration: see [the migration doc](kb/01
 
 ### [Level 3](kb/019ff102-cafa-780d-80bd-efb9c68617fc.md)
 
-Ordered decks replace one backlog: new feats start on the highest deck, `drop` advances them downward, and a fully landed feat leaves the final deck.
+Ordered decks replace one backlog: new feats start on the highest deck, `drop` advances them towards production; manage multiple `ships` from one terminal, each with their own decks.
 
 ## How we got here
 

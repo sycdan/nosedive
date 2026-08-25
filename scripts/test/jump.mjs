@@ -1432,3 +1432,28 @@ test("the commit subject names which jump this was", () => {
 	assertOk(run(["jump", diveId], bridge), "jump failed on a stale log");
 	assert.match(subject(), /: resumed$/, "the same pilot's stale dive was resumed");
 });
+
+/** The `kb/<id>.md` targets of a doc's `links:`, in the order they are written. */
+function linkOrder(bridge, docId) {
+	const text = readFileSync(join(bridge, "kb", `${docId}.md`), "utf8");
+	return [...text.matchAll(/^ {2}- (kb\/[0-9a-f-]{36}\.md):$/gm)].map((match) => match[1]);
+}
+
+test("jump rewrites a dive's rel where it stands instead of moving it last", () => {
+	const { bridge, featId, diveId } = deckSetup("link-order", { claimed: false });
+	const second = freeDive(bridge, featId, "A second dive");
+	const third = freeDive(bridge, featId, "A third dive");
+
+	const before = linkOrder(bridge, featId);
+	assert.deepEqual(
+		before,
+		[`kb/${diveId}.md`, `kb/${second}.md`, `kb/${third}.md`],
+		"a new dive edge should be appended",
+	);
+
+	assertOk(run(["jump", `kb/${diveId}.md`], bridge), "jump failed");
+
+	const featText = readFileSync(join(bridge, "kb", `${featId}.md`), "utf8");
+	assert.match(featText, new RegExp(`- kb/${diveId}\\.md:\n      rel: jumped\\.dive`));
+	assert.deepEqual(linkOrder(bridge, featId), before);
+});

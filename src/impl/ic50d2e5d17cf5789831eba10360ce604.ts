@@ -1,7 +1,7 @@
 import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
-import { findDocs, parseFindArgs } from "../lib/find.js";
+import { findDocs, parseFindArgs, renderFindResults, resolveFindScopes } from "../lib/find.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
@@ -15,15 +15,11 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 		const docs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 		const root = docs.find((doc) => doc.id === rc.backlog);
 		if (!root) throw new Error(`bridge backlog memo not found: ${rc.backlog}`);
-		for (const doc of findDocs(
-			root,
-			docs,
-			options.role!,
-			options.term,
-			rc.bridgeDir,
-			options.ageMs,
-		)) {
-			io.log(`${doc.relPath}: ${doc.gist}`);
-		}
+		const found = findDocs(root, docs, options.role!, options.term, rc.bridgeDir, {
+			minAgeMs: options.minAgeMs,
+			maxAgeMs: options.maxAgeMs,
+			scopeIds: resolveFindScopes(docs, options.scopes),
+		});
+		for (const line of renderFindResults(options.role!, found)) io.log(line);
 	}, args);
 }

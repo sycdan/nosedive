@@ -16,12 +16,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Generated README surfaces are a release artifact, so the runner
-      # produces them instead of the branch carrying them. Build and test then
-      # run against the output this code actually renders. The --check pass
-      # regenerates on top of what was just written, so it asserts determinism
-      # rather than branch freshness: nothing is committed, and a README that
-      # differs from the branch is not a failure here.
+      # @see kb/01a03c27-918e-737a-b288-1b27a6c2ddca.md
       - name: Regenerate README surfaces
         run: |
           npm run commands:surface

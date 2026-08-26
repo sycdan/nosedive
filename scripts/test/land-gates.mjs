@@ -425,14 +425,24 @@ test("land runs a passing gate and publishes", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assertOk(result, "land with a passing gate should push");
-	assert.match(result.stdout, /builds .*: passed/);
+	assert.match(result.stdout, /\[builds\]\(kb\/[0-9a-f-]+\.md\): passed/);
 
 	// A dive that landed green must say what it was checked against. Recording
 	// only refusals leaves the closed dive carrying nothing but complaints, which
 	// reads as a dive that landed red.
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(diveText, /## Land report /, "a passing land should report into the dive too");
-	assert.match(diveText, /builds .*: passed/);
+	// A pass is one line: the gate doc linked, the verdict, how long it took. The
+	// per-gate detail and the fenced stderr are the failure case's, so the report
+	// section is read out of the dive rather than the whole document, which
+	// carries a brief that may legitimately fence anything.
+	const report = diveText.slice(
+		diveText.indexOf("## Land report "),
+		diveText.indexOf("## Outcome"),
+	);
+	assert.match(report, /- \[builds\]\(kb\/[0-9a-f-]+\.md\): passed in \d+\.\d+s$/m);
+	assert.doesNotMatch(report, /```/, "a passing gate must not carry a fenced stderr block");
+	assert.doesNotMatch(report, /- script:/, "a passing gate must not carry its per-gate detail");
 	assert.ok(
 		diveText.indexOf("## Land report ") < diveText.indexOf("## Outcome"),
 		"the report should sit above the outcome it allowed",
@@ -446,7 +456,7 @@ test("a gate with passing node:test tests passes", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assertOk(result, "passing node:test tests should pass the gate");
-	assert.match(result.stdout, /node-tests .*: passed/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): passed/);
 });
 
 test("a failing gate refuses the land, pushes nothing, and reports into the dive", () => {
@@ -479,7 +489,7 @@ test("a gate with a failing node:test test fails", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "a failing node:test test must block the land");
-	assert.match(result.stdout, /node-tests .*: FAILED/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): FAILED/);
 });
 
 /**
@@ -506,7 +516,7 @@ test("a node:test gate slower than the idle limit is not cut off", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = withIdleLimit(800, () => run(["land"], bridge));
 	assertOk(result, "a suite that keeps talking must not be killed for being slow");
-	assert.match(result.stdout, /node-tests .*: passed/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): passed/);
 });
 
 test("a gate that goes silent with the loop open is failed, not left to hang", () => {
@@ -516,7 +526,7 @@ test("a gate that goes silent with the loop open is failed, not left to hang", (
 	gitCommitEmpty(worktree, "work");
 	const result = withIdleLimit(800, () => run(["land"], bridge));
 	assert.notEqual(result.status, 0, "a hung gate must fail the land");
-	assert.match(result.stdout, /hangs .*: FAILED/);
+	assert.match(result.stdout, /\[hangs\]\(kb\/[0-9a-f-]+\.md\): FAILED/);
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(
@@ -647,9 +657,11 @@ test("a gate runs from the bridge and reaches worktrees through ctx.repos", () =
 	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
 	const result = run(["land"], bridge);
 	assertOk(result, "land failed");
-	assert.match(result.stdout, /cwd=.*live-head(?!-)/, "gates run from the bridge");
-	assert.match(result.stdout, /root=workspace\/live-head-repo/, "root is bridge-relative");
-	assert.match(result.stdout, new RegExp(head), "the gate should see the live worktree HEAD");
+	// Read off the live stream, not the report: this gate passed, and a passing
+	// gate's report is one line. Its stderr still reaches the pilot as it runs.
+	assert.match(result.stderr, /cwd=.*live-head(?!-)/, "gates run from the bridge");
+	assert.match(result.stderr, /root=workspace\/live-head-repo/, "root is bridge-relative");
+	assert.match(result.stderr, new RegExp(head), "the gate should see the live worktree HEAD");
 });
 
 test("each gate receives its repo, feat, gate, and declaring doc ids", () => {
@@ -730,7 +742,7 @@ test("a gate returning false fails the land", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "returning false must block the land");
-	assert.match(result.stdout, /returns-false .*: FAILED/);
+	assert.match(result.stdout, /\[returns-false\]\(kb\/[0-9a-f-]+\.md\): FAILED/);
 });
 
 test("a test-script with no run export is a gate failure", () => {
@@ -800,8 +812,12 @@ test("a slow gate does not stop the gates behind it from running", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assertOk(result, "a slow gate must not refuse the land");
-	assert.match(result.stdout, /slow gate finished/);
-	assert.match(result.stdout, /after-slow .*: passed/, "every selected gate must run");
+	assert.match(result.stderr, /slow gate finished/);
+	assert.match(
+		result.stdout,
+		/\[after-slow\]\(kb\/[0-9a-f-]+\.md\): passed/,
+		"every selected gate must run",
+	);
 });
 
 test("--clock is gone and is rejected rather than ignored", () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Early gate mirroring the publish workflow. Runs on `git push`.
+# Quick checks to catch issues early before spending CI time.
 # Bypass a one-off with `git push --no-verify`.
 #
 # Generated README surfaces are deliberately not checked here. They are release

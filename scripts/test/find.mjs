@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -45,22 +44,22 @@ function doc(bridge, kind, id, name, gist, { links = [], scopes = [], body = "" 
 	);
 }
 
+/**
+ * Through `runGit`, not a bare spawn: the pre-push hook runs this suite from
+ * inside git's own environment, and an inherited GIT_DIR commits to the repo
+ * being pushed instead of to the fixture bridge.
+ */
 function commitAt(bridge, message, date) {
-	const env = {
-		...process.env,
-		GIT_AUTHOR_NAME: "Test",
-		GIT_AUTHOR_EMAIL: "test@example.invalid",
-		GIT_COMMITTER_NAME: "Test",
-		GIT_COMMITTER_EMAIL: "test@example.invalid",
-		GIT_AUTHOR_DATE: date,
-		GIT_COMMITTER_DATE: date,
-	};
-	const result = spawnSync("git", ["commit", "-m", message], {
-		cwd: bridge,
-		encoding: "utf8",
-		env,
+	runGit(["commit", "-m", message], bridge, {
+		env: {
+			GIT_AUTHOR_NAME: "Test",
+			GIT_AUTHOR_EMAIL: "test@example.invalid",
+			GIT_COMMITTER_NAME: "Test",
+			GIT_COMMITTER_EMAIL: "test@example.invalid",
+			GIT_AUTHOR_DATE: date,
+			GIT_COMMITTER_DATE: date,
+		},
 	});
-	assert.equal(result.status, 0, result.stderr);
 }
 
 function fixture(name) {

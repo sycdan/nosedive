@@ -113,8 +113,8 @@ export function run(args, cwd, input, cliPath = cli) {
 
 const gitSafeBareConfigArgs = ["-c", "safe.bareRepository=all"];
 
-export function runGit(args, cwd, { expectOk = true } = {}) {
-	const env = { ...process.env };
+export function runGit(args, cwd, { expectOk = true, env: extraEnv } = {}) {
+	const env = { ...process.env, ...extraEnv };
 	for (const key of gitLocalEnvKeys) delete env[key];
 	const result = spawnSync("git", [...gitSafeBareConfigArgs, ...args], {
 		cwd,

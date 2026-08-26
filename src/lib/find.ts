@@ -3,7 +3,7 @@ import { relative } from "node:path";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { toPosixPath } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
-import { KbDoc } from "./kbDocs.js";
+import { KbDoc, ScopeRef } from "./kbDocs.js";
 import { backlogDocTitle, printCommandHelp } from "./packageBacklog.js";
 import { slugFromGist } from "./slugs.js";
 
@@ -102,6 +102,17 @@ function ageMs(bridgeDir: string, doc: KbDoc): number {
 	return Date.now() - seconds * 1000;
 }
 
+/**
+ * The scopes a document answers for: its own, or the declaring document's where
+ * it left `scopes:` out. Gates are minted without one and inherit from the feat
+ * that declares them, so filtering on declared scopes alone drops every gate
+ * `record.gate` writes. An explicit `scopes: []` still overrides the declarer --
+ * the same rule `hydrateGateRepos` applies in gateSession.ts.
+ */
+function effectiveScopes(doc: KbDoc, declaredBy: KbDoc): ScopeRef[] {
+	return doc.hasScopes ? doc.scopes : declaredBy.scopes;
+}
+
 /** Resolve each `--scope` to a repo id, accepting either the id or the repo's name. */
 export function resolveFindScopes(docs: KbDoc[], scopes: string[]): Set<string> {
 	const repos = docs.filter((doc) => doc.kind === "repo");
@@ -125,7 +136,8 @@ export function findDocs(
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const { scopeIds } = options;
 	const visited = new Set<string>();
-	const selected = new Set<string>();
+	/** Each selected document against the document that declared it, first-seen-wins. */
+	const selected = new Map<string, KbDoc>();
 	/**
 	 * The backlog names its repos as scopes, not as links, so a walk that only
 	 * follows links never sees the notes and gates a repo carries. Seed the
@@ -143,21 +155,27 @@ export function findDocs(
 		for (const link of owner.links) {
 			const target = byId.get(link.id);
 			if (!target) continue;
-			if (link.rel?.endsWith(`.${role}`)) selected.add(target.id);
+			if (link.rel?.endsWith(`.${role}`) && !selected.has(target.id))
+				selected.set(target.id, owner);
 			if (target.kind !== "repo" && isBacklogFeatRel(link.rel)) queue.push(target);
 		}
 	}
 	const normalized = term ? slugFromGist(term, Number.MAX_SAFE_INTEGER) : undefined;
 	if (term && !normalized) return [];
-	return [...selected]
-		.map((id) => byId.get(id)!)
+	return [...selected.entries()]
+		.map(([id, declaredBy]) => ({ doc: byId.get(id)!, declaredBy }))
 		.filter(
-			(doc) =>
+			({ doc }) =>
 				!normalized ||
 				doc.name.includes(normalized) ||
 				Boolean(slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER)?.includes(normalized)),
 		)
-		.filter((doc) => scopeIds.size === 0 || doc.scopes.some((scope) => scopeIds.has(scope.repoId)))
+		.filter(
+			({ doc, declaredBy }) =>
+				scopeIds.size === 0 ||
+				effectiveScopes(doc, declaredBy).some((scope) => scopeIds.has(scope.repoId)),
+		)
+		.map(({ doc }) => doc)
 		.filter((doc) => {
 			if (options.minAgeMs === undefined && options.maxAgeMs === undefined) return true;
 			const age = ageMs(bridgeDir, doc);

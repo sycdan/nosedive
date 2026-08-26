@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { assertOk, createBridge, createTmp, run, runGit, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("find");
-const minted = run(["mint", "12"], tmp);
+const minted = run(["mint", "14"], tmp);
 assertOk(minted, "mint failed");
 const [
 	BACKLOG,
@@ -20,13 +20,22 @@ const [
 	NOTE_A,
 	NOTE_B,
 	UNCOMMITTED,
+	GATE_INHERITS,
+	GATE_EMPTY,
 ] = minted.stdout.trim().split(/\r?\n/);
 
 function link(id, rel) {
 	return [`  - kb/${id}.md:`, `      rel: ${rel}`];
 }
 
-function doc(bridge, kind, id, name, gist, { links = [], scopes = [], body = "" } = {}) {
+/** `scopes: []` is not the same as no `scopes:` key, so the fixture can write either. */
+function scopeLines(scopes) {
+	if (scopes === undefined) return [];
+	if (scopes.length === 0) return ["scopes: []"];
+	return ["scopes:", ...scopes.map((scope) => `  - ${scope}`)];
+}
+
+function doc(bridge, kind, id, name, gist, { links = [], scopes, body = "" } = {}) {
 	write(
 		join(bridge, "kb", `${id}.md`),
 		[
@@ -35,7 +44,7 @@ function doc(bridge, kind, id, name, gist, { links = [], scopes = [], body = "" 
 			`id: ${id}`,
 			`name: ${name}`,
 			`gist: "${gist}"`,
-			...(scopes.length ? ["scopes:", ...scopes.map((scope) => `  - ${scope}`)] : []),
+			...scopeLines(scopes),
 			...(links.length ? ["links:", ...links] : []),
 			"---",
 			"",
@@ -69,12 +78,15 @@ function fixture(name) {
 		scopes: [REPO_A, REPO_B],
 	});
 	doc(bridge, "feat", FEAT, "nested", "Nested", {
+		scopes: [REPO_A],
 		links: [
 			...link(RECENT, "evidence.note"),
 			...link(RECENT, "duplicate.note"),
 			...link(OLD, "old.note"),
 			...link(NAMED, "named.note"),
 			...link(WRONG_REL, "wrong.repo"),
+			...link(GATE_INHERITS, "land.gate"),
+			...link(GATE_EMPTY, "land.gate"),
 		],
 	});
 	doc(bridge, "repo", REPO_A, "alpha", "Alpha Repo", { links: link(NOTE_A, "todo.note") });
@@ -94,6 +106,10 @@ function fixture(name) {
 	doc(bridge, "note", NAMED, "exact-search-term", "Other gist", { scopes: [REPO_A] });
 	doc(bridge, "note", NOTE_A, "alpha-note", "Alpha repo todo", { scopes: [REPO_A] });
 	doc(bridge, "note", NOTE_B, "beta-note", "Beta repo todo", { scopes: [REPO_B] });
+	doc(bridge, "gate", GATE_INHERITS, "inherits-scopes", "Gate that omits scopes");
+	doc(bridge, "gate", GATE_EMPTY, "declares-no-scopes", "Gate that declares no scopes", {
+		scopes: [],
+	});
 	runGit(["add", "."], bridge);
 	commitAt(bridge, "recent docs", new Date().toISOString());
 	return bridge;
@@ -151,6 +167,21 @@ test("find --scope keeps documents scoping any named repo, by name or id", () =>
 	assert.match(both.stdout, new RegExp(NOTE_A));
 	assert.match(both.stdout, new RegExp(NOTE_B));
 	assert.match(both.stdout, new RegExp(RECENT));
+});
+
+test("find --scope resolves inherited scopes", () => {
+	const bridge = fixture("inherited-scopes");
+	const listed = run(["find", "gate"], bridge);
+	assertOk(listed, "gate find failed");
+	assert.match(listed.stdout, new RegExp(GATE_INHERITS));
+	assert.match(listed.stdout, new RegExp(GATE_EMPTY));
+
+	// The gate omitting `scopes:` answers for the feat that declares it; the one
+	// declaring `scopes: []` has said it answers for no repo, and means it.
+	const scoped = run(["find", "gate", "--scope", "alpha"], bridge);
+	assertOk(scoped, "scoped gate find failed");
+	assert.match(scoped.stdout, new RegExp(GATE_INHERITS));
+	assert.doesNotMatch(scoped.stdout, new RegExp(GATE_EMPTY));
 });
 
 test("find windows on age, defaulting to the past week", () => {

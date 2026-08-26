@@ -98,3 +98,13 @@ export function finalize(
 	if (versionTrailer) message.push(`Nosedive-Publish-Version: ${versionTrailer}`);
 	return commitAll(dir, message.join("\n"));
 }
+
+/** Stamps both package files the way `npm version` does, leaving them uncommitted. */
+export function stampVersion(dir, version) {
+	packageFiles(dir, { packageJsonVersion: version, lockVersion: version });
+}
+
+/** Rewrites README.md the way a surface generator would: changed, still fresh. */
+export function regenerateReadme(dir) {
+	write(join(dir, "README.md"), `${readme()}<!-- regenerated -->\n`);
+}

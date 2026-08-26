@@ -1,27 +1,22 @@
 name: Publish
 
-# Push to main -> dev build (yyyy.m.d-utcmillis, npm tag "dev").
-# Manual dispatch -> release (yyyy.m.d, npm tag "latest") + GitHub release.
-# Auth is npm trusted publishing (OIDC) — no token secret needed.
+# Push to main -> dev build (yyyy.m.d-utcmillis, npm tag "dev"), finalized onto
+# main as one managed commit. Manual dispatch -> promotion of one finalized dev
+# build to a stable release (yyyy.m.d, npm tag "latest") plus a GitHub release.
+# Auth is npm trusted publishing (OIDC) -- no token secret needed.
+# @see kb/01a03e18-7fe4-7f5c-93f3-64825b38599f.md
 on:
+  # Deliberately unfiltered. package.json on main has to be the last version
+  # that was actually finalized, and a filtered push would advance main past a
+  # release it never made. The managed push below is authenticated with
+  # GITHUB_TOKEN, which by design starts no further workflow run, so an
+  # unfiltered trigger cannot loop on its own commit.
   push:
     branches: [main]
-    # Only publish a dev build when something that reaches the npm package
-    # (or the pipeline that builds it) changes.
-    paths:
-      - "src/**"
-      - "scripts/**"
-      - "kb/**"
-      - .prettierrc.json
-      - package.json
-      - package-lock.json
-      - tsconfig.json
-      - README.md
-      - .github/workflows/publish.yml
   workflow_dispatch:
 
 permissions:
-  contents: write # gh release create (release path only)
+  contents: write # push the finalization; create the release tag
   id-token: write # npm trusted publishing
 
 concurrency:
@@ -29,10 +24,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  dev:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The candidate is the commit this event named, not whatever main
+          # holds by the time the runner starts.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -44,47 +45,151 @@ jobs:
       - name: Update npm (trusted publishing needs >= 11.5.1)
         run: npm install -g npm@11.5.1
       - run: npm ci
-      # @see kb/01a03c27-918e-737a-b288-1b27a6c2ddca.md
-      - name: Regenerate README surfaces
+      - name: Decide where this run picks up
+        id: recovery
         run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          node scripts/decide-publish-recovery.mjs "$GITHUB_SHA" origin/main | tee -a "$GITHUB_OUTPUT"
+      - name: Regenerate and stamp the release candidate
+        id: candidate
+        if: steps.recovery.outputs.state == 'rerun'
+        run: |
+          set -euo pipefail
           npm run commands:surface
           npm run faq:surface
-          npm run check:command-surface
-          npm run check:faq-surface
-      - name: Format check
-        run: npm run format:check
-      - name: Compute version
-        id: version
+          version="$(node scripts/version.mjs)"
+          npm version --no-git-tag-version "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Every gate runs against the stamped tree, so what npm receives is what
+      # was tested. format:check is a check here and nowhere a rewrite: a
+      # publish that repaired formatting would ship source no review saw.
+      - name: Gate the finalized tree
+        if: steps.recovery.outputs.state == 'rerun'
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=$(node scripts/version.mjs --release)" >> "$GITHUB_OUTPUT"
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          npm run typecheck
+          npm run build
+          npm test # format:check, check:release-surface, and the unit suite
+          npm run test:pack-bin
+      - name: Commit and push the finalization
+        id: finalize
+        if: steps.recovery.outputs.state == 'rerun'
+        run: |
+          set -euo pipefail
+          node scripts/finalize-publish.mjs \
+            --source "$GITHUB_SHA" \
+            --version "${{ steps.candidate.outputs.version }}" | tee -a "$GITHUB_OUTPUT"
+          # A plain push, so main can only fast-forward from the candidate. Its
+          # failing is ambiguous, and the two cases are not both fine: main
+          # having moved means the newer head owns the release, while main
+          # standing still means the push itself broke.
+          if git push origin "HEAD:main"; then
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "version=$(node scripts/version.mjs)" >> "$GITHUB_OUTPUT"
-            echo "tag=dev" >> "$GITHUB_OUTPUT"
+            git fetch --no-tags origin main
+            if [ "$(git rev-parse origin/main)" = "$GITHUB_SHA" ]; then
+              echo "push to main failed while main was unchanged" >&2
+              exit 1
+            fi
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Build
-        run: npm run build
-      # Before the stamp, on purpose. nosedive renders its own reproducible
-      # invocation from the running package version, so a stamped-but-unpublished
-      # version makes every `npx -y nosedive@<version>` it writes unresolvable --
-      # including the managed pre-push hook the suite executes. At 0.0.0-dev the
-      # invocation is the local build, which is what every developer machine runs.
-      - name: Smoke test
-        run: npm test
-      - name: Stamp version
-        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
-      - name: Package bin smoke test
-        run: npm run test:pack-bin
-      # npm rejects duplicate versions, which enforces the one-release-per-day rule.
+      - name: Decide the version to publish
+        id: publish
+        run: |
+          set -euo pipefail
+          case "${{ steps.recovery.outputs.state }}" in
+            rerun)
+              if [ "${{ steps.finalize.outputs.pushed }}" = "true" ]; then
+                echo "version=${{ steps.candidate.outputs.version }}" >> "$GITHUB_OUTPUT"
+              else
+                echo "main advanced while this run finalized; its newer head owns the release." >> "$GITHUB_STEP_SUMMARY"
+              fi
+              ;;
+            resume)
+              echo "version=${{ steps.recovery.outputs.version }}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Superseded: main is no longer this run's candidate." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+      # Resuming means an earlier attempt already pushed the finalization and
+      # then failed; the tarball to publish is that commit's tree, not this
+      # runner's checkout of the candidate.
+      - name: Rebuild the finalization that survived
+        if: steps.recovery.outputs.state == 'resume'
+        run: |
+          set -euo pipefail
+          git checkout --detach origin/main
+          npm ci
+          npm run build
       - name: Publish to npm
-        run: npm publish --tag "${{ steps.version.outputs.tag }}" --access public
+        if: steps.publish.outputs.version != ''
+        run: |
+          set -euo pipefail
+          version="${{ steps.publish.outputs.version }}"
+          if npm view "nosedive@$version" version > /dev/null 2>&1; then
+            echo "nosedive@$version is already on npm; an earlier attempt uploaded it."
+            tagged="$(npm view nosedive dist-tags.dev 2>/dev/null || true)"
+            # A dev tag on a newer build is the normal outcome of a later run
+            # winning the race, so say so rather than failing a live release.
+            if [ "$tagged" != "$version" ]; then
+              echo "::warning::npm dist-tag dev is ${tagged:-unset}, not $version"
+            fi
+          else
+            npm publish --tag dev --access public
+          fi
+
+  stable:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Update npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@11.5.1
+      - run: npm ci
+      - name: Decide the stable release
+        id: release
+        run: |
+          set -euo pipefail
+          node scripts/decide-stable-release.mjs "$GITHUB_SHA" "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
+      - name: Require the dev build to be on npm already
+        run: |
+          set -euo pipefail
+          # A stable release renames a build people can already install. If that
+          # build is not on npm, there is nothing to promote.
+          npm view "nosedive@${{ steps.release.outputs.dev }}" version
+      # Stable versions live in npm and in this runner, never in a commit: main
+      # keeps carrying the timestamped version its finalization stamped, which
+      # is what makes a promotion repeatable.
+      - name: Stamp the stable version in the runner only
+        run: npm version --no-git-tag-version "${{ steps.release.outputs.stable }}"
+      - name: Gate the release tree
+        run: |
+          npm run typecheck
+          npm run build
+          npm test # format:check, check:release-surface, and the unit suite
+          npm run test:pack-bin
+      - name: Publish to npm
+        run: |
+          set -euo pipefail
+          stable="${{ steps.release.outputs.stable }}"
+          if npm view "nosedive@$stable" version > /dev/null 2>&1; then
+            echo "nosedive@$stable is already on npm; an earlier attempt uploaded it."
+          else
+            npm publish --tag latest --access public
+          fi
       # Trusted publishing authenticates `npm publish`, but not `npm dist-tag`.
       # Leave an explicit follow-up instead of failing after the package is live.
       - name: Note manual compatibility tag
-        if: github.event_name == 'workflow_dispatch'
         run: |
           level=$(node scripts/compatibility-level.mjs)
           {
@@ -93,12 +198,19 @@ jobs:
             echo 'Trusted publishing does not authenticate `npm dist-tag`; run:'
             echo
             echo '```sh'
-            printf 'npm dist-tag add "nosedive@%s" "level-%s"\n' \
-              "${{ steps.version.outputs.version }}" "$level"
+            printf 'npm dist-tag add "nosedive@%s" "level-%s"\n' "${{ steps.release.outputs.stable }}" "$level"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Create GitHub release and tag
-        if: github.event_name == 'workflow_dispatch'
-        run: gh release create "v${{ steps.version.outputs.version }}" --generate-notes
+      # The tag names the finalization commit, so the release points at the tree
+      # that was built and tested rather than at a version that exists only here.
+      - name: Tag and release the finalized commit
+        run: |
+          set -euo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "$tag is already released."
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ github.token }}

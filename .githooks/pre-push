@@ -4,6 +4,7 @@
 #
 # Generated README surfaces are deliberately not checked here. They are release
 # artifacts the pipeline regenerates, not work every push has to prepare.
+# @see kb/01a03c27-918e-737a-b288-1b27a6c2ddca.md
 set -e
 
 if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then

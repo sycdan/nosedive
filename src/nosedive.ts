@@ -14,7 +14,11 @@ import {
 	renderTopLevelHelpText,
 } from "./contracts.js";
 export { collectDiveGates, collectFeatGates, collectReachableGates } from "./lib/landGates.js";
-export { describeInstructionDrift, renderedSurfaceDigest } from "./lib/packageBacklog.js";
+export {
+	describeInstructionDrift,
+	isPackageCheckout,
+	renderedSurfaceDigest,
+} from "./lib/packageBacklog.js";
 // Exported so a missing contract can be asserted directly. A command doc that
 // forgot the key is a packaging mistake, and no bridge fixture can reproduce
 // one: the docs live in the package, not the bridge.

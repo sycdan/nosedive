@@ -45,7 +45,7 @@ export function parseFindArgs(args: string[], io: CommandIo): FindOptions {
 		if (arg.startsWith("--")) throw new Error(`unknown find option: ${arg}`);
 		positional.push(arg);
 	}
-	if (positional.length < 2) throw new Error("find requires <role> <term>");
+	if (positional.length === 0) throw new Error("find requires <role>");
 	if (positional.length > 2) throw new Error(`unexpected find argument: ${positional[2]}`);
 	const [role, term] = positional;
 	if (!ROLES.has(role!))
@@ -75,7 +75,7 @@ export function findDocs(
 	root: KbDoc,
 	docs: KbDoc[],
 	role: string,
-	term: string,
+	term: string | undefined,
 	bridgeDir: string,
 	ageMs?: number,
 ): KbDoc[] {
@@ -94,13 +94,15 @@ export function findDocs(
 			if (target.kind !== "repo" && isBacklogFeatRel(link.rel)) queue.push(target);
 		}
 	}
-	const normalized = slugFromGist(term, Number.MAX_SAFE_INTEGER);
-	if (!normalized) return [];
+	const normalized = term ? slugFromGist(term, Number.MAX_SAFE_INTEGER) : undefined;
+	if (term && !normalized) return [];
 	return [...selected]
 		.map((id) => byId.get(id)!)
 		.filter(
 			(doc) =>
-				doc.name === normalized || slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER) === normalized,
+				!normalized ||
+				doc.name === normalized ||
+				slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER) === normalized,
 		)
 		.filter((doc) => ageMs === undefined || Date.now() - createdAt(bridgeDir, doc) >= ageMs)
 		.sort((left, right) => left.relPath.localeCompare(right.relPath));

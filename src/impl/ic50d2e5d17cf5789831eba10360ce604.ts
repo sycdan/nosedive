@@ -8,7 +8,7 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 	return captureCommand((commandArgs, io) => {
 		const options = parseFindArgs(commandArgs, io);
 		if (options.help) return;
-		if (!options.role || !options.term) throw new Error("find requires <role> <term>");
+		if (!options.role) throw new Error("find requires <role>");
 		const rc = readNosediveRc(process.cwd());
 		if (!rc.kbDir) throw new Error("find requires a configured kb directory");
 		if (!rc.backlog) throw new Error("find requires a configured backlog memo id");
@@ -19,7 +19,7 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 			root,
 			docs,
 			options.role!,
-			options.term!,
+			options.term,
 			rc.bridgeDir,
 			options.ageMs,
 		)) {

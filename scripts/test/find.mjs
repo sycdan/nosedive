@@ -86,6 +86,17 @@ test("find walks nested backlog links, filters rel roles, deduplicates, and matc
 	assert.equal(run(["find", "note", "Exact search"], bridge).stdout, "");
 });
 
+test("find lists every matching role when no term is supplied", () => {
+	const bridge = fixture("list");
+	const result = run(["find", "note"], bridge);
+	assertOk(result, "find list failed");
+	assert.match(result.stdout, new RegExp(OLD));
+	assert.match(result.stdout, new RegExp(RECENT));
+	assert.match(result.stdout, new RegExp(NAMED));
+	assert.doesNotMatch(result.stdout, new RegExp(WRONG_REL));
+	assert.doesNotMatch(result.stdout, new RegExp(REFERENCE_ONLY));
+});
+
 test("find --age uses first Git addition", () => {
 	const bridge = fixture("age");
 	const result = run(["find", "note", "exact-search-term", "--age", "1d"], bridge);
@@ -99,7 +110,7 @@ test("find reports invalid arguments and unresolved history", () => {
 	const bridge = fixture("errors");
 	for (const [args, pattern] of [
 		[["find", "memo", "x"], /unsupported find role/],
-		[["find", "note"], /requires <role> <term>/],
+		[["find"], /requires <role>/],
 		[["find", "note", "x", "extra"], /unexpected find argument/],
 		[["find", "note", "x", "--age", "0h"], /invalid find age/],
 	]) {

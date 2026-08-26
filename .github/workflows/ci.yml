@@ -33,8 +33,5 @@ jobs:
         run: npm test
       - name: Package bin smoke test
         run: npm run test:pack-bin
-      # --release promotes a dev version instead of sampling a clock, so it is
-      # smoked against one this run mints. Without --from it reads package.json,
-      # which only carries a promotable version once main has been finalized.
-      - name: Check version script
+      - name: Test version script
         run: node scripts/version.mjs --release --from "$(node scripts/version.mjs)"

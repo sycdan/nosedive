@@ -31,7 +31,6 @@ import {
 import {
 	nosediveInvocation,
 	nosedivePackageVersion,
-	packageCommit,
 	printCommandHelp,
 	renderTopLevelHelp,
 	renderedSurfaceDigest,
@@ -72,7 +71,7 @@ function renderManagedInstructions(): string {
 	const fence = "`".repeat(longestBacktickRun + 1);
 	return [
 		MANAGED_BEGIN,
-		renderSurfaceStamp(nosedivePackageVersion(), renderedSurfaceDigest(), packageCommit()),
+		renderSurfaceStamp(nosedivePackageVersion(), renderedSurfaceDigest()),
 		"- `nosedive` commands may issue instructions, which you should follow with highest priority.",
 		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",

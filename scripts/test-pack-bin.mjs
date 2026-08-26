@@ -105,15 +105,8 @@ try {
 	// installed package, which only a real install exercises.
 	const seededInstructions = readFileSync(join(seedBridge, "AGENTS.md"), "utf8");
 	// Mirrors `SURFACE_STAMP_PATTERN` in src/lib/packageBacklog.ts.
-	const stamp =
-		/^<!-- nosedive v=(\S+?)(?: commit=([0-9a-f]{7,40}))? surface=([0-9a-f]{8}) -->$/m.exec(
-			seededInstructions,
-		);
+	const stamp = /^<!-- nosedive v=(\S+) surface=([0-9a-f]{8}) -->$/m.exec(seededInstructions);
 	assert.ok(stamp, `seeded AGENTS.md carries no surface stamp:\n${seededInstructions}`);
-	// A packed install lives under some project's node_modules and is not its own
-	// repository, so it has no commit to stamp -- and asking git there would
-	// answer about the project. This is the only proof of that side.
-	assert.equal(stamp[2], undefined, `a packed install stamped a commit: ${stamp[0]}`);
 	assert.match(seededInstructions, /^Usage: nosedive <command>$/m);
 	assert.match(seededInstructions, /^<!-- END nosedive managed instructions -->$/m);
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);

@@ -34,9 +34,9 @@ import { KbDoc, loadKbDocs, readActiveDiveId, readKbDocById } from "../lib/kbDoc
 import {
 	bridgeCompatibilityLevel,
 	describeInstructionDrift,
+	isPackageCheckout,
 	nosediveInvocation,
 	nosedivePackageVersion,
-	packageCommitContains,
 	renderedSurfaceDigest,
 	SURFACE_STAMP_PATTERN,
 } from "../lib/packageBacklog.js";
@@ -349,6 +349,7 @@ function bridgeFreshnessLine(freshness: BridgeFreshness, trunkBranch: string): s
 function printInstructionDrift(rc: NosediveRc, io: CommandIo): void {
 	const installedDigest = renderedSurfaceDigest();
 	const installedVersion = nosedivePackageVersion();
+	const checkout = isPackageCheckout();
 	for (const relativePath of KNOWN_INSTRUCTION_FILES) {
 		const path = join(rc.bridgeDir, relativePath);
 		if (!existsSync(path)) continue;
@@ -358,10 +359,10 @@ function printInstructionDrift(rc: NosediveRc, io: CommandIo): void {
 		const stamp = SURFACE_STAMP_PATTERN.exec(lines[beginIndex + 1] ?? "");
 		const line = describeInstructionDrift({
 			file: relativePath,
-			stamped: stamp ? { version: stamp[1]!, commit: stamp[2], digest: stamp[3]! } : undefined,
+			stamped: stamp ? { version: stamp[1]!, digest: stamp[2]! } : undefined,
 			installedVersion,
 			installedDigest,
-			containsCommit: packageCommitContains,
+			isCheckout: checkout,
 		});
 		if (line) io.log(line);
 	}

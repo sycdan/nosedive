@@ -23,9 +23,9 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("preflight");
-const { nosediveInvocationFor, readAgentGuidance } = await import(libUrl);
+const { isPackageCheckout, nosediveInvocationFor, readAgentGuidance } = await import(libUrl);
 
-const NOSEDIVE_INVOCATION = nosediveInvocationFor(packageVersion, root);
+const NOSEDIVE_INVOCATION = nosediveInvocationFor(true, root);
 const MANAGED_HOOK = `#!/bin/sh\n# nosedive-managed\nexec ${NOSEDIVE_INVOCATION} _pre-push.hook "$@"\n`;
 
 /** Hook bodies run under `sh`, so every path baked into one is posix. */
@@ -80,14 +80,25 @@ function shAvailable() {
 }
 
 test("nosedive invocation pins releases and shell-quotes local CLI paths", () => {
+	assert.equal(nosediveInvocationFor(false, "/unused"), `npx -y nosedive@${packageVersion}`);
 	assert.equal(
-		nosediveInvocationFor("2026.8.11-1786460582229", "/unused"),
-		"npx -y nosedive@2026.8.11-1786460582229",
-	);
-	assert.equal(
-		nosediveInvocationFor("0.0.0-dev", "/tmp/nosedive's local build"),
+		nosediveInvocationFor(true, "/tmp/nosedive's local build"),
 		"node '/tmp/nosedive'\\''s local build/dist/cli.js'",
 	);
+});
+
+test("package checkout locality comes from .git at the package root", () => {
+	const installed = join(tmp, "package-root-installed");
+	const clone = join(tmp, "package-root-clone");
+	const worktree = join(tmp, "package-root-worktree");
+	mkdirSync(installed, { recursive: true });
+	mkdirSync(join(clone, ".git"), { recursive: true });
+	mkdirSync(worktree, { recursive: true });
+	write(join(worktree, ".git"), "gitdir: ../cache/worktrees/package-root-worktree\n");
+
+	assert.equal(isPackageCheckout(installed), false);
+	assert.equal(isPackageCheckout(clone), true);
+	assert.equal(isPackageCheckout(worktree), true);
 });
 
 function freshGitBridge(name) {
@@ -513,16 +524,12 @@ test("preflight reports instruction drift without rewriting the file", () => {
 
 	const preflight = run(["preflight"], bridge);
 	assertOk(preflight, "preflight failed");
-	// Which reseed line comes back depends on what this build can prove. From a
-	// source checkout both sides read the dev version, so the reachable stamped
-	// commit is the only thing that shows this build is the newer one, and the
-	// mismatch is the pilot's own local state. A published build compares
-	// versions instead, and calls attention.
+	// Checkout reader: digest mismatch always produces a plain (no nose:) reseed
+	// advisory, regardless of version. An installed reader would compare versions
+	// and may produce a nose: line instead.
 	assert.match(
 		preflight.stdout,
-		/^\d+\.\d+\.\d+$/.test(packageVersion)
-			? /^nose: AGENTS\.md's managed instructions do not match nosedive \S+\. Run: nosedive seed$/m
-			: /^AGENTS\.md's managed instructions describe an earlier commit of this checkout\. Run: nosedive seed$/m,
+		/^AGENTS\.md's managed instructions do not match this build\. Run: nosedive seed$/m,
 	);
 	assert.equal(readFileSync(instructionsPath, "utf8"), altered);
 	assert.notEqual(readFileSync(instructionsPath, "utf8"), before);

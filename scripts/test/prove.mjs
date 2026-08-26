@@ -27,7 +27,6 @@ import {
 	handoffRunbookId,
 	lib,
 	libUrl,
-	packageVersion,
 	packageFoundationDocs,
 	packageMigrationDoc,
 	packageMigrationScript,
@@ -42,7 +41,7 @@ import {
 } from "../test-helpers.mjs";
 
 const { nosediveInvocationFor, readNosediveRc } = await import(libUrl);
-const nosediveInvocation = nosediveInvocationFor(packageVersion, root);
+const nosediveInvocation = nosediveInvocationFor(true, root);
 const tmp = createTmp("prove");
 const noBridge = createNoBridge(tmp);
 

@@ -44,6 +44,16 @@ jobs:
       - name: Update npm (trusted publishing needs >= 11.5.1)
         run: npm install -g npm@11.5.1
       - run: npm ci
+      # This workflow is the one that produces the published README, so every
+      # check below it runs with both generated surfaces current in the
+      # worktree. The --check pass regenerates on top of what was just written
+      # and asserts the generators are deterministic.
+      - name: Regenerate README surfaces
+        run: |
+          npm run commands:surface
+          npm run faq:surface
+          npm run check:command-surface
+          npm run check:faq-surface
       - name: Format check
         run: npm run format:check
       - name: Compute version

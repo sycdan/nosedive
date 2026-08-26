@@ -1,20 +1,14 @@
 #!/usr/bin/env sh
 # Early gate mirroring the publish workflow. Runs on `git push`.
 # Bypass a one-off with `git push --no-verify`.
+#
+# Generated README surfaces are deliberately not checked here. They are release
+# artifacts the pipeline regenerates, not work every push has to prepare.
 set -e
 
 if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
 	echo "pre-push: working tree is dirty; commit or stash changes before pushing."
 	git status --short
-	exit 1
-fi
-
-echo "pre-push: regenerate README surfaces"
-npm run commands:surface
-npm run faq:surface
-if ! git diff --quiet -- README.md; then
-	echo "pre-push: README.md generated surfaces were stale; review and commit the regenerated README."
-	git diff -- README.md
 	exit 1
 fi
 

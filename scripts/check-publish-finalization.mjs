@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { TIMESTAMPED_VERSION } from "./version.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const SOURCE_TRAILER = "Nosedive-Publish-Source";
@@ -16,9 +18,6 @@ const README_GENERATORS = [
 	"scripts/update-readme-command-surface.mjs",
 	"scripts/update-readme-faq.mjs",
 ];
-
-/** `yyyy.m.d-<utc millis>`, the dev version scripts/version.mjs prints. */
-const TIMESTAMPED_VERSION = /^\d{4}\.\d{1,2}\.\d{1,2}-\d+$/;
 
 /**
  * A child of this process sees no inherited git state. A suite or a hook that

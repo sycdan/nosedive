@@ -33,7 +33,5 @@ jobs:
         run: npm test
       - name: Package bin smoke test
         run: npm run test:pack-bin
-      - name: Check version script
-        run: |
-          node scripts/version.mjs
-          node scripts/version.mjs --release
+      - name: Test version script
+        run: node scripts/version.mjs --release --from "$(node scripts/version.mjs)"

@@ -31,7 +31,7 @@ function cleanEnv() {
 	return env;
 }
 
-function git(repo, args) {
+export function git(repo, args) {
 	const result = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env: cleanEnv() });
 	if (result.error) throw result.error;
 	if (result.status !== 0) {

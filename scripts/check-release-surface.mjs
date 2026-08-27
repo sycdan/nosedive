@@ -410,10 +410,6 @@ const docsByCommand = new Map();
 const docsByCommandLevel = new Map();
 
 for (const doc of commandDocs) {
-	if (doc.level > currentLevel) {
-		fail(`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel}`);
-	}
-
 	const expectedId = commandDocId(doc.command, doc.level);
 	if (doc.id !== expectedId) {
 		fail(`${doc.name} id must be deterministic command id ${expectedId}`);
@@ -483,9 +479,6 @@ for (let level = 0; level <= currentLevel; level += 1) {
 	if (!levelsByLevel.has(level)) fail(`no kind: level doc declares level-${level}`);
 }
 for (const doc of levelDocs) {
-	if (doc.level > currentLevel && doc.raw.meta?.future !== true) {
-		fail(`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel}`);
-	}
 	if (!doc.migrationId) continue;
 	const migration = migrationDocs.get(doc.migrationId);
 	if (!migration) {
@@ -494,6 +487,16 @@ for (const doc of levelDocs) {
 		);
 	} else if (!migration.script) {
 		fail(`${doc.name} links rel: migration ${migration.filename}, which has no meta.script to run`);
+	}
+}
+
+for (const doc of commandDocs) {
+	if (doc.level <= currentLevel) continue;
+	const level = levelsByLevel.get(doc.level);
+	if (!level) {
+		fail(
+			`${doc.name} is ahead of CURRENT_COMPATIBILITY_LEVEL=${currentLevel} but has no level doc`,
+		);
 	}
 }
 

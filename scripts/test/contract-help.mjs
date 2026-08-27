@@ -264,6 +264,15 @@ test("the command list omits a command whose latest doc is deprecated", () => {
 	}
 });
 
+test("the command surface omits commands moved to an upcoming level", () => {
+	const surface = renderCommandSurface();
+
+	// Level 3 has not been released yet, so its moved human-only commands must
+	// not advertise their level-1 implementations in the current README.
+	assert.doesNotMatch(surface, /#### \[Drop\]\(kb\/[^)]+\)/);
+	assert.doesNotMatch(surface, /#### \[Spin\]\(kb\/[^)]+\)/);
+});
+
 /**
  * A deprecation only the surface renderers know about is one the pilot who
  * still types the old spelling never hears: the command keeps working and

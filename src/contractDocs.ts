@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
+import { renderCommandHelpText } from "./lib/commandHelpText.mjs";
 import {
 	formatPath,
 	packageDocsOfKind,
@@ -133,11 +134,7 @@ export function resolveContract(
 }
 
 export function renderContractHelpText(contract: ContractDoc): string {
-	const usage = contract.usage.trim();
-	const gist = contract.gist.trim();
-	const usageLine = usage ? `Usage: ${usage}` : "";
-	const manualLink = `[read the manual](${contract.relPath}).`;
-	return [usageLine, gist, manualLink].filter(Boolean).join("\n\n");
+	return renderCommandHelpText(contract);
 }
 
 /**

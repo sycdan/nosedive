@@ -14,6 +14,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { renderCommandHelpText } from "../../src/lib/commandHelpText.mjs";
 import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
@@ -117,10 +118,7 @@ test("contract help", () => {
 	const listDivesHelp = run(["list-dives", "--help"], noBridge);
 	assertOk(listDivesHelp, "list-dives --help failed");
 	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-deck>\]/);
-	assert.match(
-		listDivesHelp.stdout,
-		/\[read the manual\]\(kb\/116ff634-3742-51ba-977f-44fc5b21e9e4\.md\)\./,
-	);
+	assert.match(listDivesHelp.stdout, /nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4/);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
@@ -168,22 +166,29 @@ gist: "Legacy command fixture."
 			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
 		assert.ok(latestFiles.has(command), `${command} has no latest command doc filename`);
+		const docId = latestFiles.get(command)?.replace(/\.md$/, "");
 		assert.ok(
-			explicitHelp.stdout.includes(`[read the manual](kb/${latestFiles.get(command)}).`),
-			`${command}@${level} --help is missing its command doc link`,
+			explicitHelp.stdout.includes(`More: nosedive render ${docId}`),
+			`${command}@${level} --help is missing its command doc render instruction`,
 		);
 		if (!command.startsWith("_") && !latestDeprecated.get(command)) {
 			const npmInvocation = nosediveInvocationFor(false, root);
+			const [usageLine, gist] = explicitHelp.stdout.trim().split("\n\n");
+			const readmeHelp = renderCommandHelpText({
+				usage: usageLine.replace(/^Usage: /, ""),
+				gist,
+				id: docId,
+			});
 			assert.ok(
 				readme.includes(
 					[
 						`#### [${latestTitles.get(command)}](kb/${latestFiles.get(command)})`,
 						"",
-						"##### Usage",
-						"",
 						"```sh",
-						`$ ${npmInvocation} ${command} --help`,
-						explicitHelp.stdout.trim(),
+						`${npmInvocation} ${command} --help`,
+						"```",
+						"```md",
+						readmeHelp,
 						"```",
 					].join("\n"),
 				),

@@ -3,6 +3,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
+import { renderCommandHelpText } from "../src/lib/commandHelpText.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = join(root, "README.md");
 const packageJsonPath = join(root, "package.json");
@@ -61,6 +63,7 @@ function commandDocs() {
 			filename,
 			path,
 			relPath: rel(path),
+			id: String(raw.id ?? ""),
 			command: parsedName.command,
 			level: parsedName.level,
 			gist: String(raw.gist ?? ""),
@@ -136,22 +139,16 @@ function deprecatedRows(docs) {
 	]);
 }
 
-function commandHelpText(doc) {
-	return [`Usage: ${doc.usage}`, doc.gist, `[read the manual](${doc.relPath}).`]
-		.filter(Boolean)
-		.join("\n\n");
-}
-
 function commandSections(docs) {
 	const invocation = publishedNosediveInvocation();
 	return docs.flatMap((doc) => [
 		`#### ${markdownLink(doc.title, doc.relPath)}`,
 		"",
-		"##### Usage",
-		"",
 		"```sh",
-		`$ ${invocation} ${doc.command} --help`,
-		commandHelpText(doc),
+		`${invocation} ${doc.command} --help`,
+		"```",
+		"```md",
+		renderCommandHelpText(doc),
 		"```",
 		"",
 	]);

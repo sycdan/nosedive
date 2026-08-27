@@ -5,6 +5,7 @@ import YAML from "yaml";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = join(root, "README.md");
+const packageJsonPath = join(root, "package.json");
 const kbDir = join(root, "kb");
 const beginMarker = "<!-- BEGIN nosedive-command-surface -->";
 const endMarker = "<!-- END nosedive-command-surface -->";
@@ -68,6 +69,11 @@ function commandDocs() {
 			body: text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
 		});
 	}
+	for (const doc of docs) {
+		const title = /^#\s+(.+?)\s*$/m.exec(doc.body)?.[1];
+		if (!title) fail(`${doc.filename} command doc must have an H1 title`);
+		doc.title = title;
+	}
 	return docs;
 }
 
@@ -85,6 +91,14 @@ function code(value) {
 
 function usageForReadme(usage) {
 	return usage.replace(/^nosedive\b/, "npx nosedive");
+}
+
+// `contract-help.mjs` compares this with the runtime's
+// `nosediveInvocationFor(false, root)`, so README examples cannot drift from
+// the invocation agents receive from the package helper.
+function publishedNosediveInvocation() {
+	const version = JSON.parse(read(packageJsonPath)).version;
+	return `npx -y nosedive@${version}`;
 }
 
 function latestDocsByCommand(docs) {
@@ -122,6 +136,27 @@ function deprecatedRows(docs) {
 	]);
 }
 
+function commandHelpText(doc) {
+	return [`Usage: ${doc.usage}`, doc.gist, `[read the manual](${doc.relPath}).`]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function commandSections(docs) {
+	const invocation = publishedNosediveInvocation();
+	return docs.flatMap((doc) => [
+		`#### ${markdownLink(doc.title, doc.relPath)}`,
+		"",
+		"##### Usage",
+		"",
+		"```sh",
+		`$ ${invocation} ${doc.command} --help`,
+		commandHelpText(doc),
+		"```",
+		"",
+	]);
+}
+
 function renderCommandSurface() {
 	const latestDocs = latestDocsByCommand(commandDocs());
 	const publicDocs = latestDocs.filter((doc) => !isInternalCommand(doc));
@@ -141,10 +176,7 @@ function renderCommandSurface() {
 		"",
 		"Invoked directly by humans, or indirectly via agents.",
 		"",
-		"| Command | Usage | What it does |",
-		"| --- | --- | --- |",
-		...commandRows(activeDocs).map((row) => `| ${row.map(tableCell).join(" | ")} |`),
-		"",
+		...commandSections(activeDocs),
 		"### Internal Commands",
 		"",
 		"Named with a leading underscore, invoked by `nosedive` itself or by a hook it installs.",

@@ -133,18 +133,11 @@ export function resolveContract(
 }
 
 export function renderContractHelpText(contract: ContractDoc): string {
-	const body = contract.body.trim();
 	const usage = contract.usage.trim();
 	const gist = contract.gist.trim();
 	const usageLine = usage ? `Usage: ${usage}` : "";
-	const usageBlock = [usageLine, gist].filter(Boolean).join("\n\n");
-	const longestBacktickRun = Math.max(
-		2,
-		...[...body.matchAll(/`+/g)].map((match) => match[0].length),
-	);
-	const fence = "`".repeat(longestBacktickRun + 1);
-	const bodyBlock = body ? [`${fence}md`, body, fence].join("\n") : "";
-	return [bodyBlock, usageBlock].filter(Boolean).join("\n\n");
+	const manualLink = `[read the manual](${contract.relPath}).`;
+	return [usageLine, gist, manualLink].filter(Boolean).join("\n\n");
 }
 
 /**

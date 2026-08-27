@@ -167,6 +167,8 @@ export function renderCommandSurface() {
 		"",
 		"Command docs are the index into implementation: start at the linked doc, then follow its adapter entrypoint and compatibility breadcrumbs. A lower-level command remains current unless an explicit newer command doc supersedes it or the doc itself says it is deprecated.",
 		"",
+		"`version` and `help` have no command doc; they print the package version and the command list.",
+		"",
 		"### External Commands",
 		"",
 		"Invoked directly by humans, or indirectly via agents.",

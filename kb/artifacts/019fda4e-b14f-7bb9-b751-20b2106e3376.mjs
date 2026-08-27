@@ -1,3 +1,3 @@
-export async function L2__drop(value, ctx) {
-	return ctx.impl.i980e96ba3cdf5a998a775ade7dc57386(value.args);
+export async function L3__drop(value, ctx) {
+	return ctx.impl.i27968747f3f55808b58043a60dbf57b5(value.args);
 }

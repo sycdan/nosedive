@@ -72,11 +72,13 @@ function boundaryChoices(boundaries) {
 	return boundaries.map((boundary) => `${boundary.path} (${boundary.name})`).join("; ");
 }
 
-function tsFiles(directory) {
+function runtimeSourceFiles(directory) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
 		const path = resolve(directory, entry.name);
-		if (entry.isDirectory()) return tsFiles(path);
-		return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
+		if (entry.isDirectory()) return runtimeSourceFiles(path);
+		return entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".mjs"))
+			? [path]
+			: [];
 	});
 }
 
@@ -128,7 +130,7 @@ export function checkSourceStructure({
 	rootPath = sourceRoot,
 	boundaryFor = boundaryForSource,
 } = {}) {
-	const paths = tsFiles(rootPath).sort();
+	const paths = runtimeSourceFiles(rootPath).sort();
 	const files = new Set(paths);
 	const graph = new Map(paths.map((path) => [path, []]));
 	const failures = [];

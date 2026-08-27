@@ -14,6 +14,8 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { renderCommandHelpText } from "../../src/lib/commandHelpText.mjs";
+import { renderCommandSurface } from "../update-readme-command-surface.mjs";
 import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
@@ -46,7 +48,15 @@ const noBridge = createNoBridge(tmp);
 
 test("contract help", () => {
 	const whoamiContractBridge = createBridge(tmp, "contract-help-bridge", { backlog: "./backlog" });
-	const readme = readFileSync(join(root, "README.md"), "utf8");
+	/**
+	 * The generated surface, not the committed README. README is a release
+	 * artifact the publish pipeline regenerates, so a local checkout carries a
+	 * stale one by design and comparing against it fails for the wrong reason.
+	 * What is worth contracting is that the generator and the runtime agree --
+	 * they share only the help formatter, and each resolves a command's doc id a
+	 * different way, so there is some potential for drift.
+	 */
+	const surface = renderCommandSurface();
 
 	/**
 	 * The builtin route serves a command's latest level, so the explicit route
@@ -117,10 +127,7 @@ test("contract help", () => {
 	const listDivesHelp = run(["list-dives", "--help"], noBridge);
 	assertOk(listDivesHelp, "list-dives --help failed");
 	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-deck>\]/);
-	assert.match(
-		listDivesHelp.stdout,
-		/\[read the manual\]\(kb\/116ff634-3742-51ba-977f-44fc5b21e9e4\.md\)\./,
-	);
+	assert.match(listDivesHelp.stdout, /nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4/);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
@@ -168,26 +175,33 @@ gist: "Legacy command fixture."
 			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
 		assert.ok(latestFiles.has(command), `${command} has no latest command doc filename`);
+		const docId = latestFiles.get(command)?.replace(/\.md$/, "");
 		assert.ok(
-			explicitHelp.stdout.includes(`[read the manual](kb/${latestFiles.get(command)}).`),
-			`${command}@${level} --help is missing its command doc link`,
+			explicitHelp.stdout.includes(`More: nosedive render ${docId}`),
+			`${command}@${level} --help is missing its command doc render instruction`,
 		);
 		if (!command.startsWith("_") && !latestDeprecated.get(command)) {
 			const npmInvocation = nosediveInvocationFor(false, root);
+			const [usageLine, gist] = explicitHelp.stdout.trim().split("\n\n");
+			const expectedHelp = renderCommandHelpText({
+				usage: usageLine.replace(/^Usage: /, ""),
+				gist,
+				id: docId,
+			});
 			assert.ok(
-				readme.includes(
+				surface.includes(
 					[
 						`#### [${latestTitles.get(command)}](kb/${latestFiles.get(command)})`,
 						"",
-						"##### Usage",
-						"",
 						"```sh",
-						`$ ${npmInvocation} ${command} --help`,
-						explicitHelp.stdout.trim(),
+						`${npmInvocation} ${command} --help`,
+						"```",
+						"```md",
+						expectedHelp,
 						"```",
 					].join("\n"),
 				),
-				`README section for ${command}@${level} differs from its doc title, invocation, or help`,
+				`generated surface for ${command}@${level} differs from its doc title, invocation, or help`,
 			);
 		}
 

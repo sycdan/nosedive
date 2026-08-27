@@ -58,6 +58,25 @@ test("source structure permits imports within one boundary", () => {
 	}
 });
 
+test("source structure recognizes a runtime plain ESM helper", () => {
+	const source = fixture(
+		{
+			"contractDocs.ts":
+				'import { format } from "./lib/format.mjs";\nexport const help = format();\n',
+			"lib/format.mjs": 'export function format() { return "help"; }\n',
+		},
+		{
+			"contractDocs.ts": boundary("docs", "contract discovery", ["docs", "core"]),
+			"lib/format.mjs": boundary("core", "shared core", ["core"]),
+		},
+	);
+	try {
+		assert.deepEqual(source.check().failures, []);
+	} finally {
+		source.remove();
+	}
+});
+
 test("source structure rejects imports that point up a boundary", () => {
 	const source = fixture(
 		{

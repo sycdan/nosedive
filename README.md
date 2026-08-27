@@ -99,379 +99,379 @@ Invoked directly by humans, or indirectly via agents.
 
 #### [Add repo to feat](kb/16b4fee2-cc6c-5c29-9327-fde39a35b0a8.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 add-repo.feat --help
+npx -y nosedive@2026.8.27-1787806233892 add-repo.feat --help
+```
+```md
 Usage: nosedive add-repo.feat <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]
 
 Add a kb `kind: repo` doc to the active feat's `scopes:`, naming the branch its dives push to.
 
-[read the manual](kb/16b4fee2-cc6c-5c29-9327-fde39a35b0a8.md).
+More: nosedive render 16b4fee2-cc6c-5c29-9327-fde39a35b0a8
 ```
 
 #### [Append log](kb/f29ec670-caea-5b77-ba51-c7dba1468b0b.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 append-log.dive --help
+npx -y nosedive@2026.8.27-1787806233892 append-log.dive --help
+```
+```md
 Usage: nosedive append-log.dive [--label <text>] [--gist <line>] < body
 
 Append a timestamped progress section to the active dive, taking the body from stdin.
 
-[read the manual](kb/f29ec670-caea-5b77-ba51-c7dba1468b0b.md).
+More: nosedive render f29ec670-caea-5b77-ba51-c7dba1468b0b
 ```
 
 #### [Bail](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 bail --help
+npx -y nosedive@2026.8.27-1787806233892 bail --help
+```
+```md
 Usage: nosedive bail --reason "<why>"
 
 Abandon the active dive -- delete it if never committed, else record the reason and convert it to a memo.
 
-[read the manual](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md).
+More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 ```
 
 #### [Dehydrate repo](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 dehydrate-repo.workspace --help
+npx -y nosedive@2026.8.27-1787806233892 dehydrate-repo.workspace --help
+```
+```md
 Usage: nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]
 
 Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata.
 
-[read the manual](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md).
+More: nosedive render 32123800-a61d-5ea1-8b85-98c288b127b3
 ```
 
 #### [Drop](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 drop --help
+npx -y nosedive@2026.8.27-1787806233892 drop --help
+```
+```md
 Usage: nosedive drop "<feat>"
 
 THEORETICAL, UNSUPPORTED; Ship a ready feat by printing the configured drop prompt followed by generated repo, branch, gate and close-out context for an agent; run nothing and report every readiness blocker on stderr.
 
-[read the manual](kb/6a7ff653-7e2a-5b38-a0de-f51facf21c25.md).
+More: nosedive render 6a7ff653-7e2a-5b38-a0de-f51facf21c25
 ```
 
 #### [Dump backlog](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 dump-backlog --help
+npx -y nosedive@2026.8.27-1787806233892 dump-backlog --help
+```
+```md
 Usage: nosedive dump-backlog
 
 Render the configured backlog memo from bridge KB.
 
-[read the manual](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md).
+More: nosedive render cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1
 ```
 
 #### [Find](kb/2e5cd9a9-769a-5eda-8617-868c70f13757.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 find --help
+npx -y nosedive@2026.8.27-1787806233892 find --help
+```
+```md
 Usage: nosedive find <role> [<term>] [--scope <repo>] [--min-age <duration>] [--max-age <duration>]
 
 List backlog-reachable documents by role, optionally filtering by term, scope and age.
 
-[read the manual](kb/2e5cd9a9-769a-5eda-8617-868c70f13757.md).
+More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 ```
 
 #### [Hydrate repo](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 hydrate-repo.workspace --help
+npx -y nosedive@2026.8.27-1787806233892 hydrate-repo.workspace --help
+```
+```md
 Usage: nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]
 
 Hydrate one repo worktree from kb `kind: repo` metadata and keep it detached at the resolved commit.
 
-[read the manual](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md).
+More: nosedive render c4e93002-2925-58bd-9b70-d917017a9fc7
 ```
 
 #### [Jump](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 jump --help
+npx -y nosedive@2026.8.27-1787806233892 jump --help
+```
+```md
 Usage: nosedive jump [<dive-ref>]
 
 Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top.
 
-[read the manual](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md).
+More: nosedive render f2373f5f-d30d-5d5d-967c-bef56346bbb9
 ```
 
 #### [Land](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 land --help
+npx -y nosedive@2026.8.27-1787806233892 land --help
+```
+```md
 Usage: nosedive land [--hard]
 
 Canonicalize the active dive -- push each hydrated scope naming a work branch to that branch, close the dive as a memo with an outcome section, and leave each scoped worktree hydrated at the commit it pushed.
 
-[read the manual](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md).
+More: nosedive render 587d3f73-2534-5179-b111-ce6c83d6814d
 ```
 
 #### [List dives](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 list-dives --help
+npx -y nosedive@2026.8.27-1787806233892 list-dives --help
+```
+```md
 Usage: nosedive list-dives [<feat-or-deck>] [--include-historical] [--json]
 
 Print all outstanding dives and what they still need.
 
-[read the manual](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md).
+More: nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4
 ```
 
 #### [Mint](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 mint --help
+npx -y nosedive@2026.8.27-1787806233892 mint --help
+```
+```md
 Usage: nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]
 
 Generate UUIDv7 values with a specific timestamp encoded, one per successive millisecond.
 
-[read the manual](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md).
+More: nosedive render e8909eff-aee5-54f2-9ce2-85c2582e39f0
 ```
 
 #### [Note](kb/6274f51e-664f-5b93-a828-52f699161e9a.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 note --help
+npx -y nosedive@2026.8.27-1787806233892 note --help
+```
+```md
 Usage: nosedive note [<kind>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
 
 Create one KB document and link it from the repos it is about.
 
-[read the manual](kb/6274f51e-664f-5b93-a828-52f699161e9a.md).
+More: nosedive render 6274f51e-664f-5b93-a828-52f699161e9a
 ```
 
 #### [Nuke](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 nuke --help
+npx -y nosedive@2026.8.27-1787806233892 nuke --help
+```
+```md
 Usage: nosedive nuke --config|--workspace
 
 Remove nosedive-managed bridge config files or force-remove managed workspace worktrees; refuses to run without a destructive switch.
 
-[read the manual](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md).
+More: nosedive render 3570e756-f8e7-5e95-b911-09d7d116cd23
 ```
 
 #### [Pack](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 pack --help
+npx -y nosedive@2026.8.27-1787806233892 pack --help
+```
+```md
 Usage: nosedive pack
 
 Capture all WIP on the active dive's scoped repos, and the bridge kb/ docs it links, as patch artifacts, commit and push the bridge, release the dive to its packer, and reset every scoped worktree to its pin.
 
-[read the manual](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md).
+More: nosedive render 9e28155b-b018-5e00-a3a1-707593167e1e
 ```
 
 #### [Plan](kb/162068fe-62ff-5f56-945a-76b24ffeb439.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 plan --help
+npx -y nosedive@2026.8.27-1787806233892 plan --help
+```
+```md
 Usage: nosedive plan [<context>]
 
 Help the pilot choose a feat, then shape it into gated vertical dives small enough to land in half a day.
 
-[read the manual](kb/162068fe-62ff-5f56-945a-76b24ffeb439.md).
+More: nosedive render 162068fe-62ff-5f56-945a-76b24ffeb439
 ```
 
 #### [Preflight](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 preflight --help
+npx -y nosedive@2026.8.27-1787806233892 preflight --help
+```
+```md
 Usage: nosedive preflight
 
 Reconcile the bridge pre-push hook, fetch bridge trunk, then print the session-start report -- bridge status, pilot identity, and open work.
 
-[read the manual](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md).
+More: nosedive render 67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e
 ```
 
 #### [Prove](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 prove --help
+npx -y nosedive@2026.8.27-1787806233892 prove --help
+```
+```md
 Usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]
 
 Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits.
 
-[read the manual](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md).
+More: nosedive render af12dc22-6bad-5e2a-aca9-ff0163dd39dd
 ```
 
 #### [Record dive](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 record.dive --help
+npx -y nosedive@2026.8.27-1787806233892 record.dive --help
+```
+```md
 Usage: nosedive record.dive [<dive>] [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]
 
 Create or patch a feat-owned dive record while preserving omitted update fields.
 
-[read the manual](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md).
+More: nosedive render c583519a-95c3-59e8-90fd-0d3003b4b8d1
 ```
 
 #### [Record a feat](kb/fb3d90e6-9dbf-5f1c-9919-6653d12fe085.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 record.feat --help
+npx -y nosedive@2026.8.27-1787806233892 record.feat --help
+```
+```md
 Usage: nosedive record.feat [<feat>] [--gist <gist>] [--name <slug>] [--parent <feat>] [--no-parent]
 
 Create a new `kind: feat` KB doc, optionally nested under a parent feat.
 
-[read the manual](kb/fb3d90e6-9dbf-5f1c-9919-6653d12fe085.md).
+More: nosedive render fb3d90e6-9dbf-5f1c-9919-6653d12fe085
 ```
 
 #### [Record gate](kb/2c678acb-b4b8-5623-a900-12939da5d472.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 record.gate --help
+npx -y nosedive@2026.8.27-1787806233892 record.gate --help
+```
+```md
 Usage: nosedive record.gate [<gate>] [--gist <gist>] [--feat <feat-ref>] [--name <slug>] [--height <n>] [--flaky] [--no-flaky] [--action <test|land>]
 
 Mint a gate -- its doc, its stub script, and the link declaring it on a feat -- ready to fail until somebody writes the check.
 
-[read the manual](kb/2c678acb-b4b8-5623-a900-12939da5d472.md).
+More: nosedive render 2c678acb-b4b8-5623-a900-12939da5d472
 ```
 
 #### [Record repo](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 record.repo --help
+npx -y nosedive@2026.8.27-1787806233892 record.repo --help
+```
+```md
 Usage: nosedive record.repo [<repo>] [--url <clone-url-or-local-path>] [--name <slug>] [--base-branch <branch>]
 
 Register a Git repository with the bridge and make it visible through the backlog.
 
-[read the manual](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md).
+More: nosedive render 6640f6d5-567d-51bd-b2ba-6239a7a58707
 ```
 
 #### [Render](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 render --help
+npx -y nosedive@2026.8.27-1787806233892 render --help
+```
+```md
 Usage: nosedive render <uuid> [--gist]
 
 Print the markdown body, or with --gist the gist line, of a packaged nosedive KB document by uuid.
 
-[read the manual](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md).
+More: nosedive render 9b0241b2-f03f-5594-a537-60a3b4372ee9
 ```
 
 #### [Scan](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 scan --help
+npx -y nosedive@2026.8.27-1787806233892 scan --help
+```
+```md
 Usage: nosedive scan --repo <repo-id-or-name>
 
 Hydrate one repo and print a documentation-only brief for recording its workloads, quality gates, and conventions.
 
-[read the manual](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md).
+More: nosedive render 88bf4e10-3fd7-58c0-a247-f2dae9c886e3
 ```
 
 #### [Seed](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 seed --help
+npx -y nosedive@2026.8.27-1787806233892 seed --help
+```
+```md
 Usage: nosedive seed [--file <path>]... [--headless]
 
 Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level.
 
-[read the manual](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md).
+More: nosedive render 34c8e9fb-9629-5767-9a81-914f78c63b68
 ```
 
 #### [Spin](kb/44dc2f43-c972-5204-96fe-2b92e61bb346.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 spin --help
+npx -y nosedive@2026.8.27-1787806233892 spin --help
+```
+```md
 Usage: nosedive spin <loads>
 
 THEORETICAL, UNSUPPORTED; Brief a runner with documented loads reachable from the active dive's feat ancestry.
 
-[read the manual](kb/44dc2f43-c972-5204-96fe-2b92e61bb346.md).
+More: nosedive render 44dc2f43-c972-5204-96fe-2b92e61bb346
 ```
 
 #### [Test](kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 test --help
+npx -y nosedive@2026.8.27-1787806233892 test --help
+```
+```md
 Usage: nosedive test [--full] [--via <doc-ref>] [<gate-ref>...]
 
 Run test gates as a focused dive check or backlog regression pass, streaming every gate and exiting 1 if any non-flaky gate failed.
 
-[read the manual](kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md).
+More: nosedive render 1e62a79d-4e06-552d-be5a-4c59c85f86bf
 ```
 
 #### [Update backlog](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 update-backlog --help
+npx -y nosedive@2026.8.27-1787806233892 update-backlog --help
+```
+```md
 Usage: nosedive update-backlog [--inject <ref>]...
 
 Rerender the configured backlog memo body from the memo's own feat links.
 
-[read the manual](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md).
+More: nosedive render f5a5a431-dca3-5e3c-ae84-feb8cd64e96b
 ```
 
 #### [Whoami](kb/a40303c1-1362-523f-b095-49178354f878.md)
 
-##### Usage
-
 ```sh
-$ npx -y nosedive@2026.8.27-1787791766534 whoami --help
+npx -y nosedive@2026.8.27-1787806233892 whoami --help
+```
+```md
 Usage: nosedive whoami
 
 Returns dev-identifying fields from git config in a way that nosedive-aware agents expect.
 
-[read the manual](kb/a40303c1-1362-523f-b095-49178354f878.md).
+More: nosedive render a40303c1-1362-523f-b095-49178354f878
 ```
 
 ### Internal Commands

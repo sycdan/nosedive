@@ -63,9 +63,9 @@ Ordered decks replace one backlog: new feats start on the highest deck, `drop` a
 Every user-facing command is defined by a `kind: command` document in this
 package's [`kb/`](kb). The command document is the single source of truth for
 what the command does and for its help text: `nosedive <command> --help` prints
-that document's body in a markdown fence, followed by `Usage: <meta.usage>` and
-the document gist. To avoid documentation drift, this README links to the
-command docs rather than restating them. Command docs are the composable,
+`Usage: <meta.usage>`, the document gist, and a link to the full command manual.
+This keeps routine agent context compact while leaving the complete contract one
+link away. Command docs are the composable,
 community-contributable extension model: adding a command means authoring its
 document and adapter, not patching a central dispatcher.
 

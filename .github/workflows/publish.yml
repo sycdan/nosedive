@@ -56,10 +56,10 @@ jobs:
         if: steps.recovery.outputs.state == 'rerun'
         run: |
           set -euo pipefail
-          npm run commands:surface
-          npm run faq:surface
           version="$(node scripts/version.mjs)"
           npm version --no-git-tag-version "$version"
+          npm run commands:surface
+          npm run faq:surface
           echo "version=$version" >> "$GITHUB_OUTPUT"
       # Every gate runs against the stamped tree, so what npm receives is what
       # was tested. format:check is a check here and nowhere a rewrite: a
@@ -171,7 +171,9 @@ jobs:
       # keeps carrying the timestamped version its finalization stamped, which
       # is what makes a promotion repeatable.
       - name: Stamp the stable version in the runner only
-        run: npm version --no-git-tag-version "${{ steps.release.outputs.stable }}"
+        run: |
+          npm version --no-git-tag-version "${{ steps.release.outputs.stable }}"
+          npm run commands:surface
       - name: Gate the release tree
         run: |
           npm run typecheck

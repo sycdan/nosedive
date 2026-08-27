@@ -22,7 +22,6 @@ import {
 	createNoBridge,
 	createBridge,
 	createTmp,
-	escapeRegExp,
 	gitCommit,
 	gitCommonDir,
 	handoffRunbookId,
@@ -41,12 +40,13 @@ import {
 	writeBridgeConfig,
 } from "../test-helpers.mjs";
 
-const { readNosediveRc } = await import(libUrl);
+const { nosediveInvocationFor, readNosediveRc } = await import(libUrl);
 const tmp = createTmp("contract-help");
 const noBridge = createNoBridge(tmp);
 
 test("contract help", () => {
 	const whoamiContractBridge = createBridge(tmp, "contract-help-bridge", { backlog: "./backlog" });
+	const readme = readFileSync(join(root, "README.md"), "utf8");
 
 	/**
 	 * The builtin route serves a command's latest level, so the explicit route
@@ -55,13 +55,21 @@ test("contract help", () => {
 	 * this test fail the first time a command was republished at @2.
 	 */
 	const latestLevels = new Map();
+	const latestFiles = new Map();
+	const latestDeprecated = new Map();
+	const latestTitles = new Map();
 	for (const docName of readdirSync(join(root, "kb")).filter((name) => name.endsWith(".md"))) {
 		const docText = readFileSync(join(root, "kb", docName), "utf8");
 		if (!/^kind: command$/m.test(docText)) continue;
 		const named = /^name: (.+)@(\d+)$/m.exec(docText);
 		if (!named) continue;
 		const level = Number(named[2]);
-		if (level > (latestLevels.get(named[1]) ?? -1)) latestLevels.set(named[1], level);
+		if (level > (latestLevels.get(named[1]) ?? -1)) {
+			latestLevels.set(named[1], level);
+			latestFiles.set(named[1], docName);
+			latestDeprecated.set(named[1], /^  use-instead:/m.test(docText));
+			latestTitles.set(named[1], /^#\s+(.+?)\s*$/m.exec(docText)?.[1]);
+		}
 	}
 
 	// L0 is gone: every command the package ships is contracted at L1 or above.
@@ -109,7 +117,10 @@ test("contract help", () => {
 	const listDivesHelp = run(["list-dives", "--help"], noBridge);
 	assertOk(listDivesHelp, "list-dives --help failed");
 	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-deck>\]/);
-	assert.match(listDivesHelp.stdout, /The manual, complete view/);
+	assert.match(
+		listDivesHelp.stdout,
+		/\[read the manual\]\(kb\/116ff634-3742-51ba-977f-44fc5b21e9e4\.md\)\./,
+	);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),
 		`---
@@ -126,44 +137,14 @@ gist: "Legacy command fixture."
 	);
 	assertOk(featScopedListDives, "list-dives failed");
 	assert.match(featScopedListDives.stdout, /^Scope: feat deprecated-list-dives$/m);
-	const contractHelpLinks = {
-		preflight: [
-			/\[`_pre-push\.hook`\]\(9e3a676a-6d2f-5b93-93af-f4608ed28843\.md\)/,
-			/\[`seed`\]\(34c8e9fb-9629-5767-9a81-914f78c63b68\.md\)/,
-		],
-		seed: [/\]\(a40303c1-1362-523f-b095-49178354f878\.md\)/],
-	};
 	for (const [command, usage, level] of contractedCommands) {
 		const explicitHelp = run([`${command}@${level}`, "--help"], whoamiContractBridge);
 		assertOk(explicitHelp, `${command}@${level} --help failed`);
 		assert.match(explicitHelp.stdout, usage, `${command}@${level} --help missing usage line`);
-		for (const expectedLink of contractHelpLinks[command] ?? []) {
-			assert.match(
-				explicitHelp.stdout,
-				expectedLink,
-				`${command}@${level} --help missing kb doc link`,
-			);
-		}
-		const openingFence = explicitHelp.stdout.slice(0, explicitHelp.stdout.indexOf("\n"));
-		assert.match(
-			openingFence,
-			/^`{3,}md$/,
-			`${command}@${level} --help should start with a markdown fence`,
-		);
-		const closingFence = openingFence.slice(0, -"md".length);
-		assert.match(
-			explicitHelp.stdout,
-			new RegExp(`^${escapeRegExp(openingFence)}\\n\\n?# `),
-			`${command}@${level} --help should fence the command body`,
-		);
-		assert.match(
-			explicitHelp.stdout,
-			new RegExp(`\\n${escapeRegExp(closingFence)}\\n\\nUsage: nosedive`),
-			`${command}@${level} --help should close the markdown fence before usage`,
-		);
-		assert.ok(
-			explicitHelp.stdout.indexOf("Usage: nosedive") > explicitHelp.stdout.indexOf("# "),
-			`${command}@${level} --help should print usage after body`,
+		assert.equal(
+			explicitHelp.stdout.trim().split("\n").length,
+			5,
+			`${command}@${level} --help should contain only usage, gist, and the manual link`,
 		);
 		const usageTail = explicitHelp.stdout.slice(explicitHelp.stdout.indexOf("Usage: nosedive"));
 		assert.match(
@@ -186,6 +167,29 @@ gist: "Legacy command fixture."
 			/^---$/m,
 			`${command}@${level} --help leaked frontmatter delimiters`,
 		);
+		assert.ok(latestFiles.has(command), `${command} has no latest command doc filename`);
+		assert.ok(
+			explicitHelp.stdout.includes(`[read the manual](kb/${latestFiles.get(command)}).`),
+			`${command}@${level} --help is missing its command doc link`,
+		);
+		if (!command.startsWith("_") && !latestDeprecated.get(command)) {
+			const npmInvocation = nosediveInvocationFor(false, root);
+			assert.ok(
+				readme.includes(
+					[
+						`#### [${latestTitles.get(command)}](kb/${latestFiles.get(command)})`,
+						"",
+						"##### Usage",
+						"",
+						"```sh",
+						`$ ${npmInvocation} ${command} --help`,
+						explicitHelp.stdout.trim(),
+						"```",
+					].join("\n"),
+				),
+				`README section for ${command}@${level} differs from its doc title, invocation, or help`,
+			);
+		}
 
 		// Same help text whether the command doc routed it or the builtin did.
 		const builtinHelp = run([command, "--help"], noBridge);

@@ -13,6 +13,7 @@ import {
 	type CommandIo,
 	type KbDoc,
 } from "./lib/commands.js";
+import { CURRENT_COMPATIBILITY_LEVEL } from "./lib/constants.js";
 import { namespacedUuid } from "./lib/index.js";
 
 const USAGE_HEADER = "Usage: nosedive <command>";
@@ -151,7 +152,9 @@ function latestContractDocs(): ContractDoc[] {
 			latestByCommand.set(contract.command, contract);
 		}
 	}
-	return [...latestByCommand.values()].sort((a, b) => a.command.localeCompare(b.command));
+	return [...latestByCommand.values()]
+		.filter((contract) => contract.compatibilityLevel <= CURRENT_COMPATIBILITY_LEVEL)
+		.sort((a, b) => a.command.localeCompare(b.command));
 }
 
 function isDeprecatedContract(contract: ContractDoc): boolean {

@@ -1,5 +1,4 @@
 import { captureCommand } from "./commandAdapter.js";
-
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
@@ -25,12 +24,11 @@ function featAncestry(feat: KbDoc, kbDocs: KbDoc[]): KbDoc[] {
 
 function spin(args: string[], io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
-	// Checked before the words, so a pilot with no dive is told the thing that
-	// blocks them rather than a usage error they would still hit afterwards.
-	if (!readActiveDiveId(rc.workspaceDir))
+	if (!readActiveDiveId(rc.workspaceDir)) {
 		throw new Error(
 			"no active dive: spin needs a feat from the dive named in workspace/.nosedive-ref",
 		);
+	}
 
 	const words = args.join(" ").trim();
 	if (!words) throw new Error("spin requires words describing the loads to select");
@@ -48,9 +46,6 @@ function spin(args: string[], io: CommandIo): void {
 	}
 
 	const loads = new Map<string, KbDoc>();
-	// A repo with no loads has not necessarily gone unscanned: a library or a
-	// CLI has nothing runnable to record, and saying otherwise would assert a
-	// falsehood on every spin for the rest of that repo's life.
 	const loadless = new Map<string, KbDoc>();
 	for (const repo of repos.values()) {
 		const repoLoads = repo.links
@@ -71,10 +66,11 @@ function spin(args: string[], io: CommandIo): void {
 	if (loadless.size > 0) {
 		io.log("");
 		io.log("== repos without loads ==");
-		for (const repo of loadless.values())
+		for (const repo of loadless.values()) {
 			io.log(
 				`- ${repo.name} documents no loads; if it runs services, scan --repo ${repo.id} to record them`,
 			);
+		}
 	}
 }
 

@@ -6,12 +6,7 @@ import {
 	resolveDropFeat,
 	todayIsoDate,
 } from "../lib/drop.js";
-import {
-	readPromptBody,
-	renderDropPrompt,
-	resolvePromptDoc,
-	resolveRunnerUsage,
-} from "../lib/dropPrompt.js";
+import { readPromptBody, renderDropPrompt, resolvePromptDoc } from "../lib/dropPrompt.js";
 import { loadKbDocs } from "../lib/kbDocs.js";
 import { collectReachableGates } from "../lib/landGates.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";

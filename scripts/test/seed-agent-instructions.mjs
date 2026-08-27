@@ -46,6 +46,7 @@ function assertManagedBlock(text, label) {
 	// The agent surface is a block per command, not the pilot-facing table, so a
 	// `Use when:` trigger cannot be read against the wrong command.
 	assert.match(text, /^ {2}seed$/m);
+	assert.doesNotMatch(text, /^ {2}(?:drop|spin)$/m);
 	assert.match(text, /^ {4}Create, migrate, or edit bridge config/m);
 	assert.match(
 		text,

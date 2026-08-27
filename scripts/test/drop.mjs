@@ -138,9 +138,9 @@ meta:
 		],
 	});
 
-	const dropped = run(["drop", "ship it"], bridge);
+	const dropped = run(["drop@3", "ship it"], bridge);
 	assert.equal(dropped.status, 0, dropped.stderr);
-	assert.equal(dropped.stderr, "");
+	assert.match(dropped.stderr, /drop@3 is ahead of this bridge/);
 	assert.ok(dropped.stdout.indexOf("SHIP THIS BODY VERBATIM.") < dropped.stdout.indexOf("## Drop"));
 	assert.match(dropped.stdout, /^feat: ship-it\.development$/m);
 	assert.match(dropped.stdout, new RegExp(`^doc: kb/${featId}\\.md$`, "m"));
@@ -170,7 +170,7 @@ test("drop reports an open dive only on stderr", () => {
 		],
 	});
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /open dive: unfinished-slice/);
@@ -188,7 +188,7 @@ test("drop still recognizes legacy working dive rels", () => {
 		],
 	});
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /open dive: unfinished-slice/);
@@ -206,7 +206,7 @@ test("drop blocks a packed dive", () => {
 		],
 	});
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /open dive: packed-slice/);
@@ -217,7 +217,7 @@ test("drop blocks a feat with no landed dive", () => {
 	const bridge = createDroppableBridge("no-landed-dive");
 	writeFeat(bridge);
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /no landed dive/);
@@ -234,12 +234,12 @@ test("an open child blocks, and a closed one stops blocking", () => {
 			{ id: childId, rel: "child" },
 		],
 	});
-	assert.match(run(["drop", "ship-it.development"], bridge).stderr, /open child feat/);
+	assert.match(run(["drop@3", "ship-it.development"], bridge).stderr, /open child feat/);
 
 	// Closing a feat rewrites its kind and leaves the edge in place, so the
 	// blocker has to read done-ness rather than the presence of the link.
 	writeLinkedDoc(bridge, childId, "memo", "unfinished-child");
-	const reopened = run(["drop", "ship-it.development"], bridge);
+	const reopened = run(["drop@3", "ship-it.development"], bridge);
 	assert.doesNotMatch(reopened.stderr, /open child feat/);
 });
 
@@ -251,7 +251,7 @@ test("drop blocks a scoped repo with no merge policy", () => {
 	writeRepo(bridge, cloud, null);
 	writeFeat(bridge, { scopes: [repoId], links: [{ id: memoId, rel: "working" }] });
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, new RegExp(`repo app has no meta\\.merge; fix kb/${repoId}\\.md`));
@@ -262,7 +262,7 @@ test("drop does not block a future target date", () => {
 	writeLinkedDoc(bridge, memoId, "memo", "landed-dive");
 	writeFeat(bridge, { target: "2999-01-01", links: [{ id: memoId, rel: "working" }] });
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 0, dropped.stderr);
 	assert.match(dropped.stdout, /^target: 2999-01-01$/m);
 });
@@ -271,7 +271,7 @@ test("drop treats an already closed feat as not found", () => {
 	const bridge = createDroppableBridge("closed");
 	writeFeat(bridge, { kind: "memo" });
 
-	const dropped = run(["drop", "ship-it.development"], bridge);
+	const dropped = run(["drop@3", "ship-it.development"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /drop not found: ship-it\.development/);
@@ -291,7 +291,7 @@ gist: "Twin."
 `,
 	);
 
-	const dropped = run(["drop", "twin"], bridge);
+	const dropped = run(["drop@3", "twin"], bridge);
 	assert.equal(dropped.status, 1);
 	assert.equal(dropped.stdout, "");
 	assert.match(dropped.stderr, /drop name is ambiguous: twin \(twin\.development, twin\.release\)/);

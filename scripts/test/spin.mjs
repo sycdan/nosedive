@@ -32,12 +32,12 @@ function activeDive(bridge, effort) {
 test("spin refuses without an active dive", () => {
 	const bridge = createBridge(tmp, "no-dive");
 	writeDoc(bridge, "empty.md", 'kind: memo\nid: empty\nname: empty\ngist: "Empty"');
-	const result = run(["spin", "api"], bridge);
+	const result = run(["spin@3", "api"], bridge);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /no active dive/);
 	assert.equal(result.stdout, "");
 
-	const wordless = run(["spin"], bridge);
+	const wordless = run(["spin@3"], bridge);
 	assert.notEqual(wordless.status, 0);
 	assert.match(wordless.stderr, /no active dive/);
 });
@@ -46,7 +46,7 @@ test("spin requires pilot words", () => {
 	const bridge = createBridge(tmp, "no-words");
 	activeDive(bridge, ids.child);
 	writeDoc(bridge, "effort.md", `kind: feat\nid: ${ids.child}\nname: effort\ngist: "Effort"`);
-	const result = run(["spin"], bridge);
+	const result = run(["spin@3"], bridge);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /requires words/);
 });
@@ -86,7 +86,7 @@ test("spin lists unique loads from the active feat and its ancestors", () => {
 		`kind: load\nid: ${ids.shared}\nname: shared\ngist: "Shared service"`,
 	);
 
-	const result = run(["spin", "api", "and", "database"], bridge);
+	const result = run(["spin@3", "api", "and", "database"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /Pilot words: api and database/);
 	assert.match(result.stdout, /- api: API service/);
@@ -108,7 +108,7 @@ test("spin identifies scoped repos without documented loads", () => {
 		"repo.md",
 		`kind: repo\nid: ${ids.childRepo}\nname: toolbox\ngist: "A library with nothing runnable"`,
 	);
-	const result = run(["spin", "web"], bridge);
+	const result = run(["spin@3", "web"], bridge);
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(
 		result.stdout,

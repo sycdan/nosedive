@@ -15,6 +15,7 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 import { renderCommandHelpText } from "../../src/lib/commandHelpText.mjs";
+import { renderCommandSurface } from "../update-readme-command-surface.mjs";
 import {
 	assertContainsPath,
 	assertGeneratedFrontmatter,
@@ -47,7 +48,15 @@ const noBridge = createNoBridge(tmp);
 
 test("contract help", () => {
 	const whoamiContractBridge = createBridge(tmp, "contract-help-bridge", { backlog: "./backlog" });
-	const readme = readFileSync(join(root, "README.md"), "utf8");
+	/**
+	 * The generated surface, not the committed README. README is a release
+	 * artifact the publish pipeline regenerates, so a local checkout carries a
+	 * stale one by design and comparing against it fails for the wrong reason.
+	 * What is worth contracting is that the generator and the runtime agree --
+	 * they share only the help formatter, and each resolves a command's doc id a
+	 * different way, so there is some potential for drift.
+	 */
+	const surface = renderCommandSurface();
 
 	/**
 	 * The builtin route serves a command's latest level, so the explicit route
@@ -174,13 +183,13 @@ gist: "Legacy command fixture."
 		if (!command.startsWith("_") && !latestDeprecated.get(command)) {
 			const npmInvocation = nosediveInvocationFor(false, root);
 			const [usageLine, gist] = explicitHelp.stdout.trim().split("\n\n");
-			const readmeHelp = renderCommandHelpText({
+			const expectedHelp = renderCommandHelpText({
 				usage: usageLine.replace(/^Usage: /, ""),
 				gist,
 				id: docId,
 			});
 			assert.ok(
-				readme.includes(
+				surface.includes(
 					[
 						`#### [${latestTitles.get(command)}](kb/${latestFiles.get(command)})`,
 						"",
@@ -188,11 +197,11 @@ gist: "Legacy command fixture."
 						`${npmInvocation} ${command} --help`,
 						"```",
 						"```md",
-						readmeHelp,
+						expectedHelp,
 						"```",
 					].join("\n"),
 				),
-				`README section for ${command}@${level} differs from its doc title, invocation, or help`,
+				`generated surface for ${command}@${level} differs from its doc title, invocation, or help`,
 			);
 		}
 

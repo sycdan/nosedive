@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
@@ -13,8 +13,6 @@ const beginMarker = "<!-- BEGIN nosedive-command-surface -->";
 const endMarker = "<!-- END nosedive-command-surface -->";
 const levelsBeginMarker = "<!-- BEGIN nosedive-levels -->";
 const levelsEndMarker = "<!-- END nosedive-levels -->";
-
-const checkOnly = process.argv.includes("--check");
 
 function rel(path) {
 	return relative(root, path).replaceAll("\\", "/");
@@ -154,7 +152,7 @@ function commandSections(docs) {
 	]);
 }
 
-function renderCommandSurface() {
+export function renderCommandSurface() {
 	const latestDocs = latestDocsByCommand(commandDocs());
 	const publicDocs = latestDocs.filter((doc) => !isInternalCommand(doc));
 	const activeDocs = publicDocs.filter((doc) => !isExplicitlyDeprecated(doc));
@@ -317,19 +315,31 @@ function replaceGeneratedLevels(readme, generated) {
 	fail(`README.md is missing ${levelsBeginMarker} / ${levelsEndMarker} markers`);
 }
 
-const readme = read(readmePath);
-const generated = renderCommandSurface();
-const withSurface = replaceGeneratedSurface(readme, generated);
-const generatedLevels = renderLevels();
-const updated = replaceGeneratedLevels(withSurface, generatedLevels);
+function main() {
+	const checkOnly = process.argv.includes("--check");
+	const readme = read(readmePath);
+	const generated = renderCommandSurface();
+	const withSurface = replaceGeneratedSurface(readme, generated);
+	const generatedLevels = renderLevels();
+	const updated = replaceGeneratedLevels(withSurface, generatedLevels);
 
-if (checkOnly) {
-	if (updated !== readme) {
-		console.error("README command surface is stale. Run `npm run commands:surface`.");
-		process.exit(1);
+	if (checkOnly) {
+		if (updated !== readme) {
+			console.error("README command surface is stale. Run `npm run commands:surface`.");
+			process.exit(1);
+		}
+		console.log("README command surface is up to date.");
+		return;
 	}
-	console.log("README command surface is up to date.");
-} else {
 	writeFileSync(readmePath, updated, "utf8");
 	console.log("Updated README command surface.");
+}
+
+// Importing this module must not rewrite README: contract-help asks it for the
+// surface it would generate, and never for the file on disk.
+if (
+	process.argv[1] &&
+	realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
+	main();
 }

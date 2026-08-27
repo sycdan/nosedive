@@ -253,9 +253,12 @@ test("the command list omits a command whose latest doc is deprecated", () => {
 	);
 	assert.ok(commands.has("record.feat"), "help should list record.feat");
 	assert.ok(!commands.has("pitch"), "help should not list pitch: its latest doc is deprecated");
+	assert.ok(!commands.has("drop"), "help should not list unreleased command drop");
+	assert.ok(!commands.has("spin"), "help should not list unreleased command spin");
 
 	for (const [command, { deprecated }] of latest) {
 		if (command.startsWith("_")) continue;
+		if (command === "drop" || command === "spin") continue;
 		if (deprecated) {
 			assert.ok(!commands.has(command), `help lists ${command}, whose latest doc is deprecated`);
 		} else {
@@ -271,6 +274,18 @@ test("the command surface omits commands moved to an upcoming level", () => {
 	// not advertise their level-1 implementations in the current README.
 	assert.doesNotMatch(surface, /#### \[Drop\]\(kb\/[^)]+\)/);
 	assert.doesNotMatch(surface, /#### \[Spin\]\(kb\/[^)]+\)/);
+});
+
+test("unreleased commands require their explicit level", () => {
+	const bridge = createBridge(tmp, "unreleased-command-bridge");
+	for (const command of ["drop", "spin"]) {
+		const implicit = run([command], bridge);
+		assert.notEqual(implicit.status, 0, `${command} unexpectedly resolved`);
+		assert.match(implicit.stderr, new RegExp(`Unknown command: ${command}`));
+
+		const explicit = run([`${command}@3`, "--help"], bridge);
+		assertOk(explicit, `${command}@3 --help failed`);
+	}
 });
 
 /**

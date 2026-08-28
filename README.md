@@ -31,10 +31,10 @@ that compose safely for a human or an agent.
 
 ## Nouns
 
-The durable objects that carry intent, scope, and proof:
+Domain entity roles that carry intent, scope, and proof:
 
 - [repo](kb/00000000-0000-7a04-a8f4-6f75484220cb.md) — an implementation boundary.
-- [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a durable goal t be accomplished.
+- [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a durable goal to be accomplished.
 - [dive](kb/00000000-0000-749c-844b-2318117bffb0.md) — one bounded attempt at that goal.
 - [gate](kb/00000000-0000-76cb-a899-f8e90db8ca5c.md) — executable proof of what done means.
 

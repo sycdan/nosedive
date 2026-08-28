@@ -1457,3 +1457,52 @@ test("jump rewrites a dive's rel where it stands instead of moving it last", () 
 	assert.match(featText, new RegExp(`- kb/${diveId}\\.md:\n      rel: jumped\\.dive`));
 	assert.deepEqual(linkOrder(bridge, featId), before);
 });
+
+/**
+ * `pack` resets every scoped worktree to its pin, so work only survives it as
+ * patch artifacts. That is the right trade when the diver is somewhere the
+ * pilot cannot read -- and pure loss when it is not, because reviewing then
+ * costs a second jump to get the work back. The bridge's own branch is what
+ * separates the two: a bridge on its trunk is the bridge the pilot reads.
+ */
+test("jump on the bridge trunk hands the work back for review instead of naming pack", () => {
+	const { bridge } = setup("directive-trunk");
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a bridge sitting on trunk");
+	assert.ok(
+		result.stdout.includes("for the pilot to review"),
+		`trunk jump should hand the work back:\n${result.stdout}`,
+	);
+	assert.ok(
+		!result.stdout.includes("nosedive pack"),
+		`trunk jump should not name pack:\n${result.stdout}`,
+	);
+	assert.ok(
+		result.stdout.includes(
+			"Do not run `nosedive land` unless you have been directly instructed to.",
+		),
+		`every jump still withholds land:\n${result.stdout}`,
+	);
+});
+
+test("jump off the bridge trunk still tells the diver to pack", () => {
+	const { bridge } = setup("directive-branch");
+	runTool("git", ["checkout", "-b", "headless"], bridge);
+	// Published, because jump commits its claim and so needs an upstream. A
+	// headless bridge is one nobody reads, not one nobody pushed.
+	runTool("git", ["push", "-u", "origin", "headless"], bridge);
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a bridge sitting off trunk");
+	assert.ok(
+		result.stdout.includes(
+			"When done, run `nosedive pack` to capture your work and release the dive.",
+		),
+		`off-trunk jump should name pack:\n${result.stdout}`,
+	);
+	assert.ok(
+		!result.stdout.includes("leave the workspace hydrated"),
+		`off-trunk jump should not hand the work back:\n${result.stdout}`,
+	);
+});

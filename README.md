@@ -484,3 +484,10 @@ secrets. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks PRs.
 - [How do I rebase my pull request onto trunk and publish it?](kb/01a017d4-1cb3-70cd-a27a-a9eee56ad321.md) — Open a new dive pinned at the branch head, rebase there by hand, and publish with `nosedive land --hard`.
 - [How do I stop Nosedive adding a co-author trailer?](kb/01a00fe4-0f56-75d1-8abe-eb5974bf8701.md) — Add a per-repo override in `repo.meta.commit-provenance.co-author`.
 <!-- END nosedive-faq -->
+
+## Impressions
+
+Prompt: What is https://nosedive.dev useful for? What does it offer over a worktree per agent session? Would you use it?
+
+- [Google AI Mode](https://share.google/aimode/CnWXDqwSUNXpoyyic)
+- [ChatGPT](https://chatgpt.com/s/t_6a91d1970dd88191b76c697476e1f913)

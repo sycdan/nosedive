@@ -22,6 +22,7 @@ import {
 	resolveFrom,
 	toPosixPath,
 } from "../lib/coreParsing.js";
+import { bridgeTrunkBranch, preferredBridgeRemote } from "../lib/bridgeTrunk.js";
 import { readAgentGuidance } from "../lib/commandGuidance.js";
 import { GIT_HOOK_NAMES, proxyHook } from "../lib/commitProvenance.js";
 import {
@@ -170,23 +171,6 @@ function ensurePrePushHook(rc: NosediveRc, io: CommandIo): void {
 		io.log(`Installed nosedive pre-push hook: ${formatPath(managedHookPath)}`);
 	}
 	dropShadowedManagedHook(defaultHooksDir, managedHooksDir, io);
-}
-
-function preferredBridgeRemote(bridgeDir: string): string | undefined {
-	const remotes = (gitOutput(bridgeDir, ["remote"])?.split(/\r?\n/).filter(Boolean) ?? []).filter(
-		(remote) => gitOutput(bridgeDir, ["config", "--get", `remote.${remote}.url`]),
-	);
-	if (remotes.length === 0) return undefined;
-	return remotes.includes("origin") ? "origin" : remotes[0];
-}
-
-function bridgeTrunkBranch(bridgeDir: string, remote: string): string | undefined {
-	const remoteHead = gitRun(
-		bridgeDir,
-		["ls-remote", "--symref", remote, "HEAD"],
-		`failed to resolve bridge trunk from remote ${remote}`,
-	);
-	return /^ref:\s+refs\/heads\/(.+)\s+HEAD$/m.exec(remoteHead)?.[1]?.trim();
 }
 
 interface BridgeFreshness {

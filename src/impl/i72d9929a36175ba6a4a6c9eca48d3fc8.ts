@@ -6,6 +6,7 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
+import { bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
@@ -264,12 +265,19 @@ function applyPatchStep(step: PatchStep, targetPath: string, label: string): voi
  * `jump`'s last word is a handoff: the agent reading this has the workspace but
  * none of the reasoning behind it. Paths are relative to the cwd `jump` ran in
  * so a plain read tool takes them verbatim.
+ *
+ * How it ends depends on who can read the workspace when the work is done.
+ * `pack` resets every scoped worktree to its pin, so it is the only way work in
+ * a bridge nobody is watching becomes reachable -- and pure loss in a bridge
+ * the pilot has open, where reviewing would then cost a second jump to get the
+ * work back. `bridgeIsOnTrunk` draws that line.
  */
 function printWorkDirective(
 	dive: KbDoc,
 	feat: KbDoc | undefined,
 	bridgeDir: string,
 	workspaceDir: string,
+	packOnDone: boolean,
 	io: CommandIo,
 ): void {
 	const divePath = toPosixPath(relative(process.cwd(), dive.path));
@@ -286,10 +294,12 @@ function printWorkDirective(
 	}
 	io.log(
 		"Then do only the requested work, not more. " +
-			"Commit completed work in every scoped repo with a work branch. " +
+			"Commit completed work in every scoped repo that has a work branch. " +
 			"As you progress, use `nosedive append-log.dive` to record what you did, and what you think is next. " +
 			"Do not edit the brief or change any scopes. " +
-			"When done, run `nosedive pack` to capture your work and release the dive." +
+			(packOnDone
+				? "When done, run `nosedive pack` to capture your work and release the dive. "
+				: "When done, leave the work in place for the pilot to review. ") +
 			"Do not run `nosedive land` unless you have been directly instructed to.",
 	);
 	io.log(renderDiveScratchHandoff(bridgeDir, workspaceDir, dive.id));
@@ -524,7 +534,7 @@ export function jump(args: string[], io: CommandIo): void {
 		return;
 	}
 
-	printWorkDirective(dive, feat, rc.bridgeDir, rc.workspaceDir, io);
+	printWorkDirective(dive, feat, rc.bridgeDir, rc.workspaceDir, !bridgeIsOnTrunk(rc.bridgeDir), io);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

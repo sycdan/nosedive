@@ -2,7 +2,7 @@
   <img src="assets/nosedive-logo-circle.png" alt="Nosedive logo" width="180" height="180">
 </p>
 
-# Nosedive: intentional velocity
+# [Nosedive](https://nosedive.dev): intentional velocity
 
 _Pick **what's next**, and do it **by the book**._
 

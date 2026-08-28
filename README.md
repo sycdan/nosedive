@@ -40,7 +40,7 @@ Domain entity roles that carry intent, scope, and proof:
 
 ## Verbs
 
-The lifecycle actions that move a dive through the workflow:
+Lifecycle actions that move dives through the workflow:
 
 - [jump](kb/00000000-0000-713d-b87c-9c86d93fd66c.md) — resume scoped work and rebuild context.
 - [pack](kb/00000000-0000-7565-a984-ad5d34a2cffa.md) — capture work in progress for handoff.

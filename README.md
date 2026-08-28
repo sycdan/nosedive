@@ -21,7 +21,7 @@ up without relying on one machine, one chat, or one person’s memory.
 
 ## Nouns
 
-The things Nosedive keeps track of:
+The domain roles Nosedive keeps track of:
 
 - [repo](kb/00000000-0000-7a04-a8f4-6f75484220cb.md) — an implementation boundary.
 - [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a goal we want to accomplish.
@@ -30,11 +30,11 @@ The things Nosedive keeps track of:
 
 ## Verbs
 
-Lifecycle actions that move dives through the workflow:
+The main lifecycle actions Nosedive provides:
 
-- [jump](kb/00000000-0000-713d-b87c-9c86d93fd66c.md) — resume scoped work and rebuild context.
-- [pack](kb/00000000-0000-7565-a984-ad5d34a2cffa.md) — hand off a checkpoint for review or later pickup.
-- [land](kb/00000000-0000-70db-810d-748b23bd9e7c.md) — publish a ready dive and record its outcome.
+- [jump](kb/00000000-0000-713d-b87c-9c86d93fd66c.md) — begin or resume scoped work and rebuild context.
+- [pack](kb/00000000-0000-7565-a984-ad5d34a2cffa.md) — hand off work for internal review or later pickup.
+- [land](kb/00000000-0000-70db-810d-748b23bd9e7c.md) — publish a completed dive and record its outcome.
 - [bail](kb/00000000-0000-708a-8e3a-7cf44717d66f.md) — abandon a dive while preserving its history.
 - [test](kb/00000000-0000-7fec-a565-74e036da27f4.md) — run regression gates and plan work to fix failures.
 

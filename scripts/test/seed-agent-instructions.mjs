@@ -14,7 +14,7 @@ const MARKER_PAIR = ["```md", BEGIN, END, "```"].join("\n");
 /** Mirrors `SURFACE_STAMP_PATTERN` in src/lib/packageBacklog.ts. */
 const SURFACE_STAMP_PATTERN = /^<!-- nosedive v=(\S+) surface=([0-9a-f]{8}) -->$/m;
 const require = createRequire(import.meta.url);
-const { describeInstructionDrift, renderedSurfaceDigest } = require(
+const { describeInstructionDrift, isPackageCheckout, renderedSurfaceDigest } = require(
 	join(process.cwd(), "dist", "nosedive.js"),
 );
 
@@ -267,4 +267,20 @@ test("seed-agent-instructions", () => {
 	const missingValue = run(["seed", "--headless", "--file"], multiBridge, "");
 	assert.notEqual(missingValue.status, 0, "seed --file without a path unexpectedly succeeded");
 	assert.match(missingValue.stderr, /seed --file requires a path/);
+});
+
+test("seed's env fallback names the published package, not a local path", () => {
+	// The managed block is checked in and read on every machine that clones the
+	// bridge, so a path that resolves only where seed ran is not an answer. Seed
+	// runs from a checkout throughout development, which is exactly when the
+	// invocation helper reports this machine's own `dist/cli.js`.
+	assert.equal(isPackageCheckout(), true, "this test only proves anything from a checkout");
+	const portableBridge = newBridge("portable-invocation");
+	assertOk(run(["seed", "--headless"], portableBridge, ""), "seed failed");
+	const text = readFileSync(join(portableBridge, "AGENTS.md"), "utf8");
+	const { version } = require(join(process.cwd(), "package.json"));
+	const expected =
+		"- If `nosedive` is not in your env, call it with `npx -y nosedive@" + version + "` instead.";
+	assert.ok(text.includes(expected), `seeded AGENTS.md is missing: ${expected}`);
+	assert.doesNotMatch(text, /dist[\\/]cli\.js/);
 });

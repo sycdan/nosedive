@@ -8,38 +8,33 @@ _Pick **what's next**, and do it **by the book**._
 
 ## The problem
 
-Enterprise work rarely fits inside one repository. A change to a shared library ripples
-into three services; a feature needs edits in the backend, the client, and the
-infra repo at once. Today that means:
+Agents can make code appear quickly. Getting from there to something we
+understand and are willing to ship still takes work.
 
-- **Lost context.** Every repo is a separate world. Where was I? What was this
-  branch for? What still needs review?
-- **Unsafe agent use.** Handing an AI agent a shell in a shared repo is risky. Worktrees
-  mitigate this, but are focused on a single repo and quickly become cumbersome.
-- **Friction in the author → review loop.** Starting a unit of work, tracking it,
-  and shepherding it through review is manual and inconsistent across people.
+A change can span days, people, agents, and repositories. When its context is
+scattered across tickets, chats, branches, and people’s heads, three basic
+questions get harder to answer: What are we doing? Where did we leave off? How
+will we know it works?
 
-_nosedive_ addresses these by making the unit of work a first-class, on-disk
-object, hydrating worktree-based polyrepo workspaces, managing work handoff
-between team members, and routing developer actions through explicit commands
-that compose safely for a human or an agent.
+Nosedive keeps the answers close to the work, so a human or agent can pick it
+up without relying on one machine, one chat, or one person’s memory.
 
 ## Nouns
 
-Domain entity roles that carry intent, scope, and proof:
+The domain roles Nosedive keeps track of:
 
 - [repo](kb/00000000-0000-7a04-a8f4-6f75484220cb.md) — an implementation boundary.
-- [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a durable goal to be accomplished.
+- [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a goal we want to accomplish.
 - [dive](kb/00000000-0000-749c-844b-2318117bffb0.md) — one bounded attempt at that goal.
-- [gate](kb/00000000-0000-76cb-a899-f8e90db8ca5c.md) — executable proof of what done means.
+- [gate](kb/00000000-0000-76cb-a899-f8e90db8ca5c.md) — a repeatable check on the state of the work.
 
 ## Verbs
 
-Lifecycle actions that move dives through the workflow:
+The main lifecycle actions Nosedive provides:
 
-- [jump](kb/00000000-0000-713d-b87c-9c86d93fd66c.md) — resume scoped work and rebuild context.
-- [pack](kb/00000000-0000-7565-a984-ad5d34a2cffa.md) — capture work in progress for handoff.
-- [land](kb/00000000-0000-70db-810d-748b23bd9e7c.md) — publish a ready dive and record its outcome.
+- [jump](kb/00000000-0000-713d-b87c-9c86d93fd66c.md) — begin or resume scoped work and rebuild context.
+- [pack](kb/00000000-0000-7565-a984-ad5d34a2cffa.md) — hand off work for internal review or later pickup.
+- [land](kb/00000000-0000-70db-810d-748b23bd9e7c.md) — publish a completed dive and record its outcome.
 - [bail](kb/00000000-0000-708a-8e3a-7cf44717d66f.md) — abandon a dive while preserving its history.
 - [test](kb/00000000-0000-7fec-a565-74e036da27f4.md) — run regression gates and plan work to fix failures.
 
@@ -349,7 +344,7 @@ Mint a gate -- its doc, its stub script, and the link declaring it on a feat -- 
 More: nosedive render 2c678acb-b4b8-5623-a900-12939da5d472
 ```
 
-#### [Record a epo](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md)
+#### [Record a repo](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md)
 
 ```sh
 npx -y nosedive@2026.8.28-1787878011258 record.repo --help

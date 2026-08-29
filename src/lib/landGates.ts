@@ -79,7 +79,7 @@ export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 	const rel = doc.metaScalars["test-script"];
 	if (!rel) {
 		throw new Error(
-			`${label} is missing; add one naming the script that proves this gate, e.g. kb/artifacts/<uuid>.mjs`,
+			`${label} is missing; add one naming the script that proves this gate, e.g. kb/artifacts/<quid>.mjs`,
 		);
 	}
 	if (isAbsolute(rel) || unsafeLinkPath(rel)) {
@@ -284,7 +284,7 @@ export function collectDiveGates(
 export interface GateRepoContext {
 	/**
 	 * Repos stay keyed by kb `name` because human-written gates read better that
-	 * way. The uuid lives beside that name, never in place of it, so a gate can
+	 * way. The quid lives beside that name, never in place of it, so a gate can
 	 * match the repo against ids while navigating the kb.
 	 */
 	id: string;
@@ -292,7 +292,7 @@ export interface GateRepoContext {
 	root: string;
 }
 
-/** Handed to a gate's `run(ctx)`. Repos are keyed by kb `name`, never by uuid. */
+/** Handed to a gate's `run(ctx)`. Repos are keyed by kb `name`, never by quid. */
 export interface GateContext {
 	bridgeRoot: string;
 	diveId: string;

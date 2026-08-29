@@ -75,7 +75,7 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 			return { repoId, path: "", readOnly: true, flags: [] };
 		}
 		throw new Error(
-			`legacy scope shorthand is not supported in ${label}; use a bare UUID or '- <repo-id>: { ... }' object form`,
+			`legacy scope shorthand is not supported in ${label}; use a bare quid or '- <repo-id>: { ... }' object form`,
 		);
 	}
 	if (!scope || typeof scope !== "object" || Array.isArray(scope)) {

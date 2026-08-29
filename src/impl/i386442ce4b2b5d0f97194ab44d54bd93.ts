@@ -64,7 +64,7 @@ function scan(args: string[], io: CommandIo): void {
 	);
 	io.log(
 		"For every documented runnable workload, create and link one kind: load doc: mint an id with " +
-			`\`${cli} mint\`, write it as ${formatPath(rc.kbDir)}/<uuid>.md, and link it from the repo doc.`,
+			`\`${cli} mint\`, write it as ${formatPath(rc.kbDir)}/<quid>.md, and link it from the repo doc.`,
 	);
 	io.log(
 		"Name each load for what a pilot would type, not for this repo: `<app>-backend.<repo-slug>`, one per runnable thing, since that name is what spin matches against.",

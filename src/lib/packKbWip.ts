@@ -66,8 +66,8 @@ export function excludedKbPaths(
 /**
  * One hop, deliberately: a memo the dive links may link a third doc, and that
  * third doc is not thereby the dive's. Membership is decided on the link
- * *target* rather than on `LinkRef.id`, because `linkDocId` only yields a uuid
- * for a `kb/<uuid>.md` target and keeps any other target verbatim -- a target
+ * *target* rather than on `LinkRef.id`, because `linkDocId` only yields a quid
+ * for a `kb/<quid>.md` target and keeps any other target verbatim -- a target
  * such as `kb/space name.md` has to compare as the path it is.
  */
 export function linkedKbPaths(linkTargets: string[]): Set<string> {

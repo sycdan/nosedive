@@ -9,6 +9,7 @@
 			content="Nosedive turns a plain notes repo into a bridge: a knowledge base and orchestration hub for agentic development across one or more repos."
 		/>
 		<link rel="icon" href="assets/nosedive-logo-circle.png" />
+		<link rel="stylesheet" href="assets/asciinema-player.css" />
 		<meta property="og:title" content="Nosedive: intentional velocity" />
 		<meta
 			property="og:description"
@@ -125,12 +126,19 @@
 				font-size: 0.9em;
 			}
 			.demo {
-				border: 1px dashed var(--line);
+				border: 1px solid var(--line);
 				border-radius: 10px;
-				padding: 2.5rem 1rem;
+				overflow: hidden;
+				background: #121314;
+			}
+			.demo-caption {
 				text-align: center;
 				color: var(--muted);
-				background: var(--panel);
+				font-size: 0.85rem;
+				margin: 0.6rem 0 0;
+			}
+			.demo .ap-player {
+				font-size: 12px;
 			}
 			ul {
 				padding-left: 1.15rem;
@@ -173,10 +181,9 @@
 				<a href="https://github.com/sycdan/nosedive/blob/main/COMMANDS.md">Commands</a>
 			</div>
 
-			<!-- DEMO SLOT: replace with a self-hosted asciinema-player embed, its js and css
-			     in assets/ so this page keeps having no external dependency.
-			     @see kb/01a04e21-40d3-733f-bbc9-5274bc42a31c.md -->
-			<div class="demo">Demo recording goes here.</div>
+			<!-- @see kb/01a04e21-40d3-733f-bbc9-5274bc42a31c.md -->
+			<div class="demo" id="demo"></div>
+			<p class="demo-caption">From an empty repo to a landed dive, in under a minute.</p>
 
 			<h2>The problem</h2>
 			<p>
@@ -236,5 +243,16 @@ nosedive land     # pushes work/add-a-hello-note</code></pre>
 				>.
 			</footer>
 		</main>
+		<script src="assets/asciinema-player.min.js"></script>
+		<script>
+			AsciinemaPlayer.create("assets/demo.cast", document.getElementById("demo"), {
+				autoPlay: true,
+				loop: true,
+				preload: true,
+				fit: "width",
+				idleTimeLimit: 1.5,
+				theme: "asciinema",
+			});
+		</script>
 	</body>
 </html>

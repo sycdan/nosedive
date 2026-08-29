@@ -21,9 +21,10 @@ import {
 	toPosixPath,
 } from "../lib/coreParsing.js";
 import { DiveWipScope, uniqueDiveWipScopes } from "../lib/gitState.js";
-import { recreateDiveScratch, renderDiveScratchHandoff } from "../lib/diveScratch.js";
+import { recreateDiveScratch } from "../lib/diveScratch.js";
 import { appendTimestampedSection, latestLoggedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { printWorkDirective } from "../lib/jumpHandoff.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
@@ -262,50 +263,6 @@ function applyPatchStep(step: PatchStep, targetPath: string, label: string): voi
 }
 
 /**
- * `jump`'s last word is a handoff: the agent reading this has the workspace but
- * none of the reasoning behind it. Paths are relative to the cwd `jump` ran in
- * so a plain read tool takes them verbatim.
- *
- * How it ends depends on who can read the workspace when the work is done.
- * `pack` resets every scoped worktree to its pin, so it is the only way work in
- * a bridge nobody is watching becomes reachable -- and pure loss in a bridge
- * the pilot has open, where reviewing would then cost a second jump to get the
- * work back. `bridgeIsOnTrunk` draws that line.
- */
-function printWorkDirective(
-	dive: KbDoc,
-	feat: KbDoc | undefined,
-	bridgeDir: string,
-	workspaceDir: string,
-	packOnDone: boolean,
-	io: CommandIo,
-): void {
-	const divePath = toPosixPath(relative(process.cwd(), dive.path));
-	io.log("");
-	io.log(
-		`Read the dive at ${divePath} in full -- its "${DIVE_BRIEF_HEADING}" section is your brief, ` +
-			"and any notes below it are what earlier divers did and left undone.",
-	);
-	if (feat) {
-		io.log(
-			`Read the feat it serves at ${toPosixPath(relative(process.cwd(), feat.path))}, ` +
-				`and whatever those two link to in their frontmatter.`,
-		);
-	}
-	io.log(
-		"Then do only the requested work, not more. " +
-			"Commit completed work in every scoped repo that has a work branch. " +
-			"As you progress, use `nosedive append-log.dive` to record what you did, and what you think is next. " +
-			"Do not edit the brief or change any scopes. " +
-			(packOnDone
-				? "When done, run `nosedive pack` to capture your work and release the dive. "
-				: "When done, leave the work in place for the pilot to review. ") +
-			"Do not run `nosedive land` unless you have been directly instructed to.",
-	);
-	io.log(renderDiveScratchHandoff(bridgeDir, workspaceDir, dive.id));
-}
-
-/**
  * What jump did, appended to the dive: a lead line saying the dive was picked
  * up and by whom, then the mechanical record of what was hydrated and where --
  * one line per scoped repo, by kb `name` rather than quid, same reasoning as
@@ -534,7 +491,16 @@ export function jump(args: string[], io: CommandIo): void {
 		return;
 	}
 
-	printWorkDirective(dive, feat, rc.bridgeDir, rc.workspaceDir, !bridgeIsOnTrunk(rc.bridgeDir), io);
+	printWorkDirective(
+		dive,
+		feat,
+		rc.bridgeDir,
+		rc.workspaceDir,
+		!bridgeIsOnTrunk(rc.bridgeDir),
+		hydratedEntries,
+		kbDocs,
+		io,
+	);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

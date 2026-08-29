@@ -50,7 +50,7 @@ function sourceRepo(name) {
  * observable across more than one scope: with a single repo, reporting each
  * failure as it is found and reporting them all at once are the same output.
  */
-function setup(name, { repos = 1 } = {}) {
+function setup(name, { repos = 1, workBranch = true } = {}) {
 	const origin = bareRemote(`${name}-origin.git`);
 	const bridge = join(tmp, name);
 	mkdirSync(bridge, { recursive: true });
@@ -87,7 +87,9 @@ meta:
 		);
 	}
 	const featScopes = repoIds
-		.map((repoId) => `  - ${repoId}:\n      work-branch: work/jump-test.nosedive`)
+		.map((repoId) =>
+			workBranch ? `  - ${repoId}:\n      work-branch: work/jump-test.nosedive` : `  - ${repoId}`,
+		)
 		.join("\n");
 	write(
 		join(bridge, "kb", `${featId}.md`),
@@ -468,6 +470,53 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 		pinnedRef,
 		"scope should hydrate at the dive's pinned ref",
 	);
+	assert.match(
+		result.stdout,
+		/Commit completed work in these repos, and nowhere else:/,
+		"a one-scope jump should name where to commit rather than a generic instruction",
+	);
+	assert.match(
+		result.stdout,
+		/^- workspace\/noop-repo \(kb name: noop-repo\) -- work branch work\/jump-test\.nosedive$/m,
+		"the enumeration should carry the scope's workspace path, kb name and work branch",
+	);
+});
+
+test("jump omits a hydrated scope that names no work branch", () => {
+	const { bridge } = setup("branchless", { workBranch: false });
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a dive whose scope names no work branch");
+	assert.match(
+		result.stdout,
+		/No hydrated repo names a work branch, so commit nothing\./,
+		"a scope with no work branch is not a place to commit",
+	);
+	assert.match(
+		result.stdout,
+		/^- workspace\/branchless-repo \(kb name: branchless-repo\)$/m,
+		"a branchless scope is still listed, as reference, and carries no work branch",
+	);
+	assert.match(
+		result.stdout,
+		/Reference repos -- read only, commit nothing here:/,
+		"the reference section says what an unexplained checkout in the workspace is for",
+	);
+	assert.doesNotMatch(result.stdout, /Commit completed work in these repos/);
+});
+
+test("jump with no scoped repo says there is nothing to commit", () => {
+	const { bridge, diveId } = setup("zero-repo", { repos: 0 });
+
+	const result = run(["jump"], bridge);
+	assertOk(result, "jump failed on a dive with no scoped repo");
+	assert.match(result.stderr, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.match(
+		result.stdout,
+		/This dive hydrated no scoped repo, so there is nothing to commit\./,
+		"a zero-scope jump should say so instead of listing",
+	);
+	assert.doesNotMatch(result.stdout, /Commit completed work in these repos/);
 });
 
 test("jump installs provenance for commits made in its hydrated worktree", () => {

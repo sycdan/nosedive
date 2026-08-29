@@ -19,10 +19,6 @@ npm i -g nosedive
 
 Requires Node 22 or newer.
 
-<!-- DEMO SLOT: replace with assets/demo.gif, converted from the recorded cast with `agg`.
-     GitHub and npm cannot render the asciinema player, so this slot takes a GIF.
-     @see kb/01a04e21-40d3-733f-bbc9-5274bc42a31c.md -->
-
 ## Quickstart
 
 Start from a clone of a repo you control -- an empty GitHub repo on the free tier is

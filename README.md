@@ -356,7 +356,7 @@ More: nosedive render 2c678acb-b4b8-5623-a900-12939da5d472
 npx -y nosedive@2026.8.29-1787982179029 record.repo --help
 ```
 ```md
-Usage: nosedive record.repo [<repo>] [--url <clone-url-or-local-path>] [--name <slug>] [--base-branch <branch>]
+Usage: nosedive record.repo [<repo>] [--remote <clone-url-or-local-path>] [--url <page-url>] [--name <slug>] [--base-branch <branch>]
 
 Register a Git repository with the bridge and make it visible through the backlog.
 

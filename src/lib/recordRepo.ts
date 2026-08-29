@@ -31,11 +31,27 @@ export interface RecordRepoOptions {
 	/** The repo doc to patch. Absent means register a new repository. */
 	ref?: string;
 	/** The clone URL or local path the repository is reached at. */
-	url?: string;
+	remote?: string;
+	/** The human-facing repository page, written to `meta.url`. Never derived. */
+	page?: string;
 	name?: string;
 	baseBranch?: string;
-	/** The URL arrived as a positional, in the spelling this level deprecates. */
-	positionalUrl: boolean;
+	/** The remote arrived as a positional, in the spelling this level deprecates. */
+	positionalRemote: boolean;
+	/** `--url` supplied the remote, in the spelling this level deprecates. */
+	urlAsRemote: boolean;
+	/** `--url` was read as the page on a patch, where it once meant the remote. */
+	urlAsPageOnEdit: boolean;
+}
+
+/**
+ * A page is somewhere a person opens in a browser, so only http(s) can be one.
+ * An ssh remote or a local path reaching `--url` means the caller wanted
+ * `--remote` under its old name, and saying so beats writing an unopenable
+ * `meta.url`.
+ */
+function looksLikePage(value: string): boolean {
+	return /^https?:\/\//i.test(value);
 }
 
 export interface RecordRepoPlan {
@@ -58,11 +74,19 @@ export function parseRecordRepoArgs(
 	args: string[],
 	isDocRef: (arg: string) => boolean,
 ): RecordRepoOptions {
-	const options: RecordRepoOptions = { positionalUrl: false };
+	const options: RecordRepoOptions = {
+		positionalRemote: false,
+		urlAsRemote: false,
+		urlAsPageOnEdit: false,
+	};
+	// `--url` is held apart until the whole call is known, because what it means
+	// depends on whether a remote arrived some other way and on whether this is
+	// a create or a patch.
+	let url: string | undefined;
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
-		const flag = ["--url", "--name", "--base-branch"].find(
+		const flag = ["--remote", "--url", "--name", "--base-branch"].find(
 			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
 		);
 		if (!flag) {
@@ -71,25 +95,49 @@ export function parseRecordRepoArgs(
 				if (options.ref !== undefined) throw new Error(`unexpected record.repo argument: ${arg}`);
 				options.ref = arg;
 			} else {
-				if (options.url !== undefined) throw new Error(`record.repo url given twice: ${arg}`);
-				options.url = arg;
-				options.positionalUrl = true;
+				if (options.remote !== undefined) throw new Error(`record.repo remote given twice: ${arg}`);
+				options.remote = arg;
+				options.positionalRemote = true;
 			}
 			continue;
 		}
 		const value = arg === flag ? optionValue(args, i + 1, flag) : arg.slice(flag.length + 1);
 		if (!value.trim()) throw new Error(`${flag} requires a value`);
 		if (arg === flag) i += 1;
-		if (flag === "--url") {
-			if (options.url !== undefined) throw new Error("record.repo url given twice");
-			options.url = value;
+		if (flag === "--remote") {
+			if (options.remote !== undefined) throw new Error("record.repo remote given twice");
+			options.remote = value;
+		} else if (flag === "--url") {
+			if (url !== undefined) throw new Error("record.repo url given twice");
+			url = value;
 		} else if (flag === "--name") options.name = assertSlug(value, "record.repo name");
 		else options.baseBranch = value.trim();
 	}
 
-	options.url = options.url?.trim();
-	if (options.ref === undefined) {
-		if (!options.url) throw new Error("record.repo requires --url <clone-url-or-local-path>");
+	options.remote = options.remote?.trim();
+	url = url?.trim();
+
+	if (url) {
+		if (options.ref === undefined && options.remote === undefined) {
+			// Nothing else named a source and a create has to have one, so this is
+			// the retired spelling. Reading it as the remote keeps every call
+			// written before the rename working exactly as it did.
+			options.remote = url;
+			options.urlAsRemote = true;
+		} else {
+			if (!looksLikePage(url)) {
+				throw new Error(
+					`--url records the human-facing repository page and must be an http(s) URL: ${url}. ` +
+						"Pass --remote <clone-url-or-local-path> to set the clone source.",
+				);
+			}
+			options.page = url;
+			options.urlAsPageOnEdit = options.ref !== undefined;
+		}
+	}
+
+	if (options.ref === undefined && !options.remote) {
+		throw new Error("record.repo requires --remote <clone-url-or-local-path>");
 	}
 	return options;
 }
@@ -166,6 +214,8 @@ export function renderRepoDoc(options: {
 	name: string;
 	workspacePath: string;
 	trunk: string;
+	/** The human-facing repository page. Omitted entirely when absent. */
+	url?: string;
 	cloud?: string;
 	local?: string;
 	/** What minted the doc. `seed` mints one too, and a doc that names the wrong command is drift. */
@@ -183,6 +233,7 @@ export function renderRepoDoc(options: {
 		`gist: ${quoteYamlString(`Repository registered as ${options.name}.`)}`,
 		"meta:",
 		`  path: ${quoteYamlString(options.workspacePath)}`,
+		...(options.url ? [`  url: ${quoteYamlString(options.url)}`] : []),
 		`  trunk: ${quoteYamlString(options.trunk)}`,
 		"  remotes:",
 		...remotes,
@@ -234,8 +285,8 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 	if (!rc.kbDir) throw new Error("record.repo requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.repo requires a configured workspace directory");
 
-	const isRemote = remoteLooksLikeUrl(options.url!);
-	const localPath = isRemote ? undefined : resolve(cwd, options.url!);
+	const isRemote = remoteLooksLikeUrl(options.remote!);
+	const localPath = isRemote ? undefined : resolve(cwd, options.remote!);
 	let cloud: string | undefined;
 	let local: string | undefined;
 	let inferredBranch: string | undefined;
@@ -254,11 +305,11 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 		const origin = gitOutput(localPath, ["remote", "get-url", "origin"]);
 		if (origin && remoteLooksLikeUrl(origin)) cloud = origin;
 	} else {
-		cloud = options.url!;
-		inferredBranch = remoteHead(options.url!, rc.bridgeDir);
+		cloud = options.remote!;
+		inferredBranch = remoteHead(options.remote!, rc.bridgeDir);
 	}
 
-	const name = options.name ?? inferredRepoName(localPath ?? options.url!);
+	const name = options.name ?? inferredRepoName(localPath ?? options.remote!);
 	const branch = options.baseBranch ?? inferredBranch;
 	if (!branch) {
 		throw new Error(
@@ -290,7 +341,15 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 		name,
 		bridgeDir: rc.bridgeDir,
 		repoPath,
-		repoContent: renderRepoDoc({ id, name, workspacePath, trunk: branch, cloud, local }),
+		repoContent: renderRepoDoc({
+			id,
+			name,
+			workspacePath,
+			trunk: branch,
+			url: options.page,
+			cloud,
+			local,
+		}),
 		backlogPath,
 		backlogContent: renderBacklogRepoScope(backlogBefore, backlogPath, id),
 	};
@@ -347,14 +406,15 @@ function editRepo(
 		const clash = repoDocs(kbDocs).find((doc) => doc.name === options.name && doc.id !== repo.id);
 		if (clash) throw new Error(`repo name is already registered: ${options.name} (${clash.id})`);
 	}
-	const remote = options.url ? remoteFor(options.url, rc) : undefined;
+	const remote = options.remote ? remoteFor(options.remote, rc) : undefined;
 	// A trunk that cannot be inferred is a create-time refusal, not an edit one:
-	// the doc already names one, and `--url` on its own is not a request to
+	// the doc already names one, and `--remote` on its own is not a request to
 	// change it. Inferring silently would move the trunk nobody asked to move.
 	const trunk = options.baseBranch;
 
 	editKbDoc(repo.path, (doc, body) => {
 		if (options.name) doc.set("name", options.name);
+		if (options.page) doc.setIn(["meta", "url"], options.page);
 		if (trunk) doc.setIn(["meta", "trunk"], trunk);
 		if (remote) doc.setIn(["meta", "remotes", remote.key], remote.value);
 		return options.name ? retitleGeneratedHeading(body, repo.name, options.name) : body;
@@ -367,6 +427,7 @@ function editRepo(
 		// repository, not about moving a checkout out from under them.
 		io.log(`Renamed to ${name}; its workspace path is unchanged`);
 	}
+	if (options.page) io.log(`Set meta.url to ${options.page}`);
 	if (remote) io.log(`Set meta.remotes.${remote.key}`);
 	if (trunk) io.log(`Set meta.trunk to ${trunk}`);
 	const committed = commitBridgeDocs(rc.bridgeDir, `repo(${name}): updated`, [repo.path], io);
@@ -383,7 +444,19 @@ export function recordRepo(args: string[], io: CommandIo): void {
 	// the same shape.
 	const kbDocs = existsSync(rc.kbDir) ? loadKbDocs(rc.kbDir, rc.bridgeDir) : [];
 	const options = parseRecordRepoArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
-	if (options.positionalUrl) io.err(positionalGistNotice("record.repo", "--url"));
+	if (options.positionalRemote) io.err(positionalGistNotice("record.repo", "--remote"));
+	if (options.urlAsRemote) {
+		io.err(
+			"record.repo: --url now records the human-facing repository page. " +
+				"It was read as the clone source here because nothing else named one -- pass --remote instead.",
+		);
+	}
+	if (options.urlAsPageOnEdit) {
+		io.err(
+			"record.repo: --url sets meta.url, the human-facing repository page. " +
+				"Before this it set a meta.remotes entry -- pass --remote to change the clone source.",
+		);
+	}
 	if (options.ref === undefined) createRepo(options, io);
 	else editRepo(rc, kbDocs, options, io);
 }

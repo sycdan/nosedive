@@ -59,8 +59,8 @@ A few things worth knowing:
 - Made a wrong turn? `nosedive bail --reason "<why>"` abandons the active dive. The
   reason is always required, so it never fires by accident.
 
-Next: [your first gate](kb/01a031cd-a1e1-7c6d-9a71-4ab49b96da0a.md), which is how a dive
-learns to tell you it is done.
+Next: [your first gate](kb/01a031cd-a1e1-7c6d-9a71-4ab49b96da0a.md), which is how an agent
+learns when its work is done.
 
 ## The problem
 

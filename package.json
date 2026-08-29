@@ -22,6 +22,7 @@
 		"nosedive": "dist/cli.js"
 	},
 	"files": [
+		"COMMANDS.md",
 		"dist",
 		"kb",
 		".nosedive-ref"

@@ -26,7 +26,7 @@ test("what a finalization writes is what the check reads back", () => {
 
 	const result = finalizePublish({ repo: dir, source, version: VERSION });
 
-	assert.equal(result.readmeChanged, true);
+	assert.equal(result.surfacesChanged, true);
 	assert.deepEqual(checkPublishFinalization({ repo: dir, commit: result.commit, source }), {
 		ok: true,
 		commit: result.commit,
@@ -40,12 +40,12 @@ test("the subject reports whether the generated surfaces moved", () => {
 	regenerateReadme(updated.dir);
 	stampVersion(updated.dir, VERSION);
 	finalizePublish({ repo: updated.dir, source: updated.source, version: VERSION });
-	assert.equal(subject(updated.dir), `publish(nosedive@${VERSION}): README surfaces updated`);
+	assert.equal(subject(updated.dir), `publish(nosedive@${VERSION}): doc surfaces updated`);
 
 	const unchanged = sourceRepo(tmp, "readme-unchanged");
 	stampVersion(unchanged.dir, VERSION);
 	finalizePublish({ repo: unchanged.dir, source: unchanged.source, version: VERSION });
-	assert.equal(subject(unchanged.dir), `publish(nosedive@${VERSION}): README surfaces unchanged`);
+	assert.equal(subject(unchanged.dir), `publish(nosedive@${VERSION}): doc surfaces unchanged`);
 });
 
 test("a build step that edited tracked source fails the release instead of shipping", () => {
@@ -55,7 +55,7 @@ test("a build step that edited tracked source fails the release instead of shipp
 
 	assert.throws(
 		() => finalizePublish({ repo: dir, source, version: VERSION }),
-		/src\/nosedive\.ts changed, outside README\.md, package\.json, package-lock\.json/,
+		/src\/nosedive\.ts changed, outside /,
 	);
 	assert.equal(subject(dir), "base");
 });

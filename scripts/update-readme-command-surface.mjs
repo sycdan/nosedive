@@ -6,7 +6,7 @@ import YAML from "yaml";
 import { renderCommandHelpText } from "../src/lib/commandHelpText.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const readmePath = join(root, "README.md");
+const targetPath = join(root, "COMMANDS.md");
 const packageJsonPath = join(root, "package.json");
 const kbDir = join(root, "kb");
 const libDir = join(root, "src", "lib");
@@ -217,7 +217,7 @@ function replaceGeneratedSurface(readme, generated) {
 	if (legacyTable.test(readme)) return readme.replace(legacyTable, `${generated}\n`);
 
 	fail(
-		`README.md is missing ${beginMarker} / ${endMarker} markers and no legacy command table was found`,
+		`COMMANDS.md is missing ${beginMarker} / ${endMarker} markers and no legacy command table was found`,
 	);
 }
 
@@ -327,30 +327,30 @@ function renderLevels() {
 function replaceGeneratedLevels(readme, generated) {
 	const existingRegion = new RegExp(`${levelsBeginMarker}[\\s\\S]*?${levelsEndMarker}`);
 	if (existingRegion.test(readme)) return readme.replace(existingRegion, generated);
-	fail(`README.md is missing ${levelsBeginMarker} / ${levelsEndMarker} markers`);
+	fail(`COMMANDS.md is missing ${levelsBeginMarker} / ${levelsEndMarker} markers`);
 }
 
 function main() {
 	const checkOnly = process.argv.includes("--check");
-	const readme = read(readmePath);
+	const target = read(targetPath);
 	const generated = renderCommandSurface();
-	const withSurface = replaceGeneratedSurface(readme, generated);
+	const withSurface = replaceGeneratedSurface(target, generated);
 	const generatedLevels = renderLevels();
 	const updated = replaceGeneratedLevels(withSurface, generatedLevels);
 
 	if (checkOnly) {
-		if (updated !== readme) {
-			console.error("README command surface is stale. Run `npm run commands:surface`.");
+		if (updated !== target) {
+			console.error("COMMANDS.md command surface is stale. Run `npm run commands:surface`.");
 			process.exit(1);
 		}
-		console.log("README command surface is up to date.");
+		console.log("COMMANDS.md command surface is up to date.");
 		return;
 	}
-	writeFileSync(readmePath, updated, "utf8");
-	console.log("Updated README command surface.");
+	writeFileSync(targetPath, updated, "utf8");
+	console.log("Updated COMMANDS.md command surface.");
 }
 
-// Importing this module must not rewrite README: contract-help asks it for the
+// Importing this module must not rewrite COMMANDS.md: contract-help asks it for the
 // surface it would generate, and never for the file on disk.
 if (
 	process.argv[1] &&

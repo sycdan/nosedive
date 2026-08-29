@@ -10,7 +10,7 @@ const SOURCE_TRAILER = "Nosedive-Publish-Source";
 const VERSION_TRAILER = "Nosedive-Publish-Version";
 
 /** Everything a finalization is allowed to touch. Anything else is somebody's work. */
-const FINALIZED_PATHS = ["README.md", "package.json", "package-lock.json"];
+const FINALIZED_PATHS = ["README.md", "COMMANDS.md", "package.json", "package-lock.json"];
 
 /**
  * The commit is made by the pipeline, not by whoever pushed, and the runner has
@@ -73,9 +73,9 @@ export function finalizePublish({ repo = root, source, version }) {
 		if (declared !== version) throw new Error(`${label} is ${declared}, not ${version}`);
 	}
 
-	const readmeChanged = changed.includes("README.md");
-	const subject = `publish(nosedive@${version}): README surfaces ${
-		readmeChanged ? "updated" : "unchanged"
+	const surfacesChanged = changed.includes("README.md") || changed.includes("COMMANDS.md");
+	const subject = `publish(nosedive@${version}): doc surfaces ${
+		surfacesChanged ? "updated" : "unchanged"
 	}`;
 	// One -m for both trailers, because Git reads only the last paragraph of a
 	// message as its trailer block; a paragraph each would leave the first one
@@ -84,7 +84,7 @@ export function finalizePublish({ repo = root, source, version }) {
 	git(repo, ["add", "--", ...changed]);
 	git(repo, [...IDENTITY, "commit", "-m", subject, "-m", trailers]);
 
-	return { commit: git(repo, ["rev-parse", "HEAD"]).trim(), version, readmeChanged };
+	return { commit: git(repo, ["rev-parse", "HEAD"]).trim(), version, surfacesChanged };
 }
 
 function optionValue(args, name) {
@@ -103,7 +103,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	try {
 		const result = finalizePublish({ source, version });
 		console.log(`finalization=${result.commit}`);
-		console.log(`readme=${result.readmeChanged}`);
+		console.log(`surfaces=${result.surfacesChanged}`);
 	} catch (err) {
 		console.error(`refusing to finalize: ${err instanceof Error ? err.message : String(err)}`);
 		process.exit(1);

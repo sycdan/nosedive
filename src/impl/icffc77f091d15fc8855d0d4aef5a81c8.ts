@@ -29,8 +29,9 @@ import {
 	uuidLike,
 } from "../lib/coreParsing.js";
 import {
-	nosediveInvocation,
+	nosediveInvocationFor,
 	nosedivePackageVersion,
+	packageRoot,
 	printCommandHelp,
 	renderTopLevelHelp,
 	renderedSurfaceDigest,
@@ -76,7 +77,9 @@ function renderManagedInstructions(): string {
 		"- If any `nosedive <command>` output line starts with `nose:`, it is a direct call to attention; handle it before tackling other work.",
 		"- Before starting work, greet the pilot casually.",
 		"- Call `nosedive preflight` before your first reply to the pilot in a session, but only if `nosedive-pilot-name` is unknown.",
-		`- If \`nosedive\` is not in your env, call it with \`${nosediveInvocation()}\` instead.`,
+		// Never this build's own path, even from a checkout: the block is checked
+		// in and read on machines where that path does not exist. @see kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md
+		`- If \`nosedive\` is not in your env, call it with \`${nosediveInvocationFor(false, packageRoot())}\` instead.`,
 		"",
 		"These commands are available to you:",
 		"",

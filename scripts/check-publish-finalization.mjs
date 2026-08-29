@@ -11,9 +11,9 @@ const SOURCE_TRAILER = "Nosedive-Publish-Source";
 const VERSION_TRAILER = "Nosedive-Publish-Version";
 
 /** Everything a finalization is allowed to touch. Anything else is somebody's work. */
-const FINALIZED_PATHS = ["README.md", "package.json", "package-lock.json"];
+const FINALIZED_PATHS = ["README.md", "COMMANDS.md", "package.json", "package-lock.json"];
 
-/** Both README surface generators, each of which supports `--check`. */
+/** Doc surface generators must support `--check`. */
 const README_GENERATORS = [
 	"scripts/update-readme-command-surface.mjs",
 	"scripts/update-readme-faq.mjs",

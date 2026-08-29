@@ -96,7 +96,7 @@
 [8.743, "o", "Next steps:\r\n"]
 [8.832, "o", "nosedive record.dive --feat add-a-hello-note --gist \"<one line>\" --brief \"<what done looks like>\"\r\n"]
 [9.932, "o", "\u001b[32m~/BASE\u001b[0m \u001b[34m$\u001b[0m "]
-[9.932, "o", "nosedive record.dive --feat add-a-hello-note \\n    --gist \"Add a hello note to the bridge\" \\n    --brief \"Write hello.md in the bridge worktree and land it.\""]
+[9.932, "o", "nosedive record.dive --feat add-a-hello-note \\\r\n\u001b[34m>\u001b[0m --gist \"Add a hello note to the bridge\" \\\r\n\u001b[34m>\u001b[0m --brief \"Write hello.md in the bridge worktree and land it.\""]
 [10.232, "o", "\r\n"]
 [10.307, "o", "Recorded kb/01a04e50-4153-7660-9bb1-fb096ca0f273.md\r\n"]
 [10.344, "o", "Committed dive(add-a-hello-note.a0f273): created\r\n"]

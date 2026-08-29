@@ -34,7 +34,7 @@ test("render makes packaged kb links followable from the current directory", () 
 test("render leaves anchors and Markdown examples in code unchanged", () => {
 	const rendered = run(["render", "00000000-0000-7bee-b718-0c6abe48ee4f"], noBridge);
 	assertOk(rendered, "render with anchors and code examples failed");
-	assert.match(rendered.stdout, /\[Kinds\]\(#kinds\)/);
+	assert.match(rendered.stdout, /\[Links\]\(#links\)/);
 	assert.match(rendered.stdout, /`\[slug chain\]\(019f39dc-8ebf-7735-812d-522cc242a8b8\.md\)`/);
 });
 

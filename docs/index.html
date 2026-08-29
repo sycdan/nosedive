@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Nosedive: intentional velocity</title>
+		<meta
+			name="description"
+			content="Nosedive turns a plain notes repo into a bridge: a knowledge base and orchestration hub for agentic development across one or more repos."
+		/>
+		<link rel="icon" href="assets/nosedive-logo-circle.png" />
+		<meta property="og:title" content="Nosedive: intentional velocity" />
+		<meta
+			property="og:description"
+			content="Pick what's next, and do it by the book. A knowledge base and orchestration hub for agentic development."
+		/>
+		<meta property="og:image" content="https://nosedive.dev/assets/nosedive-logo-circle.png" />
+		<meta name="twitter:card" content="summary" />
+		<style>
+			:root {
+				--bg: #fbfbfd;
+				--panel: #ffffff;
+				--ink: #16181d;
+				--muted: #5a6070;
+				--line: #e2e5ec;
+				--accent: #1f6feb;
+				--code-bg: #f4f6fa;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg: #0e1014;
+					--panel: #14171d;
+					--ink: #e8eaf0;
+					--muted: #99a1b3;
+					--line: #262b35;
+					--accent: #6aa6ff;
+					--code-bg: #171b22;
+				}
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+					sans-serif;
+				-webkit-font-smoothing: antialiased;
+			}
+			main {
+				max-width: 46rem;
+				margin: 0 auto;
+				padding: 3.5rem 1.25rem 5rem;
+			}
+			header {
+				text-align: center;
+			}
+			header img {
+				width: 104px;
+				height: 104px;
+			}
+			h1 {
+				font-size: clamp(2rem, 6vw, 2.75rem);
+				margin: 1rem 0 0.35rem;
+				letter-spacing: -0.02em;
+			}
+			.tagline {
+				color: var(--muted);
+				font-size: 1.05rem;
+				margin: 0 0 1.5rem;
+			}
+			.lede {
+				font-size: 1.1rem;
+				margin: 0 auto 2rem;
+				max-width: 38rem;
+			}
+			.cta {
+				display: flex;
+				gap: 0.6rem;
+				justify-content: center;
+				flex-wrap: wrap;
+				margin-bottom: 3rem;
+			}
+			.cta a {
+				display: inline-block;
+				padding: 0.55rem 1.1rem;
+				border-radius: 8px;
+				border: 1px solid var(--line);
+				text-decoration: none;
+				color: var(--ink);
+				font-weight: 600;
+				font-size: 0.95rem;
+			}
+			.cta a.primary {
+				background: var(--accent);
+				border-color: var(--accent);
+				color: #fff;
+			}
+			h2 {
+				font-size: 1.3rem;
+				margin: 2.75rem 0 0.75rem;
+				letter-spacing: -0.01em;
+			}
+			p {
+				margin: 0 0 1rem;
+			}
+			pre {
+				background: var(--code-bg);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 1rem 1.1rem;
+				overflow-x: auto;
+				font-size: 0.875rem;
+				line-height: 1.6;
+			}
+			code {
+				font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+			}
+			:not(pre) > code {
+				background: var(--code-bg);
+				border: 1px solid var(--line);
+				border-radius: 5px;
+				padding: 0.1em 0.35em;
+				font-size: 0.9em;
+			}
+			.demo {
+				border: 1px dashed var(--line);
+				border-radius: 10px;
+				padding: 2.5rem 1rem;
+				text-align: center;
+				color: var(--muted);
+				background: var(--panel);
+			}
+			ul {
+				padding-left: 1.15rem;
+			}
+			li {
+				margin-bottom: 0.4rem;
+			}
+			a {
+				color: var(--accent);
+			}
+			footer {
+				margin-top: 3.5rem;
+				padding-top: 1.5rem;
+				border-top: 1px solid var(--line);
+				color: var(--muted);
+				font-size: 0.875rem;
+				text-align: center;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<header>
+				<img src="assets/nosedive-logo-circle.png" alt="Nosedive logo" width="104" height="104" />
+				<h1>Nosedive</h1>
+				<p class="tagline"><em>Pick what's next, and do it by the book.</em></p>
+			</header>
+
+			<p class="lede">
+				Nosedive turns a plain notes repo into a <strong>bridge</strong>: a knowledge base and
+				orchestration hub for agentic development across one or more implementation repos. Work is
+				split into small vertical slices before anything is built, and what "done" looks like is
+				captured as executable checks that agents can run to find out whether they are actually
+				finished.
+			</p>
+
+			<div class="cta">
+				<a class="primary" href="https://github.com/sycdan/nosedive">GitHub</a>
+				<a href="https://www.npmjs.com/package/nosedive">npm</a>
+				<a href="https://github.com/sycdan/nosedive/blob/main/COMMANDS.md">Commands</a>
+			</div>
+
+			<!-- DEMO SLOT: replace with the recorded asciinema embed -->
+			<div class="demo">Demo recording goes here.</div>
+
+			<h2>The problem</h2>
+			<p>
+				Agents can make code appear quickly. Getting from there to something we understand and are
+				willing to ship still takes work.
+			</p>
+			<p>
+				A change can span days, people, agents, and repositories. When its context is scattered
+				across tickets, chats, branches, and people's heads, three basic questions get harder to
+				answer: What are we doing? Where did we leave off? How will we know it works?
+			</p>
+			<p>
+				Nosedive keeps the answers next to the work, so a human or an agent can pick it up without
+				relying on one machine, one chat, or one person's memory.
+			</p>
+
+			<h2>Install</h2>
+			<pre><code>npm i -g nosedive</code></pre>
+			<p>Requires Node 22 or newer.</p>
+
+			<h2>Quickstart</h2>
+			<p>
+				Start from a clone of a repo you control -- an empty GitHub repo on the free tier is enough.
+			</p>
+			<pre><code>git clone &lt;your-notes-repo&gt; ~/BASE &amp;&amp; cd ~/BASE
+
+git config user.name "Test Pilot"
+git config user.email "test@nosedive.invalid"
+
+nosedive seed
+
+nosedive record.feat --gist "Add a hello note"
+nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..."
+nosedive jump
+
+# do the work in the hydrated workspace, and commit
+
+nosedive pack     # stopping partway; banks WIP as patches
+nosedive jump     # picks the same dive back up
+nosedive land     # pushes work/add-a-hello-note</code></pre>
+			<p>Every command prints a suggestion for the next one, so you can follow the prompts.</p>
+
+			<h2>The vocabulary</h2>
+			<ul>
+				<li><strong>repo</strong> -- an implementation boundary.</li>
+				<li><strong>feat</strong> -- a goal we want to accomplish.</li>
+				<li><strong>dive</strong> -- one bounded attempt at that goal.</li>
+				<li><strong>gate</strong> -- a repeatable check on the work.</li>
+				<li><strong>memo</strong> -- durable information found by following a breadcrumb.</li>
+			</ul>
+
+			<footer>
+				MIT licensed. Built by
+				<a href="https://github.com/sycdan">Dan Stace</a>.
+				<a href="https://sycdan.wordpress.com/2026/08/29/my-answer-to-ai-burnout-more-ai-but-context-is-king/"
+					>Why it exists</a
+				>.
+			</footer>
+		</main>
+	</body>
+</html>

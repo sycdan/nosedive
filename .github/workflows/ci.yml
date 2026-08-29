@@ -17,7 +17,7 @@ jobs:
           cache: npm
       - run: npm ci
       # @see kb/01a03c27-918e-737a-b288-1b27a6c2ddca.md
-      - name: Regenerate README surfaces
+      - name: Regenerate doc surfaces
         run: |
           npm run commands:surface
           npm run faq:surface

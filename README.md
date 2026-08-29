@@ -26,7 +26,7 @@ up without relying on one machine, one chat, or one person’s memory.
 
 ## Nouns
 
-The domain roles Nosedive keeps track of:
+The domain entity roles Nosedive keeps track of on its knowledge base:
 
 - [repo](kb/00000000-0000-7a04-a8f4-6f75484220cb.md) — an implementation boundary.
 - [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a goal we want to accomplish.

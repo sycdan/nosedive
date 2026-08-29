@@ -93,7 +93,7 @@ Invoked directly by humans, or indirectly via agents.
 #### [Add repo to feat](kb/16b4fee2-cc6c-5c29-9327-fde39a35b0a8.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 add-repo.feat --help
+npx -y nosedive@2026.8.29-1787984722374 add-repo.feat --help
 ```
 ```md
 Usage: nosedive add-repo.feat <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]
@@ -106,7 +106,7 @@ More: nosedive render 16b4fee2-cc6c-5c29-9327-fde39a35b0a8
 #### [Append log](kb/f29ec670-caea-5b77-ba51-c7dba1468b0b.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 append-log.dive --help
+npx -y nosedive@2026.8.29-1787984722374 append-log.dive --help
 ```
 ```md
 Usage: nosedive append-log.dive [--label <text>] [--gist <line>] < body
@@ -119,7 +119,7 @@ More: nosedive render f29ec670-caea-5b77-ba51-c7dba1468b0b
 #### [Bail](kb/337b18d6-1cca-57b5-8d26-bb6aef1f50e9.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 bail --help
+npx -y nosedive@2026.8.29-1787984722374 bail --help
 ```
 ```md
 Usage: nosedive bail --reason "<why>"
@@ -132,7 +132,7 @@ More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 #### [Dehydrate repo](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 dehydrate-repo.workspace --help
+npx -y nosedive@2026.8.29-1787984722374 dehydrate-repo.workspace --help
 ```
 ```md
 Usage: nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--force]
@@ -145,7 +145,7 @@ More: nosedive render 32123800-a61d-5ea1-8b85-98c288b127b3
 #### [Dump backlog](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 dump-backlog --help
+npx -y nosedive@2026.8.29-1787984722374 dump-backlog --help
 ```
 ```md
 Usage: nosedive dump-backlog
@@ -158,7 +158,7 @@ More: nosedive render cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1
 #### [Find](kb/2e5cd9a9-769a-5eda-8617-868c70f13757.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 find --help
+npx -y nosedive@2026.8.29-1787984722374 find --help
 ```
 ```md
 Usage: nosedive find <role> [<term>] [--scope <repo>] [--min-age <duration>] [--max-age <duration>]
@@ -171,7 +171,7 @@ More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 #### [Hydrate repo](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 hydrate-repo.workspace --help
+npx -y nosedive@2026.8.29-1787984722374 hydrate-repo.workspace --help
 ```
 ```md
 Usage: nosedive hydrate-repo.workspace <repo-id-or-name> [--at <ref>] [--read-only]
@@ -184,7 +184,7 @@ More: nosedive render c4e93002-2925-58bd-9b70-d917017a9fc7
 #### [Jump](kb/f2373f5f-d30d-5d5d-967c-bef56346bbb9.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 jump --help
+npx -y nosedive@2026.8.29-1787984722374 jump --help
 ```
 ```md
 Usage: nosedive jump [<dive-ref>]
@@ -197,7 +197,7 @@ More: nosedive render f2373f5f-d30d-5d5d-967c-bef56346bbb9
 #### [Land](kb/587d3f73-2534-5179-b111-ce6c83d6814d.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 land --help
+npx -y nosedive@2026.8.29-1787984722374 land --help
 ```
 ```md
 Usage: nosedive land [--hard]
@@ -210,7 +210,7 @@ More: nosedive render 587d3f73-2534-5179-b111-ce6c83d6814d
 #### [List dives](kb/116ff634-3742-51ba-977f-44fc5b21e9e4.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 list-dives --help
+npx -y nosedive@2026.8.29-1787984722374 list-dives --help
 ```
 ```md
 Usage: nosedive list-dives [<feat-or-deck>] [--include-historical] [--json]
@@ -223,7 +223,7 @@ More: nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4
 #### [Mint](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 mint --help
+npx -y nosedive@2026.8.29-1787984722374 mint --help
 ```
 ```md
 Usage: nosedive mint [count] [--ms <utcmillis>] [--ts <iso8601>]
@@ -236,7 +236,7 @@ More: nosedive render e8909eff-aee5-54f2-9ce2-85c2582e39f0
 #### [Note](kb/6274f51e-664f-5b93-a828-52f699161e9a.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 note --help
+npx -y nosedive@2026.8.29-1787984722374 note --help
 ```
 ```md
 Usage: nosedive note [<kind>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
@@ -249,7 +249,7 @@ More: nosedive render 6274f51e-664f-5b93-a828-52f699161e9a
 #### [Nuke](kb/3570e756-f8e7-5e95-b911-09d7d116cd23.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 nuke --help
+npx -y nosedive@2026.8.29-1787984722374 nuke --help
 ```
 ```md
 Usage: nosedive nuke --config|--workspace
@@ -262,7 +262,7 @@ More: nosedive render 3570e756-f8e7-5e95-b911-09d7d116cd23
 #### [Pack](kb/9e28155b-b018-5e00-a3a1-707593167e1e.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 pack --help
+npx -y nosedive@2026.8.29-1787984722374 pack --help
 ```
 ```md
 Usage: nosedive pack
@@ -275,7 +275,7 @@ More: nosedive render 9e28155b-b018-5e00-a3a1-707593167e1e
 #### [Plan](kb/162068fe-62ff-5f56-945a-76b24ffeb439.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 plan --help
+npx -y nosedive@2026.8.29-1787984722374 plan --help
 ```
 ```md
 Usage: nosedive plan [<context>]
@@ -288,7 +288,7 @@ More: nosedive render 162068fe-62ff-5f56-945a-76b24ffeb439
 #### [Preflight](kb/67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 preflight --help
+npx -y nosedive@2026.8.29-1787984722374 preflight --help
 ```
 ```md
 Usage: nosedive preflight
@@ -301,7 +301,7 @@ More: nosedive render 67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e
 #### [Prove](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 prove --help
+npx -y nosedive@2026.8.29-1787984722374 prove --help
 ```
 ```md
 Usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]
@@ -314,7 +314,7 @@ More: nosedive render af12dc22-6bad-5e2a-aca9-ff0163dd39dd
 #### [Record a dive](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 record.dive --help
+npx -y nosedive@2026.8.29-1787984722374 record.dive --help
 ```
 ```md
 Usage: nosedive record.dive [<dive>] [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]
@@ -327,7 +327,7 @@ More: nosedive render c583519a-95c3-59e8-90fd-0d3003b4b8d1
 #### [Record a feat](kb/fb3d90e6-9dbf-5f1c-9919-6653d12fe085.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 record.feat --help
+npx -y nosedive@2026.8.29-1787984722374 record.feat --help
 ```
 ```md
 Usage: nosedive record.feat [<feat>] [--gist <gist>] [--name <slug>] [--parent <feat>] [--no-parent]
@@ -340,7 +340,7 @@ More: nosedive render fb3d90e6-9dbf-5f1c-9919-6653d12fe085
 #### [Record a gate](kb/2c678acb-b4b8-5623-a900-12939da5d472.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 record.gate --help
+npx -y nosedive@2026.8.29-1787984722374 record.gate --help
 ```
 ```md
 Usage: nosedive record.gate [<gate>] [--gist <gist>] [--feat <feat-ref>] [--name <slug>] [--height <n>] [--flaky] [--no-flaky] [--action <test|land>]
@@ -353,7 +353,7 @@ More: nosedive render 2c678acb-b4b8-5623-a900-12939da5d472
 #### [Record a repo](kb/6640f6d5-567d-51bd-b2ba-6239a7a58707.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 record.repo --help
+npx -y nosedive@2026.8.29-1787984722374 record.repo --help
 ```
 ```md
 Usage: nosedive record.repo [<repo>] [--remote <clone-url-or-local-path>] [--url <page-url>] [--name <slug>] [--base-branch <branch>]
@@ -366,7 +366,7 @@ More: nosedive render 6640f6d5-567d-51bd-b2ba-6239a7a58707
 #### [Render](kb/9b0241b2-f03f-5594-a537-60a3b4372ee9.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 render --help
+npx -y nosedive@2026.8.29-1787984722374 render --help
 ```
 ```md
 Usage: nosedive render <uuid> [--gist]
@@ -379,7 +379,7 @@ More: nosedive render 9b0241b2-f03f-5594-a537-60a3b4372ee9
 #### [Scan](kb/88bf4e10-3fd7-58c0-a247-f2dae9c886e3.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 scan --help
+npx -y nosedive@2026.8.29-1787984722374 scan --help
 ```
 ```md
 Usage: nosedive scan --repo <repo-id-or-name>
@@ -392,7 +392,7 @@ More: nosedive render 88bf4e10-3fd7-58c0-a247-f2dae9c886e3
 #### [Seed](kb/34c8e9fb-9629-5767-9a81-914f78c63b68.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 seed --help
+npx -y nosedive@2026.8.29-1787984722374 seed --help
 ```
 ```md
 Usage: nosedive seed [--file <path>]... [--headless]
@@ -405,7 +405,7 @@ More: nosedive render 34c8e9fb-9629-5767-9a81-914f78c63b68
 #### [Test](kb/1e62a79d-4e06-552d-be5a-4c59c85f86bf.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 test --help
+npx -y nosedive@2026.8.29-1787984722374 test --help
 ```
 ```md
 Usage: nosedive test [--full] [--via <doc-ref>] [<gate-ref>...]
@@ -418,7 +418,7 @@ More: nosedive render 1e62a79d-4e06-552d-be5a-4c59c85f86bf
 #### [Update backlog](kb/f5a5a431-dca3-5e3c-ae84-feb8cd64e96b.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 update-backlog --help
+npx -y nosedive@2026.8.29-1787984722374 update-backlog --help
 ```
 ```md
 Usage: nosedive update-backlog [--inject <ref>]...
@@ -431,7 +431,7 @@ More: nosedive render f5a5a431-dca3-5e3c-ae84-feb8cd64e96b
 #### [Whoami](kb/a40303c1-1362-523f-b095-49178354f878.md)
 
 ```sh
-npx -y nosedive@2026.8.29-1787982179029 whoami --help
+npx -y nosedive@2026.8.29-1787984722374 whoami --help
 ```
 ```md
 Usage: nosedive whoami

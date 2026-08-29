@@ -32,6 +32,7 @@ The domain entity roles Nosedive keeps track of on its knowledge base:
 - [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) — a goal we want to accomplish.
 - [dive](kb/00000000-0000-749c-844b-2318117bffb0.md) — one bounded attempt at that goal.
 - [gate](kb/00000000-0000-76cb-a899-f8e90db8ca5c.md) — a repeatable check on the state of the work.
+- [memo](kb/00000000-0000-70fd-9a8c-5b0f34e248e2.md) — durable information found by following a breadcrumb.
 
 ## Verbs
 

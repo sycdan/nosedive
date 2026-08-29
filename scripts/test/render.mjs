@@ -32,13 +32,10 @@ test("render makes packaged kb links followable from the current directory", () 
 });
 
 test("render leaves anchors and Markdown examples in code unchanged", () => {
-	const rendered = run(["render", "0000000f-4240-7a62-8f61-a85b4c364560"], noBridge);
+	const rendered = run(["render", "00000000-0000-7bee-b718-0c6abe48ee4f"], noBridge);
 	assertOk(rendered, "render with anchors and code examples failed");
-	assert.match(rendered.stdout, /\[the grep below\]\(#finding-a-canonical-definition\)/);
-	assert.match(
-		rendered.stdout,
-		/`\[README\]\(\.\.\/<nosedive-workspace>\/<dirname>\/README\.md\)`/,
-	);
+	assert.match(rendered.stdout, /\[Links\]\(#links\)/);
+	assert.match(rendered.stdout, /`\[slug chain\]\(019f39dc-8ebf-7735-812d-522cc242a8b8\.md\)`/);
 });
 
 test("render --gist prints only the gist field", () => {

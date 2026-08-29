@@ -138,15 +138,6 @@ function frontmatter(text, label) {
 	}
 }
 
-function parseLevel(value, label) {
-	const level = Number.parseInt(String(value ?? ""), 10);
-	if (!Number.isInteger(level) || level < 0 || String(value) !== String(level)) {
-		fail(`${label} must be a non-negative integer`);
-		return undefined;
-	}
-	return level;
-}
-
 function deprecatedByMigrationIds(doc) {
 	const ids = [];
 	for (const { target, value } of linkEntries(doc.raw.links)) {
@@ -277,23 +268,6 @@ for (const filename of readdirSync(kbDir)
 				fail(`${filename} command meta.agents-use-when must be a single line`);
 			}
 		}
-		// A single bound gets its documented default at execution time.
-		const minimumEffort = raw.meta?.["minimum-effort"];
-		const maximumEffort = raw.meta?.["maximum-effort"];
-		if (minimumEffort !== undefined || maximumEffort !== undefined) {
-			const minimum =
-				minimumEffort === undefined
-					? 0
-					: parseLevel(minimumEffort, `${filename} meta.minimum-effort`);
-			const maximum =
-				maximumEffort === undefined
-					? undefined
-					: parseLevel(maximumEffort, `${filename} meta.maximum-effort`);
-			if (minimum !== undefined && maximum !== undefined && maximum < minimum) {
-				fail(`${filename} command meta.maximum-effort is below meta.minimum-effort`);
-			}
-		}
-
 		const level = Number.parseInt(match[2], 10);
 		const expectedEntrypoint = commandEntrypointName(match[1], level);
 		if (typeof raw.meta?.entrypoint !== "string" || raw.meta.entrypoint.trim() === "") {

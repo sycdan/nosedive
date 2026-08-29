@@ -247,7 +247,7 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 }
 
 /**
- * A dive names its feat in `meta.feat`, which may be the feat's UUID, a
+ * A dive names its feat in `meta.feat`, which may be the feat's quid, a
  * bridge-root kb path such as `kb/<id>.md`, or its exact `name`. All three
  * have to agree with the feat doc being listed.
  */

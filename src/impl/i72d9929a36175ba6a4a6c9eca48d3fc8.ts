@@ -308,7 +308,7 @@ function printWorkDirective(
 /**
  * What jump did, appended to the dive: a lead line saying the dive was picked
  * up and by whom, then the mechanical record of what was hydrated and where --
- * one line per scoped repo, by kb `name` rather than uuid, same reasoning as
+ * one line per scoped repo, by kb `name` rather than quid, same reasoning as
  * `land`'s gate-context repo keys.
  *
  * The lead line is there because the mechanical lines alone name paths and

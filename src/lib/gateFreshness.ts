@@ -33,7 +33,7 @@ export function dirtyGates(bridgeDir: string, gates: LandGate[]): LandGate[] {
 			.filter((line) => line.length > 0)
 			// Porcelain v1 is two status columns, a space, then the path, and a
 			// rename adds `orig -> new`. Neither quoting nor the rename form can
-			// arise here: both paths are `kb/<uuid>` shaped, and no command renames
+			// arise here: both paths are `kb/<quid>` shaped, and no command renames
 			// them.
 			.map((line) => line.slice(3).split(" -> ").at(-1)!),
 	);

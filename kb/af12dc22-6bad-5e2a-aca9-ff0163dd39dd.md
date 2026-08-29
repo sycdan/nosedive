@@ -13,7 +13,7 @@ meta:
 
 # Prove
 
-The assertion may be named by UUID, by a bridge-relative assertion doc path, or
+The assertion may be named by quid, by a bridge-relative assertion doc path, or
 by an absolute assertion doc path that resolves inside the bridge.
 
 The assertion must link exactly one bridge-owned single-file prover artifact

@@ -197,7 +197,7 @@ export function resolveKbFileLink(
 	}
 	if (uuidLike(link.target)) {
 		throw new Error(
-			`${label} must name an artifact file with a repo-root relative path, not a bare UUID`,
+			`${label} must name an artifact file with a repo-root relative path, not a bare quid`,
 		);
 	}
 	if (

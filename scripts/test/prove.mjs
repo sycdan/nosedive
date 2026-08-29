@@ -323,13 +323,13 @@ links:
 kind: assertion
 id: ${bareUuidProverAssertionId}
 name: proof-runner-rejects-bare-uuid-prover-link
-gist: "Proof runner rejects bare UUID prover links."
+gist: "Proof runner rejects bare quid prover links."
 links:
   - ${proofProverId}:
       rel: prover
 ---
 
-# Bare UUID prover assertion
+# Bare quid prover assertion
 `,
 	);
 	runTool("git", ["add", ".gitignore", "kb"], proofBridge);
@@ -581,6 +581,6 @@ links:
 	assert.doesNotMatch(outOfScopeProof.stderr, /nosedive: .*does not scope it/);
 
 	const bareUuidProverProof = run(["prove", bareUuidProverAssertionId], proofBridge);
-	assert.notEqual(bareUuidProverProof.status, 0, "bare UUID prover link unexpectedly succeeded");
-	assert.match(bareUuidProverProof.stderr, /repo-root relative path, not a bare UUID/);
+	assert.notEqual(bareUuidProverProof.status, 0, "bare quid prover link unexpectedly succeeded");
+	assert.match(bareUuidProverProof.stderr, /repo-root relative path, not a bare quid/);
 });

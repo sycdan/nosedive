@@ -54,9 +54,9 @@ Once the hook is confirmed wired, preflight prints, to stdout:
 ```
 == bridge status ==
 nosedive-workspace: <absolute worktree path>/<workspace>
-nosedive-current-dive-id: <uuid>
+nosedive-current-dive-id: <quid>
 nosedive-current-dive-gist: <dive gist>
-nosedive-current-effort: <uuid>
+nosedive-current-effort: <quid>
 
 == pilot identification ==
 nosedive-pilot-name: <git-config-name>

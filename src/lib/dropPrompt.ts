@@ -109,7 +109,7 @@ export function readPromptBody(promptDoc: KbDoc): string {
 /**
  * The idea doc says what to do and the context block says what to do it to, so
  * one prompt doc serves every drop. The block is generated rather than written
- * because a hand-copied uuid or date is a prompt that quietly describes the
+ * because a hand-copied quid or date is a prompt that quietly describes the
  * wrong release.
  */
 export function renderDropPrompt(

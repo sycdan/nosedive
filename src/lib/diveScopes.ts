@@ -61,8 +61,8 @@ export function resolveBridgeDocRef(bridgeDir: string, kbDocs: KbDoc[], ref: str
 /**
  * A repo named the way a pilot names it: `--upscope nosedive` resolves the
  * `kind: repo` doc called `nosedive`. Name resolution runs first because a repo
- * name is a shorter thing to type than a uuid and cannot be confused for a
- * path, and the remaining forms -- uuid, kb path, `.nosedive-ref`, a directory
+ * name is a shorter thing to type than a quid and cannot be confused for a
+ * path, and the remaining forms -- quid, kb path, `.nosedive-ref`, a directory
  * holding one -- fall through to the general document resolver behind it.
  */
 export function resolveScopeRepo(bridgeDir: string, kbDocs: KbDoc[], ref: string): KbDoc {
@@ -180,7 +180,7 @@ export interface RepinTarget {
 /**
  * Where an explicitly named ref puts one scope.
  *
- * A uuid is a dive rather than a git ref, and it answers with that dive's own
+ * A quid is a dive rather than a git ref, and it answers with that dive's own
  * pin for this repo: folding in the dive this one was stacked on is the case the
  * explicit form exists for, and making the pilot go and find the hash is how
  * that gets done wrong. A dive that scopes no such repo has no answer to give,

@@ -23,9 +23,9 @@ interface TestArgs {
 
 /**
  * Arguments are what to test, not how to test it. `land` names a set the same
- * way a uuid names a gate, which is why it is a bare word and not a flag: a
+ * way a quid names a gate, which is why it is a bare word and not a flag: a
  * flag spelled `--land` on a command that runs gates reads as an instruction to
- * land afterwards. Gates resolve by uuid only, so the word can never be
+ * land afterwards. Gates resolve by quid only, so the word can never be
  * mistaken for one.
  */
 function parseTestArgs(args: string[]): TestArgs {
@@ -95,7 +95,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	await runGateSession(selected, kbDocs, rc.bridgeDir, dive?.id ?? "", undefined, hydrated, io);
 }
 
-/** A gate named by uuid, run whatever it is attached to. */
+/** A gate named by quid, run whatever it is attached to. */
 function namedGate(id: string, kbDocs: KbDoc[], bridgeDir: string): LandGate {
 	const doc = kbDocs.find((candidate) => candidate.id === id);
 	if (!doc) throw new Error(`gate not found: ${id}`);

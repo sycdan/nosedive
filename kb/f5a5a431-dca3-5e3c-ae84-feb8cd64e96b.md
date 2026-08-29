@@ -43,7 +43,7 @@ its parent with no further step.
 
 `--inject <ref>` appends a `rel: injected.feat` link for the named doc, which
 renders it under `## Injected`. This is how a feat pitched with no parent
-reaches the backlog. The flag repeats, takes a UUID or a bridge-relative KB
+reaches the backlog. The flag repeats, takes a quid or a bridge-relative KB
 path, and is a no-op when the memo already links that doc as work -- an
 existing rel is the pilot's own filing and is never rewritten to match the flag.
 

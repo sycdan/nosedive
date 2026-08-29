@@ -60,7 +60,7 @@ test("record.repo help is available without a bridge", () => {
 	assertOk(help, "record.repo --help failed");
 	assert.match(
 		help.stdout,
-		/Usage: nosedive record\.repo \[<repo>\] \[--url <clone-url-or-local-path>\]/,
+		/Usage: nosedive record\.repo \[<repo>\] \[--remote <clone-url-or-local-path>\] \[--url <page-url>\]/,
 	);
 });
 
@@ -169,4 +169,142 @@ test("a bare record.repo publishes a repo doc somebody edited by hand", () => {
 		runTool("git", ["status", "--porcelain", "--", `kb/${repoId}.md`], bridge).stdout,
 		"",
 	);
+});
+
+// `--url` named the clone source before this level and names the repository
+// page after it, so the two meanings are pinned separately: what a call written
+// before the rename still does, and what the new spelling writes.
+
+test("--remote takes the clone source and --url writes meta.url", () => {
+	const bridge = seededBridge("record-remote-and-page");
+	const source = sourceRepo("Epsilon_Service");
+
+	const recorded = run(
+		["record.repo", "--remote", source, "--url", "https://example.invalid/team/epsilon"],
+		bridge,
+	);
+	assertOk(recorded, "record.repo --remote --url failed");
+	assert.match(recorded.stdout, /Added epsilon-service to backlog scopes/);
+
+	const repo = readFileSync(repoDocPath(bridge, "epsilon-service"), "utf8");
+	assert.match(repo, /^  url: "https:\/\/example\.invalid\/team\/epsilon"$/m);
+	assert.match(repo, /^    local: /m);
+	// The page is a field of its own, never a second spelling of the remote.
+	assert.doesNotMatch(repo, /^    cloud: "https:\/\/example\.invalid\/team\/epsilon"$/m);
+	assert.equal(recorded.stderr.includes("--url"), false, recorded.stderr);
+});
+
+test("meta.url is absent, not empty, when no page is given", () => {
+	const bridge = seededBridge("record-no-page");
+	assertOk(run(["record.repo", "--remote", sourceRepo("Zeta_Service")], bridge), "record failed");
+	assert.doesNotMatch(readFileSync(repoDocPath(bridge, "zeta-service"), "utf8"), /^  url:/m);
+});
+
+test("meta.url is never derived from an https clone URL", () => {
+	const bridge = seededBridge("record-no-derive");
+	const bare = join(tmp, "Derive.Project.git");
+	runTool("git", ["clone", "--bare", sourceRepo("derive-project-source"), bare], tmp);
+
+	const recorded = run(
+		["record.repo", "--remote", pathToFileURL(bare).href, "--name", "derive-service"],
+		bridge,
+	);
+	assertOk(recorded, "record.repo clone URL failed");
+	assert.doesNotMatch(readFileSync(repoDocPath(bridge, "derive-service"), "utf8"), /^  url:/m);
+});
+
+test("a create with only --url reads it as the clone source and says so", () => {
+	const bridge = seededBridge("record-url-retired");
+	const source = sourceRepo("Eta_Service");
+
+	const recorded = run(["record.repo", "--url", source], bridge);
+	assertOk(recorded, "retired --url spelling failed");
+	assert.match(recorded.stderr, /--url now records the human-facing repository page/);
+	assert.match(recorded.stderr, /pass --remote instead/);
+
+	const repo = readFileSync(repoDocPath(bridge, "eta-service"), "utf8");
+	assert.match(repo, /^    local: /m, "the retired spelling stopped setting a remote");
+	assert.doesNotMatch(repo, /^  url:/m, "the retired spelling wrote a page");
+});
+
+test("a create with no clone source names --remote", () => {
+	const bridge = seededBridge("record-no-source");
+	const refused = run(["record.repo", "--name", "orphan-service"], bridge);
+	assert.notEqual(refused.status, 0, "a sourceless create unexpectedly succeeded");
+	assert.match(refused.stderr, /requires --remote <clone-url-or-local-path>/);
+});
+
+test("--url refuses a value that cannot be a page and names --remote", () => {
+	const bridge = seededBridge("record-page-not-a-page");
+	const source = sourceRepo("Theta_Service");
+	const beforeFiles = readdirSync(join(bridge, "kb")).sort();
+
+	const refused = run(
+		["record.repo", "--remote", source, "--url", "git@example.invalid:team/theta.git"],
+		bridge,
+	);
+	assert.notEqual(refused.status, 0, "an ssh --url was unexpectedly accepted as a page");
+	assert.match(refused.stderr, /must be an http\(s\) URL/);
+	assert.match(refused.stderr, /Pass --remote <clone-url-or-local-path>/);
+	assert.deepEqual(readdirSync(join(bridge, "kb")).sort(), beforeFiles);
+});
+
+test("a positional clone source leaves --url meaning the page", () => {
+	const bridge = seededBridge("record-positional-and-page");
+	const source = sourceRepo("Iota_Service");
+
+	const recorded = run(
+		["record.repo", source, "--url", "https://example.invalid/team/iota"],
+		bridge,
+	);
+	assertOk(recorded, "positional source with --url page failed");
+	assert.match(recorded.stderr, /the positional argument is deprecated -- pass --remote instead/);
+
+	const repo = readFileSync(repoDocPath(bridge, "iota-service"), "utf8");
+	assert.match(repo, /^  url: "https:\/\/example\.invalid\/team\/iota"$/m);
+	assert.match(repo, /^    local: /m);
+});
+
+test("a patch reads --url as the page and --remote as the clone source", () => {
+	const bridge = seededBridge("record-patch-page");
+	const source = sourceRepo("Kappa_Service");
+	assertOk(run(["record.repo", "--remote", source], bridge), "record.repo failed");
+	const repoPath = repoDocPath(bridge, "kappa-service");
+	const repoId = /^id: (\S+)$/m.exec(readFileSync(repoPath, "utf8"))[1];
+
+	const paged = run(["record.repo", repoId, "--url", "https://example.invalid/team/kappa"], bridge);
+	assertOk(paged, "patching meta.url failed");
+	assert.match(paged.stdout, /Set meta\.url to https:\/\/example\.invalid\/team\/kappa/);
+	assert.match(paged.stderr, /--url sets meta\.url/);
+	assert.match(readFileSync(repoPath, "utf8"), /^  url: https:\/\/example\.invalid\/team\/kappa$/m);
+
+	const remoted = run(
+		["record.repo", repoId, "--remote", "https://example.invalid/team/kappa.git"],
+		bridge,
+	);
+	assertOk(remoted, "patching the remote failed");
+	assert.match(remoted.stdout, /Set meta\.remotes\.cloud/);
+	const repo = readFileSync(repoPath, "utf8");
+	assert.match(repo, /^    cloud: https:\/\/example\.invalid\/team\/kappa\.git$/m);
+	assert.match(
+		repo,
+		/^  url: https:\/\/example\.invalid\/team\/kappa$/m,
+		"the remote ate the page",
+	);
+});
+
+test("a patch refuses --url that cannot be a page", () => {
+	const bridge = seededBridge("record-patch-not-a-page");
+	assertOk(run(["record.repo", "--remote", sourceRepo("Lambda_Service")], bridge), "record failed");
+	const repoPath = repoDocPath(bridge, "lambda-service");
+	const repoId = /^id: (\S+)$/m.exec(readFileSync(repoPath, "utf8"))[1];
+	const before = readFileSync(repoPath, "utf8");
+
+	const refused = run(
+		["record.repo", repoId, "--url", "git@example.invalid:team/lambda.git"],
+		bridge,
+	);
+	assert.notEqual(refused.status, 0, "an ssh --url was unexpectedly accepted on a patch");
+	assert.match(refused.stderr, /Pass --remote <clone-url-or-local-path>/);
+	assert.equal(readFileSync(repoPath, "utf8"), before, "a refused patch still wrote");
 });

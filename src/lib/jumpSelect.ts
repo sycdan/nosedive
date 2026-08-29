@@ -117,7 +117,7 @@ export function selectJumpDive(
 			ensureActivation(dive, pilotEmail, pilotEmail, held);
 			// Named, because a pilot who did not choose still has to know what they
 			// are on before the brief scrolls past.
-			io.log(`jump: picked up the only dive on deck -- ${dive.relPath}: ${dive.gist}`);
+			io.err(`jump: picked up the only dive on deck -- ${dive.relPath}: ${dive.gist}`);
 			return { dive, claim: diver !== pilotEmail, pilotEmail };
 		}
 		io.err(

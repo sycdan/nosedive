@@ -426,7 +426,7 @@ export function jump(args: string[], io: CommandIo): void {
 		const path = settled.targetPath;
 		scopePaths.set(scope.repoId, path);
 		hydratedEntries.push({ scope, path, commit: hydrated.commit });
-		io.log(
+		io.err(
 			`hydrated repo=${scope.repoId} path=${formatPath(path)}` +
 				(settled.movedFrom ? ` moved-from=${settled.movedFrom}` : ""),
 		);
@@ -523,7 +523,7 @@ export function jump(args: string[], io: CommandIo): void {
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 
-	io.log(
+	io.err(
 		appliedCount > 0
 			? `jumped dive ${dive.id}: applied ${appliedCount} artifact(s)`
 			: `jumped dive ${dive.id}: nothing to unpack`,

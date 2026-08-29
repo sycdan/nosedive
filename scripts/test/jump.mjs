@@ -314,8 +314,10 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 
 	const result = run(["jump"], bridge);
 	assertOk(result, "jump failed");
-	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
-	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: applied 3 artifact\\(s\\)`));
+	assert.match(result.stderr, new RegExp(`hydrated repo=${repoId}`));
+	assert.match(result.stderr, new RegExp(`jumped dive ${diveId}: applied 3 artifact\\(s\\)`));
+	assert.doesNotMatch(result.stdout, /hydrated repo=|jumped dive /);
+	assert.doesNotMatch(result.stderr, /Read the dive at /);
 	const scratchDir = join(bridge, "workspace", ".scratch", diveId);
 	assert.equal(existsSync(scratchDir), true, "jump should create dive scratch space");
 	assert.match(
@@ -404,7 +406,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	write(join(scratchDir, "stale.tmp"), "remove me\n");
 	const rerun = run(["jump"], bridge);
 	assertOk(rerun, "second jump run failed");
-	assert.match(rerun.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.match(rerun.stderr, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
 	assert.deepEqual(readdirSync(scratchDir), [], "re-jump should clear existing scratch space");
 	assert.equal(
 		runTool("git", ["log", "--format=%s", pinnedRef + "..HEAD"], worktree).stdout.trim(),
@@ -432,7 +434,7 @@ test("jump reads a dive that names its feat in meta.effort", () => {
 
 	const result = run(["jump"], bridge);
 	assertOk(result, "jump failed on a dive naming its feat in meta.effort");
-	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}`));
+	assert.match(result.stderr, new RegExp(`jumped dive ${diveId}`));
 });
 
 test("jump with no patch links still hydrates the scoped repo", () => {
@@ -450,10 +452,12 @@ test("jump with no patch links still hydrates the scoped repo", () => {
 
 	const result = run(["jump"], bridge);
 	assertOk(result, "jump failed on a dive with nothing to unpack");
-	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
-	assert.match(result.stdout, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
+	assert.match(result.stderr, new RegExp(`hydrated repo=${repoId}`));
+	assert.match(result.stderr, new RegExp(`jumped dive ${diveId}: nothing to unpack`));
 	assert.match(result.stdout, new RegExp(`Read the dive at kb/${diveId}\\.md in full`));
 	assert.match(result.stdout, new RegExp(`Read the feat it serves at kb/${featId}\\.md`));
+	assert.doesNotMatch(result.stdout, /hydrated repo=|jumped dive /);
+	assert.doesNotMatch(result.stderr, /Read the dive at /);
 	assert.equal(
 		existsSync(worktree),
 		true,
@@ -700,7 +704,7 @@ test("jump leaves a corrupt chain for retry instead of aborting the whole run", 
 
 	const result = run(["jump"], bridge);
 	assert.notEqual(result.status, 0, "jump should report failure when a chain fails to apply");
-	assert.match(result.stdout, new RegExp(`hydrated repo=${repoId}`));
+	assert.match(result.stderr, new RegExp(`hydrated repo=${repoId}`));
 	assert.match(
 		result.stderr,
 		/failed to apply patch chain[\s\S]*left un-applied on the dive for retry/,
@@ -755,7 +759,7 @@ test("jump leaves a worktree already detached at the pin untouched", () => {
 		reflogBefore,
 		"jump must not run a checkout in a worktree already detached at the pin",
 	);
-	assert.doesNotMatch(result.stdout, /moved-from=/, "nothing moved, so nothing should say it did");
+	assert.doesNotMatch(result.stderr, /moved-from=/, "nothing moved, so nothing should say it did");
 });
 
 /**
@@ -784,7 +788,7 @@ test("jump moves a clean worktree off a published commit onto the pin", () => {
 		"a published worktree should be moved back to the dive's pin",
 	);
 	assert.match(
-		result.stdout,
+		result.stderr,
 		new RegExp(`hydrated repo=${repoId} path=\\S+ moved-from=${published}`),
 		"jump should say which commit it moved the worktree off",
 	);
@@ -1110,7 +1114,7 @@ test("bare jump picks up the only eligible dive", () => {
 	const result = run(["jump"], bridge);
 	assertOk(result, "bare jump failed to pick up the only eligible dive");
 	assert.match(
-		result.stdout,
+		result.stderr,
 		new RegExp(`jump: picked up the only dive on deck -- kb/${diveId}\\.md: `),
 	);
 	assert.match(

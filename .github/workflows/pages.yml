@@ -1,0 +1,37 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+# The deployment needs to mint an OIDC token for the Pages environment; the
+# checkout only ever reads.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A superseded deployment is not worth finishing, but one already in flight is:
+# cancelling mid-deploy can leave the site on a half-published artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4

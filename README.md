@@ -6,6 +6,11 @@
 
 _Pick **what's next**, and do it **by the book**._
 
+Nosedive turns a simple notes repo into a _bridge_ -- a knowledge base and orchestration
+hub for agentic development across one or more implementation repos. It encourages breaking
+work into small vertical slices before implementing anything, and capturing what "done"
+looks like in executable artifacts that agents can use to get feedback about their progress.
+
 ## The problem
 
 Agents can make code appear quickly. Getting from there to something we

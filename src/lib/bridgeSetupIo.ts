@@ -431,35 +431,25 @@ export function createCapturingIo(): CapturingCommandIo {
 }
 
 /**
- * Captures selected streams while forwarding the rest immediately. The adapter
- * still returns the captured streams, so a streamed stream cannot be replayed.
+ * Streams both streams to the real stdio as they are written, so a long command
+ * is not silent until it returns. Nothing is buffered, so `captured()` reports
+ * only the exit code -- a streamed stream cannot be replayed.
  */
-export function createStreamingIo({
-	stdout = true,
-	stderr = true,
-}: { stdout?: boolean; stderr?: boolean } = {}): CapturingCommandIo {
+export function createStreamingIo(): CapturingCommandIo {
 	const prompter = createStdinPrompter();
-	let capturedStdout = "";
-	let capturedStderr = "";
 	let exitCode = 0;
 	return {
 		log(message = ""): void {
-			const text = `${message}\n`;
-			if (stdout) process.stdout.write(text);
-			else capturedStdout += text;
+			process.stdout.write(`${message}\n`);
 		},
 		err(message: string): void {
-			const text = `${message}\n`;
-			if (stderr) process.stderr.write(text);
-			else capturedStderr += text;
+			process.stderr.write(`${message}\n`);
 		},
 		writeOut(text: string): void {
-			if (stdout) process.stdout.write(text);
-			else capturedStdout += text;
+			process.stdout.write(text);
 		},
 		writeErr(text: string): void {
-			if (stderr) process.stderr.write(text);
-			else capturedStderr += text;
+			process.stderr.write(text);
 		},
 		prompt: prompter.prompt,
 		setExitCode(code: number): void {
@@ -467,7 +457,7 @@ export function createStreamingIo({
 		},
 		close: prompter.close,
 		captured(): CapturedCommandOutput {
-			return { stdout: capturedStdout, stderr: capturedStderr, exitCode };
+			return { stdout: "", stderr: "", exitCode };
 		},
 	};
 }

@@ -28,7 +28,6 @@ import {
 	unsafeLinkPath,
 } from "./lib/commands.js";
 import { lib, type CommandLibRegistry } from "./lib/index.js";
-import { executePrompt } from "./lib/promptExecution.js";
 
 export { isContractedCommand, printCommandHelp, renderTopLevelHelpText } from "./contractDocs.js";
 
@@ -187,33 +186,19 @@ function writeCommandOutput(result: ContractRunOutput): void {
 	if (result.exitCode !== 0) process.exitCode = result.exitCode;
 }
 
-async function runPromptCommand(
+async function runContractCommand(
 	contract: ContractDoc,
 	args: string[],
 	targetLevel: number,
 ): Promise<void> {
-	const exec = args.includes("--exec");
-	setCommandIoFactory(() => createStreamingIo(exec ? { stdout: false } : undefined));
+	setCommandIoFactory(() => createStreamingIo());
 	let result: ContractRunOutput;
 	try {
-		result = await runContractAdapter(
-			contract,
-			exec ? args.filter((arg) => arg !== "--exec") : args,
-			targetLevel,
-		);
+		result = await runContractAdapter(contract, args, targetLevel);
 	} finally {
 		setCommandIoFactory(undefined);
 	}
-	if (!exec) {
-		writeCommandOutput(result);
-		return;
-	}
-	if (result.stderr) process.stderr.write(result.stderr);
-	if (result.exitCode !== 0) {
-		process.exitCode = result.exitCode;
-		return;
-	}
-	executePrompt(contract.command, contract.path, result.stdout);
+	writeCommandOutput(result);
 }
 
 /**
@@ -267,6 +252,6 @@ export async function maybeRunContractCommand(
 	}
 	const deprecation = deprecatedContractNotice(contract);
 	if (deprecation) process.stderr.write(deprecation);
-	await runPromptCommand(contract, args, targetLevel);
+	await runContractCommand(contract, args, targetLevel);
 	return true;
 }

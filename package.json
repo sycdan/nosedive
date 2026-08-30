@@ -48,6 +48,7 @@
 		"format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"package.json\" \"tsconfig.json\" \".github/workflows/*.yml\" \".prettierrc.json\"",
 		"typecheck": "tsc",
 		"check:release-surface": "node scripts/check-release-surface.mjs",
+		"check:signoff": "node scripts/check-signoff.mjs",
 		"test": "npm run format:check && npm run check:release-surface && node --test \"scripts/test/*.mjs\"",
 		"test:pack-bin": "node scripts/test-pack-bin.mjs",
 		"prepack": "npm run build",

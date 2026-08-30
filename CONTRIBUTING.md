@@ -27,7 +27,9 @@ To sign off a branch you already committed:
 git rebase --signoff main
 ```
 
-CI checks every non-merge commit in a pull request for the trailer.
+The pre-push hook checks the commits you are about to push, and CI checks every
+non-merge commit in a pull request. Both run `npm run check:signoff`, which with no
+argument checks whatever no remote holds yet.
 
 ## Versioning + publishing
 

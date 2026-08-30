@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/nosedive-logo-circle.png" alt="Nosedive logo" width="180" height="180">
+  <img src="docs/assets/nosedive-logo-circle.png" alt="Nosedive logo" width="180" height="180">
 </p>
 
 # [Nosedive](https://nosedive.dev): intentional velocity
 
-_Pick **what's next**, and do it **by the book**._
+> note input, know output
 
-Nosedive turns a plain notes repo into a _metarepo_ -- a knowledge base and orchestration
-hub for agentic development across one or more implementation repos. Work is split into
-small vertical slices before anything is built, and what "done" looks like is captured as
-executable checks that agents can run to find out whether they are actually finished.
+Nosedive turns a plain notes repo into a [bridge](kb/00000000-0000-79ef-b942-3b52824471f3.md) -- one notes repo that holds the plan
+and drives the work across your other repos. Work is split into small vertical slices
+before anything is built, and what "done" looks like is captured as executable checks
+that agents can run to find out whether they are actually finished.
 
 ## Install
 
@@ -78,6 +78,8 @@ without relying on one machine, one chat, or one person's memory.
 
 The entity roles Nosedive tracks in the knowledge base:
 
+- [bridge](kb/00000000-0000-79ef-b942-3b52824471f3.md) -- the notes repo itself,
+  holding the plan and driving the work.
 - [repo](kb/00000000-0000-7a04-a8f4-6f75484220cb.md) -- an implementation boundary.
 - [feat](kb/00000000-0000-7433-9095-caa4a7369645.md) -- a goal we want to accomplish.
 - [dive](kb/00000000-0000-749c-844b-2318117bffb0.md) -- one bounded attempt at that goal.

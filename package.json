@@ -1,7 +1,7 @@
 {
 	"name": "nosedive",
 	"version": "2026.8.30-1788061089198",
-	"description": "Turns a plain notes repo into a meterepo: a knowledge base and orchestration hub for agentic development across repos.",
+	"description": "Turns a plain notes repo into a bridge: one repo that holds the plan and drives agentic work across your other repos.",
 	"keywords": [
 		"cli",
 		"agentic",

@@ -1,7 +1,7 @@
 {
 	"name": "nosedive",
 	"version": "2026.8.30-1788054482882",
-	"description": "Turns a plain notes repo into a hub for cross-repo work.",
+	"description": "Turns a plain notes repo into a bridge: a knowledge base and orchestration hub for agentic development across repos.",
 	"keywords": [
 		"cli",
 		"agentic",
@@ -10,6 +10,10 @@
 		"polyrepo",
 		"monorepo"
 	],
+	"homepage": "https://nosedive.dev",
+	"bugs": {
+		"url": "https://github.com/sycdan/nosedive/issues"
+	},
 	"license": "MIT",
 	"author": "Dan Stace <dstace@gmail.com>",
 	"funding": "https://ko-fi.com/sycdan",

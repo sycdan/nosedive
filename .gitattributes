@@ -1,0 +1,2 @@
+# A CRLF checkout of these breaks them under WSL, where the recording runs.
+*.sh text eol=lf

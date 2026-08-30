@@ -402,6 +402,8 @@ export interface RcSettings {
 export interface SeedOptions {
 	help: boolean;
 	headless: boolean;
+	/** Commit the seeded files but leave publishing the bridge to the pilot. */
+	noPush: boolean;
 	/** Agent instruction files named with `--file`; empty means autodetect. */
 	files: string[];
 }

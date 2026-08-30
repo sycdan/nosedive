@@ -82,7 +82,6 @@ test("contract help", () => {
 		}
 	}
 
-	// L0 is gone: every command the package ships is contracted at L1 or above.
 	const contractedCommands = [
 		["add-repo.effort", /Usage: nosedive add-repo\.effort <repo-id-or-name>/],
 		["add-repo.feat", /Usage: nosedive add-repo\.feat <repo-id-or-name>/],
@@ -99,7 +98,7 @@ test("contract help", () => {
 		["render", /Usage: nosedive render <uuid>/],
 		["record.dive", /Usage: nosedive record\.dive \[<dive>\]/],
 		["record.feat", /Usage: nosedive record\.feat \[<feat>\]/],
-		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/],
+		["seed", /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\] \[--no-push\]/],
 		["update-backlog", /Usage: nosedive update-backlog/],
 		["whoami", /Usage: nosedive whoami/],
 	].map(([command, usage]) => [command, usage, latestLevels.get(command) ?? 1]);

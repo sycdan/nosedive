@@ -95,6 +95,50 @@ test("first seed publishes an empty origin and sets upstream", () => {
 	assert.doesNotMatch(seeded.stdout, /^git /m);
 });
 
+test("--no-push commits the seed and names the push that finishes it", () => {
+	const { bridge, origin } = emptyOriginBridge("no-push-first");
+	const seeded = run(["seed", "--headless", "--no-push", "--file", "AGENTS.md"], bridge, "");
+	assertOk(seeded, "seed --no-push failed");
+	assert.equal(runGit(["for-each-ref", "refs/heads"], origin).stdout.trim(), "");
+	assert.notEqual(runGitUnchecked(["rev-parse", "--abbrev-ref", "@{upstream}"], bridge).status, 0);
+	assert.equal(runGit(["rev-list", "--count", "main"], bridge).stdout.trim(), "1");
+	assert.match(
+		seeded.stdout,
+		/^Not pushed \(--no-push\); run `git push -u origin main` to publish the bridge$/m,
+	);
+	assert.doesNotMatch(seeded.stdout, /^Pushed to /m);
+});
+
+test("--no-push on a published bridge names the plain push", () => {
+	const { bridge, origin } = emptyOriginBridge("no-push-again");
+	assertOk(seedBridge(bridge), "first seed failed");
+	const before = runGit(["rev-parse", "main"], origin).stdout.trim();
+	// Drift the managed block so the re-seed has something to commit; an
+	// unchanged re-seed returns before it ever reaches the push.
+	const instructionsPath = join(bridge, "AGENTS.md");
+	writeFileSync(
+		instructionsPath,
+		readFileSync(instructionsPath, "utf8").replace(
+			"- `nosedive` commands may issue instructions",
+			"- drifted instructions may issue instructions",
+		),
+		"utf8",
+	);
+	runTool("git", ["add", "AGENTS.md"], bridge);
+	gitCommit(bridge, "simulate published instruction drift");
+	runTool("git", ["push"], bridge);
+	const published = runGit(["rev-parse", "main"], origin).stdout.trim();
+	assert.notEqual(published, before);
+
+	const reseeded = run(["seed", "--headless", "--no-push", "--file", "AGENTS.md"], bridge, "");
+	assertOk(reseeded, "seed --no-push on a published bridge failed");
+	assert.equal(runGit(["rev-parse", "main"], origin).stdout.trim(), published);
+	assert.match(
+		reseeded.stdout,
+		/^Not pushed \(--no-push\); run `git push` to publish the bridge$/m,
+	);
+});
+
 test("seed commits only its own files", () => {
 	const { bridge } = emptyOriginBridge("only-seed-files");
 	write(join(bridge, "notes.md"), "committed\n");
@@ -171,7 +215,7 @@ test("seed-headless", () => {
 	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/);
 	assert.match(
 		seedHelp.stdout,
-		/Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]\n\nCreate, migrate, or edit bridge config/,
+		/Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\] \[--no-push\]\n\nCreate, migrate, or edit bridge config/,
 	);
 
 	const initHelp = run(["init", "--help"], noBridge);

@@ -238,6 +238,7 @@ function commitAndPushSeed(
 	paths: string[],
 	bridgeBranch: string,
 	surfaceChanged: boolean,
+	noPush: boolean,
 	io: CommandIo,
 ): void {
 	const pathspecs = paths.map((path) => toPosixPath(relative(bridgeDir, path)));
@@ -278,6 +279,18 @@ function commitAndPushSeed(
 		"--symbolic-full-name",
 		"@{upstream}",
 	]);
+	/**
+	 * `--no-push` stops here, and names the push it skipped. Every later command
+	 * needs the upstream this push would set -- `jump`, `pack`, `bail` and `land`
+	 * all refuse a bridge without one -- so the line is the whole point of the
+	 * flag, not a footnote to it.
+	 */
+	if (noPush) {
+		io.log(
+			`Not pushed (--no-push); run \`${upstream ? "git push" : `git push -u origin ${bridgeBranch}`}\` to publish the bridge`,
+		);
+		return;
+	}
 	if (!upstream) {
 		try {
 			gitRun(
@@ -420,6 +433,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		],
 		bridgeBranch,
 		instructionWrites.some((write) => write.changed),
+		options.noPush,
 		io,
 	);
 

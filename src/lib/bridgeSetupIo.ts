@@ -25,7 +25,7 @@ import { levelMigration, levelsInGap } from "./packageLevels.js";
 import { readGitAuthorIdentity } from "./gitProcess.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
-	const options: SeedOptions = { help: false, headless: false, files: [] };
+	const options: SeedOptions = { help: false, headless: false, noPush: false, files: [] };
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === "-h" || arg === "--help") {
@@ -34,6 +34,10 @@ export function parseSeedOptions(args: string[]): SeedOptions {
 		}
 		if (arg === "--headless") {
 			options.headless = true;
+			continue;
+		}
+		if (arg === "--no-push") {
+			options.noPush = true;
 			continue;
 		}
 		if (arg === "--file" || arg.startsWith("--file=")) {

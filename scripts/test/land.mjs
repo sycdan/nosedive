@@ -250,6 +250,21 @@ test("land publishes without ever lifting push isolation", () => {
 	);
 });
 
+test("land refuses a bridge with no upstream before it publishes any scope", () => {
+	const { bridge, worktree } = setup("no-upstream");
+	const source = join(tmp, "no-upstream-source");
+	gitCommitEmpty(worktree, "landable work");
+	runTool("git", ["branch", "--unset-upstream"], bridge);
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land without a bridge upstream unexpectedly succeeded");
+	assert.match(result.stderr, /bridge has no upstream to push to; configure one before landing/);
+	// The regression: the check used to run after every scope was published, so
+	// the refusal arrived with the work already on the remote and no way back.
+	assert.equal(remoteWorkBranch(source), "", "land published work it could not then close");
+	assert.doesNotMatch(result.stderr, /land: pushing scope/);
+});
+
 test("land refuses a dirty scoped worktree before running gates or pushing", () => {
 	const { bridge, worktree } = setup("dirty-worktree");
 	write(join(worktree, "README.md"), "dirty\n");

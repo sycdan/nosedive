@@ -56,7 +56,7 @@ const page = `<!doctype html>
 <main>
   <h1>${castPath.replace(/[&<>]/g, "")}</h1>
   <div id="player"></div>
-  <p>Rerun the gate then reload the page for a fresh take.</p>
+  <p>Rerun \`nosedive test 01a04fe1-f17e-7701-a30a-071d26828443\` then reload the page for a fresh take.</p>
 </main>
 <script src="/player.js"></script>
 <script>

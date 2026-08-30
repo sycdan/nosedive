@@ -6,7 +6,7 @@
 
 _Pick **what's next**, and do it **by the book**._
 
-Nosedive turns a plain notes repo into a _bridge_ -- a knowledge base and orchestration
+Nosedive turns a plain notes repo into a _metarepo_ -- a knowledge base and orchestration
 hub for agentic development across one or more implementation repos. Work is split into
 small vertical slices before anything is built, and what "done" looks like is captured as
 executable checks that agents can run to find out whether they are actually finished.

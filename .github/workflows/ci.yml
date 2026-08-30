@@ -35,3 +35,30 @@ jobs:
         run: npm run test:pack-bin
       - name: Test version script
         run: node scripts/version.mjs --release --from "$(node scripts/version.mjs)"
+
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # Every commit certifies the Developer Certificate of Origin (see DCO).
+      # The SHAs go through the environment rather than into the script text,
+      # so a branch name can never be read as shell.
+      - name: Every commit is signed off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          unsigned=""
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            if ! git log -1 --format=%B "$sha" | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+              unsigned="$unsigned $sha"
+              echo "::error::$(git log -1 --format='%h %s' "$sha") has no Signed-off-by trailer"
+            fi
+          done
+          if [ -n "$unsigned" ]; then
+            echo "Sign off with \`git commit -s\`, or fix a whole branch with \`git rebase --signoff $BASE\`." >&2
+            exit 1
+          fi

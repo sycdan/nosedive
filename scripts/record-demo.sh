@@ -25,7 +25,7 @@ ASSERT_LOG="${ASSERT_LOG:-/tmp/record-demo-assertions.log}"
 WORKDIR="${WORKDIR:-/tmp/record-demo}"
 
 WORK_BRANCH="work/add-a-hello-note"
-HELLO="Hello from nosedive."
+HELLO="Hello from nosedive"
 NOTE="workspace/__self/hello.md"
 
 PROMPT=$'\e[32m~\e[0m \e[34m$\e[0m '
@@ -78,7 +78,7 @@ open_log() { exec 3>>"$ASSERT_LOG"; }
 # so the next prompt renders welded onto it. `cat` of a file an agent wrote
 # without a trailing newline produced exactly that:
 #
-#     Hello from nosedive.~ $ nosedive note ...
+#     Hello from nosedive~ $ nosedive note ...
 #
 # Knowing whether that happened would mean reading a cursor-position reply back
 # off the pty mid-recording, or piping output through `tee` to inspect it --
@@ -196,15 +196,26 @@ cmd_walk() {
 	# grep two beats later has to find something known. "Write a hello note" is
 	# what a human would say and is exactly what makes the walk unrepeatable.
 	#
-	# "Commit it." is redundant against the handoff, which already says to commit
+	# "and commit" is redundant against the handoff, which already says to commit
 	# in the named repo. It stays for take quality, not correctness: without it
 	# one take had the agent write the file and stop, which still packs and still
 	# lands, but shows no commit on camera. Real dive briefs are specific, so
 	# spelling it out is not a compromise of the outcome-first idea -- the second
 	# delegation, which says only "done when: a hello note exists", carries that.
+	#
+	# The line comes last and carries no trailing punctuation, so nothing after
+	# it can be read as part of it. Both halves of that were learned from takes.
+	# A period once ended it, and the agent dropped it as sentence punctuation,
+	# which broke two beats at once: the payoff cat no longer matched, and the
+	# grep -- whose pattern is this same string -- stopped matching the patch,
+	# because a "." is a regex wildcard wanting a character the file did not
+	# have. The only hits left were the dive record quoting the brief back at
+	# itself, which on camera proves nothing about pack banking anything. Then
+	# removing the period left "exactly: <line> Commit it.", where nothing marks
+	# where the line ends. Ending on the content settles both.
 	step "nosedive record.dive --feat add-a-hello-note \\
     --gist \"Add a hello note to the bridge\" \\
-    --brief \"Write workspace/__self/hello.md containing exactly: $HELLO Commit it.\""
+    --brief \"Write and commit workspace/__self/hello.md, one line: $HELLO\""
 
 	# Delegate the jump. Two steps and a file, never a pipe -- the handoff is
 	# written to disk and then handed over by path. Piping `jump` straight into
@@ -279,7 +290,7 @@ cmd_walk() {
 	# The closing id resolves from the installed package, not from this bridge,
 	# so a viewer who types it gets the gates quickstart on a machine that has
 	# never seen this repo.
-	step "nosedive note nosedive render 01a031cd-a1e1-7c6d-9a71-4ab49b96da0a to learn about gates"
+	step "nosedive note learn about gates: nosedive render 01a031cd-a1e1-7c6d-9a71-4ab49b96da0a"
 
 	# A cast ends at its last event, so trailing idle time does not exist in the
 	# file -- hold the tail by emitting, not by waiting. The player also caps any

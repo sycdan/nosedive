@@ -74,14 +74,13 @@
 			.lede {
 				font-size: 1.1rem;
 				margin: 0 auto 2rem;
-				max-width: 38rem;
 			}
 			.cta {
 				display: flex;
 				gap: 0.6rem;
 				justify-content: center;
 				flex-wrap: wrap;
-				margin-bottom: 3rem;
+				margin: 2rem 0 0;
 			}
 			.cta a {
 				display: inline-block;
@@ -97,11 +96,6 @@
 				background: var(--accent);
 				border-color: var(--accent);
 				color: #fff;
-			}
-			h2 {
-				font-size: 1.3rem;
-				margin: 2.75rem 0 0.75rem;
-				letter-spacing: -0.01em;
 			}
 			p {
 				margin: 0 0 1rem;
@@ -140,12 +134,6 @@
 			.demo .ap-player {
 				font-size: 12px;
 			}
-			ul {
-				padding-left: 1.15rem;
-			}
-			li {
-				margin-bottom: 0.4rem;
-			}
 			a {
 				color: var(--accent);
 			}
@@ -175,65 +163,19 @@
 				finished.
 			</p>
 
+			<pre><code>npm i -g nosedive</code></pre>
+
+			<!-- @see kb/01a04e21-40d3-733f-bbc9-5274bc42a31c.md -->
+			<div class="demo" id="demo"></div>
+			<p class="demo-caption">
+				Seed to land on an empty repo, delegated to an agent. Requires Node 22 or newer.
+			</p>
+
 			<div class="cta">
 				<a class="primary" href="https://github.com/sycdan/nosedive">GitHub</a>
 				<a href="https://www.npmjs.com/package/nosedive">npm</a>
 				<a href="https://github.com/sycdan/nosedive/blob/main/COMMANDS.md">Commands</a>
 			</div>
-
-			<!-- @see kb/01a04e21-40d3-733f-bbc9-5274bc42a31c.md -->
-			<div class="demo" id="demo"></div>
-			<p class="demo-caption">Seed to land, on an empty repo.</p>
-
-			<h2>The problem</h2>
-			<p>
-				Agents can make code appear quickly. Getting from there to something we understand and are
-				willing to ship still takes work.
-			</p>
-			<p>
-				A change can span days, people, agents, and repositories. When its context is scattered
-				across tickets, chats, branches, and people's heads, three basic questions get harder to
-				answer: What are we doing? Where did we leave off? How will we know it works?
-			</p>
-			<p>
-				Nosedive keeps the answers next to the work, so a human or an agent can pick it up without
-				relying on one machine, one chat, or one person's memory.
-			</p>
-
-			<h2>Install</h2>
-			<pre><code>npm i -g nosedive</code></pre>
-			<p>Requires Node 22 or newer.</p>
-
-			<h2>Quickstart</h2>
-			<p>
-				Start from a clone of a repo you control -- an empty GitHub repo on the free tier is enough.
-			</p>
-			<pre><code>git clone &lt;your-notes-repo&gt; ~/BASE &amp;&amp; cd ~/BASE
-
-git config user.name "Test Pilot"
-git config user.email "test@nosedive.invalid"
-
-nosedive seed
-
-nosedive record.feat --gist "Add a hello note"
-nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..."
-nosedive jump
-
-# do the work in the hydrated workspace, and commit
-
-nosedive pack     # stopping partway; banks WIP as patches
-nosedive jump     # picks the same dive back up
-nosedive land     # pushes work/add-a-hello-note</code></pre>
-			<p>Every command prints a suggestion for the next one, so you can follow the prompts.</p>
-
-			<h2>The vocabulary</h2>
-			<ul>
-				<li><strong>repo</strong> -- an implementation boundary.</li>
-				<li><strong>feat</strong> -- a goal we want to accomplish.</li>
-				<li><strong>dive</strong> -- one bounded attempt at that goal.</li>
-				<li><strong>gate</strong> -- a repeatable check on the work.</li>
-				<li><strong>memo</strong> -- durable information found by following a breadcrumb.</li>
-			</ul>
 
 			<footer>
 				MIT licensed. Built by

@@ -1,6 +1,6 @@
 {
 	"name": "nosedive",
-	"version": "2026.8.30-1788054482882",
+	"version": "2026.8.30-1788061089198",
 	"description": "Turns a plain notes repo into a meterepo: a knowledge base and orchestration hub for agentic development across repos.",
 	"keywords": [
 		"cli",

@@ -216,10 +216,29 @@ function stashExceptStaged(bridgeDir: string): boolean {
 	return before !== after;
 }
 
+/**
+ * The bridge upstream `land` needs to close the dive, resolved before anything
+ * is published. The check used to sit inside `commitAndPushLand`, which runs
+ * after every work branch is already on its remote: a bridge with no upstream
+ * therefore published the work and then refused, leaving the dive open with
+ * nothing to retry -- landing again cannot un-push a branch.
+ */
+function bridgeUpstreamForLand(bridgeDir: string): string {
+	const upstream = gitOutput(bridgeDir, [
+		"rev-parse",
+		"--abbrev-ref",
+		"--symbolic-full-name",
+		"@{upstream}",
+	]);
+	if (!upstream) throw new Error("bridge has no upstream to push to; configure one before landing");
+	return upstream;
+}
+
 function commitAndPushLand(
 	bridgeDir: string,
 	divePath: string,
 	diveName: string,
+	upstream: string,
 	io: CommandIo,
 	featId?: string,
 	featPath?: string,
@@ -234,14 +253,6 @@ function commitAndPushLand(
 
 	const stashed = stashExceptStaged(bridgeDir);
 	try {
-		const upstream = gitOutput(bridgeDir, [
-			"rev-parse",
-			"--abbrev-ref",
-			"--symbolic-full-name",
-			"@{upstream}",
-		]);
-		if (!upstream)
-			throw new Error("bridge has no upstream to push to; configure one before landing");
 		const [remote] = upstream.split("/");
 		io.err(`land: syncing bridge from ${upstream}`);
 		gitRun(bridgeDir, ["fetch", remote!], "failed to fetch bridge remote before land push");
@@ -308,6 +319,9 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	const slug = slugForBranch(dive, feat);
 	const cli = nosediveInvocation();
+
+	// Before the scope loop, the gates and every push: see `bridgeUpstreamForLand`.
+	const upstream = bridgeUpstreamForLand(rc.bridgeDir);
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0) {
@@ -484,7 +498,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, io, feat?.id, feat?.path);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, feat?.path);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

@@ -72,6 +72,27 @@ failed=0
 # recording -- the one place assertion noise must never appear.
 open_log() { exec 3>>"$ASSERT_LOG"; }
 
+# Starts a command block, and repairs the ragged case on the way.
+#
+# A command whose output does not end in a newline leaves the cursor mid-line,
+# so the next prompt renders welded onto it. `cat` of a file an agent wrote
+# without a trailing newline produced exactly that:
+#
+#     Hello from nosedive.~ $ nosedive note ...
+#
+# Knowing whether that happened would mean reading a cursor-position reply back
+# off the pty mid-recording, or piping output through `tee` to inspect it --
+# and piping would cost the color, since nosedive checks whether stdout is a
+# terminal. Emitting a newline first costs one blank line between blocks, reads
+# as deliberate spacing, and cannot get this wrong. Not before the first block,
+# so the cast does not open on an empty line.
+started=0
+begin_block() {
+	[ "$started" -eq 1 ] && printf '\r\n'
+	started=1
+	printf '%s' "$PROMPT"
+}
+
 say() { printf '%s\n' "$*" >&3; }
 
 fail() {
@@ -87,7 +108,8 @@ step() {
 	local cmd="$1" first rest rc
 	first="${cmd%%$'\n'*}"
 	rest="${cmd#*$'\n'}"
-	printf '%s%s\r\n' "$PROMPT" "$first"
+	begin_block
+	printf '%s\r\n' "$first"
 	if [ "$rest" != "$cmd" ]; then
 		while IFS= read -r line; do
 			printf '%s%s\r\n' "$CONT" "$line"
@@ -105,7 +127,8 @@ step() {
 # succeeds, pack reset nothing and the demo is showing a lie.
 fails() {
 	local cmd="$1" rc
-	printf '%s%s\r\n' "$PROMPT" "$cmd"
+	begin_block
+	printf '%s\r\n' "$cmd"
 	eval "$cmd"
 	rc=$?
 	[ $rc -ne 0 ] || fail "expected non-zero, got 0: $cmd"
@@ -130,7 +153,8 @@ check() {
 # reviewer sees it; the walk keeps going so there is something to watch.
 agent() {
 	local cmd="$1" rc
-	printf '%s%s\r\n' "$PROMPT" "$cmd"
+	begin_block
+	printf '%s\r\n' "$cmd"
 	eval "$cmd"
 	rc=$?
 	[ $rc -eq 0 ] || say "NOTE: agent step exited $rc (not fatal): $cmd"
@@ -171,9 +195,16 @@ cmd_walk() {
 	# The brief names the exact line, because an agent writes this file and the
 	# grep two beats later has to find something known. "Write a hello note" is
 	# what a human would say and is exactly what makes the walk unrepeatable.
+	#
+	# "Commit it." is redundant against the handoff, which already says to commit
+	# in the named repo. It stays for take quality, not correctness: without it
+	# one take had the agent write the file and stop, which still packs and still
+	# lands, but shows no commit on camera. Real dive briefs are specific, so
+	# spelling it out is not a compromise of the outcome-first idea -- the second
+	# delegation, which says only "done when: a hello note exists", carries that.
 	step "nosedive record.dive --feat add-a-hello-note \\
     --gist \"Add a hello note to the bridge\" \\
-    --brief \"Write workspace/__self/hello.md containing exactly: $HELLO -- then commit it. Do not land.\""
+    --brief \"Write workspace/__self/hello.md containing exactly: $HELLO Commit it.\""
 
 	# Delegate the jump. Two steps and a file, never a pipe -- the handoff is
 	# written to disk and then handed over by path. Piping `jump` straight into
@@ -196,8 +227,14 @@ cmd_walk() {
 
 	check "jump hydrated the bridge worktree" 'test -d workspace/__self'
 	check "the agent wrote the note" "test -f '$NOTE'"
-	check "the agent left nothing uncommitted" \
-		'test -z "$(git -C workspace/__self status --porcelain)"'
+
+	# Observed, not asserted. Whether the agent committed is not a property of
+	# nosedive working: `pack` captures all WIP on the scoped repos, so an
+	# uncommitted file reaches the artifact and replays exactly the same. Every
+	# beat below -- the failed cat, the grep into the patch, the cold jump, the
+	# land -- went green on a take where the agent never committed. Worth
+	# knowing when reviewing a take, wrong as a failure.
+	say "agent left uncommitted: $(git -C workspace/__self status --porcelain | tr '\n' ' ')"
 
 	step "nosedive pack"
 
@@ -248,7 +285,7 @@ cmd_walk() {
 	# file -- hold the tail by emitting, not by waiting. The player also caps any
 	# single gap at its idleTimeLimit, so two beats a second apart give a real
 	# two seconds where one two-second pause gives 1.5.
-	printf '%s' "$PROMPT"
+	begin_block
 	sleep 1
 	printf '\e[0m'
 	sleep 1

@@ -8,7 +8,10 @@
 		"workflow",
 		"multi-repo",
 		"polyrepo",
-		"monorepo"
+		"cross-repo",
+		"metarepo",
+		"tooling",
+		"devex"
 	],
 	"homepage": "https://nosedive.dev",
 	"bugs": {

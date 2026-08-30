@@ -6,7 +6,7 @@
 
 > note input, know output
 
-Nosedive turns a plain notes repo into a [bridge](kb/00000000-0000-79ef-b942-3b52824471f3.md) -- one notes repo that holds the plan
+Nosedive turns a plain notes repo into a [bridge](kb/00000000-0000-79ef-b942-3b52824471f3.md) -- one repo that holds the plan
 and drives the work across your other repos. Work is split into small vertical slices
 before anything is built, and what "done" looks like is captured as executable checks
 that agents can run to find out whether they are actually finished.

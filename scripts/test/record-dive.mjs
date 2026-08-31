@@ -1301,6 +1301,47 @@ test("record.dive --repin writes the dive and touches nothing else", () => {
 	);
 });
 
+/**
+ * A repin moves refs. Everything else the pilot wrote on a scope entry is theirs,
+ * including keys this version of nosedive has no opinion about, and rebuilding
+ * the block is not a licence to drop them. Order is part of that: the sequence a
+ * pilot chose is the sequence they read the dive in, and a ref moving is no
+ * reason for it to change.
+ */
+test("record.dive --repin keeps every other scope key and the scope order", () => {
+	const { bridge, repo, repoCommit } = setup("repin-keeps-scope-keys");
+	const other = join(bridge, "workspace", "other");
+	const otherCommit = createRepo(other, unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const created = run(["record.dive", "--feat", featId], bridge);
+	assertOk(created, "record.dive create failed");
+	const path = recordedPath(bridge, created.stdout);
+	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
+	// `other` goes first so a rebuild that reorders is visible, and carries the
+	// three kinds of key at stake: one the renderer knows and reads (path), one it
+	// knows and reads elsewhere (render), and one it has never heard of (note).
+	writeFileSync(
+		path,
+		readFileSync(path, "utf8").replace(
+			/^scopes:$/m,
+			`scopes:\n  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      path: docs\n      render: body\n      note: "why this repo is here"`,
+		),
+	);
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	const otherTrunk = commitOnBranch(other, "main", "trunk-work");
+	assertOk(run(["record.dive", "--ref", id, "--repin"], bridge), "record.dive --repin failed");
+	const doc = readFileSync(path, "utf8");
+	assert.match(
+		doc,
+		new RegExp(
+			`^scopes:\n  - ${unrelatedRepoId}:\n      ref: ${otherTrunk}\n      path: docs\n      render: body\n      note: "?why this repo is here"?\n  - ${repoId}:\n      ref: ${featHead}\n      work-branch: work/record-dive.nosedive$`,
+			"m",
+		),
+		`a repin moved both pins and kept nothing else:\n${doc}`,
+	);
+	assert.notEqual(otherTrunk, otherCommit, "the pin must move or this proves nothing");
+});
+
 test("record.dive composes --upscope, --unscope and one --work-branch", () => {
 	const { bridge } = setup("upscope");
 	const secondCommit = createRepo(join(bridge, "workspace", "second"), unhydratedRepoId);

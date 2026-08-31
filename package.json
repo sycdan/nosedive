@@ -1,6 +1,6 @@
 {
 	"name": "nosedive",
-	"version": "2026.8.30-1788133371924",
+	"version": "2026.8.31-1788136895089",
 	"description": "Turns a plain notes repo into a bridge: one repo that holds the plan and drives agentic work across your other repos.",
 	"keywords": [
 		"cli",

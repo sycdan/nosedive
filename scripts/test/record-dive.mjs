@@ -19,6 +19,7 @@ const featId = "019fc623-0000-7000-8000-000000000002";
 const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
 const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
 const backlogId = "019fc623-0000-7000-8000-000000000005";
+const testDiver = "01a05527-a49a-714c-9d35-3fa310ac6270@nosedive.invalid";
 
 function createRepo(path, id) {
 	mkdirSync(path, { recursive: true });
@@ -511,22 +512,63 @@ test("record.dive --free records an empty dive scoping the backlog read-only", (
 	// The id stands in for the name a free dive has not been given yet.
 	assert.match(doc, new RegExp(`^name: ${id}$`, "m"));
 	// No branch: nothing about an
-	// unbriefed, unclaimed dive justifies somewhere to push, and naming no branch
+	// unbriefed dive justifies somewhere to push, and naming no branch
 	// is the whole of what read-only means.
 	assert.match(doc, new RegExp(`^  - ${repoId}:\n      ref: ${repoCommit}$`, "m"));
 	assert.doesNotMatch(doc, /^      work-branch: /m);
 	assert.doesNotMatch(doc, /^      mode: /m);
 	assert.doesNotMatch(doc, /^gist:/m);
-	assert.doesNotMatch(doc, /^meta:/m);
 	assert.doesNotMatch(doc, /^links:/m);
 	assert.doesNotMatch(doc, /^# /m);
-	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false);
+	// Claimed and on deck: finding work reads the workspace, and `append-log.dive`
+	// and `bail` both act on whatever the marker names.
+	assert.match(doc, /^  diver: "?test@nosedive\.invalid"?$/m);
+	assert.equal(readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"), `id: ${id}\n`);
 	// The agent that just made the dive is the one that has to fill it in, so it
 	// is told what is missing without having to run preflight to find out.
 	// `local-only` is absent because the command committed the doc it wrote, and
 	// that tag reports the absence of exactly that commit.
-	assert.match(result.stdout, /^needs: needs-name, needs-gist, needs-brief, needs-diver$/m);
+	assert.match(result.stdout, /^needs: needs-name, needs-gist, needs-brief$/m);
 	assert.ok(result.stdout.includes(`Committed dive(${id}): created`), result.stdout);
+	// `jump` is feat-scoped and refuses a free dive, so the hints name what a
+	// free dive can actually do next -- including the adoption that ends that.
+	assert.doesNotMatch(result.stdout, /nosedive jump/);
+	assert.match(result.stdout, new RegExp(`^nosedive record\\.dive ${id} --gist `, "m"));
+	assert.match(result.stdout, /^nosedive append-log\.dive /m);
+	assert.match(result.stdout, new RegExp(`^nosedive record\\.dive ${id} --feat <feat-ref> `, "m"));
+	assert.match(result.stdout, /^nosedive bail --reason /m);
+});
+
+test("record.dive <ref> stops offering the gist step once a free dive has one", () => {
+	const { bridge } = setupFree("free-gisted");
+	const created = run(["record.dive", "--free"], bridge);
+	assertOk(created, "record.dive --free failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const gisted = run(["record.dive", id, "--gist", "what breaks"], bridge);
+	assertOk(gisted, "record.dive <id> --gist failed");
+	assert.doesNotMatch(gisted.stdout, /--gist </);
+	assert.doesNotMatch(gisted.stdout, /nosedive jump/);
+	assert.match(gisted.stdout, /^nosedive bail --reason /m);
+});
+
+test("record.dive <ref> --feat makes a free dive jumpable and says so", () => {
+	const { bridge } = setupFree("free-adopted");
+	const created = run(["record.dive", "--free"], bridge);
+	assertOk(created, "record.dive --free failed");
+	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
+	const adopted = run(["record.dive", id, "--feat", featId], bridge);
+	assertOk(adopted, "record.dive <id> --feat failed");
+	assert.match(adopted.stdout, new RegExp(`^nosedive jump kb/${id}\\.md$`, "m"));
+});
+
+test("record.dive --free requires an identity to claim the dive with", () => {
+	const { bridge } = setupFree("free-nameless");
+	// Emptied rather than unset: an unset local key falls through to the runner's
+	// own global config, and the fixture would then depend on the machine.
+	runTool("git", ["config", "user.email", ""], bridge);
+	const result = run(["record.dive", "--free"], bridge, "");
+	assert.notEqual(result.status, 0, "record.dive --free unexpectedly succeeded");
+	assert.match(result.stderr, /--free requires git config user\.email/);
 });
 
 test("record.dive --free warns when the backlog scopes no repos", () => {
@@ -556,14 +598,23 @@ test("record.dive --free takes no other option", () => {
 	}
 });
 
-test("record.dive --free ignores the active dive", () => {
+test("record.dive --free refuses over a dive already in flight", () => {
 	const { bridge } = setupFree("free-active");
-	const created = run(["record.dive", "--effort", featId], bridge);
+	// The claim only puts a dive on deck when it names the pilot the bridge
+	// knows, and that is what makes this workspace occupied.
+	runTool("git", ["config", "user.email", testDiver], bridge);
+	const created = run(["record.dive", "--feat", featId, "--diver", testDiver], bridge);
 	assertOk(created, "record.dive create failed");
 	const id = /^id: (.+)$/m.exec(readFileSync(recordedPath(bridge, created.stdout), "utf8"))[1];
 	const marker = join(bridge, "workspace", ".nosedive-ref");
-	writeFileSync(marker, `id: ${id}\n`);
-	assertOk(run(["record.dive", "--free"], bridge), "record.dive --free failed");
+	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
+	const before = readdirSync(join(bridge, "kb")).length;
+	const result = run(["record.dive", "--free"], bridge, "");
+	assert.notEqual(result.status, 0, "record.dive --free unexpectedly succeeded");
+	assert.match(result.stderr, /pilot already has active dive/);
+	// The refusal happens before the document is written, so nothing is left on
+	// disk that the marker never named.
+	assert.equal(readdirSync(join(bridge, "kb")).length, before);
 	assert.match(readFileSync(marker, "utf8"), new RegExp(`^id: ${id}\\n$`));
 });
 
@@ -1093,7 +1144,7 @@ test("record.dive --repin <ref> --scope pins at a merge that contains HEAD", () 
 			"-c",
 			"user.name=Nosedive Test",
 			"-c",
-			"user.email=nosedive@example.invalid",
+			`user.email=${testDiver}`,
 			"merge",
 			"--no-ff",
 			"-m",

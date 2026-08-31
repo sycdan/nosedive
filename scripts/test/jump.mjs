@@ -298,6 +298,28 @@ test("jump refuses an unbriefed dive before hydrating its scopes", () => {
 	assert.equal(existsSync(worktree), false, "jump should refuse before hydrating the scope");
 });
 
+test("jump names the missing feat before the missing brief", () => {
+	const { bridge, repoId, diveId } = setup("featless");
+	const worktree = repoWorktree(bridge, "featless");
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	// A free dive lacks both, and the feat is the one that cannot be fixed by
+	// writing anything into the document.
+	writeFileSync(
+		divePath,
+		readFileSync(divePath, "utf8")
+			.replace(/^  feat: .*$\n/m, "")
+			.replace(/\n## Brief\n[\s\S]*$/, "\n"),
+	);
+	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly accepted a dive with no feat");
+	assert.match(result.stderr, new RegExp(`dive ${diveId} has no feat`));
+	assert.match(result.stderr, new RegExp(`record\\.dive kb/${diveId}\\.md --feat <feat-ref>`));
+	assert.doesNotMatch(result.stderr, /## Brief/);
+	assert.equal(existsSync(worktree), false, "jump should refuse before hydrating the scope");
+});
+
 test("jump hydrates a packed dive's scoped repos and reapplies every patch chain", () => {
 	const { bridge, origin, repoId, featId, diveId, pinnedRef } = setup("full");
 	const worktree = repoWorktree(bridge, "full");

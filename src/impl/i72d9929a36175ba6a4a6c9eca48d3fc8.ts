@@ -342,6 +342,14 @@ export function jump(args: string[], io: CommandIo): void {
 	if (!selection) return;
 	const dive = selection.dive;
 
+	const featRef = dive.featRef;
+	if (!featRef)
+		throw new Error(
+			`dive ${dive.id} has no feat; assign one with ` +
+				`\`${nosediveInvocation()} record.dive ${dive.relPath} --feat <feat-ref>\``,
+		);
+	const feat = resolveFeatDoc(kbDocs, rc, featRef);
+
 	// Checked before anything is hydrated: an unbriefed dive has nothing to hand
 	// the next agent, and jump's whole output is that handoff.
 	const diveBody = parseMarkdownDoc(readFileSync(dive.path, "utf8"), formatPath(dive.path)).body;
@@ -356,12 +364,6 @@ export function jump(args: string[], io: CommandIo): void {
 	if (failures.length > 0) {
 		throw new Error(failures.flatMap((failure) => failure.reasons).join("; "));
 	}
-	// The parsed field, not the raw key: it accepts `meta.feat` and the older
-	// `meta.effort` alike, and reading past it made a dive written the canonical
-	// way impossible to jump at all.
-	const featRef = dive.featRef;
-	if (!featRef) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
-	const feat = resolveFeatDoc(kbDocs, rc, featRef);
 	recreateDiveScratch(rc.workspaceDir, dive.id);
 
 	const scopePaths = new Map<string, string>();

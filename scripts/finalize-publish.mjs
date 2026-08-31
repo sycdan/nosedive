@@ -82,7 +82,9 @@ export function finalizePublish({ repo = root, source, version }) {
 	// unparseable and the finalization unrecognizable to its own rerun.
 	const trailers = `${SOURCE_TRAILER}: ${sourceSha}\n${VERSION_TRAILER}: ${version}`;
 	git(repo, ["add", "--", ...changed]);
-	git(repo, [...IDENTITY, "commit", "-m", subject, "-m", trailers]);
+	// Signed off under the pipeline identity, because the pre-push hook this
+	// push runs through refuses any commit without the trailer.
+	git(repo, [...IDENTITY, "commit", "-s", "-m", subject, "-m", trailers]);
 
 	return { commit: git(repo, ["rev-parse", "HEAD"]).trim(), version, surfacesChanged };
 }

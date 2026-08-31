@@ -8,6 +8,29 @@
 
 - `npm run format` to apply the repo-local Prettier config.
 
+## Sign your work
+
+Nosedive uses the [Developer Certificate of Origin](DCO) -- a one-line statement that
+you wrote the contribution, or otherwise have the right to submit it under the MIT
+license. There is no agreement to sign and no rights are transferred; you keep the
+copyright on what you write.
+
+Certify a commit by adding a `Signed-off-by` trailer with your real name:
+
+```sh
+git commit -s -m "..."
+```
+
+To sign off a branch you already committed:
+
+```sh
+git rebase --signoff main
+```
+
+The pre-push hook checks the commits you are about to push, and CI checks every
+non-merge commit in a pull request. Both run `npm run check:signoff`, which with no
+argument checks whatever no remote holds yet.
+
 ## Versioning + publishing
 
 Versions are CalVer, computed by [`scripts/version.mjs`](scripts/version.mjs):

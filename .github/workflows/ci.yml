@@ -35,3 +35,22 @@ jobs:
         run: npm run test:pack-bin
       - name: Test version script
         run: node scripts/version.mjs --release --from "$(node scripts/version.mjs)"
+
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # The same check the pre-push hook runs, so a pull request cannot fail on
+      # something the push already had every chance to catch. The SHAs go
+      # through the environment rather than into the script text, so a branch
+      # name can never be read as shell.
+      - name: Every commit is signed off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-signoff.mjs "$BASE..$HEAD"

@@ -28,6 +28,17 @@ export interface ScopeRef {
 	legacyMode?: "ro" | "rw";
 	flags: string[];
 	render?: "body" | "gist";
+	/**
+	 * Every scalar key written on the entry, `ref` and `work-branch` included.
+	 * Open set, the way a link's is: the reading command validates what it needs,
+	 * and the renderer writes back whatever it was not asked to manage, so a key
+	 * this version has no opinion about survives a repin.
+	 *
+	 * Scalars only, so the superseded `flags:` list is not among them. That is the
+	 * same deliberate drop `mode` gets: both spell writability, and a branch
+	 * spells it better.
+	 */
+	attrs: Record<string, string>;
 }
 
 export interface LinkRef {
@@ -72,7 +83,7 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 		if (uuidLike(repoId)) {
 			// A bare entry names a repo and nothing else, so it names no branch and
 			// is not landable until something upscopes it.
-			return { repoId, path: "", readOnly: true, flags: [] };
+			return { repoId, path: "", readOnly: true, flags: [], attrs: {} };
 		}
 		throw new Error(
 			`legacy scope shorthand is not supported in ${label}; use a bare quid or '- <repo-id>: { ... }' object form`,
@@ -102,6 +113,11 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 	const workBranch = optionalScopeString(value, "work-branch", label);
 	const render = optionalScopeString(value, "render", label) as "body" | "gist" | undefined;
 	const flags = optionalScopeFlags(value, label);
+	const attrs: Record<string, string> = {};
+	for (const [key, raw] of Object.entries(value)) {
+		const scalar = scalarToString(raw);
+		if (scalar !== undefined) attrs[key] = scalar;
+	}
 
 	if (render && render !== "body" && render !== "gist") {
 		throw new Error(`invalid scope entry in ${label}: render must be 'body' or 'gist'`);
@@ -135,6 +151,7 @@ export function parseScopeRef(scope: unknown, path: string, index: number): Scop
 		legacyMode: mode === "rw" || flags.includes("rw") ? "rw" : mode === "ro" ? "ro" : undefined,
 		flags,
 		render,
+		attrs,
 	};
 }
 

@@ -103,6 +103,7 @@ export function cachedScope(repo: KbDoc, bridgeDir: string, workspaceDir: string
 		ref: resolveRefCommit(cache, repo.id, trunk),
 		readOnly: true,
 		flags: [],
+		attrs: {},
 	};
 }
 
@@ -392,17 +393,31 @@ export function featWorkBranch(
 }
 
 /**
+ * The keys the renderers decide for themselves. `ref` and `work-branch` are
+ * rewritten from the resolved scope; `mode` is dropped, because `mode: ro` said
+ * the same thing twice and `mode: rw` said something a branch says better.
+ * Everything else on the entry is the pilot's and is written back untouched.
+ */
+const MANAGED_SCOPE_KEYS = new Set(["ref", "work-branch", "mode"]);
+
+function unmanagedScopeAttrs(scope: ScopeRef): [string, string][] {
+	return Object.entries(scope.attrs).filter(([key]) => !MANAGED_SCOPE_KEYS.has(key));
+}
+
+/**
  * A read-only scope is written as the repo and its pin and nothing else: naming
- * no branch is what read-only means, so there is no key that says so. `mode` is
- * never written -- `mode: ro` said the same thing twice and `mode: rw` said
- * something a branch says better.
+ * no branch is what read-only means, so there is no key that says so.
+ *
+ * Every other key the entry arrived with is written back after them. A repin
+ * rebuilds the whole `scopes:` block to move one ref, so a renderer that emits
+ * only what it manages is a renderer that deletes `path`, `render` and whatever
+ * the pilot wrote alongside them -- silently, and for every scope in the dive.
  */
 export function renderScopeEntry(scope: ScopeRef): Record<string, unknown> {
-	return {
-		[scope.repoId]: scope.workBranch
-			? { ref: scope.ref, "work-branch": scope.workBranch }
-			: { ref: scope.ref },
-	};
+	const value: Record<string, unknown> = { ref: scope.ref };
+	if (scope.workBranch) value["work-branch"] = scope.workBranch;
+	for (const [key, attr] of unmanagedScopeAttrs(scope)) value[key] = attr;
+	return { [scope.repoId]: value };
 }
 
 /**
@@ -483,6 +498,11 @@ export function inheritedScopes(
  * The create-time spelling of `renderScopeEntry`, emitting lines rather than a
  * value because a new dive's frontmatter is assembled as text. Neither writes
  * `mode`: the branch says where work goes, and its absence says nowhere.
+ *
+ * Unlike `renderScopeEntry` this has no carried-over keys to write. Every scope
+ * it renders was resolved from a repo doc moments earlier, so a dive is never
+ * born with a key its feat wrote. Route an existing scope through here and that
+ * stops being true -- it would need quoting the text form does not do.
  */
 export function renderScopes(scopes: ScopeRef[]): string[] {
 	if (scopes.length === 0) return ["scopes: []"];

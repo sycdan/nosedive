@@ -91,14 +91,38 @@ function renderNewDive(
 
 /**
  * A free dive carries only what the bridge can supply: no feat, so no managed
- * name, gist, title, brief, meta or links. Its own id stands in for the name it
- * has not been given yet. `jump` refuses it -- no `meta.feat`, no brief -- so
- * it is a record to hang work off, not a dive anything can pick up as-is.
+ * name, gist, title, brief or links. Its own id stands in for the name it has
+ * not been given yet. `jump` refuses it -- no `meta.feat` -- so it is a record
+ * to hang work off, not a dive anything can pick up as-is.
+ *
+ * It is claimed all the same. Finding work is work: it reads the workspace and
+ * may hydrate into it, so the marker has to say what the checkouts are for, and
+ * `append-log.dive` and `bail` both read that marker.
  */
-function renderFreeDive(id: string, scopes: ScopeRef[]): string {
-	return ["---", "kind: dive", `id: ${id}`, `name: ${id}`, ...renderScopes(scopes), "---", ""].join(
-		"\n",
-	);
+function renderFreeDive(id: string, scopes: ScopeRef[], diver: string): string {
+	return [
+		"---",
+		"kind: dive",
+		`id: ${id}`,
+		`name: ${id}`,
+		...renderScopes(scopes),
+		"meta:",
+		`  diver: ${quoteYamlString(diver)}`,
+		"---",
+		"",
+	].join("\n");
+}
+
+function freeDiveNextSteps(id: string, gist: string): string[] {
+	const steps = gist
+		? []
+		: [`nosedive record.dive ${id} --gist "<the question>" -- name what is being looked into`];
+	return [
+		...steps,
+		"nosedive append-log.dive -- record what you find, body on stdin",
+		`nosedive record.dive ${id} --feat <feat-ref> -- assign a feat, making it jumpable`,
+		`nosedive bail --reason "<what you found>" -- close it as a memo`,
+	];
 }
 
 function backlogMemoDoc(rc: NosediveRc, kbDocs: KbDoc[]): KbDoc {
@@ -116,8 +140,14 @@ function recordFreeDive(
 	kbDocs: KbDoc[],
 	kbDir: string,
 	workspaceDir: string,
+	pilotEmail: string,
+	active: KbDoc | undefined,
 	io: CommandIo,
 ): void {
+	// A dive nobody can be named as holding is not claimable, and an unclaimed
+	// free dive is one no other command will act on.
+	if (!pilotEmail)
+		throw new Error("record.dive --free requires git config user.email in the bridge");
 	const backlog = backlogMemoDoc(rc, kbDocs);
 	const scopes = backlog.scopes.map((scope) => ({
 		...cachedScope(
@@ -126,8 +156,8 @@ function recordFreeDive(
 			workspaceDir,
 		),
 		// Stamped on after `cachedScope`, which derives the mode from the repo doc
-		// and would hand back rw: an unbriefed dive nobody holds has no claim on a
-		// writable checkout.
+		// and would hand back rw: a free dive answers a question, and what it
+		// produces is a memo. Code lands on the feat-owned dive it leads to.
 		readOnly: true,
 	}));
 	if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
@@ -137,7 +167,12 @@ function recordFreeDive(
 	}
 	const id = uuid7AtMs(Date.now());
 	const path = join(kbDir, `${id}.md`);
-	writeFileAtomic(path, renderFreeDive(id, scopes));
+	// Before the document exists, so a workspace flying something else costs
+	// nothing: `ensureActivation` throws here rather than leaving a claimed dive
+	// on disk that the marker never named.
+	ensureActivation({ id }, pilotEmail, pilotEmail, active);
+	writeFileAtomic(path, renderFreeDive(id, scopes, pilotEmail));
+	writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 	io.log(`Recorded ${formatPath(path)}`);
 	// The agent that just made the dive is the one that has to fill it in, so it
 	// is told what is missing here rather than having to run preflight to find out.
@@ -145,7 +180,7 @@ function recordFreeDive(
 	commitBridgeDocs(rc.bridgeDir, `dive(${recorded.name}): created`, [path], io);
 	const tags = diveTags(recorded, localOnlyKbDocIds(rc.bridgeDir, kbDir));
 	if (tags.length > 0) io.log(`needs: ${tags.join(", ")}`);
-	printNextSteps(io, [`nosedive jump kb/${id}.md`]);
+	printNextSteps(io, freeDiveNextSteps(id, ""));
 }
 
 function replaceTitle(body: string, title: string): string {
@@ -161,15 +196,16 @@ export function recordDive(args: string[], io: CommandIo): void {
 	// question only the bridge can answer.
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
-	// Before the active-dive read: a free dive is never activated and never
-	// claimed, so what the workspace currently holds cannot bear on it.
-	if (options.free) {
-		recordFreeDive(rc, kbDocs, rc.kbDir, rc.workspaceDir, io);
-		return;
-	}
 	const active = activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
+
+	// After the active-dive read, not before it: a free dive claims the workspace
+	// like any other, so one already in flight is what refuses this one.
+	if (options.free) {
+		recordFreeDive(rc, kbDocs, rc.kbDir, workspaceDir, pilotEmail, active, io);
+		return;
+	}
 
 	if (!options.ref) {
 		// No guard on the active dive here: recording is writing work up, and a
@@ -332,5 +368,12 @@ export function recordDive(args: string[], io: CommandIo): void {
 		io,
 		feat?.id,
 	);
-	printNextSteps(io, [`nosedive jump kb/${dive.id}.md`]);
+	// A dive with no feat is a free dive whatever else this call changed about
+	// it, and `jump` is not among the things it can do next.
+	printNextSteps(
+		io,
+		feat
+			? [`nosedive jump kb/${dive.id}.md`]
+			: freeDiveNextSteps(dive.id, options.gist?.trim() ?? dive.gist),
+	);
 }

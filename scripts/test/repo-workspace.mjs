@@ -973,6 +973,69 @@ meta:
 		"hydrate after publishing should leave the worktree detached",
 	);
 
+	// A worktree whose commit was squash-merged and its branch deleted: no ref
+	// contains it any more, but merging it into trunk would change nothing, so
+	// hydrate moves the worktree instead of refusing.
+	// @see kb/019fcb35-d660-7318-ac4c-3d5aeed3a81e.md
+	write(join(unpublishedTarget, ".assertion-squashed"), "squashed\n");
+	runTool("git", ["add", ".assertion-squashed"], unpublishedTarget);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Assertion",
+			"-c",
+			"user.email=assertion@example.invalid",
+			"commit",
+			"-m",
+			"work that will be squash-merged",
+		],
+		unpublishedTarget,
+	);
+	const squashedCommit = runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim();
+	const squashedOriginUrl = runTool(
+		"git",
+		["config", "--get", "remote.origin.url"],
+		unpublishedTarget,
+	).stdout.trim();
+	runTool(
+		"git",
+		["push", squashedOriginUrl, `${squashedCommit}:refs/heads/work/land-squash`],
+		unpublishedTarget,
+	);
+	runTool("git", ["checkout", "main"], cloudSourceRepo);
+	runTool("git", ["merge", "--squash", "work/land-squash"], cloudSourceRepo);
+	runTool(
+		"git",
+		[
+			"-c",
+			"user.name=Nosedive Assertion",
+			"-c",
+			"user.email=assertion@example.invalid",
+			"commit",
+			"-m",
+			"squash merge work",
+		],
+		cloudSourceRepo,
+	);
+	runTool("git", ["branch", "-D", "work/land-squash"], cloudSourceRepo);
+	const squashMergeCommit = runTool(
+		"git",
+		["rev-parse", "main^{commit}"],
+		cloudSourceRepo,
+	).stdout.trim();
+
+	const hydrateAfterSquash = run(["hydrate-repo.workspace", hydrateRepoId], hydrateBridge);
+	assertOk(
+		hydrateAfterSquash,
+		"hydrate over a squash-merged, branch-deleted commit should succeed",
+	);
+	assert.equal(
+		runTool("git", ["rev-parse", "HEAD"], unpublishedTarget).stdout.trim(),
+		squashMergeCommit,
+		"hydrate should move the worktree onto the squash merge commit",
+	);
+
 	const outsideDehydrateDir = join(tmp, "outside-dehydrate-target");
 	mkdirSync(outsideDehydrateDir, { recursive: true });
 	write(join(outsideDehydrateDir, "keep.txt"), "outside\n");

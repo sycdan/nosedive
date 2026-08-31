@@ -26,6 +26,7 @@ import {
 	isDirEmpty,
 	pruneStaleWorktrees,
 	resolveRefCommit,
+	trunkAbsorbsHead,
 	writeRepoMarker,
 } from "../lib/repoWorktrees.js";
 import { reconcilePushIsolation } from "../lib/repoHardening.js";
@@ -74,7 +75,11 @@ export function hydrateRepoWorkspace(args: string[], io: CommandIo): void {
 			["rev-parse", "HEAD"],
 			`failed to inspect current commit for repo ${repoId}`,
 		);
-		if (currentCommit !== commit && dehydrateHasUnpublishedCommits(targetPath)) {
+		if (
+			currentCommit !== commit &&
+			dehydrateHasUnpublishedCommits(targetPath) &&
+			!trunkAbsorbsHead(targetPath, repoDoc.repoBaseBranch ?? "main")
+		) {
 			throw new Error(HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID);
 		}
 		if (ensureDetachedAtCommit(targetPath, commit, repoId)) changed = true;

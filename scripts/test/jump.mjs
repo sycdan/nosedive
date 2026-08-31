@@ -870,6 +870,53 @@ test("jump moves a clean worktree off a published commit onto the pin", () => {
 	);
 });
 
+/**
+ * `land` pushes HEAD to a work branch, the PR is squash-merged, and the branch
+ * is deleted -- containment finds no ref for the new squash commit, but
+ * `trunkAbsorbsHead` proves the merge would change nothing, so jump proceeds
+ * instead of refusing. @see kb/019fcb35-d660-7318-ac4c-3d5aeed3a81e.md
+ */
+test("jump moves a worktree whose commit was squash-merged and its branch deleted", () => {
+	const { bridge, repoId, diveId, pinnedRef, source } = deckSetup("squash-absorbed", {
+		claimed: false,
+	});
+	const worktree = repoWorktree(bridge, "squash-absorbed");
+
+	write(join(worktree, "squashed.txt"), "squashed\n");
+	runTool("git", ["add", "squashed.txt"], worktree);
+	gitCommit(worktree, "work that will be squash-merged");
+	const squashed = worktreeHead(bridge, "squash-absorbed");
+
+	// Hydrated worktrees are push-isolated (`remote.origin.pushurl` points at a
+	// sentinel), so publish the way `land` does: straight to the resolved URL.
+	const originUrl = runTool(
+		"git",
+		["config", "--get", "remote.origin.url"],
+		worktree,
+	).stdout.trim();
+	runTool("git", ["push", originUrl, `${squashed}:refs/heads/work/land-squash`], worktree);
+	runTool("git", ["checkout", "main"], source);
+	runTool("git", ["merge", "--squash", "work/land-squash"], source);
+	gitCommit(source, "squash merge work");
+	runTool("git", ["branch", "-D", "work/land-squash"], source);
+
+	const result = run(["jump", diveId], bridge);
+	assertOk(
+		result,
+		"jump failed on a worktree whose commit was squash-merged and its branch deleted",
+	);
+	assert.equal(
+		worktreeHead(bridge, "squash-absorbed"),
+		pinnedRef,
+		"an absorbed worktree should be moved back to the dive's pin",
+	);
+	assert.match(
+		result.stderr,
+		new RegExp(`hydrated repo=${repoId} path=\\S+ moved-from=${squashed}`),
+		"jump should say which commit it moved the worktree off",
+	);
+});
+
 test("jump refuses a worktree carrying a commit no ref contains", () => {
 	const { bridge, diveId, pinnedRef } = setup("unpublished");
 	const worktree = repoWorktree(bridge, "unpublished");

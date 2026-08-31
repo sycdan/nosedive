@@ -19,6 +19,7 @@ import {
 	pruneStaleWorktrees,
 	resolveRefCommit,
 	ensureReusableExistingTarget,
+	trunkAbsorbsHead,
 } from "./repoWorktrees.js";
 
 export interface HydratedScope {
@@ -113,6 +114,8 @@ function unmovableScopes(hydrated: HydratedScope[]): UnmovableScope[] {
 		const head = gitOutput(scope.targetPath, ["rev-parse", "HEAD"]);
 		if (!head || head === scope.commit) continue;
 		if (!dehydrateHasUnpublishedCommits(scope.targetPath)) continue;
+		const trunk = scope.repoDoc.repoBaseBranch;
+		if (trunk && trunkAbsorbsHead(scope.targetPath, trunk)) continue;
 		unmovable.push({
 			repoName: scope.repoDoc.name || scope.repoDoc.id,
 			targetPath: scope.targetPath,

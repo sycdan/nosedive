@@ -233,6 +233,25 @@ export function dehydrateHasUnpublishedCommits(targetPath: string): boolean {
 	return !otherRefsContainHead;
 }
 
+/**
+ * Whether merging `targetPath`'s HEAD into `trunk` would change nothing, so
+ * moving the worktree off HEAD loses nothing even though no ref contains it
+ * (e.g. after a squash merge deletes the branch that did).
+ *
+ * A merge-tree conflict (exit non-zero) and a cache with no
+ * `refs/remotes/origin/<trunk>` both read as not absorbed -- fail safe.
+ *
+ * @see kb/019fcb35-d660-7318-ac4c-3d5aeed3a81e.md
+ */
+export function trunkAbsorbsHead(targetPath: string, trunk: string): boolean {
+	const trunkRef = `refs/remotes/origin/${trunk}`;
+	const mergedTree = gitOutput(targetPath, ["merge-tree", "--write-tree", trunkRef, "HEAD"]);
+	if (!mergedTree) return false;
+	const trunkTree = gitOutput(targetPath, ["rev-parse", "--verify", `${trunkRef}^{commit}^{tree}`]);
+	if (!trunkTree) return false;
+	return mergedTree === trunkTree;
+}
+
 export function removeHydratedWorktree(repoId: string, targetPath: string, force: boolean): void {
 	const commonDirRaw = gitOutput(targetPath, ["rev-parse", "--git-common-dir"]);
 	if (!commonDirRaw) {

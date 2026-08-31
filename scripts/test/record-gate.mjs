@@ -17,6 +17,26 @@ function setup(name) {
 	return { bridge, featPath, featId: /^id: (\S+)$/m.exec(featText)[1] };
 }
 
+/** A bridge with one feat and one repo doc that `--repo` can resolve by name. */
+function setupWithRepo(name) {
+	const result = setup(name);
+	const repoId = "01a055fc-820f-7f05-99dd-a4608428954a";
+	const repoPath = join(result.bridge, "kb", `${repoId}.md`);
+	write(
+		repoPath,
+		`---
+kind: repo
+id: ${repoId}
+name: implementation
+gist: "The implementation repository."
+---
+
+# Implementation
+`,
+	);
+	return { ...result, repoId, repoPath };
+}
+
 function recordedGateId(stdout) {
 	const match = /^Recorded kb[/\\]([0-9a-f-]+)\.md$/m.exec(stdout);
 	assert.ok(match, `record.gate did not report a written doc:\n${stdout}`);
@@ -176,6 +196,107 @@ test("--action land declares land.gate on the feat, blocking nosedive land", () 
 	const ran = run(["test", gateId], bridge);
 	assert.notEqual(ran.status, 0, "a freshly minted gate must fail");
 	assert.match(ran.stderr, new RegExp(`gate ${gateId} is unimplemented`));
+});
+
+test("--repo declares a land gate on the repo and scopes the gate to it", () => {
+	const { bridge, repoId, repoPath } = setupWithRepo("repo-declaration");
+
+	const recorded = run(
+		[
+			"record.gate",
+			"Every implementation checkout is healthy.",
+			"--repo",
+			"implementation",
+			"--action",
+			"land",
+			"--note",
+			"why this runs",
+		],
+		bridge,
+	);
+	assertOk(recorded, "record.gate --repo failed");
+	const gateId = recordedGateId(recorded.stdout);
+	const gateText = readFileSync(join(bridge, "kb", `${gateId}.md`), "utf8");
+	const repoText = readFileSync(repoPath, "utf8");
+
+	assert.match(gateText, new RegExp(`^scopes:\\n  - ${repoId}$`, "m"));
+	assert.doesNotMatch(gateText, /^\s+mode:/m);
+	assert.match(
+		repoText,
+		new RegExp(`- kb/${gateId}\\.md:\\n      rel: land\\.gate\\n      note: why this runs`),
+	);
+	assert.match(recorded.stdout, /Declared land\.gate on/);
+});
+
+test("--repo refuses test gates and cannot be combined with --feat", () => {
+	const { bridge } = setupWithRepo("repo-refusals");
+
+	const testGate = run(
+		[
+			"record.gate",
+			"A repo cannot own regression work.",
+			"--repo",
+			"implementation",
+			"--action",
+			"test",
+		],
+		bridge,
+	);
+	assert.notEqual(testGate.status, 0);
+	assert.match(testGate.stderr, /repo cannot regress without a feat in context/);
+
+	const twoDeclarers = run(
+		[
+			"record.gate",
+			"One declaring document only.",
+			"--feat",
+			"honesty",
+			"--repo",
+			"implementation",
+		],
+		bridge,
+	);
+	assert.notEqual(twoDeclarers.status, 0);
+	assert.match(twoDeclarers.stderr, /--feat and --repo are mutually exclusive/);
+});
+
+test("repo-declared gates can be patched through their declaring link", () => {
+	const { bridge, repoPath } = setupWithRepo("repo-edit");
+	const recorded = run(
+		["record.gate", "The repo stays publishable.", "--repo", "implementation"],
+		bridge,
+	);
+	assertOk(recorded, "record.gate --repo failed");
+	const gateId = recordedGateId(recorded.stdout);
+
+	const patched = run(["record.gate", gateId, "--height", "200"], bridge);
+	assertOk(patched, "record.gate refused a repo-declared gate edit");
+	assert.match(
+		readFileSync(repoPath, "utf8"),
+		new RegExp(`- kb/${gateId}\\.md:\\n      rel: land\\.gate\\n      gate-height: 200`),
+	);
+});
+
+test("--note is preserved by other edits and --no-note removes it", () => {
+	const { bridge, featPath } = setup("note-attributes");
+	const recorded = run(
+		["record.gate", "The reason stays readable.", "--feat", "honesty", "--note", "why this runs"],
+		bridge,
+	);
+	assertOk(recorded, "record.gate --note failed");
+	const gateId = recordedGateId(recorded.stdout);
+
+	const height = run(["record.gate", gateId, "--height", "200"], bridge);
+	assertOk(height, "height edit failed");
+	let featText = readFileSync(featPath, "utf8");
+	assert.match(featText, /note: why this runs/);
+	assert.match(featText, /gate-height: 200/);
+
+	const cleared = run(["record.gate", gateId, "--no-note"], bridge);
+	assertOk(cleared, "record.gate --no-note failed");
+	featText = readFileSync(featPath, "utf8");
+	assert.doesNotMatch(featText, /note: why this runs/);
+	assert.match(featText, /gate-height: 200/);
 });
 
 test("--action=land also works, and an unknown --action value is refused", () => {

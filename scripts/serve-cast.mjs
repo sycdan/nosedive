@@ -6,13 +6,13 @@
  * here: reviewing a take in a different player than the one docs/index.html
  * mounts would defeat the point of reviewing it.
  *
- * Binds loopback only and takes an ephemeral port unless told otherwise, so
- * repeated runs never collide and nothing is exposed off the machine.
+ * Binds loopback only on fixed port 8777 unless told otherwise, so the review
+ * URL survives reruns and nothing is exposed off the machine.
  *
  * Usage: node scripts/serve-cast.mjs <cast-path> [--port <n>]
  */
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,7 +37,15 @@ readFileSync(castPath);
 const playerJs = readFileSync(join(ASSETS, "asciinema-player.min.js"));
 const playerCss = readFileSync(join(ASSETS, "asciinema-player.css"));
 
-const page = `<!doctype html>
+function escapeHtml(value) {
+	return value.replace(/[&<>"']/g, (character) => {
+		return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character];
+	});
+}
+
+function page() {
+	const modified = statSync(castPath).mtime.toISOString();
+	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -49,14 +57,18 @@ const page = `<!doctype html>
          font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
   h1 { font-size: 14px; font-weight: 600; color: #8b949e; margin: 0 0 12px; }
-  p { color: #8b949e; margin: 16px 0 0; }
+  p { color: #8b949e; margin: 12px 0 0; }
+  code, time { color: #c9d1d9; }
 </style>
 </head>
 <body>
 <main>
-  <h1>${castPath.replace(/[&<>]/g, "")}</h1>
+  <h1>${escapeHtml(castPath)}</h1>
   <div id="player"></div>
-  <p>Rerun \`nosedive test 01a04fe1-f17e-7701-a30a-071d26828443\` then reload the page for a fresh take.</p>
+	<p>Playing the cast modified <time datetime="${modified}">${modified}</time>.</p>
+	<p>Rerun the <strong>cast-can-be-recut</strong> test gate with
+		<code>nosedive test 01a04fe1-f17e-7701-a30a-071d26828443 --via kb/01a04fd1-d207-70db-ba05-442946a1fffa.md</code>,
+		then reload for a fresh take.</p>
 </main>
 <script src="/player.js"></script>
 <script>
@@ -69,13 +81,14 @@ const page = `<!doctype html>
 </body>
 </html>
 `;
+}
 
 // The cast is a function, not a value: it is re-read on every request so that
 // rerunning the gate and reloading the page shows the new take. The player and
-// the page are fixed for the life of the process, which is what makes the URL
-// worth keeping open.
+// its assets are fixed for the life of the process; the page is rebuilt too so
+// its modification timestamp follows the cast across reruns.
 const routes = {
-	"/": () => [page, "text/html; charset=utf-8"],
+	"/": () => [page(), "text/html; charset=utf-8"],
 	"/demo.cast": () => [readFileSync(castPath), "application/json; charset=utf-8"],
 	"/player.js": () => [playerJs, "text/javascript; charset=utf-8"],
 	"/player.css": () => [playerCss, "text/css; charset=utf-8"],
@@ -96,13 +109,12 @@ const server = createServer((req, res) => {
 		res.writeHead(503).end(String(err.message ?? err));
 		return;
 	}
-	res.writeHead(200, { "content-type": body[1] }).end(body[0]);
+	res.writeHead(200, { "content-type": body[1], "cache-control": "no-store" }).end(body[0]);
 });
 
 // A stable URL beats a free one. The port is fixed by default so the tab you
-// left open still works after a rerun, and an already-running server on it is
-// success rather than a collision -- it is serving the same path, and the cast
-// is read per request, so it is already showing the fresh take.
+// left open still works after a rerun. An already-running server on it reports
+// the existing URL; the caller verifies that URL serves the requested path.
 server.on("error", (err) => {
 	if (err.code !== "EADDRINUSE") throw err;
 	console.log(`cast review server already running: http://127.0.0.1:${port}/`);

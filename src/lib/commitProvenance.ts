@@ -1,13 +1,11 @@
 import { shellQuote } from "./constants.js";
 import { nosedivePackageVersion } from "./packageBacklog.js";
 
-/** Formats commits authored by nosedive with machine-readable provenance. */
 export function commitMessage(subject: string, featId?: string): string {
-	const trailers = featId ? [`Feat: ${featId}`] : [];
+	const trailers = featId ? [`Nosedive-Feat: ${featId}`] : [];
 	trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
-	// One block, single-spaced: git only parses the last paragraph as trailers, so
-	// a blank line between them would leave `Feat:` invisible to
-	// `git interpret-trailers`.
+	// One block, single-spaced: git only parses the last paragraph as trailers, so  a
+	// blank line between them would make provenance invisible to `git interpret-trailers`.
 	return `${subject}\n\n${trailers.join("\n")}`;
 }
 
@@ -17,7 +15,9 @@ export interface CommitProvenanceOptions {
 	 * `commit-provenance.effort` is still read.
 	 */
 	feat: boolean;
+	dive: boolean;
 	coAuthor: boolean;
+	signoff?: string;
 }
 
 export const GIT_HOOK_NAMES = [
@@ -57,11 +57,13 @@ export function prepareCommitMsgHook(
 	originalHookPath: string | undefined,
 	options: CommitProvenanceOptions,
 ): string {
-	const trailers = [`Dive: ${diveId}`];
-	if (options.feat) trailers.push(`Feat: ${featId}`);
+	const trailers: string[] = [];
+	if (options.dive) trailers.push(`Nosedive-Dive: ${diveId}`);
+	if (options.feat) trailers.push(`Nosedive-Feat: ${featId}`);
 	if (options.coAuthor) {
 		trailers.push(`Co-Authored-By: nosedive ${nosedivePackageVersion()} <noreply@nosedive.dev>`);
 	}
+	if (options.signoff) trailers.push(`Signed-off-by: ${options.signoff}`);
 	return [
 		"#!/bin/sh",
 		"# nosedive-managed prepare-commit-msg",

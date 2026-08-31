@@ -69,6 +69,7 @@ function settleScope(
 	scope: DiveWipScope,
 	featId: string,
 	diveId: string,
+	bridgeDir: string,
 ): { targetPath: string; stale?: StalePin; repoName: string; movedFrom?: string } {
 	const { repoDoc, sourcePath, targetPath, commit } = hydrated;
 	const movedFrom = moveScopeToPin(hydrated);
@@ -82,7 +83,7 @@ function settleScope(
 	 * in it fails with "this operation must be run in a work tree".
 	 */
 	reconcilePushIsolation(sourcePath, targetPath, scope.readOnly, scope.repoId);
-	reconcilePrepareCommitMsgHook(targetPath, featId, diveId, repoDoc);
+	reconcilePrepareCommitMsgHook(targetPath, featId, diveId, repoDoc, bridgeDir);
 
 	return {
 		targetPath,
@@ -381,7 +382,7 @@ export function jump(args: string[], io: CommandIo): void {
 		`${nosediveInvocation()} record.dive --ref ${dive.id} --repin`,
 	);
 	for (const { scope, hydrated } of resolved) {
-		const settled = settleScope(hydrated, scope, feat.id, dive.id);
+		const settled = settleScope(hydrated, scope, feat.id, dive.id, rc.bridgeDir);
 		const path = settled.targetPath;
 		scopePaths.set(scope.repoId, path);
 		hydratedEntries.push({ scope, path, commit: hydrated.commit });

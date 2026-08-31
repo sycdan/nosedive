@@ -19,6 +19,7 @@ import {
 	packageVersion,
 	packageVersionPattern,
 	posixShell,
+	root,
 	run,
 	runGitUnchecked,
 	runTool,
@@ -414,7 +415,7 @@ test("jump hydrates a packed dive's scoped repos and reapplies every patch chain
 	const commitSubject = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
 	assert.match(commitSubject, /^jump\(jump-test\.nosedive\.[0-9a-f]{6}\): unpacked 3 artifacts$/);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Feat: ${featId}`));
+	assert.match(commitBody, new RegExp(`Nosedive-Feat: ${featId}`));
 	assert.match(
 		commitBody,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),
@@ -553,10 +554,10 @@ test("jump installs provenance for commits made in its hydrated worktree", () =>
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout.trim();
 	assert.equal(
 		message,
-		`implementation\n\nDive: ${diveId}\nFeat: ${featId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
+		`implementation\n\nNosedive-Dive: ${diveId}\nNosedive-Feat: ${featId}\nCo-Authored-By: nosedive ${packageVersion} <noreply@nosedive.dev>`,
 	);
-	assert.equal((message.match(new RegExp(`Feat: ${featId}`, "g")) ?? []).length, 1);
-	assert.equal((message.match(new RegExp(`Dive: ${diveId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(new RegExp(`Nosedive-Feat: ${featId}`, "g")) ?? []).length, 1);
+	assert.equal((message.match(new RegExp(`Nosedive-Dive: ${diveId}`, "g")) ?? []).length, 1);
 	assert.equal(
 		(message.match(new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`, "g")) ?? [])
 			.length,
@@ -618,7 +619,7 @@ test("jump survives tooling that rewrites core.hooksPath in shared config", () =
 	gitCommitEmpty(worktree, "commit after tooling ran");
 	assert.match(
 		runTool("git", ["log", "-1", "--format=%B"], worktree).stdout,
-		new RegExp(`Feat: ${featId}`),
+		new RegExp(`Nosedive-Feat: ${featId}`),
 		"managed hooks must still fire after the shared config was rewritten",
 	);
 
@@ -670,7 +671,7 @@ test("jump chains a repo prepare-commit-msg hook without modifying tracked files
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
 	assert.match(message, /Repo-Hook: ran/);
-	assert.match(message, new RegExp(`Feat: ${featId}`));
+	assert.match(message, new RegExp(`Nosedive-Feat: ${featId}`));
 	assert.match(message, new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern}`));
 	const managedHooks = runTool(
 		"git",
@@ -722,7 +723,7 @@ test("jump honors independent repo provenance opt-outs and still installs the wr
 	assertOk(run(["jump"], bridge), "jump failed");
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
-	assert.doesNotMatch(message, /Feat:/);
+	assert.doesNotMatch(message, /Nosedive-Feat:/);
 	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);
 	assert.notEqual(
 		runTool("git", ["config", "--worktree", "--get", "core.hooksPath"], worktree).stdout.trim(),
@@ -744,10 +745,66 @@ test("jump honors the canonical commit-provenance opt-out key", () => {
 	assertOk(run(["jump"], bridge), "jump failed");
 	gitCommitEmpty(worktree, "implementation");
 	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
-	assert.doesNotMatch(message, /Feat:/);
+	assert.doesNotMatch(message, /Nosedive-Feat:/);
 	// Only the feat trailer is opted out, so the others must survive.
-	assert.match(message, new RegExp(`Dive: ${diveId}`));
+	assert.match(message, new RegExp(`Nosedive-Dive: ${diveId}`));
 	assert.match(message, /Co-Authored-By: nosedive/);
+});
+
+test("jump honors the dive provenance opt-out without suppressing the other defaults", () => {
+	const { bridge, repoId, featId } = setup("dive-opt-out");
+	const worktree = repoWorktree(bridge, "dive-opt-out");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    dive: false\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.doesNotMatch(message, /Nosedive-Dive:/);
+	assert.match(message, new RegExp(`Nosedive-Feat: ${featId}`));
+	assert.match(message, /Co-Authored-By: nosedive/);
+});
+
+test("jump honors the co-author provenance opt-out without suppressing the other defaults", () => {
+	const { bridge, repoId, featId, diveId } = setup("co-author-opt-out");
+	const worktree = repoWorktree(bridge, "co-author-opt-out");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    co-author: false\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.match(message, new RegExp(`Nosedive-Dive: ${diveId}`));
+	assert.match(message, new RegExp(`Nosedive-Feat: ${featId}`));
+	assert.doesNotMatch(message, /Co-Authored-By: nosedive/);
+});
+
+test("jump adds a pilot sign-off when a repo enables it", () => {
+	const { bridge, repoId } = setup("signoff");
+	const worktree = repoWorktree(bridge, "signoff");
+	const repoDoc = join(bridge, "kb", `${repoId}.md`);
+	writeFileSync(
+		repoDoc,
+		readFileSync(repoDoc, "utf8").replace(
+			"  trunk: main\n",
+			"  trunk: main\n  commit-provenance:\n    signoff: true\n",
+		),
+	);
+	assertOk(run(["jump"], bridge), "jump failed");
+	gitCommitEmpty(worktree, "implementation");
+	const message = runTool("git", ["log", "-1", "--format=%B"], worktree).stdout;
+	assert.match(message, /Signed-off-by: Jump Test <jump@example\.test>/);
+	runTool(process.execPath, [join(root, "scripts", "check-signoff.mjs"), "HEAD^..HEAD"], worktree);
 });
 
 test("jump leaves a corrupt chain for retry instead of aborting the whole run", () => {

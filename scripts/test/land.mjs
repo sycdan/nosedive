@@ -180,7 +180,7 @@ test("land retains the worktree at the pushed HEAD commit", () => {
 	assert.equal(runTool("git", ["status", "--porcelain"], worktree).stdout, "");
 	assert.equal(existsSync(join(worktree, ".nosedive-ref")), true, "managed marker should remain");
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
-	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
+	assert.match(commitBody, new RegExp(`Nosedive-Feat: ${effortId}`));
 	assert.match(
 		commitBody,
 		new RegExp(`Co-Authored-By: nosedive ${packageVersionPattern} <noreply@nosedive\\.dev>`),

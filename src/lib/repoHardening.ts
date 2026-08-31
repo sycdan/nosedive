@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { GIT_HOOK_NAMES, prepareCommitMsgHook, proxyHook } from "./commitProvenance.js";
 import { formatPath, resolveFrom } from "./coreParsing.js";
 import { KbDoc } from "./kbDocs.js";
+import { readPilotIdentity } from "./gitState.js";
 import { gitOutput } from "./gitProcess.js";
 import { gitOk, writeFileAtomic } from "./renderPlan.js";
 import { gitRun } from "./repoWorkspaceCore.js";
@@ -13,8 +14,10 @@ export function worktreeConfigEnabled(targetPath: string): boolean {
 }
 
 function commitProvenanceOptions(repoDoc: KbDoc): {
+	dive: boolean;
 	feat: boolean;
 	coAuthor: boolean;
+	signoff: boolean;
 } {
 	const raw = repoDoc.metaRaw["commit-provenance"];
 	const options = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -22,8 +25,10 @@ function commitProvenanceOptions(repoDoc: KbDoc): {
 	// read so a repo doc a pilot already configured keeps working.
 	const feat = options.feat ?? options.effort;
 	return {
+		dive: options.dive !== false,
 		feat: feat !== false,
 		coAuthor: options["co-author"] !== false,
+		signoff: options.signoff === true,
 	};
 }
 
@@ -33,6 +38,7 @@ export function reconcilePrepareCommitMsgHook(
 	featId: string,
 	diveId: string,
 	repoDoc: KbDoc,
+	bridgeDir: string,
 ): void {
 	const repoId = repoDoc.id;
 	const gitDirRaw = gitOutput(targetPath, ["rev-parse", "--git-dir"]);
@@ -64,12 +70,12 @@ export function reconcilePrepareCommitMsgHook(
 			: undefined;
 	}
 
-	const hook = prepareCommitMsgHook(
-		featId,
-		diveId,
-		originalHookPath,
-		commitProvenanceOptions(repoDoc),
-	);
+	const options = commitProvenanceOptions(repoDoc);
+	const identity = options.signoff ? readPilotIdentity(bridgeDir) : undefined;
+	const hook = prepareCommitMsgHook(featId, diveId, originalHookPath, {
+		...options,
+		signoff: identity ? `${identity.name} <${identity.email}>` : undefined,
+	});
 	if (!existsSync(managedHookPath) || readFileSync(managedHookPath, "utf8") !== hook) {
 		mkdirSync(managedHooksPath, { recursive: true });
 		writeFileAtomic(managedHookPath, hook);

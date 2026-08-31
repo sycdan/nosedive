@@ -264,7 +264,7 @@ meta:
 
 	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
 	runTool("git", ["add", "-A"], bridge);
-	gitCommit(bridge, `dive(${diveId}): packed wip`);
+	gitCommit(bridge, `pack(${diveId}): packed 3 artifacts`);
 	runTool("git", ["push"], bridge);
 }
 

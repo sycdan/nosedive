@@ -264,11 +264,19 @@ function stashExceptStaged(bridgeDir: string): boolean {
 	return before !== after;
 }
 
+/** Mirrors jumpSubject: what the run did, worth naming in the commit subject. */
+function packSubject(capturedCount: number): string {
+	if (capturedCount > 0) {
+		return `packed ${capturedCount} artifact${capturedCount === 1 ? "" : "s"}`;
+	}
+	return "put down";
+}
+
 function commitAndPushPack(
 	bridgeDir: string,
 	divePath: string,
 	newArtifactAbsPaths: string[],
-	diveName: string,
+	message: string,
 	feat: KbDoc | undefined,
 ): void {
 	// Pack records its phase on the feat's reciprocal link. Stage that edit
@@ -300,7 +308,7 @@ function commitAndPushPack(
 		);
 		gitRun(
 			bridgeDir,
-			["commit", "-m", commitMessage(`dive(${diveName}): packed wip`, feat?.id)],
+			["commit", "-m", commitMessage(message, feat?.id)],
 			"failed to commit packed dive",
 		);
 		gitRun(bridgeDir, ["push"], "failed to push bridge after pack; dive is committed locally");
@@ -406,7 +414,10 @@ export function packDive(args: string[], io: CommandIo): void {
 	if (headRelPaths.length > 0) appendDivePatchLinks(dive.path, headRelPaths);
 	// Releasing the dive is bookkeeping worth pushing on its own: a dive freed
 	// with nothing to pack has to reach the shared kb before anyone can pick it up.
-	if (committing) commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, dive.name, feat);
+	if (committing) {
+		const message = `pack(${dive.name}): ${packSubject(capturedCount)}`;
+		commitAndPushPack(rc.bridgeDir, dive.path, newFileAbsPaths, message, feat);
+	}
 	// After the push, where `land` and `bail` also drop it: a dive nobody holds
 	// is not the dive the workspace is on, and leaving the marker would have
 	// `append-log.dive`, `spin` and `land` reading a dive already handed back.

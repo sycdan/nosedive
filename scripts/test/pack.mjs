@@ -296,7 +296,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	assert.match(bridgeWipPatch, /\n$/, "captured bridge-wip diff must keep its trailing newline");
 
 	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
-	assert.equal(log, `dive(${diveText.match(/^name: (.+)$/m)[1]}): packed wip`);
+	assert.equal(log, `pack(${diveText.match(/^name: (.+)$/m)[1]}): packed 4 artifacts`);
 	const commitBody = runTool("git", ["log", "-1", "--format=%B"], bridge).stdout;
 	assert.match(commitBody, new RegExp(`Feat: ${effortId}`));
 	assert.match(
@@ -445,6 +445,11 @@ test("pack with nothing to capture still resets and reports no-op", () => {
 		beforeHead,
 		"releasing a held dive should create a bridge commit",
 	);
+	const diveName = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8").match(
+		/^name: (.+)$/m,
+	)[1];
+	const log = runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
+	assert.equal(log, `pack(${diveName}): put down`);
 });
 
 test("pack without work or a diver leaves its phase alone", () => {

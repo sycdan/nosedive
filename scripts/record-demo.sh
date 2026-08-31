@@ -192,9 +192,8 @@ cmd_walk() {
 	# No --name: the slug derived from the gist is what every later command
 	# names the feat by, so passing one would hide a change to that derivation.
 	step 'nosedive record.feat --gist "Add a hello note"'
-	# The brief names the exact line, because an agent writes this file and the
-	# grep two beats later has to find something known. "Write a hello note" is
-	# what a human would say and is exactly what makes the walk unrepeatable.
+	# The brief names the exact file & line, because an agent writes this and the
+	# grep two beats later has to find something known.
 	#
 	# "and commit" is redundant against the handoff, which already says to commit
 	# in the named repo. It stays for take quality, not correctness: without it
@@ -215,7 +214,7 @@ cmd_walk() {
 	# where the line ends. Ending on the content settles both.
 	step "nosedive record.dive --feat add-a-hello-note \\
     --gist \"Add a hello note to the bridge\" \\
-    --brief \"Write and commit workspace/__self/hello.md, one line: $HELLO\""
+    --brief \"Done when $NOTE exists with content: $HELLO\""
 
 	# Delegate the jump. Two steps and a file, never a pipe -- the handoff is
 	# written to disk and then handed over by path. Piping `jump` straight into
@@ -254,14 +253,12 @@ cmd_walk() {
 	fails "cat $NOTE"
 	step "grep -r \"$HELLO\" kb/"
 
-	# The second delegation, and the one the whole demo is for: a human says
-	# what done looks like, in English, and the agent works out that this means
-	# jump, verify, land. Its jump is the cold jump -- the one that replays the
-	# packed artifact back onto disk.
-	agent "$AGENT_CMD \"jump and land. done when: a hello note exists in the bridge worktree\""
+	# The second delegation. Its cold jump replays the packed artifact back
+	# onto disk. Landing pushes it.
+	agent "$AGENT_CMD \"jump and land\""
 
 	# The payoff, run by the human: the note is back, from an artifact, put
-	# there by an agent that was told an outcome rather than a command.
+	# there by an agent that was given a very simple command.
 	step "cat $NOTE"
 
 	check "the replayed note holds the original line" \

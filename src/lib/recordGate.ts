@@ -11,7 +11,7 @@ import {
 	readNosediveRc,
 	stringifyYaml,
 } from "./coreParsing.js";
-import { resolveBridgeDocRef } from "./diveScopes.js";
+import { resolveBridgeDocRef, resolveScopeRepo } from "./diveScopes.js";
 import { KbDoc, loadKbDocs, retitleGeneratedHeading } from "./kbDocs.js";
 import { resolveGateScript } from "./landGates.js";
 import { LinkRef } from "./kbRefs.js";
@@ -26,11 +26,14 @@ export interface RecordGateOptions {
 	ref?: string;
 	gist?: string;
 	feat?: string;
+	repo?: string;
 	name?: string;
 	/** `gate-height` on the declaring link; taller gates run first. */
 	height?: number;
 	/** `test-is-flaky` on the declaring link; a flaky gate reports but never blocks. */
 	flaky?: boolean;
+	/** `note` on the declaring link; null means remove it. */
+	note?: string | null;
 	/** Which rel the declaring link carries: `test.gate` or `land.gate`. */
 	action?: "test" | "land";
 	/** The gist arrived as a positional, in the spelling this level deprecates. */
@@ -57,7 +60,11 @@ export function parseRecordGateArgs(
 			options.flaky = arg === "--flaky";
 			continue;
 		}
-		const flag = ["--gist", "--feat", "--name", "--height", "--action"].find(
+		if (arg === "--no-note") {
+			options.note = null;
+			continue;
+		}
+		const flag = ["--gist", "--feat", "--repo", "--name", "--height", "--action", "--note"].find(
 			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
 		);
 		if (!flag) {
@@ -79,7 +86,9 @@ export function parseRecordGateArgs(
 			if (options.gist !== undefined) throw new Error("record.gate gist given twice");
 			options.gist = value;
 		} else if (flag === "--feat") options.feat = value;
+		else if (flag === "--repo") options.repo = value;
 		else if (flag === "--name") options.name = assertSlug(value, "--name");
+		else if (flag === "--note") options.note = value;
 		else if (flag === "--action") {
 			if (value !== "test" && value !== "land")
 				throw new Error(`--action must be test or land: ${value}`);
@@ -94,11 +103,20 @@ export function parseRecordGateArgs(
 		options.gist = options.gist.trim();
 		if (!options.gist) throw new Error("gist cannot be empty");
 	}
+	if (typeof options.note === "string") {
+		options.note = options.note.trim();
+		if (!options.note) throw new Error("note cannot be empty");
+	}
+	if (options.feat && options.repo)
+		throw new Error("--feat and --repo are mutually exclusive; name one declaring document");
+	if (options.repo && options.action === "test") {
+		throw new Error(
+			"--repo cannot declare test.gate: a repo cannot regress without a feat in context, so a failing repo-declared test.gate would have no document to mint work against",
+		);
+	}
 	if (options.ref === undefined) {
 		if (options.gist === undefined) throw new Error('record.gate requires --gist "<one line>"');
-		// A gate has to be declared where a feat is in context, or a failing
-		// backlog sweep has nothing to mint work against.
-		if (!options.feat) throw new Error("record.gate requires --feat");
+		if (!options.feat && !options.repo) throw new Error("record.gate requires --feat or --repo");
 	}
 	return options;
 }
@@ -119,17 +137,24 @@ export function defaultGateName(now = new Date()): string {
 }
 
 /**
- * No `scopes:` key at all. An absent one inherits the declaring doc's scopes,
- * which is what a new gate wants; an explicit `scopes: []` would say the
- * opposite -- this gate needs no repo -- and pin it to nothing.
+ * A feat-declared gate writes no `scopes:` key and inherits its feat's scopes.
+ * A repo-declared gate names that repo itself: repo docs normally have no
+ * scopes to inherit, while the gate's `ctx.repos` must contain its repo.
  */
-function renderGateDoc(id: string, name: string, gist: string, scriptRel: string): string {
+function renderGateDoc(
+	id: string,
+	name: string,
+	gist: string,
+	scriptRel: string,
+	repoId?: string,
+): string {
 	return [
 		"---",
 		"kind: gate",
 		`id: ${id}`,
 		`name: ${name}`,
 		`gist: ${quoteYamlString(gist)}`,
+		...(repoId ? ["scopes:", `  - ${repoId}`] : []),
 		"meta:",
 		`  test-script: ${scriptRel}`,
 		"---",
@@ -182,6 +207,8 @@ function gateLinkAttrs(
 	if (options.height !== undefined) attrs["gate-height"] = options.height;
 	if (options.flaky === true) attrs["test-is-flaky"] = true;
 	if (options.flaky === false) delete attrs["test-is-flaky"];
+	if (typeof options.note === "string") attrs.note = options.note;
+	if (options.note === null) delete attrs.note;
 	return attrs;
 }
 
@@ -194,33 +221,34 @@ function featForGate(kbDocs: KbDoc[], rc: NosediveRc, featRef: string): KbDoc {
 	return feat;
 }
 
-function declaringFeat(
-	kbDocs: KbDoc[],
-	gateId: string,
-): { feat: KbDoc; link: LinkRef } | undefined {
-	for (const feat of kbDocs.filter((doc) => doc.kind === "feat")) {
-		const link = feat.links.find(
+function declaringDoc(kbDocs: KbDoc[], gateId: string): { doc: KbDoc; link: LinkRef } | undefined {
+	for (const doc of kbDocs.filter(
+		(candidate) => candidate.kind === "feat" || candidate.kind === "repo",
+	)) {
+		const link = doc.links.find(
 			(candidate) =>
 				candidate.id === gateId && (candidate.rel === "test.gate" || candidate.rel === "land.gate"),
 		);
-		if (link) return { feat, link };
+		if (link) return { doc, link };
 	}
 	return undefined;
 }
 
 function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, io: CommandIo) {
 	const gist = options.gist!;
-	const feat = featForGate(kbDocs, rc, options.feat!);
-	const action = options.action ?? "test";
+	const declaring = options.repo
+		? resolveScopeRepo(rc.bridgeDir, kbDocs, options.repo)
+		: featForGate(kbDocs, rc, options.feat!);
+	const action = options.repo ? "land" : (options.action ?? "test");
 
 	const id = uuid7AtMs(Date.now());
 	// An explicit --name wins outright. Otherwise derive a slug from the gist,
 	// so the first thing a pilot sees named is what the gate checks rather than
 	// a clock -- but fall back to the timestamp name if the derived slug
-	// collides with a gate already declared on this feat, or the gist yields
+	// collides with a gate already declared on this doc, or the gist yields
 	// nothing usable, rather than refusing to mint a runnable gate at all.
 	const existingGateNames = new Set(
-		feat.links
+		declaring.links
 			.filter((link) => link.rel === "test.gate" || link.rel === "land.gate")
 			.map((link) => kbDocs.find((doc) => doc.id === link.id)?.name)
 			.filter((docName): docName is string => docName !== undefined),
@@ -238,18 +266,21 @@ function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions,
 	// produce something that breaks the moment anything selects it.
 	mkdirSync(join(rc.kbDir!, "artifacts"), { recursive: true });
 	writeFileAtomic(scriptPath, renderGateStub(scriptRel));
-	writeFileAtomic(docPath, renderGateDoc(id, name, gist, scriptRel));
-	appendLinkToDoc(feat.path, id, `${action}.gate`, gateLinkAttrs(undefined, options));
+	writeFileAtomic(
+		docPath,
+		renderGateDoc(id, name, gist, scriptRel, options.repo ? declaring.id : undefined),
+	);
+	appendLinkToDoc(declaring.path, id, `${action}.gate`, gateLinkAttrs(undefined, options));
 
 	io.log(`Recorded ${formatPath(docPath)}`);
 	io.log(`Wrote ${formatPath(scriptPath)}`);
-	io.log(`Declared ${action}.gate on ${formatPath(feat.path)}`);
+	io.log(`Declared ${action}.gate on ${formatPath(declaring.path)}`);
 	commitBridgeDocs(
 		rc.bridgeDir,
 		`gate(${name}): created`,
-		[docPath, scriptPath, feat.path],
+		[docPath, scriptPath, declaring.path],
 		io,
-		feat.id,
+		declaring.kind === "feat" ? declaring.id : undefined,
 	);
 	if (action === "land") io.log("It blocks nosedive land until it passes.");
 	io.log(`It fails until written. Run it with: nosedive test ${id}`);
@@ -279,23 +310,41 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 		writeFileAtomic(gate.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	}
 
-	const declared = declaringFeat(kbDocs, gate.id);
-	const feat = options.feat ? featForGate(kbDocs, rc, options.feat) : declared?.feat;
+	const declared = declaringDoc(kbDocs, gate.id);
+	const declaration = options.feat
+		? featForGate(kbDocs, rc, options.feat)
+		: options.repo
+			? resolveScopeRepo(rc.bridgeDir, kbDocs, options.repo)
+			: declared?.doc;
+	if (declaration?.kind === "repo" && options.action === "test") {
+		throw new Error(
+			"a repo cannot regress without a feat in context, so a failing repo-declared test.gate would have no document to mint work against",
+		);
+	}
 	const redeclaring =
 		options.feat !== undefined ||
+		options.repo !== undefined ||
 		options.action !== undefined ||
 		options.height !== undefined ||
-		options.flaky !== undefined;
+		options.flaky !== undefined ||
+		options.note !== undefined;
 	if (redeclaring) {
 		// Height, flakiness and action all live on the link rather than the doc, so
-		// there is nowhere to put them until some feat declares the gate.
-		if (!feat)
-			throw new Error(`gate ${gate.name} is declared on no feat; name one with --feat <feat-ref>`);
-		const rel = `${options.action ?? (declared?.link.rel === "land.gate" ? "land" : "test")}.gate`;
-		if (declared && declared.feat.id !== feat.id)
-			reconcileDocLink(declared.feat.path, gate.id, undefined);
-		reconcileDocLink(feat.path, gate.id, rel, gateLinkAttrs(declared?.link.attrs, options));
-		io.log(`Declared ${rel} on ${formatPath(feat.path)}`);
+		// there is nowhere to put them until a feat or repo declares the gate.
+		if (!declaration) {
+			throw new Error(
+				`gate ${gate.name} is declared on no feat or repo; name one with --feat <feat-ref> or --repo <repo-ref>`,
+			);
+		}
+		const action =
+			declaration.kind === "repo"
+				? "land"
+				: (options.action ?? (declared?.link.rel === "land.gate" ? "land" : "test"));
+		const rel = `${action}.gate`;
+		if (declared && declared.doc.id !== declaration.id)
+			reconcileDocLink(declared.doc.path, gate.id, undefined);
+		reconcileDocLink(declaration.path, gate.id, rel, gateLinkAttrs(declared?.link.attrs, options));
+		io.log(`Declared ${rel} on ${formatPath(declaration.path)}`);
 	}
 
 	const name = options.name ?? gate.name;
@@ -305,9 +354,9 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 	const committed = commitBridgeDocs(
 		rc.bridgeDir,
 		`gate(${name}): updated`,
-		[gate.path, scriptPath, feat?.path, declared?.feat.path],
+		[gate.path, scriptPath, declaration?.path, declared?.doc.path],
 		io,
-		feat?.id,
+		declaration?.kind === "feat" ? declaration.id : undefined,
 	);
 	// After the commit, because "updated" is a claim about what was published.
 	io.log(

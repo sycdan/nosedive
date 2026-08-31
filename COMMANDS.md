@@ -298,9 +298,9 @@ More: nosedive render fb3d90e6-9dbf-5f1c-9919-6653d12fe085
 npx -y nosedive@2026.8.31-1788147064065 record.gate --help
 ```
 ```md
-Usage: nosedive record.gate [<gate>] [--gist <gist>] [--feat <feat-ref>] [--name <slug>] [--height <n>] [--flaky] [--no-flaky] [--action <test|land>]
+Usage: nosedive record.gate [<gate>] [--gist <gist>] [--feat <feat-ref>] [--repo <repo-ref>] [--name <slug>] [--height <n>] [--flaky] [--no-flaky] [--note <text>] [--no-note] [--action <test|land>]
 
-Mint a gate -- its doc, its stub script, and the link declaring it on a feat -- ready to fail until somebody writes the check.
+Mint a gate -- its doc, its stub script, and the link declaring it on a feat or repo -- ready to fail until somebody writes the check.
 
 More: nosedive render 2c678acb-b4b8-5623-a900-12939da5d472
 ```

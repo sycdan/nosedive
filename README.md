@@ -11,6 +11,8 @@ and drives the work across your other repos. Work is split into small vertical s
 before anything is built, and what "done" looks like is captured as executable checks
 that agents can run to find out whether they are actually finished.
 
+[Watch a dive](https://nosedive.dev/#demo) -- empty repo to a pushed branch, delegated to opencode with a free model.
+
 ## Install
 
 ```sh

@@ -393,7 +393,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 
 A compatibility level is the version of the data format a bridge's `kb/` uses; `seed` migrates a bridge to the current one.
 
-Nosedive is at [level 2](kb/019fda55-7348-7568-825c-d039467180d6.md). The backlog tree is carried by `.feat` role links rather than by `kind: feat` or name slug chains, so seed migrates an L1 backlog memo body into canonical links before L2 readers consume it.
+Nosedive is at [level 2](kb/019fda55-7348-7568-825c-d039467180d6.md). A feat's place in the backlog is carried by the links pointing at it, not by its kind or its name; migrating rewrites an older backlog memo body into those links.
 
 Upgrading to level-2 requires running a migration: see [the migration doc](kb/019fda4e-b14f-7bb9-b751-20b2106e3374.md).
 <!-- END nosedive-levels -->

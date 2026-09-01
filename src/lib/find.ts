@@ -10,7 +10,6 @@ import { slugFromGist } from "./slugs.js";
 const ROLES = new Set(["dive", "feat", "gate", "repo", "note"]);
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
 const UNITS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
-const DEFAULT_MAX_AGE_MS = UNITS.w;
 
 /** Keep the traversal aligned with list-dives: only feat edges expand the deck. */
 function isBacklogFeatRel(rel: string | undefined): boolean {
@@ -72,9 +71,6 @@ export function parseFindArgs(args: string[], io: CommandIo): FindOptions {
 	// crosses selects nothing, and silence is a worse answer than a refusal.
 	if (minAgeMs !== undefined && maxAgeMs !== undefined && minAgeMs >= maxAgeMs)
 		throw new Error("find --min-age must be shorter than --max-age");
-	// The default ceiling is the recent past, but only where the pilot named no
-	// window at all: --min-age 2w with an unrequested 1w ceiling matches nothing.
-	if (maxAgeMs === undefined && minAgeMs === undefined) maxAgeMs = DEFAULT_MAX_AGE_MS;
 	return { role, term, minAgeMs, maxAgeMs, scopes, help: false };
 }
 
@@ -147,6 +143,10 @@ export function findDocs(
 		.filter((scope) => scopeIds.size === 0 || scopeIds.has(scope.repoId))
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => Boolean(doc));
+	// Seeding them as owners is what makes their notes and gates reachable;
+	// selecting them here is what makes `find repo` answer at all, since no link
+	// anywhere carries the `.repo` rel the walk below would otherwise need.
+	if (role === "repo") for (const repo of seeded) selected.set(repo.id, root);
 	const queue = [root, ...seeded];
 	while (queue.length > 0) {
 		const owner = queue.shift()!;

@@ -154,6 +154,22 @@ test("find walks the repos the backlog scopes", () => {
 	assert.doesNotMatch(result.stdout, new RegExp(REFERENCE_ONLY));
 });
 
+test("find repo lists the repos the backlog scopes, and --scope narrows to the named one", () => {
+	const bridge = fixture("repo-role");
+	const all = run(["find", "repo"], bridge);
+	assertOk(all, "repo find failed");
+	assert.match(all.stdout, new RegExp(REPO_A));
+	assert.match(all.stdout, new RegExp(REPO_B));
+
+	// A repo declares no `scopes:` of its own, so the trailing scope filter reads
+	// the backlog's -- which names every repo. Narrowing has to happen where the
+	// repos are seeded, or `--scope beta` would answer with alpha as well.
+	const beta = run(["find", "repo", "--scope", "beta"], bridge);
+	assertOk(beta, "scoped repo find failed");
+	assert.match(beta.stdout, new RegExp(REPO_B));
+	assert.doesNotMatch(beta.stdout, new RegExp(REPO_A));
+});
+
 test("find --scope keeps documents scoping any named repo, by name or id", () => {
 	const bridge = fixture("scope");
 	const beta = run(["find", "note", "--scope", "beta"], bridge);
@@ -184,12 +200,14 @@ test("find --scope resolves inherited scopes", () => {
 	assert.doesNotMatch(scoped.stdout, new RegExp(GATE_EMPTY));
 });
 
-test("find windows on age, defaulting to the past week", () => {
+test("find windows on age only where the pilot asked for a window", () => {
 	const bridge = fixture("age");
-	const recent = run(["find", "note"], bridge);
-	assertOk(recent, "default find failed");
-	assert.match(recent.stdout, new RegExp(RECENT));
-	assert.doesNotMatch(recent.stdout, new RegExp(OLD));
+	// No flags is no window. A ceiling nobody named would answer a narrower
+	// question than the one asked, and say nothing about having narrowed it.
+	const unwindowed = run(["find", "note"], bridge);
+	assertOk(unwindowed, "unwindowed find failed");
+	assert.match(unwindowed.stdout, new RegExp(RECENT));
+	assert.match(unwindowed.stdout, new RegExp(OLD));
 
 	const older = run(["find", "note", "--min-age", "1d"], bridge);
 	assertOk(older, "min-age find failed");

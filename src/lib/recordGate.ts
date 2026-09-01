@@ -204,6 +204,24 @@ function gateLinkAttrs(
 	return attrs;
 }
 
+/**
+ * What the edge already carries, retyped the way the link writes it. A move to
+ * another declaring document builds a fresh edge, so this is the only thing
+ * carrying the pilot's keys across.
+ */
+function carriedGateLinkAttrs(
+	previous: Record<string, string> | undefined,
+): Record<string, string | number | boolean> {
+	const attrs: Record<string, string | number | boolean> = {};
+	for (const [key, value] of Object.entries(previous ?? {})) {
+		if (key === "rel") continue;
+		if (key === "gate-height") attrs[key] = Number(value);
+		else if (key === "test-is-flaky") attrs[key] = value === "true";
+		else attrs[key] = value;
+	}
+	return attrs;
+}
+
 /** A new edge has nothing to delete, so null update markers stay out of it. */
 function newGateLinkAttrs(options: RecordGateOptions): Record<string, string | number | boolean> {
 	const attrs: Record<string, string | number | boolean> = {};
@@ -342,9 +360,12 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 				? "land"
 				: (options.action ?? (declared?.link.rel === "land.gate" ? "land" : "test"));
 		const rel = `${action}.gate`;
-		if (declared && declared.doc.id !== declaration.id)
-			reconcileDocLink(declared.doc.path, gate.id, undefined);
-		reconcileDocLink(declaration.path, gate.id, rel, gateLinkAttrs(options));
+		const moved = declared !== undefined && declared.doc.id !== declaration.id;
+		if (moved) reconcileDocLink(declared.doc.path, gate.id, undefined);
+		reconcileDocLink(declaration.path, gate.id, rel, {
+			...(moved ? carriedGateLinkAttrs(declared?.link.attrs) : {}),
+			...gateLinkAttrs(options),
+		});
 		io.log(`Declared ${rel} on ${formatPath(declaration.path)}`);
 	}
 

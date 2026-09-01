@@ -182,6 +182,7 @@ cmd_walk() {
 	# answers three prompts, so the cast diverges from a real first run at this
 	# one step. Known, deliberate, and the quickstart gate makes the same trade.
 	step "nosedive seed --headless"
+	# step "nosedive find repo" # disabled for now as would only show bridge
 
 	# seed publishes the bridge itself -- no git command left for the pilot to
 	# type and none printed. That the remote actually received it is a claim no
@@ -192,6 +193,7 @@ cmd_walk() {
 	# No --name: the slug derived from the gist is what every later command
 	# names the feat by, so passing one would hide a change to that derivation.
 	step 'nosedive record.feat --gist "Add a hello note"'
+	step "nosedive find feat"
 	# The brief names the exact file & line, because an agent writes this and the
 	# grep two beats later has to find something known.
 	#
@@ -215,6 +217,7 @@ cmd_walk() {
 	step "nosedive record.dive --feat add-a-hello-note \\
     --gist \"Add a hello note to the bridge\" \\
     --brief \"Done when $NOTE exists with content: $HELLO\""
+	step "nosedive find dive"
 
 	# Delegate the jump. Two steps and a file, never a pipe -- the handoff is
 	# written to disk and then handed over by path. Piping `jump` straight into
@@ -288,6 +291,7 @@ cmd_walk() {
 	# so a viewer who types it gets the gates quickstart on a machine that has
 	# never seen this repo.
 	step "nosedive note learn about gates: nosedive render 01a031cd-a1e1-7c6d-9a71-4ab49b96da0a"
+	step "nosedive find note"
 
 	# A cast ends at its last event, so trailing idle time does not exist in the
 	# file -- hold the tail by emitting, not by waiting. The player also caps any

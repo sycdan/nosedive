@@ -426,3 +426,39 @@ test("a bare record.gate publishes the check a pilot wrote into the stub", () =>
 		"publishing an unchanged gate should commit nothing",
 	);
 });
+
+test("moving a gate to another feat carries the attributes the old edge held", () => {
+	const { bridge, featPath } = setup("redeclare-move");
+	const recorded = run(
+		[
+			"record.gate",
+			"The reason travels with the gate.",
+			"--feat",
+			"honesty",
+			"--note",
+			"why this runs",
+			"--height",
+			"200",
+			"--flaky",
+		],
+		bridge,
+	);
+	assertOk(recorded, "record.gate failed");
+	const gateId = recordedGateId(recorded.stdout);
+
+	const pitched = run(["record.feat", "Hold the thing steady.", "--name", "steadiness"], bridge);
+	assertOk(pitched, "second record.feat failed");
+	const secondPath = join(bridge, /^Recorded (.+)$/m.exec(pitched.stdout)[1]);
+
+	const moved = run(["record.gate", gateId, "--feat", "steadiness"], bridge);
+	assertOk(moved, "record.gate --feat move failed");
+
+	assert.doesNotMatch(readFileSync(featPath, "utf8"), new RegExp(gateId), "the old edge must go");
+	assert.match(
+		readFileSync(secondPath, "utf8"),
+		new RegExp(
+			`- kb/${gateId}\.md:\n      rel: test\.gate\n      gate-height: 200\n      test-is-flaky: true\n      note: why this runs`,
+		),
+		"the moved edge must carry what the old one held",
+	);
+});

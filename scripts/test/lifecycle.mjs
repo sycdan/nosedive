@@ -37,6 +37,30 @@ function assertFeatDiveRel(featPath, diveId, rel) {
 	);
 }
 
+function annotateDiveLink(featPath, diveId) {
+	const text = readFileSync(featPath, "utf8");
+	const link = `- kb/${diveId}.md:\n      rel: planned.dive`;
+	assert.ok(text.includes(link), `fixture link is missing:\n${text}`);
+	write(
+		featPath,
+		text.replace(
+			link,
+			`${link}\n      note: the pilot wrote this\n      arbitrary: pilot-owned # This comment belongs to the pilot.`,
+		),
+	);
+}
+
+function assertDiveLinkAttrs(featPath, diveId, rel) {
+	const escapedRel = rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	assert.match(
+		readFileSync(featPath, "utf8"),
+		new RegExp(
+			`- kb/${diveId}\\.md:\\n      rel: ${escapedRel}\\n      note: the pilot wrote this\\n      arbitrary: pilot-owned # This comment belongs to the pilot\\.`,
+		),
+		`link attributes did not survive the ${rel} rewrite`,
+	);
+}
+
 /** Publishes pending kb edits, which is what a pilot does before packing. */
 function commitKb(bridge, message) {
 	runTool("git", ["add", "--", "kb"], bridge);
@@ -86,6 +110,9 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	assertOk(first, "first record.dive failed");
 	const firstId = recordedDiveId(first.stdout);
 	assertFeatDiveRel(featPath, firstId, "planned\\.dive");
+	annotateDiveLink(featPath, firstId);
+	assertOk(run(["record.dive", "--ref", firstId, "--repin"], bridge), "first repin failed");
+	assertDiveLinkAttrs(featPath, firstId, "planned.dive");
 	// Nothing has published `work/lifecycle` yet, so trunk is the only pin there
 	// is to give the first dive on a feat. The third dive below is where that
 	// stops being true.
@@ -99,22 +126,27 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 		run(["record.dive", "--ref", firstId, "--brief", "Test packing and reclaiming."], bridge),
 		"first brief failed",
 	);
+	assertDiveLinkAttrs(featPath, firstId, "planned.dive");
 	assertOk(run(["jump"], bridge), "first jump failed");
 	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
+	assertDiveLinkAttrs(featPath, firstId, "jumped.dive");
 	const worktree = join(bridge, "workspace", "lifecycle-repo");
 	write(join(worktree, "packed.txt"), "packed work\n");
 	runTool("git", ["add", "packed.txt"], worktree);
 	gitCommit(worktree, "add packed work");
 	assertOk(run(["pack"], bridge), "pack failed");
 	assertFeatDiveRel(featPath, firstId, "packed\\.dive");
+	assertDiveLinkAttrs(featPath, firstId, "packed.dive");
 
 	const firstPath = join(bridge, "kb", `${firstId}.md`);
 	const packed = readFileSync(firstPath, "utf8");
 	assert.doesNotMatch(packed, /^  diver: (?!null$).+$/m, "packed dive should be claimable");
 	assert.match(packed, /rel: patch/, "packed dive should carry a patch chain");
 	assertOk(run(["record.dive", "--ref", firstId, "--diver", diver], bridge), "reclaim failed");
+	assertDiveLinkAttrs(featPath, firstId, "packed.dive");
 	assertOk(run(["jump"], bridge), "re-jump failed");
 	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
+	assertDiveLinkAttrs(featPath, firstId, "jumped.dive");
 	write(
 		join(bridge, "kb", `${diveGateId}.md`),
 		`---
@@ -192,9 +224,12 @@ meta:
 	commitKb(bridge, "publish the gate docs before packing");
 	assertOk(run(["pack"], bridge), "pack before reclaiming failed");
 	assertFeatDiveRel(featPath, firstId, "packed\\.dive");
+	assertDiveLinkAttrs(featPath, firstId, "packed.dive");
 	assertOk(run(["jump", firstId], bridge), "reclaim jump failed");
+	assertDiveLinkAttrs(featPath, firstId, "jumped.dive");
 	assertOk(run(["bail", "--reason", "exercise the bail path"], bridge), "bail failed");
 	assertFeatDiveRel(featPath, firstId, "bailed\\.dive");
+	assertDiveLinkAttrs(featPath, firstId, "bailed.dive");
 	const bailed = readFileSync(firstPath, "utf8");
 	assert.match(bailed, /^kind: memo$/m);
 	assert.match(bailed, /^## Bail report\b/m);
@@ -212,6 +247,7 @@ meta:
 	assertOk(second, "second record.dive failed");
 	const secondId = recordedDiveId(second.stdout);
 	assertFeatDiveRel(featPath, secondId, "planned\\.dive");
+	annotateDiveLink(featPath, secondId);
 	const noDiveGates = run(["test"], bridge);
 	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
 	assert.match(noDiveGates.stderr, /--full/);
@@ -219,8 +255,10 @@ meta:
 		run(["record.dive", "--ref", secondId, "--brief", "Test landing and publication."], bridge),
 		"second brief failed",
 	);
+	assertDiveLinkAttrs(featPath, secondId, "planned.dive");
 	assertOk(run(["jump"], bridge), "second jump failed");
 	assertFeatDiveRel(featPath, secondId, "jumped\\.dive");
+	assertDiveLinkAttrs(featPath, secondId, "jumped.dive");
 	write(join(worktree, "landed.txt"), "landed work\n");
 	runTool("git", ["add", "landed.txt"], worktree);
 	gitCommit(worktree, "add landed work");
@@ -230,6 +268,7 @@ meta:
 	assert.match(landed, /^kind: memo$/m);
 	assert.match(landed, /^## Outcome$/m);
 	assertFeatDiveRel(featPath, secondId, "landed\\.dive");
+	assertDiveLinkAttrs(featPath, secondId, "landed.dive");
 	const published = cloudHead(repo, "work/lifecycle");
 	assert.match(published, /^[0-9a-f]{40}$/, "land should publish the work branch to cloud");
 	assert.notEqual(published, trunkHead, "the landed branch must stand ahead of trunk");

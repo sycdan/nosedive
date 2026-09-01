@@ -119,6 +119,17 @@ function linkTarget(entry: unknown): string | undefined {
 	return isScalar(key) && typeof key.value === "string" ? key.value : undefined;
 }
 
+function newLinkAttrs(
+	rel: string,
+	attrs: Record<string, string | number | boolean | null>,
+): Record<string, string | number | boolean> {
+	const result: Record<string, string | number | boolean> = { rel };
+	for (const [key, value] of Object.entries(attrs)) {
+		if (key !== "rel" && value !== null) result[key] = value;
+	}
+	return result;
+}
+
 /**
  * Make the document's link to `targetId` say exactly `rel`, or remove it when
  * no rel is given. Unlike `appendLinkToDoc` this is idempotent: it replaces the
@@ -133,7 +144,11 @@ export function reconcileDocLink(
 	path: string,
 	targetId: string,
 	rel: string | undefined,
-	attrs: Record<string, string | number | boolean> = {},
+	/**
+	 * Keys supplied here update the existing edge. A null explicitly removes a
+	 * key; omitted keys are deliberately left as the pilot wrote them.
+	 */
+	attrs: Record<string, string | number | boolean | null> = {},
 ): void {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
@@ -150,17 +165,31 @@ export function reconcileDocLink(
 	if (links !== undefined && links !== null && !isSeq(links)) {
 		throw new Error(`invalid links in ${label}: expected a YAML list`);
 	}
-	const entry = rel ? { [target]: { rel, ...attrs } } : undefined;
 	if (!isSeq(links)) {
-		if (entry) doc.set("links", [entry]);
+		if (rel) doc.set("links", [{ [target]: newLinkAttrs(rel, attrs) }]);
 	} else {
 		// Every occurrence goes, so a document that somehow carries the target
 		// twice comes back with one edge, as it did before.
 		const at = links.items.findIndex((item) => linkTarget(item) === target);
-		links.items = links.items.filter((item) => linkTarget(item) !== target);
-		if (entry) {
-			if (at === -1) links.add(entry);
-			else links.items.splice(at, 0, entry);
+		if (!rel) {
+			links.items = links.items.filter((item) => linkTarget(item) !== target);
+		} else if (at === -1) {
+			links.add({ [target]: newLinkAttrs(rel, attrs) });
+		} else {
+			const existing = links.items[at];
+			const value = isMap(existing) ? existing.items[0]?.value : undefined;
+			if (!isMap(value)) {
+				links.items.splice(at, 1, { [target]: newLinkAttrs(rel, attrs) });
+			} else {
+				value.set("rel", rel);
+				for (const [key, attr] of Object.entries(attrs)) {
+					if (attr === null) value.delete(key);
+					else value.set(key, attr);
+				}
+			}
+			links.items = links.items.filter(
+				(item, index) => index === at || linkTarget(item) !== target,
+			);
 		}
 	}
 

@@ -34,6 +34,9 @@ export { createGateResolver } from "./lib/gateResolve.js";
 // Exported so tests can exercise the id assertion directly: it alone keeps
 // filename-is-the-id honest, and going through `seed` would obscure that fact.
 export { readKbDocById } from "./lib/kbDocs.js";
+// Exported so the preservation contract can be tested at the YAML edit itself,
+// rather than only through whichever command happened to call it.
+export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

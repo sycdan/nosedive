@@ -103,7 +103,7 @@ The lifecycle actions that move them:
 ## Reference
 
 - [Commands](COMMANDS.md) -- every command, what it does, and the doc behind it.
-  Also carries the compatibility level Nosedive is on and where it is heading.
+  Also carries the compatibility level Nosedive is on.
 - [Contributing](CONTRIBUTING.md) -- development setup and conventions.
 
 <!-- BEGIN nosedive-faq -->

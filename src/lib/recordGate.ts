@@ -189,26 +189,27 @@ function renderGateStub(scriptRel: string): string {
 }
 
 /**
- * The attributes the declaring link should carry after this call. Attributes
- * the command knows nothing about are carried through: they were written by
- * somebody, and a height change is no reason to drop them.
+ * The explicit changes `record.gate` makes to its declaring link. Attributes
+ * it knows nothing about are preserved by reconcileDocLink.
  */
 function gateLinkAttrs(
-	previous: Record<string, string> | undefined,
 	options: RecordGateOptions,
-): Record<string, string | number | boolean> {
-	const attrs: Record<string, string | number | boolean> = {};
-	for (const [key, value] of Object.entries(previous ?? {})) {
-		if (key === "rel") continue;
-		if (key === "gate-height") attrs[key] = Number(value);
-		else if (key === "test-is-flaky") attrs[key] = value === "true";
-		else attrs[key] = value;
-	}
+): Record<string, string | number | boolean | null> {
+	const attrs: Record<string, string | number | boolean | null> = {};
 	if (options.height !== undefined) attrs["gate-height"] = options.height;
 	if (options.flaky === true) attrs["test-is-flaky"] = true;
-	if (options.flaky === false) delete attrs["test-is-flaky"];
+	if (options.flaky === false) attrs["test-is-flaky"] = null;
 	if (typeof options.note === "string") attrs.note = options.note;
-	if (options.note === null) delete attrs.note;
+	if (options.note === null) attrs.note = null;
+	return attrs;
+}
+
+/** A new edge has nothing to delete, so null update markers stay out of it. */
+function newGateLinkAttrs(options: RecordGateOptions): Record<string, string | number | boolean> {
+	const attrs: Record<string, string | number | boolean> = {};
+	for (const [key, value] of Object.entries(gateLinkAttrs(options))) {
+		if (value !== null) attrs[key] = value;
+	}
 	return attrs;
 }
 
@@ -270,7 +271,7 @@ function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions,
 		docPath,
 		renderGateDoc(id, name, gist, scriptRel, options.repo ? declaring.id : undefined),
 	);
-	appendLinkToDoc(declaring.path, id, `${action}.gate`, gateLinkAttrs(undefined, options));
+	appendLinkToDoc(declaring.path, id, `${action}.gate`, newGateLinkAttrs(options));
 
 	io.log(`Recorded ${formatPath(docPath)}`);
 	io.log(`Wrote ${formatPath(scriptPath)}`);
@@ -343,7 +344,7 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 		const rel = `${action}.gate`;
 		if (declared && declared.doc.id !== declaration.id)
 			reconcileDocLink(declared.doc.path, gate.id, undefined);
-		reconcileDocLink(declaration.path, gate.id, rel, gateLinkAttrs(declared?.link.attrs, options));
+		reconcileDocLink(declaration.path, gate.id, rel, gateLinkAttrs(options));
 		io.log(`Declared ${rel} on ${formatPath(declaration.path)}`);
 	}
 

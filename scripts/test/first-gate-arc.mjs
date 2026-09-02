@@ -51,7 +51,7 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	const repoId = recordedRepoId(registered.stdout);
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate-repo.workspace failed");
 
-	const { featId } = pitchFeat(bridge, "Keep the export list honest.", "export-honesty");
+	const { featId } = pitchFeat(bridge, "Keep the export list honest.", "export-honesty", repoId);
 	const dive = run(
 		[
 			"record.dive",

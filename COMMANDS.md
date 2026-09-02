@@ -255,7 +255,7 @@ More: nosedive render c583519a-95c3-59e8-90fd-0d3003b4b8d1
 npx -y nosedive@2026.9.1-1788305886401 record.feat --help
 ```
 ```md
-Usage: nosedive record.feat [<feat>] [--gist <gist>] [--name <slug>] [--parent <feat>] [--no-parent]
+Usage: nosedive record.feat [<feat>] [--gist <gist>] [--name <slug>] [--parent <feat>] [--no-parent] [--scope <repo-ref>]...
 
 Create a new `kind: feat` KB doc, optionally nested under a parent feat.
 

@@ -87,16 +87,13 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	const { bridge } = seededBridge(tmp, "bridge", diver);
 	writeImplRepoDoc(bridge, repoId, repo);
 
-	const { featPath, featId, featText } = pitchFeat(
+	// The feat says where its repo lands, so the dives under it inherit somewhere
+	// to push. The work-loop test below covers the feat that named no branch.
+	const { featPath, featId } = pitchFeat(
 		bridge,
 		"Exercise a complete lifecycle.",
 		"lifecycle",
-	);
-	// The feat says where its repo lands, so the dives under it inherit somewhere
-	// to push. The work-loop test below covers the feat that has not said.
-	write(
-		featPath,
-		featText.replace(/^---$/m, `---\nscopes:\n  - ${repoId}:\n      work-branch: work/lifecycle`),
+		repoId,
 	);
 	// Work is picked up off the deck, so a feat nothing reaches has no dives
 	// anybody can jump -- and this test puts its dive down and picks it back up.
@@ -402,21 +399,27 @@ meta:
 		),
 	);
 
-	const { featPath, featId, featText } = pitchFeat(
+	const { featPath, featText } = pitchFeat(
 		bridge,
 		"Ship the work loop feature.",
 		"work-loop",
+		workLoopRepoId,
 	);
+	const featId = /^id: (\S+)$/m.exec(featText)[1];
 	/**
 	 * The gate is declared on the feat, not on the dive: a dive-declared gate has
 	 * a dive to attach its failure to already, so only a feat-declared one can
 	 * exercise minting.
+	 *
+	 * The scopes `record.feat` wrote are replaced with bare ones, because this
+	 * test needs a feat that named no work branch -- what step 8 costs something
+	 * for -- and `--scope` always names one.
 	 */
 	write(
 		featPath,
 		featText.replace(
-			/^---$/m,
-			`---\nscopes:\n  - ${workLoopRepoId}\n  - ${workLoopSecondRepoId}\n  - ${workLoopThirdRepoId}\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate`,
+			/^scopes:\n(?:.+\n)+?(?=[a-z-]+:|---)/m,
+			`scopes:\n  - ${workLoopRepoId}\n  - ${workLoopSecondRepoId}\n  - ${workLoopThirdRepoId}\nlinks:\n  - kb/${workLoopGateId}.md:\n      rel: test.gate\n`,
 		),
 	);
 	runTool("git", ["add", "--", "kb"], bridge);
@@ -619,13 +622,11 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	const { bridge } = seededBridge(tmp, "stale-pin-bridge", diver);
 	writeImplRepoDoc(bridge, stalePinRepoId, repo);
 
-	const { featPath, featId, featText } = pitchFeat(bridge, "Exercise stale pins.", "stale-pin");
-	write(
-		featPath,
-		featText.replace(
-			/^---$/m,
-			`---\nscopes:\n  - ${stalePinRepoId}:\n      work-branch: work/stale-pin`,
-		),
+	const { featPath, featId } = pitchFeat(
+		bridge,
+		"Exercise stale pins.",
+		"stale-pin",
+		stalePinRepoId,
 	);
 	// The dive is packed and picked back up below, and only a dive the deck
 	// reaches can be picked up.

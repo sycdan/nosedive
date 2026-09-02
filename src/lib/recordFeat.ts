@@ -26,6 +26,7 @@ import {
 	reconcileDocLink,
 	resolveFeatDoc,
 } from "./repoFeatScopes.js";
+import { resolveRepoDoc } from "./repoWorkspaceCore.js";
 import { assertSlug, managedDiveName, slugFromGist } from "./slugs.js";
 
 export interface RecordFeatOptions {
@@ -34,6 +35,8 @@ export interface RecordFeatOptions {
 	gist?: string;
 	name?: string;
 	parent?: string;
+	/** Repos to add to a new feat's explicit scope set. */
+	scopes: string[];
 	/** `--no-parent`: the feat becomes a root of the backlog again. */
 	unparent: boolean;
 	/** The gist arrived as a positional, in the spelling this level deprecates. */
@@ -50,7 +53,7 @@ export function parseRecordFeatArgs(
 	args: string[],
 	isDocRef: (arg: string) => boolean,
 ): RecordFeatOptions {
-	const options: RecordFeatOptions = { unparent: false, positionalGist: false };
+	const options: RecordFeatOptions = { scopes: [], unparent: false, positionalGist: false };
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
@@ -60,7 +63,7 @@ export function parseRecordFeatArgs(
 			options.unparent = true;
 			continue;
 		}
-		const flag = ["--gist", "--name", "--parent"].find(
+		const flag = ["--gist", "--name", "--parent", "--scope"].find(
 			(candidate) => arg === candidate || arg.startsWith(`${candidate}=`),
 		);
 		if (!flag) {
@@ -82,7 +85,8 @@ export function parseRecordFeatArgs(
 			if (options.gist !== undefined) throw new Error("record.feat gist given twice");
 			options.gist = value;
 		} else if (flag === "--name") options.name = assertSlug(value, "record.feat name");
-		else options.parent = value;
+		else if (flag === "--parent") options.parent = value;
+		else options.scopes.push(value);
 	}
 
 	if (options.gist !== undefined) {
@@ -142,6 +146,24 @@ function backlogMemoPath(rc: NosediveRc): string | undefined {
 function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, io: CommandIo) {
 	const gist = options.gist!;
 	const parent = options.parent ? resolveFeatDoc(kbDocs, rc, options.parent) : undefined;
+	const repos = repoDocs(kbDocs);
+	if (parent && options.scopes.length > 0) {
+		throw new Error("a parented feat inherits its parent's scopes; do not pass --scope");
+	}
+	if (!parent && repos.length > 1 && options.scopes.length === 0) {
+		throw new Error(
+			"record.feat requires --scope <repo-ref> when the bridge registers more than one repo; no scope is safe to guess",
+		);
+	}
+	// Every scope is resolved before anything is written, so a misspelled repo
+	// ref fails the command instead of leaving a recorded feat nobody asked for.
+	const scoped: KbDoc[] = [];
+	for (const scopeRef of options.scopes) {
+		const repoDoc = resolveRepoDoc(kbDocs, scopeRef);
+		if (scoped.some((doc) => doc.id === repoDoc.id))
+			throw new Error(`--scope names ${repoDoc.name} twice`);
+		scoped.push(repoDoc);
+	}
 	const existingNames = new Set(featDocs(kbDocs).map((doc) => doc.name));
 	// An explicit --name wins outright. Otherwise derive a slug from the gist,
 	// the way this command always has for the leaf's title -- but fall back to
@@ -166,15 +188,19 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	io.log(`Recorded ${formatPath(path)}`);
 	// A feat that scopes nothing hands every gate declared on it an empty repo
 	// set, so such a gate can never pass under `test`. Where the bridge registers
-	// exactly one repo there is only one set it could have meant, and naming the
-	// branch is what makes that scope writable. With several there is no
-	// defensible guess, and a parented feat is left alone because it already
-	// inherits its parent's scopes -- writing here would be a second source.
-	const repos = repoDocs(kbDocs);
-	const soleRepo = !parent && repos.length === 1 ? repos[0]! : undefined;
+	// exactly one repo and the pilot named none there is only one set it could
+	// have meant, and naming the branch is what makes that scope writable. With
+	// several, `--scope` is required above, and a parented feat is left alone
+	// because it already inherits its parent's scopes -- writing here would be a
+	// second source.
+	const soleRepo = !parent && scoped.length === 0 && repos.length === 1 ? repos[0]! : undefined;
 	if (soleRepo) {
 		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch: defaultWorkBranch(rc, name) });
 		io.log(`Scoped feat to the only registered repo: ${soleRepo.name} (${soleRepo.id})`);
+	}
+	for (const repoDoc of scoped) {
+		appendRepoScopeToFeat(path, { id: repoDoc.id, workBranch: defaultWorkBranch(rc, name) });
+		io.log(`Scoped feat to repo: ${repoDoc.name} (${repoDoc.id})`);
 	}
 
 	// The backlog renders from its own links, so an unparented feat is reachable
@@ -194,9 +220,10 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 
 	// A scoped feat has answered both flags already, so a pilot who typed them
 	// would be choosing a repo and a branch that are no longer open questions.
-	const upscope = soleRepo
-		? ""
-		: ` --upscope ${repos.length === 1 ? repos[0]!.name : "<repo>"} --work-branch work/${name}`;
+	const upscope =
+		soleRepo || scoped.length > 0
+			? ""
+			: ` --upscope ${repos.length === 1 ? repos[0]!.name : "<repo>"} --work-branch work/${name}`;
 	printNextSteps(io, [
 		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>"` +
 			upscope,

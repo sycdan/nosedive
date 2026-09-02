@@ -380,9 +380,14 @@ export function seededBridge(tmp, name, diver) {
 	return { bridge, origin: join(tmp, `${name}-origin.git`) };
 }
 
-/** Records a feat and returns where it landed, for fixtures that then edit it. */
-export function pitchFeat(bridge, gist, name) {
-	const pitched = run(["record.feat", gist, "--name", name], bridge);
+/**
+ * Records a feat and returns where it landed, for fixtures that then edit it.
+ * `scopeRef` is required on a bridge registering more than one repo, because
+ * that is where `record.feat` refuses to guess.
+ */
+export function pitchFeat(bridge, gist, name, scopeRef) {
+	const scope = scopeRef ? ["--scope", scopeRef] : [];
+	const pitched = run(["record.feat", gist, "--name", name, ...scope], bridge);
 	assertOk(pitched, "record.feat failed");
 	const featPath = join(bridge, /^Recorded (.+)$/m.exec(pitched.stdout)?.[1] ?? "");
 	const text = readFileSync(featPath, "utf8");

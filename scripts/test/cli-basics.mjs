@@ -70,7 +70,7 @@ test("cli-basics", () => {
 	assert.match(help.stdout, /seed/);
 	assert.doesNotMatch(help.stdout, /^  init\b/m);
 	assert.match(help.stdout, /preflight/);
-	assert.match(help.stdout, /prove/);
+	assert.doesNotMatch(help.stdout, /^  prove/m);
 	assert.match(help.stdout, /render/);
 	assert.match(help.stdout, /whoami/);
 	assert.match(help.stdout, /dump-backlog/);

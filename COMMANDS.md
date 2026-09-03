@@ -223,19 +223,6 @@ Reconcile the bridge pre-push hook, fetch bridge trunk, then print the session-s
 More: nosedive render 67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e
 ```
 
-#### [Prove](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md)
-
-```sh
-npx -y nosedive@2026.9.2-1788352532175 prove --help
-```
-```md
-Usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]
-
-Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits.
-
-More: nosedive render af12dc22-6bad-5e2a-aca9-ff0163dd39dd
-```
-
 #### [Record a dive](kb/c583519a-95c3-59e8-90fd-0d3003b4b8d1.md)
 
 ```sh
@@ -384,6 +371,7 @@ Still functional, so nothing pinned to them breaks. Each names what to reach for
 | [`add-repo.effort@2`](kb/2b1416e4-924b-558f-a4a4-a087031cab22.md) | `npx nosedive add-repo.effort <repo-id-or-name> [--ref <ref>] [--work-branch <branch>]` | `add-repo.feat`, which is the same command under the name of the thing it edits. |
 | [`into@2`](kb/434ecb05-536a-533b-8ac2-2b3c1199a075.md) | `npx nosedive into [<context>]` | `plan`, which turns a selected feat into gated vertical dives without starting them. |
 | [`pitch@2`](kb/d59ff8d4-3366-54cd-ac2e-7ef869752b3a.md) | `npx nosedive pitch "<gist>" [--name <slug>] [--parent <feat>]` | `record.feat`, which is the same command under the name of the thing it records. |
+| [`prove@1`](kb/af12dc22-6bad-5e2a-aca9-ff0163dd39dd.md) | `npx nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]` | `test`, which runs the gates a dive links. |
 <!-- END nosedive-command-surface -->
 
 <!-- BEGIN nosedive-levels -->

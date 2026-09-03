@@ -5,13 +5,21 @@ name: prove@1
 gist: "Run an executable proof for a bridge `kind: assertion` doc in an isolated child process, optionally recording the proven input commits."
 scopes: []
 meta:
+  use-instead: "`test`, which runs the gates a dive links."
   usage: nosedive prove <assertion-ref> [--record] [--rehydrate] [--force] [--verbose]
   agents-use-when: an assertion needs its proof run, or a change needs proving before it lands.
   adapter: kb/artifacts/019fadf5-e089-7c4d-8c97-9c6bf1db6b0f.mjs
   entrypoint: L1__prove
+links:
+  - kb/019fda55-7348-7568-825c-d039467180d6.md:
+      rel: deprecated-by
 ---
 
-# Prove
+# Prove (deprecated)
+
+Use `test` instead. It runs the gates a dive links, and is the supported way to
+check that work holds up. This command remains available for compatibility with
+bridges whose assertion docs still carry a `rel: prover` artifact.
 
 The assertion may be named by quid, by a bridge-relative assertion doc path, or
 by an absolute assertion doc path that resolves inside the bridge.

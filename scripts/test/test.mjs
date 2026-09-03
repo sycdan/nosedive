@@ -162,6 +162,10 @@ test("a failing dive gate records a report and link without changing its declara
 	assert.equal(result.status, 1);
 	const diveText = readFileSync(divePath, "utf8");
 	assert.match(diveText, /^## Test report \d{4}-\d{2}-\d{2}T.*Z$/m);
+	assert.match(diveText, new RegExp(`\\[${failId}\\]\\(${failId}\\.md\\)`));
+	assert.match(diveText, new RegExp(`declared by: ${failId}\\.md`));
+	assert.doesNotMatch(diveText, new RegExp(`\\]\\(kb/${failId}\\.md\\)`));
+	assert.doesNotMatch(diveText, new RegExp(`declared by: kb/${failId}\\.md`));
 	assert.match(diveText, new RegExp(`kb/${failId}\\.md:\\n      rel: test\\.gate`));
 	assert.equal(readFileSync(gatePath, "utf8"), gateBefore, "the gate declaration must not move");
 });

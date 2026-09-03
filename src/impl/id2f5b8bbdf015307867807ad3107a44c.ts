@@ -438,7 +438,7 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 				),
 			},
 		});
-		const report = renderGateReport(gates, outcome);
+		const report = renderGateReport(gates, outcome, dive);
 		io.log(report);
 		/**
 		 * Written whether or not the gates passed. Appending only on failure makes a

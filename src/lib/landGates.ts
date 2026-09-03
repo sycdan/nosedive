@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
@@ -552,7 +552,13 @@ function gateLabel(gate: LandGate): string {
 }
 
 /** Written into the dive so the next `jump` hands the whole picture to the next agent. */
-export function renderGateReport(gates: LandGate[], outcome: GateOutcome): string {
+export function renderGateReport(
+	gates: LandGate[],
+	outcome: GateOutcome,
+	reportDoc: KbDoc,
+): string {
+	const relativeToReport = (doc: KbDoc) =>
+		relative(dirname(reportDoc.relPath), doc.relPath).replaceAll("\\", "/");
 	const lines: string[] = [];
 	lines.push(`Elapsed: ${(outcome.elapsedMs / 1000).toFixed(1)}s.`);
 	lines.push("");
@@ -562,11 +568,11 @@ export function renderGateReport(gates: LandGate[], outcome: GateOutcome): strin
 	if (gates.length === 0) lines.push("- (none declared)");
 	for (const gate of gates) {
 		const run = outcome.runs.find((entry) => entry.gate === gate);
-		const label = `[${gate.doc.name || gate.doc.id}](${gate.doc.relPath})`;
+		const label = `[${gate.doc.name || gate.doc.id}](${relativeToReport(gate.doc)})`;
 		// Which edge won stays auditable whatever the verdict; everything else below
 		// is only worth keeping for a gate that did not pass.
 		const shadowed = gate.shadowedBy.length
-			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map((doc) => doc.relPath).join(", ")}`
+			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map(relativeToReport).join(", ")}`
 			: undefined;
 		if (run?.status === 0) {
 			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s`);
@@ -581,7 +587,7 @@ export function renderGateReport(gates: LandGate[], outcome: GateOutcome): strin
 		lines.push(`- ${label}: ${verdict}`);
 		lines.push(`  - script: ${gate.scriptPath}`);
 		lines.push(`  - gate-height: ${gate.gateHeight}, test-is-flaky: ${gate.flaky}`);
-		lines.push(`  - declared by: ${gate.introducedBy.relPath}`);
+		lines.push(`  - declared by: ${relativeToReport(gate.introducedBy)}`);
 		if (shadowed) lines.push(shadowed);
 		if (run) {
 			lines.push(`  - ran: ${run.startedAt} -> ${run.endedAt} (${run.elapsedMs}ms)`);

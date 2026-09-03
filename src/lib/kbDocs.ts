@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
@@ -26,6 +26,11 @@ export type { LinkRef, ScopeRef } from "./kbRefs.js";
 export function renderKbDocTitle(name: string): string {
 	const leaf = name.split(".")[0]!;
 	return `# ${titleFromSlug(leaf)}`;
+}
+
+/** Render a link from one KB document to another, relative to the first document. */
+export function relativeDocPath(from: KbDoc, to: KbDoc): string {
+	return toPosixPath(relative(dirname(from.relPath), to.relPath));
 }
 
 /**

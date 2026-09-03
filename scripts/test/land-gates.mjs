@@ -487,7 +487,7 @@ test("land runs a passing gate and publishes", () => {
 		diveText.indexOf("## Land report "),
 		diveText.indexOf("## Outcome"),
 	);
-	assert.match(report, /- \[builds\]\(kb\/[0-9a-f-]+\.md\): passed in \d+\.\d+s$/m);
+	assert.match(report, /- \[builds\]\([0-9a-f-]+\.md\): passed in \d+\.\d+s$/m);
 	assert.doesNotMatch(report, /```/, "a passing gate must not carry a fenced stderr block");
 	assert.doesNotMatch(report, /- script:/, "a passing gate must not carry its per-gate detail");
 	assert.ok(
@@ -503,7 +503,7 @@ test("a gate with passing node:test tests passes", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assertOk(result, "passing node:test tests should pass the gate");
-	assert.match(result.stdout, /\[node-tests\]\([0-9a-f-]+\.md\): passed/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): passed/);
 });
 
 test("a failing gate refuses the land, pushes nothing, and reports into the dive", () => {
@@ -536,7 +536,7 @@ test("a gate with a failing node:test test fails", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = run(["land"], bridge);
 	assert.notEqual(result.status, 0, "a failing node:test test must block the land");
-	assert.match(result.stdout, /\[node-tests\]\([0-9a-f-]+\.md\): FAILED/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): FAILED/);
 });
 
 /**
@@ -563,7 +563,7 @@ test("a node:test gate slower than the idle limit is not cut off", () => {
 	gitCommitEmpty(worktree, "work");
 	const result = withIdleLimit(800, () => run(["land"], bridge));
 	assertOk(result, "a suite that keeps talking must not be killed for being slow");
-	assert.match(result.stdout, /\[node-tests\]\([0-9a-f-]+\.md\): passed/);
+	assert.match(result.stdout, /\[node-tests\]\(kb\/[0-9a-f-]+\.md\): passed/);
 });
 
 test("a gate that goes silent with the loop open is failed, not left to hang", () => {
@@ -573,7 +573,7 @@ test("a gate that goes silent with the loop open is failed, not left to hang", (
 	gitCommitEmpty(worktree, "work");
 	const result = withIdleLimit(800, () => run(["land"], bridge));
 	assert.notEqual(result.status, 0, "a hung gate must fail the land");
-	assert.match(result.stdout, /\[hangs\]\([0-9a-f-]+\.md\): FAILED/);
+	assert.match(result.stdout, /\[hangs\]\(kb\/[0-9a-f-]+\.md\): FAILED/);
 
 	const diveText = readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8");
 	assert.match(

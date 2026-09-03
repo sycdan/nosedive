@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
 import { commandForSpawn } from "./gitState.js";
-import { KbDoc, LinkRef } from "./kbDocs.js";
+import { KbDoc, LinkRef, relativeDocPath } from "./kbDocs.js";
 import { isFeatEdge } from "./relGrammar.js";
 import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
@@ -557,8 +557,6 @@ export function renderGateReport(
 	outcome: GateOutcome,
 	reportDoc: KbDoc,
 ): string {
-	const relativeToReport = (doc: KbDoc) =>
-		relative(dirname(reportDoc.relPath), doc.relPath).replaceAll("\\", "/");
 	const lines: string[] = [];
 	lines.push(`Elapsed: ${(outcome.elapsedMs / 1000).toFixed(1)}s.`);
 	lines.push("");
@@ -568,11 +566,11 @@ export function renderGateReport(
 	if (gates.length === 0) lines.push("- (none declared)");
 	for (const gate of gates) {
 		const run = outcome.runs.find((entry) => entry.gate === gate);
-		const label = `[${gate.doc.name || gate.doc.id}](${relativeToReport(gate.doc)})`;
+		const label = `[${gate.doc.name || gate.doc.id}](${relativeDocPath(reportDoc, gate.doc)})`;
 		// Which edge won stays auditable whatever the verdict; everything else below
 		// is only worth keeping for a gate that did not pass.
 		const shadowed = gate.shadowedBy.length
-			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map(relativeToReport).join(", ")}`
+			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map((doc) => relativeDocPath(reportDoc, doc)).join(", ")}`
 			: undefined;
 		if (run?.status === 0) {
 			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s`);
@@ -587,7 +585,7 @@ export function renderGateReport(
 		lines.push(`- ${label}: ${verdict}`);
 		lines.push(`  - script: ${gate.scriptPath}`);
 		lines.push(`  - gate-height: ${gate.gateHeight}, test-is-flaky: ${gate.flaky}`);
-		lines.push(`  - declared by: ${relativeToReport(gate.introducedBy)}`);
+		lines.push(`  - declared by: ${relativeDocPath(reportDoc, gate.introducedBy)}`);
 		if (shadowed) lines.push(shadowed);
 		if (run) {
 			lines.push(`  - ran: ${run.startedAt} -> ${run.endedAt} (${run.elapsedMs}ms)`);

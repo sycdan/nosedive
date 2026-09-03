@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 
 import { captureCommand } from "./commandAdapter.js";
@@ -26,6 +26,7 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
 import {
 	collectFeatGates,
@@ -438,8 +439,8 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 				),
 			},
 		});
-		const report = renderGateReport(gates, outcome);
-		io.log(report);
+		const report = renderGateReport(gates, outcome, dive);
+		io.log(rewriteMarkdownLinks(report, dirname(dive.path), process.cwd()));
 		/**
 		 * Written whether or not the gates passed. Appending only on failure makes a
 		 * landed dive read as one that landed red: the refusal is the only gate

@@ -144,7 +144,7 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 		}
 		if (dive) {
 			const divePath = join(rc.bridgeDir, dive.relPath);
-			appendTimestampedSection(divePath, renderGateReport(selected, outcome), "Test report");
+			appendTimestampedSection(divePath, renderGateReport(selected, outcome, dive), "Test report");
 			attachFailedGatesToDive(divePath, dive.links, claimed);
 		}
 		mintUnclaimedFailures(unclaimed, kbDocs, rc, io);

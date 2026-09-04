@@ -86,9 +86,9 @@ More: nosedive render cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1
 npx -y nosedive@2026.9.3-1788406609568 find --help
 ```
 ```md
-Usage: nosedive find <role> [<term>] [--scope <repo>] [--min-age <duration>] [--max-age <duration>]
+Usage: nosedive find <role> [<term>] [--kind <slug>] [--scope <repo>] [--min-age <duration>] [--max-age <duration>]
 
-List backlog-reachable documents by role, optionally filtering by term, scope and age.
+List backlog-reachable documents by role, optionally filtering by term, kind, scope and age.
 
 More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 ```

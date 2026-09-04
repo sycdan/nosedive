@@ -5,7 +5,7 @@ import { toPosixPath } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
 import { backlogDocTitle, printCommandHelp } from "./packageBacklog.js";
-import { slugFromGist } from "./slugs.js";
+import { assertSlug, slugFromGist } from "./slugs.js";
 
 const ROLES = new Set(["dive", "feat", "gate", "repo", "note"]);
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
@@ -31,6 +31,7 @@ export interface FindOptions {
 	minAgeMs?: number;
 	maxAgeMs?: number;
 	scopes: string[];
+	kinds: string[];
 	help: boolean;
 }
 
@@ -38,12 +39,13 @@ export function parseFindArgs(args: string[], io: CommandIo): FindOptions {
 	let minAgeMs: number | undefined;
 	let maxAgeMs: number | undefined;
 	const scopes: string[] = [];
+	const kinds: string[] = [];
 	const positional: string[] = [];
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index]!;
 		if (arg === "-h" || arg === "--help") {
 			printCommandHelp("find", io);
-			return { help: true, scopes };
+			return { help: true, scopes, kinds };
 		}
 		if (arg === "--min-age") {
 			minAgeMs = parseAge(arg, args[++index]);
@@ -59,6 +61,12 @@ export function parseFindArgs(args: string[], io: CommandIo): FindOptions {
 			scopes.push(value);
 			continue;
 		}
+		if (arg === "--kind") {
+			const value = args[++index];
+			if (!value) throw new Error("find --kind requires a kind");
+			kinds.push(assertSlug(value, "find --kind"));
+			continue;
+		}
 		if (arg.startsWith("--")) throw new Error(`unknown find option: ${arg}`);
 		positional.push(arg);
 	}
@@ -71,7 +79,7 @@ export function parseFindArgs(args: string[], io: CommandIo): FindOptions {
 	// crosses selects nothing, and silence is a worse answer than a refusal.
 	if (minAgeMs !== undefined && maxAgeMs !== undefined && minAgeMs >= maxAgeMs)
 		throw new Error("find --min-age must be shorter than --max-age");
-	return { role, term, minAgeMs, maxAgeMs, scopes, help: false };
+	return { role, term, minAgeMs, maxAgeMs, scopes, kinds, help: false };
 }
 
 /**
@@ -127,7 +135,7 @@ export function findDocs(
 	role: string,
 	term: string | undefined,
 	bridgeDir: string,
-	options: { minAgeMs?: number; maxAgeMs?: number; scopeIds: Set<string> },
+	options: { minAgeMs?: number; maxAgeMs?: number; scopeIds: Set<string>; kinds: string[] },
 ): KbDoc[] {
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const { scopeIds } = options;
@@ -164,11 +172,13 @@ export function findDocs(
 	if (term && !normalized) return [];
 	return [...selected.entries()]
 		.map(([id, declaredBy]) => ({ doc: byId.get(id)!, declaredBy }))
+		.filter(({ doc }) => options.kinds.length === 0 || options.kinds.includes(doc.kind))
 		.filter(
 			({ doc }) =>
 				!normalized ||
 				doc.name.includes(normalized) ||
-				Boolean(slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER)?.includes(normalized)),
+				Boolean(slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER)?.includes(normalized)) ||
+				Boolean(slugFromGist(doc.h1 ?? "", Number.MAX_SAFE_INTEGER)?.includes(normalized)),
 		)
 		.filter(
 			({ doc, declaredBy }) =>
@@ -189,13 +199,22 @@ export function renderFindResults(role: string, docs: KbDoc[]): string[] {
 	const heading = `${role.slice(0, 1).toUpperCase()}${role.slice(1)}s`;
 	const lines = [`## ${heading}`, ""];
 	if (docs.length === 0) lines.push("No matches.");
-	// Same entry shape the backlog renders, for the same reason: a document is
-	// known by its title, and its gist is the sentence explaining the title.
-	else
-		lines.push(
-			...docs.map(
-				(doc) => `- [${backlogDocTitle(doc)}](${doc.relPath})${doc.gist ? `: ${doc.gist}` : ""}`,
-			),
-		);
+	else {
+		const byKind = new Map<string, KbDoc[]>();
+		for (const doc of docs) byKind.set(doc.kind, [...(byKind.get(doc.kind) ?? []), doc]);
+		for (const [index, kind] of [...byKind.keys()]
+			.sort((left, right) => left.localeCompare(right))
+			.entries()) {
+			if (index > 0) lines.push("");
+			lines.push(`### ${kind}`, "");
+			// Same entry shape the backlog renders, for the same reason: a document is
+			// known by its title, and its gist is the sentence explaining the title.
+			lines.push(
+				...(byKind.get(kind) ?? []).map(
+					(doc) => `- [${backlogDocTitle(doc)}](${doc.relPath})${doc.gist ? `: ${doc.gist}` : ""}`,
+				),
+			);
+		}
+	}
 	return lines;
 }

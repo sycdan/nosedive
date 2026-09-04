@@ -10,7 +10,6 @@ import {
 	findBridgeConfig,
 	formatPath,
 	parseFrontmatter,
-	parseMarkdownDoc,
 	parseMarkdownFrontmatter,
 	parseYamlBlock,
 	readNosediveRc,
@@ -287,8 +286,7 @@ export function posixRelPath(from: string, to: string): string {
 }
 
 export function featDocTitle(doc: KbDoc, leafSlug: string): string {
-	const body = parseMarkdownDoc(readFileSync(doc.path, "utf8"), formatPath(doc.path)).body;
-	return firstMarkdownHeading(body, titleFromSlug(leafSlug));
+	return doc.h1 ?? titleFromSlug(leafSlug);
 }
 
 /** The title a backlog entry renders under: its H1, or its name's leaf slug. */

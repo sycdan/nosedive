@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { assertOk, createBridge, createTmp, run, runGit, write } from "../test-helpers.mjs";
 
 const tmp = createTmp("find");
-const minted = run(["mint", "14"], tmp);
+const minted = run(["mint", "18"], tmp);
 assertOk(minted, "mint failed");
 const [
 	BACKLOG,
@@ -22,6 +22,10 @@ const [
 	UNCOMMITTED,
 	GATE_INHERITS,
 	GATE_EMPTY,
+	TODO,
+	BUG,
+	H1_ONLY,
+	UNTYPED,
 ] = minted.stdout.trim().split(/\r?\n/);
 
 function link(id, rel) {
@@ -40,7 +44,7 @@ function doc(bridge, kind, id, name, gist, { links = [], scopes, body = "" } = {
 		join(bridge, "kb", `${id}.md`),
 		[
 			"---",
-			`kind: ${kind}`,
+			...(kind === undefined ? [] : [`kind: ${kind}`]),
 			`id: ${id}`,
 			`name: ${name}`,
 			`gist: "${gist}"`,
@@ -87,6 +91,10 @@ function fixture(name) {
 			...link(WRONG_REL, "wrong.repo"),
 			...link(GATE_INHERITS, "land.gate"),
 			...link(GATE_EMPTY, "land.gate"),
+			...link(TODO, "todo.note"),
+			...link(BUG, "bug.note"),
+			...link(H1_ONLY, "h1.note"),
+			...link(UNTYPED, "untyped.note"),
 		],
 	});
 	doc(bridge, "repo", REPO_A, "alpha", "Alpha Repo", { links: link(NOTE_A, "todo.note") });
@@ -110,6 +118,13 @@ function fixture(name) {
 	doc(bridge, "gate", GATE_EMPTY, "declares-no-scopes", "Gate that declares no scopes", {
 		scopes: [],
 	});
+	doc(bridge, "todo", TODO, "todo-find", "Search todo kind", { scopes: [REPO_A] });
+	doc(bridge, "bug", BUG, "bug-find", "Search bug kind", { scopes: [REPO_A] });
+	doc(bridge, "note", H1_ONLY, "ordinary-name", "Ordinary summary", {
+		scopes: [REPO_A],
+		body: "# H1-only discovery\n",
+	});
+	doc(bridge, undefined, UNTYPED, "untyped", "Untyped document", { scopes: [REPO_A] });
 	runGit(["add", "."], bridge);
 	commitAt(bridge, "recent docs", new Date().toISOString());
 	return bridge;
@@ -125,11 +140,12 @@ test("find walks nested backlog links, filters rel roles, deduplicates, and matc
 	assert.doesNotMatch(result.stdout, new RegExp(REFERENCE_ONLY));
 });
 
-test("find renders a titled role list of markdown links, and says so when nothing matches", () => {
+test("find renders kind-grouped markdown links, and says so when nothing matches", () => {
 	const bridge = fixture("render");
 	const result = run(["find", "note", "search"], bridge);
 	assertOk(result, "find failed");
-	assert.match(result.stdout, /^## Notes\n\n/);
+	assert.match(result.stdout, /^## Notes\n\n### bug\n\n/);
+	assert.match(result.stdout, /\n### note\n\n/);
 	assert.ok(
 		result.stdout.includes(`- [Written By Hand](kb/${RECENT}.md): Exact Search Term`),
 		`link text should be the document's H1:\n${result.stdout}`,
@@ -141,6 +157,40 @@ test("find renders a titled role list of markdown links, and says so when nothin
 	const empty = run(["find", "note", "no-such-term"], bridge);
 	assertOk(empty, "empty find failed");
 	assert.equal(empty.stdout, "## Notes\n\nNo matches.\n");
+});
+
+test("find filters repeatable --kind values, matches H1s, and groups by kind", () => {
+	const bridge = fixture("kind");
+	const todo = run(["find", "note", "--kind", "todo"], bridge);
+	assertOk(todo, "kind-only find failed");
+	assert.match(todo.stdout, new RegExp(TODO));
+	assert.doesNotMatch(todo.stdout, new RegExp(BUG));
+	assert.doesNotMatch(todo.stdout, new RegExp(NOTE_A));
+
+	const twoKinds = run(["find", "note", "search", "--kind", "todo", "--kind", "bug"], bridge);
+	assertOk(twoKinds, "multi-kind find failed");
+	assert.match(twoKinds.stdout, new RegExp(TODO));
+	assert.match(twoKinds.stdout, new RegExp(BUG));
+	assert.doesNotMatch(twoKinds.stdout, new RegExp(RECENT));
+
+	const absent = run(["find", "note", "--kind", "does-not-exist"], bridge);
+	assertOk(absent, "absent kind find failed");
+	assert.equal(absent.stdout, "## Notes\n\nNo matches.\n");
+
+	const h1 = run(["find", "note", "h1-only"], bridge);
+	assertOk(h1, "H1 find failed");
+	assert.match(h1.stdout, new RegExp(H1_ONLY));
+
+	const grouped = run(["find", "note"], bridge);
+	assertOk(grouped, "grouped find failed");
+	for (const kind of ["bug", "note", "todo", "unclassified"])
+		assert.match(grouped.stdout, new RegExp(`### ${kind}\\n\\n`));
+	assert.ok(
+		grouped.stdout.indexOf("### bug") < grouped.stdout.indexOf("### note") &&
+			grouped.stdout.indexOf("### note") < grouped.stdout.indexOf("### todo") &&
+			grouped.stdout.indexOf("### todo") < grouped.stdout.indexOf("### unclassified"),
+		`kinds should sort alphabetically:\n${grouped.stdout}`,
+	);
 });
 
 test("find walks the repos the backlog scopes", () => {
@@ -245,6 +295,8 @@ test("find reports invalid arguments", () => {
 		[["find", "note", "--min-age", "2d", "--max-age", "1d"], /--min-age must be shorter/],
 		[["find", "note", "--min-age", "1d", "--max-age", "1d"], /--min-age must be shorter/],
 		[["find", "note", "--scope", "no-such-repo"], /unknown find scope/],
+		[["find", "note", "--kind"], /--kind requires a kind/],
+		[["find", "note", "--kind", "to do"], /--kind must be kebab-case/],
 	]) {
 		const result = run(args, bridge);
 		assert.notEqual(result.status, 0, `expected failure for ${args.join(" ")}`);

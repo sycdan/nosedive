@@ -621,6 +621,8 @@ const BAILED_DIVE_ID = "019fe500-0000-7000-8000-00000000ba11";
 const UNLINKED_DIVE_ID = "019fe500-0000-7000-8000-00000000babe";
 const OFF_BACKLOG_DIVE_ID = "019fe500-0000-7000-8000-00000000f00d";
 const HELD_HEADING = "Held by other pilots:";
+/** The one line preflight prints about the backlog: where it is, not what is in it. */
+const backlogPointer = (id) => `kb/${id}.md lists every feat and repo`;
 
 function backlogId(bridge) {
 	const match = /^backlog: (\S+)$/m.exec(
@@ -852,10 +854,17 @@ test("preflight lists only backlog-reachable planned/pending and packed dives", 
 		assert.doesNotMatch(preflight.stdout, new RegExp(hidden));
 	}
 
-	// The backlog memo is walked for these dives but never printed: the feat
+	// The backlog memo is walked for these dives but never rendered: the feat
 	// headers are what the pilot needs, and the rest is `dump-backlog`'s job.
+	// Its path is named once, under the listing, for a session that has to plan
+	// something the listing does not offer.
 	assert.doesNotMatch(preflight.stdout, /^== open work/m);
 	assert.doesNotMatch(preflight.stdout, /Backlog fixture\./);
+	assert.match(preflight.stdout, new RegExp(`^${escapeRegExp(backlogPointer(backlog))}`, "m"));
+	assert.ok(
+		held < preflight.stdout.indexOf(backlogPointer(backlog)),
+		"the backlog path closes the section, after every dive on offer",
+	);
 	// The listing prints paths, so the guidance has to name the same thing: an
 	// agent told one and shown the other is back to guessing.
 	assert.match(preflight.stdout, /start with `nosedive jump <doc-path>`/);
@@ -872,6 +881,12 @@ test("preflight names record.dive --free when there is no dive to pick up", () =
 	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
 	assert.doesNotMatch(preflight.stdout, /^## /m);
 	assert.doesNotMatch(preflight.stdout, new RegExp(`^${HELD_HEADING}$`, "m"));
+	// The case the path is there for: nothing to pick up, so the next thing the
+	// pilot asks for is new work, and the memo is where the feats and repos are.
+	assert.match(
+		preflight.stdout,
+		new RegExp(`^${escapeRegExp(backlogPointer(backlogId(bridge)))}`, "m"),
+	);
 });
 
 /**
@@ -1030,6 +1045,9 @@ test("preflight lists no dives when the backlog memo cannot be resolved", () => 
 	assert.match(preflight.stdout, /^nose: no dive to pick up; run `record\.dive --free`/m);
 	assert.doesNotMatch(preflight.stdout, /unreachable-dive/);
 	assert.match(preflight.stderr, new RegExp(`bridge backlog memo not found: ${missing}`));
+	// A path to a memo that is not there would send the pilot after a file that
+	// cannot answer them; the stderr line already says what is wrong.
+	assert.doesNotMatch(preflight.stdout, /lists every feat and repo/);
 
 	// Same rule for a backlog id that could never resolve: an empty list has to
 	// say it is empty because the memo is unreadable, not because there is no
@@ -1042,6 +1060,7 @@ test("preflight lists no dives when the backlog memo cannot be resolved", () => 
 		unshaped.stderr,
 		/listing dives requires a UUID-shaped backlog memo id: \.\/backlog/,
 	);
+	assert.doesNotMatch(unshaped.stdout, /lists every feat and repo/);
 });
 
 test("preflight fails like whoami when git identity is incomplete", () => {

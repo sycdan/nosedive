@@ -269,12 +269,26 @@ function printCurrentDiveAndFeat(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io
 	}
 }
 
+/**
+ * Where to look when nothing listed above fits. The memo itself stays
+ * unrendered -- it grows with the backlog and most sessions never need it --
+ * but naming nothing left an agent whose session opened with no dive to pick
+ * up with no way to reach the feats and repos except by grepping kb/.
+ */
+function backlogPointerLine(rc: NosediveRc): string | undefined {
+	if (!rc.backlog || !rc.kbDir) return undefined;
+	const backlog = readKbDocById(rc.kbDir, rc.bridgeDir, rc.backlog);
+	if (!backlog) return undefined;
+	return `${backlog.relPath} lists every feat and repo -- read it when planning new work, not by default: it is long, and grows with the backlog.`;
+}
+
 function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo): void {
 	io.log("== feats and their dives ==");
 	if (!kbDocs || !rc.kbDir) {
 		io.err("no kb directory is configured, so no feats or dives can be listed");
 		return;
 	}
+	const backlogPointer = backlogPointerLine(rc);
 
 	const { available, held, warnings } = collectPreflightDives(
 		rc,
@@ -285,6 +299,7 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 
 	if (available.length === 0 && held.length === 0) {
 		io.log(PREFLIGHT_NO_DIVE_LINE);
+		if (backlogPointer) io.log(backlogPointer);
 		return;
 	}
 
@@ -297,6 +312,7 @@ function printDives(rc: NosediveRc, kbDocs: KbDoc[] | undefined, io: CommandIo):
 		lines.push("", "Held by other pilots:", "");
 		for (const dive of held) lines.push(formatJumpableDive(dive, true));
 	}
+	if (backlogPointer) lines.push("", backlogPointer);
 	for (const line of lines) io.log(line);
 }
 
@@ -389,9 +405,9 @@ function printSessionReport(
 	io.log("");
 
 	// Identity first, so a reader knows whose dives these are. The backlog is
-	// not printed: every dive already sits under the feat that owns it, and the
-	// rest of the backlog is a document to ask for -- `dump-backlog` -- rather
-	// than one every session pays for whether or not it is read.
+	// named but not rendered: every dive already sits under the feat that owns
+	// it, and the rest of the backlog is a document to open when picking new
+	// work rather than one every session pays for whether or not it is read.
 	printDives(rc, kbDocs, io);
 	io.log("");
 	io.log(agentGuidance.join("\n"));

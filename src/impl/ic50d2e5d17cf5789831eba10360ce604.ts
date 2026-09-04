@@ -19,6 +19,7 @@ export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandO
 			minAgeMs: options.minAgeMs,
 			maxAgeMs: options.maxAgeMs,
 			scopeIds: resolveFindScopes(docs, options.scopes),
+			kinds: options.kinds,
 		});
 		for (const line of renderFindResults(options.role!, found)) io.log(line);
 	}, args);

@@ -77,6 +77,8 @@ export interface KbDoc {
 	name: string;
 	kind: string;
 	gist: string;
+	/** The first H1, when the body supplies a human-written title. */
+	h1?: string;
 	repoPath?: string;
 	repoBaseBranch?: string;
 	featRef?: string;
@@ -189,11 +191,12 @@ export function readKbDoc(path: string, bridgeDir: string): KbDoc {
 		// `featRef` below, so every `doc.kind === "feat"` check downstream (dive
 		// ownership, gate feats, repo-feat scoping) works with bridges that still
 		// spell it the old way.
-		kind: fm.scalars.kind === "effort" ? "feat" : fm.scalars.kind,
+		kind: fm.scalars.kind === "effort" ? "feat" : (fm.scalars.kind ?? "unclassified"),
 		// A doc with no `gist:` has no gist, not the string `undefined`:
 		// the field is typed as present, so every reader would
 		// otherwise have to guard a value the type says cannot happen.
 		gist: fm.scalars.gist ?? "",
+		h1: /^#\s+(.+?)\s*$/m.exec(text)?.[1]?.trim() || undefined,
 		hasBrief: DIVE_BRIEF_HEADING_PATTERN.test(text),
 		lastLog: latestLoggedSection(text),
 		repoPath: kbMetaPath(fm.nested.meta?.path),

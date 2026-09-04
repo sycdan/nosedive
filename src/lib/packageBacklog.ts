@@ -10,7 +10,6 @@ import {
 	findBridgeConfig,
 	formatPath,
 	parseFrontmatter,
-	parseMarkdownDoc,
 	parseMarkdownFrontmatter,
 	parseYamlBlock,
 	readNosediveRc,

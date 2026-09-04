@@ -29,7 +29,7 @@ enough. Nosedive pushes to that repo's remote, so it needs an `origin`.
 ```sh
 git clone <your-notes-repo> ~/BASE && cd ~/BASE
 
-# the bridge commits on your behalf, so give it an identity
+# the tool commits on your behalf, so give it an identity
 git config user.name "Test Pilot"
 git config user.email "test@nosedive.invalid"
 

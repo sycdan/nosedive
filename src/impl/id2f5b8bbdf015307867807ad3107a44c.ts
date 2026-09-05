@@ -312,6 +312,21 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	if (marker.error || !marker.id)
 		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
 
+	/**
+	 * Recursion is landing the dive that is already landing, not merely landing
+	 * from inside a land: a gate that walks a second bridge lands a dive of its
+	 * own, and refusing that would fail every land the gate runs on.
+	 *
+	 * @see kb/01a06f5e-f003-7b1b-8a63-919d36015e31.md
+	 */
+	if (process.env[LAND_IN_FLIGHT_ENV] === marker.id)
+		throw new Error(
+			`land is already in flight for dive ${marker.id}, and landing it from inside that land ` +
+				`would publish the same work twice. This is usually a pre-push hook that runs ` +
+				`\`nosedive land\`: take the land out of the hook. To allow a nested land on purpose, unset ` +
+				`${LAND_IN_FLIGHT_ENV} in the hook.`,
+		);
+
 	// Everything past here can push, and a push runs the scoped repo's own
 	// pre-push hook. `land` clears this again once the whole run is over.
 	process.env[LAND_IN_FLIGHT_ENV] = marker.id;
@@ -515,21 +530,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	printNextSteps(io, ["nosedive preflight"]);
 }
 
-/**
- * Refuses a land re-entered from inside a land, which recurses without bound and
- * lets the innermost one publish while every land above it reports failure.
- *
- * @see kb/019ff969-4126-79f0-9af7-451afe898c0e.md
- */
+/** Keeps the in-flight marker from outliving the land that set it. */
 async function land(args: string[], io: CommandIo): Promise<void> {
-	const inFlight = process.env[LAND_IN_FLIGHT_ENV];
-	if (inFlight)
-		throw new Error(
-			`land is already in flight for dive ${inFlight}, and landing from inside that land would ` +
-				`publish the same work twice. This is usually a pre-push hook that runs \`nosedive land\`: ` +
-				`take the land out of the hook. To allow a nested land on purpose, unset ` +
-				`${LAND_IN_FLIGHT_ENV} in the hook.`,
-		);
 	try {
 		await landDive(args, io);
 	} finally {

@@ -47,6 +47,23 @@ const GATE_SLOW =
 /** Speaks, then stalls: the only shape that can tell streaming from buffering. */
 const GATE_TALKS_THEN_STALLS =
 	'export function run() {\n\tconsole.error("gate speaking early");\n\tAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);\n}\n';
+/**
+ * A land inside a land gate, in a bridge of its own -- the shape the quickstart
+ * gate takes when it walks a fresh clone all the way to a pushed work branch.
+ * @see kb/01a06f5e-f003-7b1b-8a63-919d36015e31.md
+ */
+const nestedLandGate = (cliPath, bridgePath) => `import { spawnSync } from "node:child_process";
+
+export function run() {
+	const result = spawnSync(process.execPath, [${JSON.stringify(cliPath)}, "land"], {
+		cwd: ${JSON.stringify(bridgePath)},
+		encoding: "utf8",
+	});
+	console.error(result.stderr);
+	if (result.status !== 0) throw new Error("the nested land exited " + result.status);
+}
+`;
+
 const orderGate = (logPath, name) =>
 	`import { appendFileSync } from "node:fs";\n\nexport function run() {\n\tappendFileSync(${JSON.stringify(logPath)}, ${JSON.stringify(`${name}\n`)});\n}\n`;
 const contextGate = (logPath) =>
@@ -934,4 +951,21 @@ test("land refuses a gate whose source is unpublished, and lands once it is", ()
 
 	assertOk(run(["record.gate", gateId], bridge), "record.gate should publish the script");
 	assertOk(run(["land"], bridge), "land should proceed once the gate is published");
+});
+
+test("a land gate can land a dive in another bridge", () => {
+	const inner = setup("nested-inner");
+	gitCommitEmpty(inner.worktree, "inner work");
+	const gateId = "01a06f60-d9db-7b35-a52c-49e00b6f5969";
+	const { bridge, worktree } = setup("nested-outer", [
+		gate(gateId, "lands-another-bridge", nestedLandGate(cli, inner.bridge)),
+	]);
+	gitCommitEmpty(worktree, "outer work");
+
+	assertOk(run(["land"], bridge), "a gate landing a second bridge should not be refused");
+	assert.match(
+		readFileSync(join(inner.bridge, "kb", `${inner.diveId}.md`), "utf8"),
+		/^kind: memo$/m,
+		"the nested land should have closed its own dive",
+	);
 });

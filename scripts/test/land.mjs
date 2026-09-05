@@ -723,6 +723,10 @@ test("the land guard leaves other nosedive commands usable from a pre-push hook"
 	const source = join(tmp, "prepush-whoami-source");
 	const log = hookLog(bridge, "prepush-whoami");
 	gitCommitEmpty(worktree, "landable work");
+	// whoami reads the scoped repo's real git identity, which CI has none of
+	// globally -- the ordering trap giveOrigin documents.
+	runTool("git", ["config", "user.name", "Nosedive Test"], worktree);
+	runTool("git", ["config", "user.email", "test@nosedive.invalid"], worktree);
 	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
 	installPrePushHook(
 		worktree,

@@ -63,6 +63,15 @@ export const HYDRATE_UNPUBLISHED_COMMIT_ERROR_ID = "019fcb35-d660-7318-ac4c-3d5a
 export const NO_ACTIVE_DIVE_ERROR_ID = "019fe2f7-5922-72d5-abda-b5b8cb7300cf";
 export const SEED_LEVEL_DOWNGRADE_ERROR_ID = "019fee38-0674-7e46-be0c-a3405ece099e";
 
+/**
+ * Set for the lifetime of a `land` and inherited by every process it spawns, so
+ * a pre-push hook that shells back into `nosedive land` refuses instead of
+ * re-entering. Unset it in a hook to allow a nested land on purpose.
+ *
+ * @see kb/019ff969-4126-79f0-9af7-451afe898c0e.md
+ */
+export const LAND_IN_FLIGHT_ENV = "NOSEDIVE_LAND_IN_FLIGHT";
+
 export const GIT_LOCAL_ENV_KEYS = [
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 	"GIT_COMMON_DIR",

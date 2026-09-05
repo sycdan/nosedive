@@ -8,7 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import { NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
+import { LAND_IN_FLIGHT_ENV, NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
 	defaultWorkBranch,
@@ -303,7 +303,7 @@ function appendGateReportToDive(divePath: string, report: string): void {
 	appendTimestampedSection(divePath, report, "Land report");
 }
 
-async function land(args: string[], io: CommandIo): Promise<void> {
+async function landDive(args: string[], io: CommandIo): Promise<void> {
 	const { hard } = parseLandArgs(args);
 	const rc = readNosediveRc(process.cwd());
 
@@ -311,6 +311,25 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	if (!marker.present) throw new Error(NO_ACTIVE_DIVE_ERROR_ID);
 	if (marker.error || !marker.id)
 		throw new Error(`broken active dive marker: ${marker.error ?? "missing id"}`);
+
+	/**
+	 * Recursion is landing the dive that is already landing, not merely landing
+	 * from inside a land: a gate that walks a second bridge lands a dive of its
+	 * own, and refusing that would fail every land the gate runs on.
+	 *
+	 * @see kb/01a06f5e-f003-7b1b-8a63-919d36015e31.md
+	 */
+	if (process.env[LAND_IN_FLIGHT_ENV] === marker.id)
+		throw new Error(
+			`land is already in flight for dive ${marker.id}, and landing it from inside that land ` +
+				`would publish the same work twice. This is usually a pre-push hook that runs ` +
+				`\`nosedive land\`: take the land out of the hook. To allow a nested land on purpose, unset ` +
+				`${LAND_IN_FLIGHT_ENV} in the hook.`,
+		);
+
+	// Everything past here can push, and a push runs the scoped repo's own
+	// pre-push hook. `land` clears this again once the whole run is over.
+	process.env[LAND_IN_FLIGHT_ENV] = marker.id;
 
 	if (!rc.kbDir) throw new Error("land requires a configured kb directory");
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
@@ -509,6 +528,15 @@ async function land(args: string[], io: CommandIo): Promise<void> {
 	io.log(`landed "${dive.gist}"`);
 	io.log(outcome);
 	printNextSteps(io, ["nosedive preflight"]);
+}
+
+/** Keeps the in-flight marker from outliving the land that set it. */
+async function land(args: string[], io: CommandIo): Promise<void> {
+	try {
+		await landDive(args, io);
+	} finally {
+		delete process.env[LAND_IN_FLIGHT_ENV];
+	}
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

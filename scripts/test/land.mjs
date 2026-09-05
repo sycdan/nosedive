@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, sep } from "node:path";
 import { test } from "node:test";
 
 import {
 	assertOk,
+	cli,
 	createTmp,
 	escapeRegExp,
 	gitCommit,
@@ -659,4 +660,82 @@ test("land still rejects an unknown option", () => {
 	const result = run(["land", "--soft"], bridge);
 	assert.notEqual(result.status, 0, "land unexpectedly accepted an unknown option");
 	assert.match(result.stderr, /unknown land option: --soft/);
+});
+
+/**
+ * `land` pushes through the scoped repo's own pre-push hook by design, so a
+ * hook that shells back into nosedive re-enters the very land that invoked it.
+ * @see kb/019ff969-4126-79f0-9af7-451afe898c0e.md
+ */
+function hookLog(bridge, name) {
+	return join(bridge, `${name}.log`).split(sep).join("/");
+}
+
+function readHookLog(path) {
+	return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
+}
+
+test("land refuses a nested land re-entered from a scoped pre-push hook", () => {
+	const { bridge, diveId, worktree } = setup("recursion");
+	const source = join(tmp, "recursion-source");
+	const log = hookLog(bridge, "recursion");
+	gitCommitEmpty(worktree, "landable work");
+	installPrePushHook(
+		worktree,
+		`#!/bin/sh
+set -e
+echo entered >> "${log}"
+node "${cli.split(sep).join("/")}" land
+`,
+	);
+
+	const result = run(["land"], bridge);
+	assert.notEqual(result.status, 0, "land unexpectedly survived a hook that re-entered land");
+	assert.equal(
+		readHookLog(log).length,
+		1,
+		"the guard must stop the recursion at the first nested land, not unwind it later",
+	);
+	assert.match(result.stderr, new RegExp(`land is already in flight for dive ${diveId}`));
+	assert.equal(remoteWorkBranch(source), "", "a refused land must publish nothing");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${diveId}.md`), "utf8"),
+		/^kind: dive$/m,
+		"a refused land must leave the dive open",
+	);
+});
+
+test("land runs an ordinary pre-push hook exactly once", () => {
+	const { bridge, worktree } = setup("prepush-once");
+	const source = join(tmp, "prepush-once-source");
+	const log = hookLog(bridge, "prepush-once");
+	gitCommitEmpty(worktree, "landable work");
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	installPrePushHook(worktree, `#!/bin/sh\nset -e\necho ran >> "${log}"\n`);
+
+	assertOk(run(["land"], bridge), "land failed past an ordinary pre-push hook");
+	assert.deepEqual(readHookLog(log), ["ran"], "the pilot's hook must run once, and still run");
+	assert.equal(remoteWorkBranch(source), head, "land must still publish the work branch");
+});
+
+test("the land guard leaves other nosedive commands usable from a pre-push hook", () => {
+	const { bridge, worktree } = setup("prepush-whoami");
+	const source = join(tmp, "prepush-whoami-source");
+	const log = hookLog(bridge, "prepush-whoami");
+	gitCommitEmpty(worktree, "landable work");
+	const head = runTool("git", ["rev-parse", "HEAD"], worktree).stdout.trim();
+	installPrePushHook(
+		worktree,
+		`#!/bin/sh
+set -e
+node "${cli.split(sep).join("/")}" whoami >> "${log}"
+`,
+	);
+
+	assertOk(run(["land"], bridge), "the guard must not block a non-land command in a hook");
+	assert.ok(
+		readHookLog(log).some((line) => line.startsWith("nosedive-pilot-name:")),
+		"the hook's nosedive command should have produced its ordinary output",
+	);
+	assert.equal(remoteWorkBranch(source), head, "land must still publish the work branch");
 });

@@ -120,7 +120,7 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 		"the first dive on a feat pins at trunk",
 	);
 	assertOk(
-		run(["record.dive", "--ref", firstId, "--brief", "Test packing and reclaiming."], bridge),
+		run(["record.dive", "--ref", firstId, "--brief", "-"], bridge, "Test packing and reclaiming."),
 		"first brief failed",
 	);
 	assertDiveLinkAttrs(featPath, firstId, "planned.dive");
@@ -249,7 +249,11 @@ meta:
 	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
 	assert.match(noDiveGates.stderr, /--full/);
 	assertOk(
-		run(["record.dive", "--ref", secondId, "--brief", "Test landing and publication."], bridge),
+		run(
+			["record.dive", "--ref", secondId, "--brief", "-"],
+			bridge,
+			"Test landing and publication.",
+		),
 		"second brief failed",
 	);
 	assertDiveLinkAttrs(featPath, secondId, "planned.dive");
@@ -287,7 +291,7 @@ meta:
 		"a dive recorded after a sibling landed pins at what the sibling published",
 	);
 	assertOk(
-		run(["record.dive", "--ref", thirdId, "--brief", "Stack on the landed dive."], bridge),
+		run(["record.dive", "--ref", thirdId, "--brief", "-"], bridge, "Stack on the landed dive."),
 		"third brief failed",
 	);
 	assertOk(run(["jump"], bridge), "third jump failed");
@@ -646,7 +650,7 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	const waitingId = recordedDiveId(waiting.stdout);
 	assert.equal(scopeRef(waitingId), trunkHead(), "a new dive must pin trunk as it stands");
 	assertOk(
-		run(["record.dive", "--ref", waitingId, "--brief", "Wait while trunk moves."], bridge),
+		run(["record.dive", "--ref", waitingId, "--brief", "-"], bridge, "Wait while trunk moves."),
 		"brief for the waiting dive failed",
 	);
 

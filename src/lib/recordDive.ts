@@ -5,6 +5,7 @@ import { parseDocument } from "yaml";
 import { diveTags, localOnlyKbDocIds } from "./diveListing.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
+import { readStdinText } from "./stdinText.js";
 import {
 	formatPath,
 	NosediveRc,
@@ -63,11 +64,23 @@ function managedName(feat: KbDoc, id: string): string {
 	return managedDiveName(feat.name, id);
 }
 
+/** Any `##` section, which below the brief means work the brief already directed. */
+const SECTION_HEADING = /^##\s/;
+
+function readDiveBrief(): string {
+	const brief = readStdinText(
+		"record.dive reads the brief on stdin: `nosedive record.dive --feat <feat> --brief - < brief.md`",
+	);
+	if (!brief) throw new Error("brief cannot be empty");
+	return brief;
+}
+
 function renderNewDive(
 	id: string,
 	feat: KbDoc,
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
+	brief: string | undefined,
 ): string {
 	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
@@ -84,7 +97,7 @@ function renderNewDive(
 		"",
 		`# ${options.title?.trim() || "Dive Record"}`,
 	];
-	if (options.brief?.trim()) lines.push("", DIVE_BRIEF_HEADING, "", options.brief.trim());
+	if (brief) lines.push("", DIVE_BRIEF_HEADING, "", brief);
 	lines.push("");
 	return lines.join("\n");
 }
@@ -188,7 +201,12 @@ function replaceTitle(body: string, title: string): string {
 	return `# ${title}\n\n${body}`;
 }
 
-export function recordDive(args: string[], io: CommandIo): void {
+/**
+ * `brief` is for the in-process caller that already holds the text -- `test`
+ * minting a dive for a failed gate. Every other caller is the CLI, where the
+ * brief arrives on stdin because an argument cannot carry paragraphs.
+ */
+export function recordDive(args: string[], io: CommandIo, brief?: string): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
@@ -196,6 +214,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 	// question only the bridge can answer.
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
+	if (options.briefStdin) brief = readDiveBrief();
 	const active = activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
@@ -248,7 +267,7 @@ export function recordDive(args: string[], io: CommandIo): void {
 		}
 		const id = uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes));
+		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
@@ -339,15 +358,21 @@ export function recordDive(args: string[], io: CommandIo): void {
 		doc.set("scopes", scopes.map(renderScopeEntry));
 	}
 	let body = options.title?.trim() ? replaceTitle(parsed.body, options.title.trim()) : parsed.body;
-	if (options.brief?.trim()) {
-		// Write-once: the brief is what informed everything already built on this
-		// dive, so a second one is a new dive, not an edit.
-		if (DIVE_BRIEF_HEADING_PATTERN.test(body)) {
+	if (brief) {
+		const lines = body.split("\n");
+		const start = lines.findIndex((line) => DIVE_BRIEF_HEADING_PATTERN.test(line));
+		// Write-once, but only once the brief has informed something. Every section
+		// below it was written by work it directed, so replacing it then would make
+		// the record lie. A dive whose brief is still the last thing in it has
+		// directed nothing -- nobody has jumped it -- and rewriting that one is a
+		// pitch being corrected rather than history being edited.
+		if (start !== -1 && lines.slice(start + 1).some((line) => SECTION_HEADING.test(line))) {
 			throw new Error(
 				`dive already has a brief: ${formatPath(dive.path)}; bail and pitch a new dive instead of rewriting it`,
 			);
 		}
-		body = `${body.trimEnd()}\n\n${DIVE_BRIEF_HEADING}\n\n${options.brief.trim()}\n`;
+		const head = start === -1 ? body : lines.slice(0, start).join("\n");
+		body = `${head.trimEnd()}\n\n${DIVE_BRIEF_HEADING}\n\n${brief}\n`;
 	}
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	const claimed = options.takeover ? pilotEmail : options.diver;

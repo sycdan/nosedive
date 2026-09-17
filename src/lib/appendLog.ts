@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
 import { formatPath, readNosediveRc } from "./coreParsing.js";
 import { appendTimestampedSection } from "./kbSections.js";
 import { loadKbDocs, readActiveDiveId } from "./kbDocs.js";
+import { readStdinText } from "./stdinText.js";
 
 export interface AppendLogOptions {
 	label?: string;
@@ -50,22 +50,11 @@ export function parseAppendLogArgs(args: string[]): AppendLogOptions {
 	return options;
 }
 
-/**
- * The whole body, read at once from fd 0.
- *
- * A terminal is refused rather than read. With no pipe there is nothing to
- * read and the command would wait forever, which looks like a hang and not
- * like a usage error -- the one way stdin can be worse than a flag, and the
- * cheapest to close.
- */
+/** The whole section body, read at once from fd 0. */
 export function readStdinBody(): string {
-	if (process.stdin.isTTY) {
-		throw new Error(
-			"append-log.dive reads the section body on stdin; pipe it, e.g. `git log --oneline -3 | nosedive append-log.dive`",
-		);
-	}
-	// CRLF would otherwise survive into the document and litter every later diff.
-	const body = readFileSync(0, "utf8").replaceAll("\r\n", "\n").trim();
+	const body = readStdinText(
+		"append-log.dive reads the section body on stdin; pipe it, e.g. `git log --oneline -3 | nosedive append-log.dive`",
+	);
 	if (!body) throw new Error("append-log.dive refuses an empty section; nothing was piped in");
 	return body;
 }

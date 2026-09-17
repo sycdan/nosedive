@@ -60,13 +60,14 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 			"--diver",
 			diver,
 			"--brief",
-			"Prove the export list stays honest.",
+			"-",
 			"--upscope",
 			repoId,
 			"--work-branch",
 			"work/export-honesty",
 		],
 		bridge,
+		"Prove the export list stays honest.",
 	);
 	assertOk(dive, "record.dive failed");
 	const diveId = recordedDiveId(dive.stdout);

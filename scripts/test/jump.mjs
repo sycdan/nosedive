@@ -115,8 +115,9 @@ ${featScopes}
 		assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate scoped repo failed");
 	}
 	const diveResult = run(
-		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "Test brief."],
+		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "-"],
 		bridge,
+		"Test brief.",
 	);
 	assertOk(diveResult, "record.dive failed");
 	const diveId = /^Recorded kb[\\/]([0-9a-f-]{36})\.md$/m.exec(diveResult.stdout)?.[1];
@@ -1165,8 +1166,9 @@ function commitBridge(bridge, message) {
 /** A second, unheld dive on the same feat -- the thing a selection has to choose between. */
 function freeDive(bridge, featId, gist) {
 	const result = run(
-		["record.dive", "--feat", featId, "--gist", gist, "--brief", "Test brief."],
+		["record.dive", "--feat", featId, "--gist", gist, "--brief", "-"],
 		bridge,
+		"Test brief.",
 	);
 	assertOk(result, "record.dive failed");
 	const id = /^Recorded kb[\/]([0-9a-f-]{36})\.md$/m.exec(result.stdout)?.[1];
@@ -1216,16 +1218,9 @@ scopes:
 	runTool("git", ["push"], bridge);
 
 	const diveResult = run(
-		[
-			"record.dive",
-			"--feat",
-			featId,
-			"--diver",
-			"jump@example.test",
-			"--brief",
-			"Owned by a bug doc.",
-		],
+		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "-"],
 		bridge,
+		"Owned by a bug doc.",
 	);
 	assertOk(diveResult, "record.dive failed for a feat while the bug doc owns the path");
 	const diveId = /^Recorded kb\/[0-9a-f-]{36}\.md$/m

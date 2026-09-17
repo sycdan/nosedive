@@ -9,7 +9,8 @@ export interface RecordDiveOptions {
 	feat?: string;
 	gist?: string;
 	title?: string;
-	brief?: string;
+	/** `--brief -`: the brief body is waiting on stdin. */
+	briefStdin: boolean;
 	diver?: string;
 	takeover: boolean;
 	/** Hand the dive back: its diver becomes its packer, and it holds nobody. */
@@ -41,6 +42,7 @@ export function parseRecordDiveArgs(
 	isDocRef: (arg: string) => boolean,
 ): RecordDiveOptions {
 	const options: RecordDiveOptions = {
+		briefStdin: false,
 		takeover: false,
 		packer: false,
 		free: false,
@@ -126,8 +128,17 @@ export function parseRecordDiveArgs(
 		else if (flag === "--effort") effortValue = value;
 		else if (flag === "--gist") options.gist = value;
 		else if (flag === "--title") options.title = value;
-		else if (flag === "--brief") options.brief = value;
-		else options.diver = value;
+		else if (flag === "--brief") {
+			// A brief is paragraphs, and an argument cannot carry them: under `npx` a
+			// multi-line value is cut at the first newline before argv is ever built,
+			// so the loss is silent and no check here could see it had happened.
+			// Stdin is the only spelling that survives, so it is the only one taken.
+			if (value !== "-")
+				throw new Error(
+					"record.dive reads the brief on stdin: `--brief -`, e.g. `nosedive record.dive --feat <feat> --brief - < brief.md`",
+				);
+			options.briefStdin = true;
+		} else options.diver = value;
 	}
 	if (featValue !== undefined && effortValue !== undefined && featValue !== effortValue) {
 		throw new Error("--feat and --effort name different refs");
@@ -167,8 +178,6 @@ export function parseRecordDiveArgs(
 	if (!options.ref && options.gist !== undefined && !options.gist.trim()) {
 		throw new Error("gist cannot be empty");
 	}
-	if (options.brief !== undefined && !options.brief.trim())
-		throw new Error("brief cannot be empty");
 	if (options.takeover) {
 		// Takeover reads the holder off the dive and writes the pilot's own email,
 		// so a --diver alongside it can only contradict one of the two.

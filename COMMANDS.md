@@ -229,7 +229,7 @@ More: nosedive render 67187c8d-2e4e-5fc5-b8fd-d0805acd0f2e
 npx -y nosedive@2026.9.5-1788580525144 record.dive --help
 ```
 ```md
-Usage: nosedive record.dive [<dive>] [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief <brief>] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]
+Usage: nosedive record.dive [<dive>] [--ref <dive-ref>] [--feat <feat-ref>] [--effort <feat-ref>] [--gist <gist>] [--title <title>] [--brief -] [--diver <email>] [--takeover] [--packer] [--clear-scopes] [--upscope <repo-ref>]... [--unscope <repo-ref>]... [--work-branch <branch>] [--repin [<ref>]] [--scope <repo-ref>] [--free]
 
 Create or patch a feat-owned dive record while preserving omitted update fields.
 

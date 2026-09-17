@@ -56,7 +56,7 @@ export function runPlanningPrompt(args: string[], io: CommandIo): void {
 	io.log("");
 	io.log(
 		`Each slice must deliver one end-to-end behavior and represent no more than half a day's work from the planner's perspective. ` +
-			`Record each one with \`${cli} record.dive --feat <feat-ref> --gist "<gist>" --title "<title>" --brief "<brief>"\`. ` +
+			`Record each one with \`${cli} record.dive --feat <feat-ref> --gist "<gist>" --title "<title>" --brief -\`, piping the brief in. ` +
 			`Leave planned dives unclaimed: do not pass --diver.`,
 	);
 	io.log("");

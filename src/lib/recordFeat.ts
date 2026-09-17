@@ -225,8 +225,7 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 			? ""
 			: ` --upscope ${repos.length === 1 ? repos[0]!.name : "<repo>"} --work-branch work/${name}`;
 	printNextSteps(io, [
-		`nosedive record.dive --feat ${name} --gist "<one line>" --brief "<what done looks like>"` +
-			upscope,
+		`nosedive record.dive --feat ${name} --gist "<one line>" --brief -` + upscope,
 	]);
 }
 

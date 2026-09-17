@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -229,8 +237,9 @@ test("record.dive accepts matching --feat and --effort refs", () => {
 test("record.dive patches only provided fields and can resolve its marker", () => {
 	const { bridge } = setup("patch");
 	const created = run(
-		["record.dive", "--effort", featId, "--gist", "Initial.", "--brief", "Keep this."],
+		["record.dive", "--effort", featId, "--gist", "Initial.", "--brief", "-"],
 		bridge,
+		"Keep this.",
 	);
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
@@ -311,18 +320,33 @@ test("record.dive validates mutation modes", () => {
 	assertOk(created, "record.dive create failed");
 	const path = recordedPath(bridge, created.stdout);
 	const id = /^id: (.+)$/m.exec(readFileSync(path, "utf8"))[1];
-	// An unbriefed dive can still be briefed; a briefed one is write-once.
+	// An unbriefed dive can still be briefed, and so can one whose brief is still
+	// the last thing in it -- nobody has jumped it, so the brief has directed
+	// nothing. Paragraphs survive the pipe that an argument would have truncated.
 	assertOk(
-		run(["record.dive", "--ref", id, "--brief", "First brief."], bridge),
+		run(["record.dive", "--ref", id, "--brief", "-"], bridge, "First brief.\n\nSecond para."),
 		"record.dive brief-on-update failed",
 	);
-	assert.match(readFileSync(path, "utf8"), /## Brief\n\nFirst brief\./);
-	const rebrief = run(["record.dive", "--ref", id, "--brief", "Second brief."], bridge, "");
+	assert.match(readFileSync(path, "utf8"), /## Brief\n\nFirst brief\.\n\nSecond para\.\n$/);
+	assertOk(
+		run(["record.dive", "--ref", id, "--brief", "-"], bridge, "Corrected brief."),
+		"rebriefing an unjumped dive failed",
+	);
+	const corrected = readFileSync(path, "utf8");
+	assert.match(corrected, /## Brief\n\nCorrected brief\.\n$/);
+	assert.doesNotMatch(corrected, /First brief/);
+	// A section below the brief is work the brief directed, so it is write-once now.
+	appendFileSync(path, "\n## Jumped 2026-09-17T00:00:00.000Z\n\nwent diving\n");
+	const rebrief = run(["record.dive", "--ref", id, "--brief", "-"], bridge, "Third brief.");
 	assert.notEqual(rebrief.status, 0);
 	assert.match(rebrief.stderr, /already has a brief/);
-	const emptyBrief = run(["record.dive", "--effort", featId, "--brief", "  "], bridge, "");
+	const emptyBrief = run(["record.dive", "--effort", featId, "--brief", "-"], bridge, "   ");
 	assert.notEqual(emptyBrief.status, 0);
 	assert.match(emptyBrief.stderr, /brief cannot be empty/);
+	// The string spelling is gone: it could not carry a newline through `npx`.
+	const stringBrief = run(["record.dive", "--effort", featId, "--brief", "inline"], bridge, "");
+	assert.notEqual(stringBrief.status, 0);
+	assert.match(stringBrief.stderr, /reads the brief on stdin/);
 });
 
 test("record.dive activates only for the pilot diver", () => {

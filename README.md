@@ -38,7 +38,8 @@ nosedive seed                                 # commits and pushes bridge config
                                               # add --headless if you are an agent
 
 nosedive record.feat --gist "Add a hello note"
-nosedive record.dive --feat add-a-hello-note --gist "..." --brief "..."
+echo "Done when hello.md exists" |
+  nosedive record.dive --feat add-a-hello-note --gist "..." --brief -
 nosedive jump                                 # hydrates the workspace and rebuilds context
 
 # do the work in the hydrated workspace/__self worktree, and commit

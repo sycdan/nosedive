@@ -234,15 +234,9 @@ function mintUnclaimedFailures(
 			run.stdout || "(none)",
 		].join("\n");
 		recordDive(
-			[
-				"--feat",
-				feat.id,
-				"--gist",
-				`triage ${run.gate.doc.name || run.gate.doc.id} failure`,
-				"--brief",
-				brief,
-			],
+			["--feat", feat.id, "--gist", `triage ${run.gate.doc.name || run.gate.doc.id} failure`],
 			io,
+			brief,
 		);
 		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 		const minted = kbDocs.find((doc) => doc.kind === "dive" && !before.has(doc.id));

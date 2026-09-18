@@ -183,7 +183,7 @@ test("pack captures ahead commits, dirty state, bridge-wip, pushes, and resets",
 	const { bridge, origin, repoId, effortId, diveId } = setup("full");
 	const worktree = repoWorktree(bridge, "full");
 	assertOk(
-		run(["record.dive", "--ref", diveId, "--brief", "Exercise pack after jump."], bridge),
+		run(["record.dive", "--ref", diveId, "--brief", "-"], bridge, "Exercise pack after jump."),
 		"record.dive brief failed",
 	);
 	assertOk(run(["jump"], bridge), "jump failed");
@@ -359,7 +359,7 @@ test("pack removes the workspace dive marker", () => {
 test("a packed dive reaches jump and reapplies its patch chain", () => {
 	const { bridge, diveId } = setup("resume");
 	const worktree = repoWorktree(bridge, "resume");
-	assertOk(run(["record.dive", "--ref", diveId, "--brief", "Resume packed work."], bridge));
+	assertOk(run(["record.dive", "--ref", diveId, "--brief", "-"], bridge, "Resume packed work."));
 	write(join(worktree, "resumed.txt"), "resumed\n");
 	runTool("git", ["add", "resumed.txt"], worktree);
 	gitCommit(worktree, "resume me");

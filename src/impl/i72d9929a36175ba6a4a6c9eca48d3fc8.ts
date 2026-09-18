@@ -357,7 +357,7 @@ export function jump(args: string[], io: CommandIo): void {
 	if (!DIVE_BRIEF_HEADING_PATTERN.test(diveBody)) {
 		throw new Error(
 			`dive ${dive.id} has no "${DIVE_BRIEF_HEADING}" section: ${formatPath(dive.path)}; ` +
-				`brief it with \`record.dive --ref ${dive.id} --brief "<brief>"\` first`,
+				`brief it with \`record.dive --ref ${dive.id} --brief -\` first, body on stdin`,
 		);
 	}
 

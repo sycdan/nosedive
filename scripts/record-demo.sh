@@ -204,8 +204,9 @@ cmd_walk() {
 	# spelling it out is not a compromise of the outcome-first idea -- the second
 	# delegation, which says only "done when: a hello note exists", carries that.
 	#
-	# The line comes last and carries no trailing punctuation, so nothing after
-	# it can be read as part of it. Both halves of that were learned from takes.
+	# The line is the whole of what is piped in and carries no trailing
+	# punctuation, so nothing else can be read as part of it. Both halves of
+	# that were learned from takes.
 	# A period once ended it, and the agent dropped it as sentence punctuation,
 	# which broke two beats at once: the payoff cat no longer matched, and the
 	# grep -- whose pattern is this same string -- stopped matching the patch,
@@ -214,9 +215,9 @@ cmd_walk() {
 	# itself, which on camera proves nothing about pack banking anything. Then
 	# removing the period left "exactly: <line> Commit it.", where nothing marks
 	# where the line ends. Ending on the content settles both.
-	step "nosedive record.dive --feat add-a-hello-note \\
-    --gist \"Add a hello note to the bridge\" \\
-    --brief \"Done when $NOTE exists with content: $HELLO\""
+	step "echo \"Done when $NOTE exists with content: $HELLO\" | \\
+  nosedive record.dive --feat add-a-hello-note \\
+    --gist \"Add a hello note to the bridge\" --brief -"
 	step "nosedive find dive"
 
 	# Delegate the jump. Two steps and a file, never a pipe -- the handoff is

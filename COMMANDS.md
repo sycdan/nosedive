@@ -93,6 +93,19 @@ List backlog-reachable documents by role, optionally filtering by term, kind, sc
 More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 ```
 
+#### [Helm](kb/6a704279-69c1-5dcb-a2c0-b0b5dc93d56e.md)
+
+```sh
+npx -y nosedive@2026.9.18-1789698885570 helm --help
+```
+```md
+Usage: nosedive helm
+
+Serve a local admin UI for the bridge: the bridge and every backlog repo, with hydration and nosedive install state.
+
+More: nosedive render 6a704279-69c1-5dcb-a2c0-b0b5dc93d56e
+```
+
 #### [Hydrate repo](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md)
 
 ```sh

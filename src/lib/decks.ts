@@ -1,19 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseDocument } from "yaml";
-
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
-import {
-	formatPath,
-	parseYamlBlock,
-	readNosediveRc,
-	uuidLike,
-	type NosediveRc,
-} from "./coreParsing.js";
+import { parseYamlBlock, readNosediveRc, uuidLike, type NosediveRc } from "./coreParsing.js";
 import { namespacedUuid } from "./namespacedUuid.js";
 import { writeFileAtomic } from "./renderPlan.js";
-import { slugFromGist, titleFromSlug } from "./slugs.js";
+import { titleFromSlug } from "./slugs.js";
 
 const DECK_TAG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -64,43 +56,16 @@ function renderDeckDoc(id: string, tag: string, title: string): string {
 	].join("\n");
 }
 
-/**
- * Makes a deck from a name: its slug is the tag, the doc sits at the tag's
- * deterministic id, and the tag joins `decks:` unless it is listed already --
- * all in one commit. With no `decks:` yet, the backlog is written in first, so
- * adding a deck never hides the one the bridge was already showing.
- */
-export function makeDeck(cwd: string, name: string, io: { log(message: string): void }): string {
-	const slug = slugFromGist(name, 60);
-	if (!slug) throw new Error(`deck name has nothing to slug: ${JSON.stringify(name)}`);
-	const rc = readNosediveRc(cwd);
-	if (!rc.kbDir) throw new Error("make deck requires a configured kb directory");
-	const id = deckId(rc, slug);
-	const path = join(rc.kbDir, `${id}.md`);
-	if (existsSync(path)) throw new Error(`deck ${slug} already exists: ${formatPath(path)}`);
-
-	const decks = configuredDecks(rc);
-	const listed = decks.includes(slug);
-	if (!listed) {
-		const config = parseDocument(readFileSync(rc.path, "utf8"));
-		// Written as a comma string whatever form it was read in: `seed` carries
-		// over the config keys it does not own only when they are scalars.
-		config.set("decks", [...decks, slug].join(", "));
-		writeFileAtomic(rc.path, String(config));
-	}
-	const title = name.trim() === slug ? titleFromSlug(slug) : name.trim();
-	writeFileAtomic(path, renderDeckDoc(id, slug, title));
-	io.log(`Made ${formatPath(path)}`);
-	commitBridgeDocs(rc.bridgeDir, `deck(${slug}): created`, listed ? [path] : [path, rc.path], io);
-	return id;
-}
-
-/** Makes the doc of every configured tag that has none. */
+/** Writes and commits the doc of every configured tag that has none. */
 export function ensureTagDecks(cwd: string, io: { log(message: string): void }): void {
 	const rc = readNosediveRc(cwd);
 	if (!rc.kbDir) throw new Error("decks require a configured kb directory");
 	for (const entry of configuredDecks(rc)) {
-		if (uuidLike(entry) || existsSync(join(rc.kbDir, `${deckId(rc, entry)}.md`))) continue;
-		makeDeck(cwd, entry, io);
+		if (uuidLike(entry)) continue;
+		const id = deckId(rc, entry);
+		const path = join(rc.kbDir, `${id}.md`);
+		if (existsSync(path)) continue;
+		writeFileAtomic(path, renderDeckDoc(id, entry, titleFromSlug(entry)));
+		commitBridgeDocs(rc.bridgeDir, `deck(${entry}): created`, [path], io);
 	}
 }

@@ -188,43 +188,6 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		],
 	);
 
-	// A deck made from the page: slugged name, deterministic id, doc and config
-	// committed together.
-	const post = (name) =>
-		fetch(api, {
-			method: "POST",
-			headers: { "x-helm-token": token, "content-type": "application/json" },
-			body: JSON.stringify({ name }),
-		});
-	const created = await post("Magic: The Gathering");
-	assert.equal(created.status, 200, await created.clone().text());
-	const mtg = namespacedUuid(BRIDGE_REPO, "magic-the-gathering");
-	assert.equal((await created.json()).id, mtg);
-	const mtgText = readFileSync(join(bridge, "kb", `${mtg}.md`), "utf8");
-	assert.match(mtgText, /^kind: deck$/m);
-	assert.match(mtgText, /^name: magic-the-gathering$/m);
-	assert.match(mtgText, /^# Magic: The Gathering$/m);
-	assert.match(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-		new RegExp(`^decks: ${BACKLOG}, ideas, magic-the-gathering$`, "m"),
-	);
-	assert.equal(
-		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim(),
-		"deck(magic-the-gathering): created",
-	);
-	assert.equal(
-		runTool("git", ["status", "--porcelain", "kb", ".nosedive/config.yaml"], bridge).stdout.trim(),
-		"",
-	);
-	assert.deepEqual(
-		(await get("/api/decks")).decks.map((deck) => deck.id),
-		[BACKLOG, ideas, mtg],
-	);
-	const again = await post("magic the gathering");
-	assert.equal(again.status, 400, "the command's refusal comes back as the error");
-	assert.match((await again.json()).error, /deck magic-the-gathering already exists/);
-	assert.equal((await post("!!!")).status, 400, "a name that slugs to nothing");
-
 	const repos = await get(`/api/deck-repos?id=${BACKLOG}`);
 	assert.deepEqual(
 		repos.map((repo) => repo.id),

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -19,7 +18,6 @@ import {
 import { gitOutput } from "./gitProcess.js";
 import { helmPage } from "./helmPage.js";
 import { loadKbDocs, type KbDoc } from "./kbDocs.js";
-import { packageRoot } from "./packageBacklog.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -124,65 +122,6 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 		hydrated,
 		nosedive,
 	};
-}
-
-/** A request helm refuses on its merits, answered with its own status. */
-export class HelmRequestError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
-}
-
-/**
- * Runs one nosedive command from the same build helm runs from -- the page
- * acts through the commands, never through a second implementation of them.
- */
-function runNosedive(
-	cwd: string,
-	args: string[],
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-	return new Promise((resolveRun, reject) => {
-		const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {
-			cwd,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		let stdout = "";
-		let stderr = "";
-		child.stdout.on("data", (chunk) => (stdout += chunk));
-		child.stderr.on("data", (chunk) => (stderr += chunk));
-		child.on("error", reject);
-		child.on("close", (code) => resolveRun({ exitCode: code ?? 1, stdout, stderr }));
-	});
-}
-
-async function makeDeckRoute(cwd: string, name: string): Promise<{ id: string; output: string }> {
-	const result = await runNosedive(cwd, ["make", "deck", name]);
-	if (result.exitCode !== 0)
-		throw new HelmRequestError(400, result.stderr.replace(/^nosedive: /, "").trim());
-	const id = /^Made .*?([0-9a-f]{8}-[0-9a-f-]{27})\.md$/m.exec(result.stdout)?.[1];
-	if (!id)
-		throw new Error(`make deck did not say what it made:
-${result.stdout}`);
-	return { id, output: result.stdout };
-}
-
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-	let text = "";
-	for await (const chunk of req) {
-		text += chunk;
-		if (text.length > 64 * 1024) throw new HelmRequestError(413, "request body too large");
-	}
-	try {
-		const body = JSON.parse(text) as unknown;
-		if (body && typeof body === "object" && !Array.isArray(body))
-			return body as Record<string, unknown>;
-	} catch {
-		// Reported below, the same as any other shape that is not an object.
-	}
-	throw new HelmRequestError(400, "request body must be a JSON object");
 }
 
 function bridgeDocs(cwd: string): { rc: NosediveRc; docs: KbDoc[] } {
@@ -380,7 +319,7 @@ export async function startHelmServer(
 	const boot = randomBytes(8).toString("hex");
 	let allowedHost = "";
 
-	const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+	const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 		if (req.headers.host !== allowedHost) return send(res, 403, "text/plain", "forbidden host\n");
 		const url = new URL(req.url ?? "/", `http://${allowedHost}`);
 		if (req.method === "GET" && url.pathname === "/") {
@@ -404,10 +343,6 @@ export async function startHelmServer(
 			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
 		const id = url.searchParams.get("id") ?? "";
 		try {
-			if (req.method === "POST" && url.pathname === "/api/decks") {
-				const body = await readJsonBody(req);
-				return sendJson(res, await makeDeckRoute(cwd, String(body.name ?? "")));
-			}
 			if (req.method !== "GET") return sendJson(res, undefined);
 			if (url.pathname === "/api/decks") return sendJson(res, helmDecks(cwd));
 			if (url.pathname === "/api/deck-repos") return sendJson(res, helmDeckRepos(cwd, id));
@@ -415,8 +350,7 @@ export async function startHelmServer(
 			return sendJson(res, undefined);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			const status = err instanceof HelmRequestError ? err.status : 500;
-			return send(res, status, "application/json", JSON.stringify({ error: message }));
+			return send(res, 500, "application/json", JSON.stringify({ error: message }));
 		}
 	});
 

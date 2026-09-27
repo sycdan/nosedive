@@ -158,19 +158,6 @@ Print all outstanding dives and what they still need.
 More: nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4
 ```
 
-#### [Make](kb/3ebc3d15-6940-53ae-a859-5e8c52478507.md)
-
-```sh
-npx -y nosedive@2026.9.18-1789698885570 make --help
-```
-```md
-Usage: nosedive make deck <name>
-
-Make a thing in the bridge kb and commit it; `make deck <name>` slugs the name, writes the deck at uuid5(bridge id, slug) and adds it to decks.
-
-More: nosedive render 3ebc3d15-6940-53ae-a859-5e8c52478507
-```
-
 #### [Mint](kb/e8909eff-aee5-54f2-9ce2-85c2582e39f0.md)
 
 ```sh

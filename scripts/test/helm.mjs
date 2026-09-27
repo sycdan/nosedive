@@ -64,6 +64,8 @@ function fixture() {
 			"links:",
 			`  - kb/${FEAT}.md:`,
 			"      rel: current.feat",
+			`  - kb/${UNLISTED}.md:`,
+			"      rel: linked.repo",
 			"---",
 			"",
 		].join("\n"),
@@ -116,7 +118,14 @@ function startHelm(cwd) {
 		child.stderr.on("data", (chunk) => (err += chunk));
 		child.on("exit", (code) => reject(new Error(`helm exited ${code}\n${out}\n${err}`)));
 	});
-	return { child, url };
+	url.catch(() => {});
+	const exited = new Promise((resolveExit) => child.once("exit", resolveExit));
+	// Awaiting the exit frees the port before the next launch binds it.
+	const stop = () => {
+		child.kill();
+		return exited;
+	};
+	return { url, stop };
 }
 
 test("helm decks: config forms, missing means the backlog", () => {
@@ -129,8 +138,8 @@ test("helm decks: config forms, missing means the backlog", () => {
 
 test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	const bridge = fixture();
-	const { child, url } = startHelm(bridge);
-	t.after(() => child.kill());
+	const { url, stop } = startHelm(bridge);
+	t.after(stop);
 	const base = await url;
 	const token = base.searchParams.get("token");
 	const get = async (path) => {
@@ -163,7 +172,8 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	);
 	assert.equal(runTool("git", ["status", "--porcelain", "kb"], bridge).stdout.trim(), "");
 
-	const decks = await get("/api/decks");
+	const { bridge: bridgeInfo, decks } = await get("/api/decks");
+	assert.deepEqual(bridgeInfo, { id: BRIDGE_REPO, name: "bridge" });
 	assert.deepEqual(
 		decks.map((deck) => [deck.id, deck.name]),
 		[
@@ -176,7 +186,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.deepEqual(
 		repos.map((repo) => repo.id),
 		[BRIDGE_REPO, HYDRATED, INSTALLED],
-		"the deck's scoped repos in scope order; unlisted repos are not shown",
+		"the deck's scoped repos in scope order; a repo it only links is not shown",
 	);
 	const [bridgeCard, hydratedCard, installedCard] = repos;
 	assert.equal(bridgeCard.isBridge, true);
@@ -194,7 +204,10 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	const backlog = await get(`/api/doc?id=${BACKLOG}`);
 	assert.deepEqual(
 		backlog.links.map((link) => [link.type, link.id ?? link.target, link.rel ?? null]),
-		[["doc", FEAT, "current.feat"]],
+		[
+			["doc", FEAT, "current.feat"],
+			["doc", UNLISTED, "linked.repo"],
+		],
 	);
 	assert.equal(backlog.links[0].name, "the-feat");
 	assert.equal(backlog.links[0].kind, "feat");
@@ -223,8 +236,8 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 test("helm refuses a request whose Host is not the address it bound", async (t) => {
 	const bridge = join(tmp, "bridge");
 	const commits = runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout;
-	const { child, url } = startHelm(bridge);
-	t.after(() => child.kill());
+	const { url, stop } = startHelm(bridge);
+	t.after(stop);
 	const base = await url;
 	const { request } = await import("node:http");
 	const status = await new Promise((resolveStatus, reject) => {
@@ -246,4 +259,60 @@ test("helm refuses a request whose Host is not the address it bound", async (t) 
 		commits,
 		"an existing tag deck is not recreated",
 	);
+});
+
+/** Reads server-sent events off a helm stream, one `{ event, data }` at a time. */
+function events(res) {
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	return {
+		async next() {
+			while (!buffer.includes("\n\n")) buffer += decoder.decode((await reader.read()).value);
+			const end = buffer.indexOf("\n\n");
+			const block = buffer.slice(0, end);
+			buffer = buffer.slice(end + 2);
+			return {
+				event: /^event: (.*)$/m.exec(block)?.[1],
+				data: /^data: (.*)$/m.exec(block)?.[1],
+			};
+		},
+		cancel: () => reader.cancel(),
+	};
+}
+
+test("a restarted helm keeps its URL and tells open pages it rebooted", async (t) => {
+	const bridge = join(tmp, "bridge");
+	const first = startHelm(bridge);
+	t.after(first.stop);
+	const base = await first.url;
+	const token = base.searchParams.get("token");
+	const port = Number(base.port);
+	assert.ok(port >= 20000 && port < 30000, `port ${port} is derived into 20000-29999`);
+
+	assert.equal(
+		(await fetch(new URL("/api/events?token=0", base))).status,
+		403,
+		"the event stream is token-guarded",
+	);
+	const bootOf = async (url) => {
+		const res = await fetch(new URL(`/api/events?token=${token}`, url));
+		assert.equal(res.status, 200);
+		assert.match(res.headers.get("content-type"), /text\/event-stream/);
+		const stream = events(res);
+		const boot = await stream.next();
+		await stream.cancel();
+		assert.equal(boot.event, "boot");
+		return boot.data;
+	};
+	const firstBoot = await bootOf(base);
+	await first.stop();
+
+	// An open tab survives a restart only if the server comes back where it was
+	// and still accepts the token the tab holds.
+	const second = startHelm(bridge);
+	t.after(second.stop);
+	const again = await second.url;
+	assert.equal(again.href, base.href);
+	assert.notEqual(await bootOf(again), firstBoot);
 });

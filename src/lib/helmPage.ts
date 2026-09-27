@@ -27,6 +27,12 @@ body { margin: 0; background: var(--bg); color: var(--text); display: grid;
 header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10px 16px;
 	display: flex; gap: 12px; align-items: center; }
 header h1 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0; }
+#crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+#crumbs .sep { color: var(--line); }
+#crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 4px; cursor: pointer;
+	color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
+#crumbs button:hover { background: var(--hover); color: var(--text); }
+#crumbs button:last-child { color: var(--text); font-weight: 600; }
 aside { border-right: 1px solid var(--line); overflow: auto; padding: 8px 6px 24px; }
 main { overflow: auto; padding: 16px 24px 48px; min-width: 0; }
 button { font: inherit; color: inherit; }
@@ -51,9 +57,6 @@ button { font: inherit; color: inherit; }
 
 /* main */
 .empty { color: var(--dim); padding: 48px 0; text-align: center; }
-.crumb { color: var(--dim); font-size: 12px; margin-bottom: 4px; }
-h2.title { margin: 0 0 4px; font-size: 20px; }
-.lede { color: var(--dim); margin: 0 0 16px; }
 .cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
 	padding: 12px 14px; display: grid; gap: 8px; }
@@ -69,7 +72,13 @@ h2.title { margin: 0 0 4px; font-size: 20px; }
 .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
 .tag { font-size: 11px; color: var(--accent); font-weight: 500; }
 details.fm { margin: 0 0 16px; }
-details.fm summary { cursor: pointer; color: var(--dim); font-size: 12px; }
+details.fm summary { display: inline-block; cursor: pointer; color: var(--dim); font-size: 12px;
+	padding: 2px 6px; border-radius: 4px; list-style: none; }
+details.fm summary::before { content: "▸ "; }
+details.fm[open] summary::before { content: "▾ "; }
+details.fm summary:hover { background: var(--hover); color: var(--text); }
+details.fm summary:focus { outline: none; }
+details.fm summary:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 details.fm pre { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
 	padding: 10px 12px; overflow: auto; font: 12px/1.5 var(--mono); }
 .doc { max-width: 80ch; }
@@ -82,12 +91,13 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 </style>
 </head>
 <body>
-<header><h1>helm</h1></header>
+<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav></header>
 <aside><ul class="tree" id="tree" aria-label="Decks"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
 <script>
 const token = new URLSearchParams(location.search).get("token");
 const deckIds = new Set();
+let bridge = { name: "" };
 let selectedRow = null;
 
 async function api(path) {
@@ -120,7 +130,7 @@ function showError(err) {
 /** One tree node; docs expand lazily into their links, never into an ancestor. */
 function node(item, ancestors) {
 	const isDoc = item.type === "doc";
-	const cycle = isDoc && ancestors.includes(item.id);
+	const cycle = isDoc && ancestors.some((a) => a.id === item.id);
 	const li = el("li", { class: (item.isDeck ? "deck " : "") + (cycle ? "cycle" : item.type) });
 	const children = el("ul", { hidden: "" });
 	const twisty = el("button", { class: "twisty", "aria-label": "expand", disabled: isDoc && !cycle ? null : "" },
@@ -134,7 +144,7 @@ function node(item, ancestors) {
 		loaded = true;
 		try {
 			const doc = await api("/api/doc?id=" + item.id);
-			children.replaceChildren(...doc.links.map((link) => node(link, [...ancestors, item.id])));
+			children.replaceChildren(...doc.links.map((link) => node(link, [...ancestors, { id: item.id, name: item.name }])));
 			if (!doc.links.length) { twisty.disabled = true; twisty.textContent = ""; }
 		} catch (err) { showError(err); }
 	});
@@ -148,13 +158,15 @@ function node(item, ancestors) {
 		? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
 		: el("button", { class: "label", title: item.gist || item.target, disabled: isDoc ? null : "" }, parts);
 	const row = el("div", { class: "row" }, twisty, label);
-	if (isDoc) label.addEventListener("click", () => select(item.id, row));
+	if (isDoc) label.addEventListener("click", () => select([...ancestors, { id: item.id, name: item.name }], row));
 	li.append(row, children);
 	return li;
 }
 
 async function loadDecks() {
-	const decks = await api("/api/decks");
+	const listing = await api("/api/decks");
+	bridge = listing.bridge;
+	const decks = listing.decks;
 	for (const deck of decks) deckIds.add(deck.id);
 	document.getElementById("tree").replaceChildren(...decks.map((deck) =>
 		node({ type: "doc", isDeck: true, ...deck }, [])));
@@ -180,29 +192,47 @@ function repoCard(repo) {
 			n === "unknown" ? fact("", "nosedive ?") : n ? fact("ok", "nosedive", "L" + n.level) : fact("", "no nosedive")));
 }
 
-function heading(doc) {
-	return [el("div", { class: "crumb" }, doc.kind), el("h2", { class: "title" }, doc.name), el("p", { class: "lede" }, doc.gist)];
+function crumbs(path) {
+	const parts = [el("button", { title: "Nothing selected", onclick: reset }, bridge.name)];
+	path.forEach((step, index) => parts.push(el("span", { class: "sep" }, "/"),
+		el("button", { title: step.name, onclick: () => select(path.slice(0, index + 1)) }, step.name)));
+	document.getElementById("crumbs").replaceChildren(...parts);
 }
 
-async function select(id, row) {
+function highlight(row) {
 	if (selectedRow) selectedRow.classList.remove("selected");
 	selectedRow = row || null;
 	if (row) row.classList.add("selected");
-	history.replaceState(null, "", "#" + id);
+}
+
+function reset() {
+	highlight(null);
+	history.replaceState(null, "", location.pathname + location.search);
+	crumbs([]);
+	document.getElementById("view").replaceChildren(el("p", { class: "empty" }, "Pick a deck, or anything below one."));
+}
+
+/** Selects the last doc on a path of { id, name } steps from a deck down. */
+async function select(path, row) {
+	highlight(row);
+	const id = path[path.length - 1].id;
+	history.replaceState(null, "", "#" + path.map((step) => step.id).join("/"));
+	crumbs(path);
 	const view = document.getElementById("view");
 	try {
 		const doc = await api("/api/doc?id=" + id);
 		showError(null);
+		if (path[path.length - 1].name !== doc.name) { path[path.length - 1].name = doc.name; crumbs(path); }
 		if (deckIds.has(id)) {
 			const repos = await api("/api/deck-repos?id=" + id);
-			view.replaceChildren(...heading(doc), repos.length
+			view.replaceChildren(repos.length
 				? el("div", { class: "cards" }, repos.map(repoCard))
 				: el("p", { class: "empty" }, "This deck scopes no repos."));
 			return;
 		}
 		const body = el("div", { class: "doc" });
 		body.innerHTML = doc.html;
-		view.replaceChildren(...heading(doc),
+		view.replaceChildren(
 			el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), body);
 	} catch (err) { showError(err); }
 }
@@ -213,17 +243,28 @@ document.getElementById("view").addEventListener("click", (event) => {
 	if (!a) return;
 	const quid = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md/i.exec(a.getAttribute("href"));
 	event.preventDefault();
-	if (quid) select(quid[1].toLowerCase());
+	if (quid) select([...currentPath(), { id: quid[1].toLowerCase(), name: a.textContent }]);
 	else if (/^[a-z][a-z0-9+.-]*:/i.test(a.getAttribute("href"))) window.open(a.href, "_blank", "noopener");
 });
 
-function empty() {
-	document.getElementById("view").replaceChildren(el("p", { class: "empty" }, "Pick a deck, or anything below one."));
+function currentPath() {
+	return location.hash.slice(1).split("/").filter(Boolean).map((id) => ({ id, name: id.slice(0, 8) }));
 }
 
+// A restarted helm (a rebuild under node --watch, say) comes back on the same
+// port with the same token but a new boot id; the page follows it.
+let boot = null;
+new EventSource("/api/events?token=" + token).addEventListener("boot", (event) => {
+	if (boot && boot !== event.data) location.reload();
+	boot = event.data;
+});
+
 loadDecks().then(() => {
-	const id = location.hash.slice(1);
-	if (id) select(id); else empty();
+	const path = currentPath();
+	if (!path.length) return reset();
+	// Names are unknown after a reload; each step fills its own in as it loads.
+	Promise.all(path.map((step) => api("/api/doc?id=" + step.id).then((doc) => { step.name = doc.name; }, () => {})))
+		.then(() => select(path));
 }).catch(showError);
 </script>
 </body>

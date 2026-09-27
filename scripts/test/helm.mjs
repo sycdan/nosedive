@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -315,4 +315,22 @@ test("a restarted helm keeps its URL and tells open pages it rebooted", async (t
 	const again = await second.url;
 	assert.equal(again.href, base.href);
 	assert.notEqual(await bootOf(again), firstBoot);
+});
+
+test("a second helm for the same bridge names the running one instead of starting", async (t) => {
+	const bridge = join(tmp, "bridge");
+	const first = startHelm(bridge);
+	t.after(first.stop);
+	const base = await first.url;
+
+	const second = spawnSync(process.execPath, [cli, "helm"], {
+		cwd: bridge,
+		encoding: "utf8",
+		timeout: 15000,
+	});
+	assert.equal(second.status, 1, second.stdout);
+	assert.ok(
+		second.stderr.includes(`helm is already running for this bridge: ${base.href}`),
+		second.stderr,
+	);
 });

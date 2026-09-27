@@ -316,6 +316,22 @@ export function helmPorts(rc: NosediveRc): number[] {
 	);
 }
 
+function helmUrl(port: number, token: string): string {
+	return `http://127.0.0.1:${port}/?token=${token}`;
+}
+
+async function answersAsHelm(port: number, token: string): Promise<boolean> {
+	try {
+		const res = await fetch(`http://127.0.0.1:${port}/api/decks`, {
+			headers: { "x-helm-token": token },
+			signal: AbortSignal.timeout(2000),
+		});
+		return res.ok;
+	} catch {
+		return false;
+	}
+}
+
 function listen(server: ReturnType<typeof createServer>, port: number): Promise<boolean> {
 	return new Promise((resolveListen, reject) => {
 		const onError = (err: NodeJS.ErrnoException) => {
@@ -402,13 +418,19 @@ export async function startHelmServer(
 
 	const ports = helmPorts(rc);
 	let listening = false;
+	// Only a helm holding this bridge's token answers. Every port is asked
+	// first, because a running helm may sit past a port that has since freed.
+	for (const port of ports) {
+		if (await answersAsHelm(port, token))
+			throw new Error(`helm is already running for this bridge: ${helmUrl(port, token)}`);
+	}
 	for (const port of ports) if ((listening = await listen(server, port))) break;
 	if (!listening)
 		throw new Error(`helm could not bind any of its ports for this bridge: ${ports.join(", ")}`);
 	const bound = (server.address() as AddressInfo).port;
 	allowedHost = `127.0.0.1:${bound}`;
 	return {
-		url: `http://${allowedHost}/?token=${token}`,
+		url: helmUrl(bound, token),
 		close: () =>
 			new Promise((resolveClose) => {
 				server.close(() => resolveClose());

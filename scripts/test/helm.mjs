@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { Script } from "node:vm";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -25,7 +26,7 @@ assertOk(minted, "mint failed");
 const [BACKLOG, BRIDGE_REPO, HYDRATED, INSTALLED, UNLISTED, FEAT] = minted.stdout
 	.trim()
 	.split(/\r?\n/);
-const { parseHelmDecks } = await import(libUrl);
+const { parseDecks } = await import(libUrl);
 
 function fixture() {
 	const bridge = createBridge(tmp, "bridge", { backlog: BACKLOG, bridge: BRIDGE_REPO });
@@ -129,11 +130,11 @@ function startHelm(cwd) {
 }
 
 test("helm decks: config forms, missing means the backlog", () => {
-	assert.deepEqual(parseHelmDecks("a, b,c", BACKLOG), ["a", "b", "c"]);
-	assert.deepEqual(parseHelmDecks(["a", "b"], BACKLOG), ["a", "b"]);
-	assert.deepEqual(parseHelmDecks(undefined, BACKLOG), [BACKLOG]);
-	assert.deepEqual(parseHelmDecks(undefined, undefined), []);
-	assert.throws(() => parseHelmDecks("Not A Slug", BACKLOG), /deck tag/);
+	assert.deepEqual(parseDecks("a, b,c", BACKLOG), ["a", "b", "c"]);
+	assert.deepEqual(parseDecks(["a", "b"], BACKLOG), ["a", "b"]);
+	assert.deepEqual(parseDecks(undefined, BACKLOG), [BACKLOG]);
+	assert.deepEqual(parseDecks(undefined, undefined), []);
+	assert.throws(() => parseDecks("Not A Slug", BACKLOG), /deck tag/);
 });
 
 test("helm serves decks as a link tree over a token-guarded API", async (t) => {
@@ -150,7 +151,12 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 
 	const page = await fetch(base);
 	assert.equal(page.status, 200);
-	assert.match(await page.text(), /<title>helm/i);
+	const html = await page.text();
+	assert.match(html, /<title>helm/i);
+	// The page's script is a string in a TS file: nothing else would catch it not parsing.
+	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
+	assert.ok(script, "page carries its script");
+	assert.doesNotThrow(() => new Script(script), "page script parses");
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
 	const api = new URL("/api/decks", base);
@@ -181,6 +187,43 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 			[ideas, "ideas"],
 		],
 	);
+
+	// A deck made from the page: slugged name, deterministic id, doc and config
+	// committed together.
+	const post = (name) =>
+		fetch(api, {
+			method: "POST",
+			headers: { "x-helm-token": token, "content-type": "application/json" },
+			body: JSON.stringify({ name }),
+		});
+	const created = await post("Magic: The Gathering");
+	assert.equal(created.status, 200, await created.clone().text());
+	const mtg = namespacedUuid(BRIDGE_REPO, "magic-the-gathering");
+	assert.equal((await created.json()).id, mtg);
+	const mtgText = readFileSync(join(bridge, "kb", `${mtg}.md`), "utf8");
+	assert.match(mtgText, /^kind: deck$/m);
+	assert.match(mtgText, /^name: magic-the-gathering$/m);
+	assert.match(mtgText, /^# Magic: The Gathering$/m);
+	assert.match(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+		new RegExp(`^decks: ${BACKLOG}, ideas, magic-the-gathering$`, "m"),
+	);
+	assert.equal(
+		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim(),
+		"deck(magic-the-gathering): created",
+	);
+	assert.equal(
+		runTool("git", ["status", "--porcelain", "kb", ".nosedive/config.yaml"], bridge).stdout.trim(),
+		"",
+	);
+	assert.deepEqual(
+		(await get("/api/decks")).decks.map((deck) => deck.id),
+		[BACKLOG, ideas, mtg],
+	);
+	const again = await post("magic the gathering");
+	assert.equal(again.status, 400, "the command's refusal comes back as the error");
+	assert.match((await again.json()).error, /deck magic-the-gathering already exists/);
+	assert.equal((await post("!!!")).status, 400, "a name that slugs to nothing");
 
 	const repos = await get(`/api/deck-repos?id=${BACKLOG}`);
 	assert.deepEqual(

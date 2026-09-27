@@ -38,7 +38,7 @@ export { readKbDocById } from "./lib/kbDocs.js";
 // rather than only through whichever command happened to call it.
 export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 // Exported so every accepted spelling of `decks:` is tested without a bridge per form.
-export { parseHelmDecks } from "./lib/helm.js";
+export { parseDecks } from "./lib/decks.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -6,20 +7,19 @@ import { basename, dirname, join } from "node:path";
 
 import { Marked } from "marked";
 
-import { commitBridgeDocs } from "./commitBridgeDocs.js";
+import { configuredDecks, deckId, ensureTagDecks } from "./decks.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
 	leadingMarkdownFrontmatter,
 	parseYamlBlock,
 	readNosediveRc,
-	uuidLike,
 	type NosediveRc,
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { helmPage } from "./helmPage.js";
 import { loadKbDocs, type KbDoc } from "./kbDocs.js";
-import { namespacedUuid } from "./namespacedUuid.js";
+import { packageRoot } from "./packageBacklog.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -67,7 +67,6 @@ export interface HelmDoc {
 }
 
 const CONFIG_PATHS = [`${BRIDGE_STATE_DIRNAME}/${BASE_CONFIG_FILENAME}`, LEGACY_CONFIG_FILENAME];
-const DECK_TAG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const URL_TARGET = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 function levelFromConfig(text: string, label: string): { level: number } | null {
@@ -127,63 +126,63 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 	};
 }
 
+/** A request helm refuses on its merits, answered with its own status. */
+export class HelmRequestError extends Error {
+	constructor(
+		readonly status: number,
+		message: string,
+	) {
+		super(message);
+	}
+}
+
 /**
- * The bridge config's `decks:` entries, as a comma string or a YAML list. With
- * none configured the backlog memo is the one deck, so a bridge that has never
- * heard of decks still shows its plan.
+ * Runs one nosedive command from the same build helm runs from -- the page
+ * acts through the commands, never through a second implementation of them.
  */
-export function parseHelmDecks(raw: unknown, backlog: string | undefined): string[] {
-	const entries =
-		raw === undefined || raw === null || raw === ""
-			? []
-			: (Array.isArray(raw) ? raw.map(String) : String(raw).split(",")).map((entry) =>
-					entry.trim(),
-				);
-	for (const entry of entries) {
-		if (!uuidLike(entry) && !DECK_TAG.test(entry))
-			throw new Error(`invalid deck tag in decks: ${JSON.stringify(entry)} (use kebab-case)`);
+function runNosedive(
+	cwd: string,
+	args: string[],
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+	return new Promise((resolveRun, reject) => {
+		const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (chunk) => (stdout += chunk));
+		child.stderr.on("data", (chunk) => (stderr += chunk));
+		child.on("error", reject);
+		child.on("close", (code) => resolveRun({ exitCode: code ?? 1, stdout, stderr }));
+	});
+}
+
+async function makeDeckRoute(cwd: string, name: string): Promise<{ id: string; output: string }> {
+	const result = await runNosedive(cwd, ["make", "deck", name]);
+	if (result.exitCode !== 0)
+		throw new HelmRequestError(400, result.stderr.replace(/^nosedive: /, "").trim());
+	const id = /^Made .*?([0-9a-f]{8}-[0-9a-f-]{27})\.md$/m.exec(result.stdout)?.[1];
+	if (!id)
+		throw new Error(`make deck did not say what it made:
+${result.stdout}`);
+	return { id, output: result.stdout };
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+	let text = "";
+	for await (const chunk of req) {
+		text += chunk;
+		if (text.length > 64 * 1024) throw new HelmRequestError(413, "request body too large");
 	}
-	if (entries.length > 0) return entries;
-	return backlog ? [backlog] : [];
-}
-
-function configuredDecks(rc: NosediveRc): string[] {
-	const config = parseYamlBlock(readFileSync(rc.path, "utf8"), rc.path);
-	return parseHelmDecks(config.raw.decks, rc.backlog);
-}
-
-function deckId(rc: NosediveRc, entry: string): string {
-	if (uuidLike(entry)) return entry.toLowerCase();
-	if (!rc.bridge)
-		throw new Error(`deck tag ${entry} needs the bridge config's \`bridge:\` repo id`);
-	return namespacedUuid(rc.bridge, entry);
-}
-
-function renderDeckDoc(id: string, tag: string): string {
-	return [
-		"---",
-		"kind: deck",
-		`id: ${id}`,
-		`name: ${tag}`,
-		`gist: "Deck ${tag}"`,
-		"---",
-		"",
-		`# ${tag.slice(0, 1).toUpperCase()}${tag.slice(1)}`,
-		"",
-	].join("\n");
-}
-
-/** Writes and commits a `kind: deck` doc for every configured tag that has none. */
-export function ensureTagDecks(cwd: string, io: { log(message: string): void }): void {
-	const rc = readNosediveRc(cwd);
-	if (!rc.kbDir) throw new Error("helm requires a configured kb directory");
-	for (const entry of configuredDecks(rc)) {
-		if (uuidLike(entry)) continue;
-		const path = join(rc.kbDir, `${deckId(rc, entry)}.md`);
-		if (existsSync(path)) continue;
-		writeFileAtomic(path, renderDeckDoc(deckId(rc, entry), entry));
-		commitBridgeDocs(rc.bridgeDir, `deck(${entry}): created`, [path], io);
+	try {
+		const body = JSON.parse(text) as unknown;
+		if (body && typeof body === "object" && !Array.isArray(body))
+			return body as Record<string, unknown>;
+	} catch {
+		// Reported below, the same as any other shape that is not an object.
 	}
+	throw new HelmRequestError(400, "request body must be a JSON object");
 }
 
 function bridgeDocs(cwd: string): { rc: NosediveRc; docs: KbDoc[] } {
@@ -381,7 +380,7 @@ export async function startHelmServer(
 	const boot = randomBytes(8).toString("hex");
 	let allowedHost = "";
 
-	const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+	const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
 		if (req.headers.host !== allowedHost) return send(res, 403, "text/plain", "forbidden host\n");
 		const url = new URL(req.url ?? "/", `http://${allowedHost}`);
 		if (req.method === "GET" && url.pathname === "/") {
@@ -405,6 +404,10 @@ export async function startHelmServer(
 			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
 		const id = url.searchParams.get("id") ?? "";
 		try {
+			if (req.method === "POST" && url.pathname === "/api/decks") {
+				const body = await readJsonBody(req);
+				return sendJson(res, await makeDeckRoute(cwd, String(body.name ?? "")));
+			}
 			if (req.method !== "GET") return sendJson(res, undefined);
 			if (url.pathname === "/api/decks") return sendJson(res, helmDecks(cwd));
 			if (url.pathname === "/api/deck-repos") return sendJson(res, helmDeckRepos(cwd, id));
@@ -412,7 +415,8 @@ export async function startHelmServer(
 			return sendJson(res, undefined);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			return send(res, 500, "application/json", JSON.stringify({ error: message }));
+			const status = err instanceof HelmRequestError ? err.status : 500;
+			return send(res, status, "application/json", JSON.stringify({ error: message }));
 		}
 	});
 

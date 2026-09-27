@@ -87,6 +87,17 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 	padding: 10px 12px; overflow: auto; }
 .doc code { font-family: var(--mono); font-size: 12.5px; }
 .doc table { border-collapse: collapse; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 8px; }
+.start { max-width: 420px; margin: 48px auto; text-align: center; }
+.start .empty { padding: 0 0 16px; }
+form.make { display: flex; gap: 8px; }
+form.make input { flex: 1; min-width: 0; font: inherit; padding: 7px 10px; border-radius: 6px;
+	border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+form.make input:focus { outline: none; border-color: var(--accent); }
+form.make button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 0; cursor: pointer;
+	background: var(--accent); color: #fff; }
+.status { color: #d64545; font-size: 12px; min-height: 1em; }
+.deck-body { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--line); }
+.deck-body:empty { display: none; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
 </style>
 </head>
@@ -100,8 +111,10 @@ const deckIds = new Set();
 let bridge = { name: "" };
 let selectedRow = null;
 
-async function api(path) {
-	const res = await fetch(path, { headers: { "x-helm-token": token } });
+async function api(path, payload) {
+	const res = await fetch(path, payload === undefined
+		? { headers: { "x-helm-token": token } }
+		: { method: "POST", headers: { "x-helm-token": token, "content-type": "application/json" }, body: JSON.stringify(payload) });
 	const body = await res.json();
 	if (!res.ok) throw new Error(body.error || res.statusText);
 	return body;
@@ -209,7 +222,26 @@ function reset() {
 	highlight(null);
 	history.replaceState(null, "", location.pathname + location.search);
 	crumbs([]);
-	document.getElementById("view").replaceChildren(el("p", { class: "empty" }, "Pick a deck, or anything below one."));
+	const input = el("input", { type: "text", placeholder: "New deck name", "aria-label": "New deck name", required: "" });
+	const status = el("p", { class: "status" });
+	const form = el("form", { class: "make" }, input, el("button", { type: "submit" }, "Make deck"));
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		status.textContent = "";
+		form.inert = true;
+		try {
+			const made = await api("/api/decks", { name: input.value });
+			await loadDecks();
+			select([{ id: made.id, name: input.value }]);
+		} catch (err) {
+			status.textContent = String(err.message || err);
+		} finally {
+			form.inert = false;
+		}
+	});
+	document.getElementById("view").replaceChildren(
+		el("div", { class: "start" }, el("p", { class: "empty" }, "Pick a deck, or anything below one."), form, status));
+	input.focus();
 }
 
 /** Selects the last doc on a path of { id, name } steps from a deck down. */
@@ -225,9 +257,11 @@ async function select(path, row) {
 		if (path[path.length - 1].name !== doc.name) { path[path.length - 1].name = doc.name; crumbs(path); }
 		if (deckIds.has(id)) {
 			const repos = await api("/api/deck-repos?id=" + id);
+			const body = el("div", { class: "doc deck-body" });
+			body.innerHTML = doc.html;
 			view.replaceChildren(repos.length
 				? el("div", { class: "cards" }, repos.map(repoCard))
-				: el("p", { class: "empty" }, "This deck scopes no repos."));
+				: el("p", { class: "empty" }, "This deck scopes no repos."), body);
 			return;
 		}
 		const body = el("div", { class: "doc" });

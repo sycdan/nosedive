@@ -38,21 +38,38 @@ function renderBar() {
 	const dive = dives.active || dives.staged;
 	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
-	if (dives.active) {
-		const reason = el("input", { type: "text", placeholder: "why bail?", class: "reason" });
+	if (dives.active)
 		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
 			el("span", { class: "gap" }),
 			confirmButton("Land", "land", () => runVerb({ verb: "land" })),
 			confirmButton("Pack", "pack", () => runVerb({ verb: "pack" })),
-			reason,
-			confirmButton("Bail", "bail", () => reason.value.trim()
-				? runVerb({ verb: "bail", reason: reason.value.trim() })
-				: reason.focus()));
-	}
+			el("button", { class: "act bail", onclick: () => bailDialog(dive) }, "Bail"));
 	bar.replaceChildren(el("span", { class: "state" }, "Staged"), title,
 		el("span", { class: "gap" }),
 		el("button", { class: "act unstage", onclick: () => stage(null) }, "Unstage"),
 		confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: dive.id })));
+}
+
+/** Bail asks why in a modal: Esc, Cancel or a click outside backs out. */
+function bailDialog(dive) {
+	const reason = el("input", { type: "text", placeholder: "Why bail?", "aria-label": "reason" });
+	const form = el("form", {}, el("h3", {}, "Bail " + dive.title + "?"), reason,
+		el("div", { class: "modalacts" },
+			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Cancel"),
+			el("button", { type: "submit", class: "act bail" }, "Confirm bail")));
+	const dialog = el("dialog", { class: "modal" }, form);
+	dialog.addEventListener("close", () => dialog.remove());
+	dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+	form.addEventListener("submit", (event) => {
+		event.preventDefault();
+		const why = reason.value.trim();
+		if (!why) return reason.focus();
+		dialog.close();
+		runVerb({ verb: "bail", reason: why });
+	});
+	document.body.append(dialog);
+	dialog.showModal();
+	reason.focus();
 }
 
 /** Staging touches nothing on disk: it narrows what the page shows to the dive's scopes. */

@@ -116,8 +116,14 @@ pre.output.failed { border-left-color: #d64545; }
 	border-bottom: 1px solid var(--line); font-size: 13px; min-height: 40px; }
 #divebar .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 #divebar .gap { flex: 1; }
-#divebar .reason { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
-	background: var(--panel); color: var(--text); width: 14em; }
+dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
+	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }
+dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
+dialog.modal form { display: grid; gap: 12px; padding: 16px; }
+dialog.modal h3 { margin: 0; }
+dialog.modal input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+	background: var(--bg); color: var(--text); }
+.modalacts { display: flex; justify-content: flex-end; gap: 6px; }
 button.act { font: inherit; padding: 5px 12px; border-radius: 6px; border: 0; cursor: pointer; color: #fff; }
 button.act.jump { background: #2f6fdb; } button.act.land { background: #1f8a4c; }
 button.act.pack { background: #b7791f; } button.act.bail { background: #c53b3b; }

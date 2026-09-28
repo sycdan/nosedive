@@ -19,6 +19,7 @@ import {
 } from "../test-helpers.mjs";
 
 const {
+	selectRepo,
 	kindSources,
 	loadKinds,
 	resolveKind,
@@ -168,7 +169,8 @@ test("with no dive kinds are the bridge's; on a dive only the scoped repos'", ()
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
 
-	const idle = loadKinds(kindSources(bridge));
+	const idleSources = kindSources(bridge);
+	const idle = loadKinds(idleSources);
 	assert.equal(resolveKind(idle, "backlog")?.id, BACKLOG_KIND);
 	assert.equal(resolveKind(idle, "card"), undefined, "no dive: scoped repos are not consulted");
 
@@ -195,10 +197,14 @@ test("with no dive kinds are the bridge's; on a dive only the scoped repos'", ()
 	assert.equal(resolveKind(diving, "backlog"), undefined, "on a dive the bridge is not consulted");
 	assert.throws(
 		() => resolveKind(diving, "card"),
-		(err) => /card\.repo-a/.test(err.message) && /card\.repo-b/.test(err.message),
+		(err) => /repo-a/.test(err.message) && /repo-b/.test(err.message) && /--repo/.test(err.message),
 	);
-	assert.equal(resolveKind(diving, "card.repo-a")?.id, CARD_A);
-	assert.equal(resolveKind(diving, "card.repo-b")?.id, CARD_B);
+	// --repo narrows what is in play to one repo, by name or id.
+	const onlyA = loadKinds(selectRepo(kindSources(bridge), "repo-a"));
+	assert.equal(resolveKind(onlyA, "card")?.id, CARD_A);
+	assert.equal(resolveKind(loadKinds(selectRepo(kindSources(bridge), REPO_B)), "card")?.id, CARD_B);
+	assert.throws(() => selectRepo(kindSources(bridge), "nope"), /repo nope is not in context/);
+	assert.throws(() => selectRepo(idleSources, "repo-a"), /repo repo-a is not in context/);
 });
 
 test("seed copies the shipped kind docs into the bridge and overwrites an edited copy", () => {

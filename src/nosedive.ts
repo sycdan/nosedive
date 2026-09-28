@@ -46,6 +46,7 @@ export {
 	kindSources,
 	loadKinds,
 	resolveKind,
+	selectRepo,
 	shippedKindFiles,
 	validateMeta,
 } from "./lib/kinds.js";

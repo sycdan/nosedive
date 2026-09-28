@@ -10,8 +10,9 @@ import { packageRoot } from "./packageBacklog.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
-/** A repo whose kb can declare kinds: named so `<kind>.<repo>` can pick it. */
+/** A repo whose kb can declare kinds, named and identified so `--repo` can pick it. */
 export interface KindSource {
+	id?: string;
 	name: string;
 	root: string;
 	kbDir: string;
@@ -57,7 +58,12 @@ export function kindSources(cwd: string): KindSource[] {
 	if (!activeId) {
 		const bridgeDoc = rc.bridge ? docs.find((doc) => doc.id === rc.bridge) : undefined;
 		return [
-			{ name: bridgeDoc?.name ?? basename(rc.bridgeDir), root: rc.bridgeDir, kbDir: rc.kbDir },
+			{
+				id: rc.bridge,
+				name: bridgeDoc?.name ?? basename(rc.bridgeDir),
+				root: rc.bridgeDir,
+				kbDir: rc.kbDir,
+			},
 		];
 	}
 	const dive = readKbDocById(rc.kbDir, rc.bridgeDir, activeId);
@@ -70,7 +76,7 @@ export function kindSources(cwd: string): KindSource[] {
 			const root = expectedWorktreePath(repo, rc.bridgeDir);
 			if (!existsSync(root))
 				throw new Error(`repo ${repo.name} is scoped on the active dive but not hydrated`);
-			return { name: repo.name, root, kbDir: repoKbDir(root) };
+			return { id: repo.id, name: repo.name, root, kbDir: repoKbDir(root) };
 		});
 }
 
@@ -91,22 +97,29 @@ export function loadKinds(sources: KindSource[]): KindDoc[] {
 	);
 }
 
+/** Narrows what is in play to one repo, named or identified; one out of play is refused. */
+export function selectRepo(sources: KindSource[], ref: string): KindSource[] {
+	const picked = sources.filter((source) => source.name === ref || source.id === ref);
+	if (picked.length === 0)
+		throw new Error(
+			`repo ${ref} is not in context; in play: ${sources.map((source) => source.name).join(", ")}`,
+		);
+	return picked;
+}
+
 /**
- * The one kind a name means in context. `<kind>.<repo>` picks among repos
- * that each define it; a bare name they share is refused rather than guessed.
+ * The one kind a name means in context. A name several repos in play define
+ * is refused rather than guessed; `--repo` narrows the context to one.
  */
 export function resolveKind(kinds: KindDoc[], ref: string): KindDoc | undefined {
-	let matches = kinds.filter((kind) => kind.name === ref);
-	if (matches.length === 0 && ref.includes(".")) {
-		const dot = ref.indexOf(".");
-		const [name, repo] = [ref.slice(0, dot), ref.slice(dot + 1)];
-		matches = kinds.filter((kind) => kind.name === name && kind.source.name === repo);
-	}
+	const matches = kinds.filter((kind) => kind.name === ref);
 	if (matches.length > 1) {
 		const named = matches
-			.map((kind) => `${kind.name}.${kind.source.name} (${formatPath(kind.path)})`)
+			.map((kind) => `${kind.source.name} (${formatPath(kind.path)})`)
 			.join(", ");
-		throw new Error(`kind ${ref} is defined more than once in context: ${named}; name one`);
+		throw new Error(
+			`kind ${ref} is defined by more than one repo in context: ${named}; pick one with --repo <repo>`,
+		);
 	}
 	return matches[0];
 }

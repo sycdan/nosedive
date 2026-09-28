@@ -4,12 +4,14 @@ import { makeDeck } from "../lib/decks.js";
 
 /**
  * The deck kind's crud-script mints through this: `--root <repo>` is the repo
- * the deck kind resolved from, and the remaining words are the deck's name.
+ * the deck kind resolved from, an optional `--name <tag>` names it, and the
+ * remaining words are its gist.
  */
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
 	return captureCommand((commandArgs, io) => {
-		const [flag, root, ...gist] = commandArgs;
+		const [flag, root, ...rest] = commandArgs;
 		if (flag !== "--root" || !root) throw new Error("the deck crud impl needs --root <repo>");
-		makeDeck(root, gist.join(" "), io);
+		const named = rest[0] === "--name";
+		makeDeck(root, rest.slice(named ? 2 : 0).join(" "), io, named ? rest[1] : undefined);
 	}, args);
 }

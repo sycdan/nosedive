@@ -68,13 +68,21 @@ function renderDeckDoc(id: string, tag: string, title: string): string {
 
 /**
  * Mints a deck from a gist in the bridge at `root` -- what `crud deck` runs,
- * through the deck kind's crud-script: the gist's slug is the tag, the doc sits at the tag's
+ * through the deck kind's crud-script: the tag is `--name` when given, else
+ * the gist's slug, the doc sits at the tag's
  * deterministic id, and the tag joins `decks:` unless it is listed already,
  * all in one commit. With no `decks:` yet the backlog is written in first,
  * because an absent `decks:` means the backlog is the one deck.
  */
-export function makeDeck(root: string, gist: string, io: { log(message: string): void }): string {
-	const tag = gistSlug(gist);
+export function makeDeck(
+	root: string,
+	gist: string,
+	io: { log(message: string): void },
+	name?: string,
+): string {
+	if (name !== undefined && !DECK_TAG.test(name))
+		throw new Error(`a deck's name is its tag, and must be kebab-case: ${JSON.stringify(name)}`);
+	const tag = name ?? gistSlug(gist);
 	// The deck kind resolved from this repo, so this repo is where the deck
 	// goes -- never a bridge found by walking up from it.
 	if (!existsSync(baseConfigPath(root)))
@@ -99,7 +107,7 @@ export function makeDeck(root: string, gist: string, io: { log(message: string):
 	io.log(`Minted ${formatPath(path)}`);
 	commitBridgeDocs(
 		rc.bridgeDir,
-		`crud(${id}): created ${tag}`,
+		`crud(${id}): created deck ${tag}`,
 		listed ? [path] : [path, rc.path],
 		io,
 	);

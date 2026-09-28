@@ -7,8 +7,18 @@ import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
 import { findDocByQuid, matchDocs, mintDoc } from "../lib/crud.js";
 import { readActiveDiveId } from "../lib/kbDocs.js";
-import { crudScriptPath, kindSources, loadKinds, resolveKind } from "../lib/kinds.js";
+import { crudScriptPath, kindSources, loadKinds, resolveKind, selectRepo } from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
+
+/** Removes `<flag> <value>` from args, wherever it sits, and returns the value. */
+function takeFlag(args: string[], flag: string): string | undefined {
+	const at = args.indexOf(flag);
+	if (at === -1) return undefined;
+	const value = args[at + 1];
+	if (!value || value.startsWith("--")) throw new Error(`${flag} needs a value`);
+	args.splice(at, 2);
+	return value;
+}
 
 async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promise<void> {
 	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
@@ -16,11 +26,11 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		if (args.length === 0) io.setExitCode(1);
 		return;
 	}
-	const nameAt = args.indexOf("--name");
-	const name = nameAt === -1 ? undefined : args[nameAt + 1];
-	if (nameAt !== -1 && !name) throw new Error("--name needs a value");
-	if (nameAt !== -1) args = [...args.slice(0, nameAt), ...args.slice(nameAt + 2)];
-	const sources = kindSources(process.cwd());
+	const name = takeFlag(args, "--name");
+	const repo = takeFlag(args, "--repo");
+	const sources =
+		repo === undefined ? kindSources(process.cwd()) : selectRepo(kindSources(process.cwd()), repo);
+	if (args.length === 0) throw new Error("crud needs a kind and a gist, or a quid");
 	const [first, ...rest] = args as [string, ...string[]];
 
 	if (uuidLike(first)) {
@@ -60,16 +70,12 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		mintDoc(kind, gist, io, name);
 		return;
 	}
-	if (name !== undefined)
-		throw new Error(
-			`kind ${kind.name} mints through its crud-script, which names the doc itself; drop --name`,
-		);
 	// A kind that mints its own way gets what a command adapter gets.
 	const mod = (await import(pathToFileURL(script).href)) as Record<string, unknown>;
 	if (typeof mod.crud !== "function")
 		throw new Error(`crud-script of kind ${kind.name} must export crud(value, ctx): ${script}`);
 	const result = (await mod.crud(
-		{ args: rest, kind: kind.name, gist, root: kind.source.root },
+		{ args: rest, kind: kind.name, gist, name, root: kind.source.root },
 		{ cwd: process.cwd(), impl: runtime.impl },
 	)) as ImplCommandOutput;
 	if (result.stdout) io.writeOut(result.stdout);

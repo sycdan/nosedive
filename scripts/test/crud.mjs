@@ -85,7 +85,11 @@ test("crud mints a doc of a bridge kind, then reads it on the next run", () => {
 		text,
 		new RegExp(`^---\nkind: note\nid: ${id}\nname: ${id}\ngist: "Buy more sleeves"\n---\n`),
 	);
-	assert.equal(subject(bridge), `crud(${id}): created ${id}`, "a minted doc is named by its id");
+	assert.equal(
+		subject(bridge),
+		`crud(${id}): created note ${id}`,
+		"a minted doc is named by its id",
+	);
 	assert.equal(git(["status", "--porcelain"], bridge), "");
 	const before = commits(bridge);
 
@@ -111,7 +115,7 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
 	assert.match(text, /^name: sleeves$/m);
 	assert.match(text, /^gist: "Buy more sleeves"$/m);
-	assert.equal(subject(bridge), `crud(${id}): created sleeves`);
+	assert.equal(subject(bridge), `crud(${id}): created note sleeves`);
 	const before = commits(bridge);
 
 	const taken = run(["crud", "note", "--name", "sleeves", "Something", "else"], bridge);
@@ -124,9 +128,17 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	assert.match(bad.stderr, /kebab-case/);
 
 	const { bridge: seeded } = seededBridge(tmp, "named-deck", "pilot@nosedive.invalid");
-	const deck = run(["crud", "deck", "--name", "elves", "Elves"], seeded);
-	assert.equal(deck.status, 1);
-	assert.match(deck.stderr, /crud-script, which names the doc itself/);
+	// A crud-script is handed --name and decides; the deck script takes it as its tag.
+	const deck = run(["crud", "deck", "--name", "mtg", "Magic:", "The", "Gathering"], seeded);
+	assertOk(deck, "crud deck --name failed");
+	const seededConfig = readFileSync(join(seeded, ".nosedive", "config.yaml"), "utf8");
+	const deckId = namespacedUuid(/^bridge: (\S+)$/m.exec(seededConfig)[1], "mtg");
+	assert.equal(madeId(deck.stdout), deckId);
+	const deckText = readFileSync(join(seeded, "kb", `${deckId}.md`), "utf8");
+	assert.match(deckText, /^name: mtg$/m);
+	assert.match(deckText, /^# Magic: The Gathering$/m);
+	assert.match(seededConfig, /^decks: .*, mtg$/m);
+	assert.equal(subject(seeded), `crud(${deckId}): created deck mtg`);
 });
 
 test("crud refuses an ambiguous match, an unknown kind, and a mint its kind would reject", () => {
@@ -173,7 +185,7 @@ test("crud deck mints through the deck kind's script: deterministic id and decks
 	assert.match(text, /^name: magic-the-gathering$/m);
 	assert.match(text, /^# Magic: The Gathering$/m);
 	assert.match(config(), new RegExp(`^decks: ${backlog}, magic-the-gathering$`, "m"));
-	assert.equal(subject(bridge), `crud(${id}): created magic-the-gathering`);
+	assert.equal(subject(bridge), `crud(${id}): created deck magic-the-gathering`);
 	assert.deepEqual(
 		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
 		[".nosedive/config.yaml", `kb/${id}.md`],
@@ -216,9 +228,16 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 		existsSync(join(worktree, "kb", `${id}.md`)),
 		"minted in the repo that defines the kind",
 	);
-	assert.equal(subject(worktree), `crud(${id}): created ${id}`);
+	assert.equal(subject(worktree), `crud(${id}): created card ${id}`);
 	assert.equal(git(["status", "--porcelain"], worktree), "");
 	assert.equal(commits(bridge), bridgeBefore, "the bridge is untouched on a dive");
+
+	const pinned = run(["crud", "--repo", "cards", "card", "Black", "Lotus"], bridge);
+	assertOk(pinned, "crud --repo failed");
+	assert.ok(existsSync(join(worktree, "kb", `${madeId(pinned.stdout)}.md`)));
+	const elsewhere = run(["crud", "--repo", "nope", "card", "x"], bridge);
+	assert.equal(elsewhere.status, 1);
+	assert.match(elsewhere.stderr, /repo nope is not in context/);
 
 	const read = run(["crud", id], bridge);
 	assertOk(read, "crud <quid> on a dive failed");

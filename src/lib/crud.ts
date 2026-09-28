@@ -98,7 +98,7 @@ export function mintDoc(
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	commitBridgeDocs(kind.source.root, `crud(${id}): created ${name ?? id}`, [path], io);
+	commitBridgeDocs(kind.source.root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path], io);
 	return id;
 }
 

@@ -19,12 +19,15 @@ import {
 	MANAGED_INSTRUCTIONS_BEGIN,
 	MANAGED_INSTRUCTIONS_END,
 } from "../lib/constants.js";
+import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import { copyShippedKinds } from "../lib/kinds.js";
+import { shipZerostars } from "../lib/shipZerostars.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
+	defaultWorkBranch,
 	formatPath,
+	readNosediveRc,
 	resolveFrom,
 	toPosixPath,
 	uuidLike,
@@ -412,13 +415,26 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 
-	const kindPaths = copyShippedKinds(kbDir, io);
+	const shippedPaths = shipZerostars(
+		bridgeDir,
+		kbDir,
+		settings.bridge,
+		defaultWorkBranch(settings, "kb"),
+		join(kbDir, `${settings.backlog}.md`),
+		io,
+	);
 
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
 	const nosediveGitignorePath = join(bridgeDir, ".nosedive", ".gitignore");
 	io.log(`Wrote ${formatPath(basePath)}`);
+	// A backlog seed just minted renders the kb feat it now links, so a fresh
+	// bridge holds what update-backlog would write. An existing backlog only
+	// gains the link: its body and scopes are the pilot's until they render it.
+	const backlogPath = join(kbDir, `${settings.backlog}.md`);
+	if (mintedBacklogMemo && shippedPaths.includes(backlogPath))
+		injectDocsIntoBacklogMemo(readNosediveRc(bridgeDir), loadKbDocs(kbDir, bridgeDir), [], io);
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
@@ -432,7 +448,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 			nosediveGitignorePath,
 			...(mintedBacklogMemo ? [mintedBacklogMemo.path] : []),
 			...(mintedBridgeRepoDoc ? [mintedBridgeRepoDoc.path] : []),
-			...kindPaths,
+			...shippedPaths,
 			...instructionWrites.map((write) => write.path),
 		],
 		bridgeBranch,

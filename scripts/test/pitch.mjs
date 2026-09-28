@@ -213,6 +213,20 @@ test("a --parent record.feat is reachable only through its parent, not also inje
 	assert.match(memo, new RegExp(`- kb/${parentId}\\.md:`), "the parent should still be linked");
 });
 
+/**
+ * The seeded backlog without the kb feat seed links from it, and so without
+ * the bridge scope that feat brings: these tests derive scopes from feats of
+ * their own.
+ */
+function withoutKbFeat(backlogPath) {
+	const text = readFileSync(backlogPath, "utf8");
+	const keep = text
+		.split("\n---\n")[0]
+		.split("\n")
+		.filter((line) => /^(---|kind|id|name|gist):?/.test(line));
+	write(backlogPath, `${keep.join("\n")}\n---\n\n# Backlog\n`);
+}
+
 test("update-backlog rewrites the memo's scopes from its feats", () => {
 	const bridge = createBridge(tmp, "pitch-backlog-scopes-bridge");
 	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
@@ -220,6 +234,7 @@ test("update-backlog rewrites the memo's scopes from its feats", () => {
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 	)[1];
 	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+	withoutKbFeat(backlogPath);
 	const zebraRepo = "019fc623-0000-7000-8000-0000000000a1";
 	const appleRepo = "019fc623-0000-7000-8000-0000000000a2";
 	const staleRepo = "019fc623-0000-7000-8000-0000000000a3";
@@ -262,6 +277,7 @@ test("update-backlog leaves scopes alone when the rendered tree scopes no repo",
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 	)[1];
 	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
+	withoutKbFeat(backlogPath);
 	const heldRepo = "019fc623-0000-7000-8000-0000000000c1";
 	// record.feat can no longer mint the unscoped feat this test needs -- with a
 	// second repo registered it demands --scope -- so the feat is written by hand,

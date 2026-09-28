@@ -49,9 +49,9 @@ export {
 	postCrudScriptPath,
 	resolveKind,
 	selectRepo,
-	shippedKindFiles,
 	validateMeta,
 } from "./lib/kinds.js";
+export { shippedFiles } from "./lib/shipZerostars.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

@@ -199,8 +199,11 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 	const add = (name, spec) => { const entry = schemaRow(name, spec || {}, required.includes(name), rows); rows.push(entry); list.append(entry.row); };
 	for (const [name, spec] of Object.entries(schema.properties || {})) add(name, spec);
 	const verdict = el("div", { class: "verdict" });
+	// A kind states whether it is closed; the editor keeps what it says.
+	const open = el("input", { type: "checkbox", "aria-label": "open schema" });
+	open.checked = schema.additionalProperties === true;
 	const build = () => {
-		const next = { type: "object", additionalProperties: false, properties: {} };
+		const next = { type: "object", additionalProperties: open.checked, properties: {} };
 		const must = [];
 		for (const entry of rows) {
 			const field = entry.read();
@@ -230,6 +233,7 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 		el("fieldset", { disabled: kind.inCrudContext ? null : "" }, el("legend", {}, "schema"), list,
 			el("div", { class: "schemaacts" },
 				el("button", { type: "button", class: "linkish", onclick: () => add("", { type: "string" }) }, "+ field"),
+				el("label", { title: "an open schema accepts meta keys it does not declare" }, open, " open"),
 				el("button", { type: "button", onclick: () => check().catch(showError) }, "Check"),
 				el("button", { type: "submit" }, "Save schema")),
 			verdict));

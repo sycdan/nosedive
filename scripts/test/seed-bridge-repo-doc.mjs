@@ -140,7 +140,7 @@ test("seed skips minting when a matching bridge repo doc already exists", () => 
 	);
 	const seed = run(["seed", "--headless"], bridgeDir, "");
 	assertOk(seed, "seed failed");
-	// Seed also copies the shipped zerostar kind docs; what matters here is that no repo doc was minted.
+	// Seed also ships its zerostars; what matters here is that no repo doc was minted.
 	assert.deepEqual(
 		readdirSync(join(bridgeDir, "kb"))
 			.filter((file) => !file.startsWith("00000000-0000-"))

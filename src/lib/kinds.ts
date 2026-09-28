@@ -182,29 +182,3 @@ export function postCrudScriptPath(kind: KindDoc): string | undefined {
 		? join(packageRoot(), script.slice(NOSEDIVE_SCRIPT.length))
 		: join(kind.source.root, script);
 }
-
-/** Every zerostar `kind: kind` doc in a kb: the kinds that ship. */
-export function shippedKindFiles(kbDir: string): string[] {
-	return kindFiles(kbDir).filter((file) => isZerostar(basename(file, ".md")));
-}
-
-/**
- * Copies the package's shipped kind docs into a bridge kb and returns every
- * path it owns there. The package owns them: a copy that differs is replaced,
- * so a bridge customises by declaring a kind of another name.
- */
-export function copyShippedKinds(kbDir: string, io: { log(message: string): void }): string[] {
-	const packageKb = join(packageRoot(), "kb");
-	return shippedKindFiles(packageKb).map((file) => {
-		const text = readFileSync(join(packageKb, file), "utf8");
-		const path = join(kbDir, file);
-		if (!existsSync(path)) {
-			writeFileAtomic(path, text);
-			io.log(`Wrote ${formatPath(path)}`);
-		} else if (readFileSync(path, "utf8") !== text) {
-			writeFileAtomic(path, text);
-			io.log(`Replaced ${formatPath(path)}`);
-		}
-		return path;
-	});
-}

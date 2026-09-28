@@ -189,7 +189,7 @@ test("seed-agent-instructions", () => {
 	assertOk(run(["seed", "--headless"], bareBridge, ""), "second seed failed");
 	assert.equal(readFileSync(join(bareBridge, "AGENTS.md"), "utf8"), seededInstructions);
 	const backlogMemos = readdirSync(join(bareBridge, "kb"))
-		.filter((entry) => entry.endsWith(".md"))
+		.filter((entry) => entry.endsWith(".md") && !entry.startsWith("00000000-0000-"))
 		.filter((entry) => /^kind: memo$/m.test(readFileSync(join(bareBridge, "kb", entry), "utf8")));
 	assert.equal(backlogMemos.length, 1, "fresh seed should mint exactly one backlog memo");
 	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Backlog$/m);

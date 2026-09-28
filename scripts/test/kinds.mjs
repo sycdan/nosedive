@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -13,7 +12,6 @@ import {
 	root,
 	run,
 	runTool,
-	seededBridge,
 	write,
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
@@ -26,7 +24,7 @@ const {
 	validateMeta,
 	checkDocMeta,
 	postCrudScriptPath,
-	shippedKindFiles,
+	shippedFiles,
 } = await import(libUrl);
 
 const KIND = "00000000-0000-70a0-90bd-1d49dc6264b9";
@@ -128,7 +126,7 @@ test("post-crud-script resolves nosedive: in the package and anything else in th
 	assert.equal(postCrudScriptPath(card), join(tmp, "scripts", "scripts", "card.mjs"));
 });
 
-test("only zerostar kind docs ship", () => {
+test("every unscoped zerostar ships; a scoped or minted one stays in its repo", () => {
 	const dir = join(tmp, "ship", "kb");
 	write(join(dir, `${KIND}.md`), kindDoc(KIND, "kind", ["schema: {}"]));
 	write(join(dir, `${CARD_A}.md`), kindDoc(CARD_A, "internal", ["schema: {}"]));
@@ -136,7 +134,11 @@ test("only zerostar kind docs ship", () => {
 		join(dir, "00000000-0000-7000-8000-000000000001.md"),
 		'---\nkind: foundation\nid: 00000000-0000-7000-8000-000000000001\nname: x\ngist: "x"\n---\n',
 	);
-	assert.deepEqual(shippedKindFiles(dir), [`${KIND}.md`]);
+	write(
+		join(dir, "00000000-0000-7000-8000-000000000002.md"),
+		`---\nkind: noun\nid: 00000000-0000-7000-8000-000000000002\nname: y\ngist: "y"\nscopes:\n  - ${REPO_A}\n---\n`,
+	);
+	assert.deepEqual(shippedFiles(dir), ["00000000-0000-7000-8000-000000000001.md", `${KIND}.md`]);
 });
 
 test("with no dive kinds are the bridge's; on a dive only the scoped repos'", () => {
@@ -205,35 +207,6 @@ test("with no dive kinds are the bridge's; on a dive only the scoped repos'", ()
 	assert.equal(resolveKind(loadKinds(selectRepo(kindSources(bridge), REPO_B)), "card")?.id, CARD_B);
 	assert.throws(() => selectRepo(kindSources(bridge), "nope"), /repo nope is not in context/);
 	assert.throws(() => selectRepo(idleSources, "repo-a"), /repo repo-a is not in context/);
-});
-
-test("seed copies the shipped kind docs into the bridge and overwrites an edited copy", () => {
-	const { bridge } = seededBridge(tmp, "seeded", "pilot@nosedive.invalid");
-	const shipped = shippedKindFiles(join(root, "kb"));
-	assert.deepEqual([...shipped].sort(), [`${KIND}.md`, `${DECK}.md`].sort());
-	for (const file of shipped) {
-		assert.equal(
-			readFileSync(join(bridge, "kb", file), "utf8"),
-			readFileSync(join(root, "kb", file), "utf8"),
-		);
-	}
-	assert.equal(
-		existsSync(join(bridge, "kb", "artifacts", `${DECK}.mjs`)),
-		false,
-		"a nosedive: script stays in the package",
-	);
-	assert.equal(runTool("git", ["status", "--porcelain", "kb"], bridge).stdout.trim(), "");
-
-	const deckCopy = join(bridge, "kb", `${DECK}.md`);
-	write(deckCopy, readFileSync(deckCopy, "utf8").replace("nosedive:", "scripts/"));
-	const again = run(["seed", "--headless"], bridge, "");
-	assertOk(again, "seed failed");
-	assert.match(again.stdout, new RegExp(`Replaced kb[\\\\/]${DECK}\\.md`));
-	assert.equal(
-		readFileSync(deckCopy, "utf8"),
-		readFileSync(join(root, "kb", `${DECK}.md`), "utf8"),
-	);
-	assert.equal(runTool("git", ["status", "--porcelain", "kb"], bridge).stdout.trim(), "");
 });
 
 /** Kinds loaded from a throwaway kb holding the given kind docs. */

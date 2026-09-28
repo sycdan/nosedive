@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -153,6 +153,27 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const refused = await runVerb({ verb: "land" });
 	assert.equal(refused.exit, 1, "land with no dive fails, and says why");
 	assert.match(refused.text, /active dive, and there isn't one/, "the command's own words");
+
+	// Hydrate and dehydrate from a card run the workspace commands themselves.
+	const worktree = join(bridge, "workspace", "cards");
+	assert.ok(existsSync(worktree), "packing leaves the scoped repo hydrated");
+	write(join(worktree, "scratch.txt"), "unsaved\n");
+	const dirty = await runVerb({ verb: "dehydrate", repo: REPO });
+	assert.equal(dirty.exit, 1, "a dirty worktree is not thrown away");
+	assert.match(dirty.text, /uncommitted/i, "dehydrate's own refusal");
+	assert.ok(existsSync(worktree));
+	rmSync(join(worktree, "scratch.txt"));
+	const dehydrated = await runVerb({ verb: "dehydrate", repo: REPO });
+	assert.equal(dehydrated.exit, 0, dehydrated.text);
+	assert.equal(existsSync(worktree), false);
+	const cardAfter = (await get(`/api/context?deck=${BACKLOG}`)).repos[0];
+	assert.equal(cardAfter.hydrated, null);
+
+	const hydrated = await runVerb({ verb: "hydrate", repo: REPO, at: "main" });
+	assert.equal(hydrated.exit, 0, hydrated.text);
+	assert.ok(existsSync(worktree));
+	const card = (await get(`/api/context?deck=${BACKLOG}`)).repos[0];
+	assert.match(card.hydrated.commit, /^[0-9a-f]{40}$/);
 
 	const nope = await runVerb({ verb: "nuke" });
 	assert.equal(nope.status, 400, "only the dive verbs run");

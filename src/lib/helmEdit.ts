@@ -133,4 +133,26 @@ function deckForm() {
 	});
 	return [form, out];
 }
+
+/** Hydrate (a ref, prefilled with trunk) or dehydrate (confirmed once) a repo from its card. */
+function cardActions(repo) {
+	if (repo.isBridge) return null;
+	if (repo.hydrated)
+		return el("div", { class: "cardacts" },
+			confirmButton("Dehydrate", "pack", () => runVerb({ verb: "dehydrate", repo: repo.id })));
+	const box = el("div", { class: "cardacts" });
+	const open = el("button", { class: "act jump" }, "Hydrate");
+	open.addEventListener("click", () => {
+		const ref = el("input", { type: "text", value: repo.trunk, "aria-label": "ref to hydrate at" });
+		const form = el("form", { class: "make" }, ref, el("button", { type: "submit" }, "Hydrate"));
+		form.addEventListener("submit", (event) => {
+			event.preventDefault();
+			runVerb({ verb: "hydrate", repo: repo.id, at: ref.value.trim() });
+		});
+		box.replaceChildren(form);
+		ref.select();
+	});
+	box.append(open);
+	return box;
+}
 `;

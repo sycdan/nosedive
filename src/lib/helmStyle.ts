@@ -133,5 +133,7 @@ form.newdive button { justify-self: start; font: inherit; padding: 6px 14px; bor
 	cursor: pointer; background: var(--accent); color: #fff; }
 pre.output.streaming { border-left-color: var(--accent); }
 pre.output { max-height: 70vh; overflow: auto; }
+.cardacts { display: flex; gap: 6px; }
+.cardacts form.make { margin: 0; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
 `;

@@ -11,7 +11,7 @@ function field(body: Record<string, unknown>, key: string): string {
 	throw new HelmRequestError(400, `${key} is required`);
 }
 
-/** The dive verbs the page may run, and the argv and stdin each becomes. */
+/** The verbs the page may run -- the dive lifecycle and the workspace pair -- and the argv and stdin each becomes. */
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
 		case "record.dive":
@@ -37,8 +37,14 @@ function command(body: Record<string, unknown>): { args: string[]; stdin: string
 			return { args: ["land"], stdin: "" };
 		case "bail":
 			return { args: ["bail", "--reason", field(body, "reason")], stdin: "" };
+		case "hydrate": {
+			const at = typeof body.at === "string" && body.at.trim() ? ["--at", body.at.trim()] : [];
+			return { args: ["hydrate-repo.workspace", field(body, "repo"), ...at], stdin: "" };
+		}
+		case "dehydrate":
+			return { args: ["dehydrate-repo.workspace", field(body, "repo")], stdin: "" };
 		default:
-			throw new HelmRequestError(400, `helm runs only the dive verbs, not ${String(body.verb)}`);
+			throw new HelmRequestError(400, `helm does not run ${String(body.verb)}`);
 	}
 }
 

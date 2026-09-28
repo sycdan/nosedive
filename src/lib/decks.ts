@@ -97,7 +97,12 @@ export function makeDeck(root: string, gist: string, io: { log(message: string):
 	const title = gist.trim() === tag ? titleFromSlug(tag) : gist.trim();
 	writeFileAtomic(path, renderDeckDoc(id, tag, title));
 	io.log(`Minted ${formatPath(path)}`);
-	commitBridgeDocs(rc.bridgeDir, `deck(${tag}): created`, listed ? [path] : [path, rc.path], io);
+	commitBridgeDocs(
+		rc.bridgeDir,
+		`crud(${id}): created ${tag}`,
+		listed ? [path] : [path, rc.path],
+		io,
+	);
 	return id;
 }
 

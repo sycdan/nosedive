@@ -3,11 +3,13 @@ import { join } from "node:path";
 
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { formatPath } from "./coreParsing.js";
-import { readKbDoc } from "./kbDocs.js";
+import { readKbDoc, type KbDoc } from "./kbDocs.js";
 import { validateMeta, type KindDoc, type KindSource } from "./kinds.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { slugFromGist } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
+
+const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
 
 export interface CrudMatch {
 	id: string;
@@ -25,20 +27,26 @@ export function gistSlug(gist: string): string {
 	return slug;
 }
 
-/** Docs of a kind, in the kb of the repo that defines it, that a gist names. */
-export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
+/** Every doc of a kind in the kb of the repo that defines it. */
+function docsOfKind(kind: KindDoc): KbDoc[] {
 	const kbDir = kind.source.kbDir;
 	if (!existsSync(kbDir)) return [];
-	const kindLine = new RegExp(
-		`^kind: ${kind.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
-		"m",
-	);
-	const slug = gistSlug(gist);
-	const text = gist.trim().toLowerCase();
+	const kindLine = `kind: ${kind.name}`;
 	return readdirSync(kbDir)
 		.filter((file) => file.endsWith(".md"))
-		.filter((file) => kindLine.test(readFileSync(join(kbDir, file), "utf8")))
-		.map((file) => readKbDoc(join(kbDir, file), kind.source.root))
+		.filter((file) =>
+			readFileSync(join(kbDir, file), "utf8")
+				.split(/\r?\n/)
+				.some((line) => line.trimEnd() === kindLine),
+		)
+		.map((file) => readKbDoc(join(kbDir, file), kind.source.root));
+}
+
+/** Docs of a kind, in the kb of the repo that defines it, that a gist names. */
+export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
+	const slug = gistSlug(gist);
+	const text = gist.trim().toLowerCase();
+	return docsOfKind(kind)
 		.filter((doc) => doc.name === slug || doc.gist.trim().toLowerCase() === text)
 		.map((doc) => ({ id: doc.id, name: doc.name, path: doc.path }));
 }
@@ -46,13 +54,27 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
 /**
  * Mints a doc of a kind where the kind is defined, and commits it there: the
  * bridge with no dive, a scoped repo's worktree on one, for land to publish.
- * It is named by its own id -- the mark of a doc nobody has named yet -- so
- * the gist is what finds it again.
+ * It is named by its own id -- the mark of a doc nobody has named yet, so the
+ * gist is what finds it again -- unless a name is given, which must be free
+ * among the docs of its kind in that repo.
  * The new doc's meta is validated first, so a kind that requires meta refuses
  * a bare mint rather than committing a doc it would reject.
  */
-export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string): void }): string {
+export function mintDoc(
+	kind: KindDoc,
+	gist: string,
+	io: { log(message: string): void },
+	name?: string,
+): string {
 	gistSlug(gist); // refuses a gist with nothing in it
+	if (name !== undefined) {
+		if (!NAME.test(name))
+			throw new Error(
+				`--name must be a leaf-first chain of kebab-case slugs joined by dots: ${JSON.stringify(name)}`,
+			);
+		const holder = docsOfKind(kind).find((doc) => doc.name === name);
+		if (holder) throw new Error(`${kind.name} name ${name} is taken by ${holder.id}`);
+	}
 	const errors = validateMeta(kind, {});
 	if (errors.length > 0)
 		throw new Error(
@@ -67,7 +89,7 @@ export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string):
 			"---",
 			`kind: ${kind.name}`,
 			`id: ${id}`,
-			`name: ${id}`,
+			`name: ${name ?? id}`,
 			`gist: ${JSON.stringify(title)}`,
 			"---",
 			"",
@@ -76,7 +98,7 @@ export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string):
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	commitBridgeDocs(kind.source.root, `${kind.name}(${id}): created`, [path], io);
+	commitBridgeDocs(kind.source.root, `crud(${id}): created ${name ?? id}`, [path], io);
 	return id;
 }
 

@@ -16,10 +16,15 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		if (args.length === 0) io.setExitCode(1);
 		return;
 	}
+	const nameAt = args.indexOf("--name");
+	const name = nameAt === -1 ? undefined : args[nameAt + 1];
+	if (nameAt !== -1 && !name) throw new Error("--name needs a value");
+	if (nameAt !== -1) args = [...args.slice(0, nameAt), ...args.slice(nameAt + 2)];
 	const sources = kindSources(process.cwd());
 	const [first, ...rest] = args as [string, ...string[]];
 
 	if (uuidLike(first)) {
+		if (name !== undefined) throw new Error("crud <quid> takes no --name");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const path = findDocByQuid(sources, first);
 		if (!path) throw new Error(`no doc ${first} in context`);
@@ -52,9 +57,13 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 
 	const script = crudScriptPath(kind);
 	if (!script) {
-		mintDoc(kind, gist, io);
+		mintDoc(kind, gist, io, name);
 		return;
 	}
+	if (name !== undefined)
+		throw new Error(
+			`kind ${kind.name} mints through its crud-script, which names the doc itself; drop --name`,
+		);
 	// A kind that mints its own way gets what a command adapter gets.
 	const mod = (await import(pathToFileURL(script).href)) as Record<string, unknown>;
 	if (typeof mod.crud !== "function")

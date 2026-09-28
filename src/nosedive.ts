@@ -39,6 +39,16 @@ export { readKbDocById } from "./lib/kbDocs.js";
 export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 // Exported so every accepted spelling of `decks:` is tested without a bridge per form.
 export { parseDecks } from "./lib/decks.js";
+// Exported so kind resolution and validation are tested at the library, below any command.
+export {
+	checkDocMeta,
+	crudScriptPath,
+	kindSources,
+	loadKinds,
+	resolveKind,
+	shippedKindFiles,
+	validateMeta,
+} from "./lib/kinds.js";
 export { createCapturingIo, createConsoleIo, nosediveInvocationFor, readNosediveRc };
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };

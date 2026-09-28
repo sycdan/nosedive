@@ -20,6 +20,7 @@ import {
 	MANAGED_INSTRUCTIONS_END,
 } from "../lib/constants.js";
 import { commitMessage } from "../lib/commitProvenance.js";
+import { copyShippedKinds } from "../lib/kinds.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
@@ -411,6 +412,8 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 
+	const kindPaths = copyShippedKinds(kbDir, io);
+
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
@@ -429,6 +432,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 			nosediveGitignorePath,
 			...(mintedBacklogMemo ? [mintedBacklogMemo.path] : []),
 			...(mintedBridgeRepoDoc ? [mintedBridgeRepoDoc.path] : []),
+			...kindPaths,
 			...instructionWrites.map((write) => write.path),
 		],
 		bridgeBranch,

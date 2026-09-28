@@ -1,0 +1,189 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
+
+import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
+
+import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
+import { formatPath, parseYamlBlock, readNosediveRc, resolveFrom } from "./coreParsing.js";
+import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById } from "./kbDocs.js";
+import { packageRoot } from "./packageBacklog.js";
+import { writeFileAtomic } from "./renderPlan.js";
+import { expectedWorktreePath } from "./repoWorktrees.js";
+
+/** A repo whose kb can declare kinds: named so `<kind>.<repo>` can pick it. */
+export interface KindSource {
+	name: string;
+	root: string;
+	kbDir: string;
+}
+
+export interface KindDoc {
+	id: string;
+	name: string;
+	path: string;
+	source: KindSource;
+	meta: Record<string, unknown>;
+}
+
+const KIND_LINE = /^kind: kind\s*$/m;
+const NOSEDIVE_SCRIPT = "nosedive:";
+
+/** Minted at timestamp 0: the mark of a kind doc nosedive ships. */
+export function isZerostar(id: string): boolean {
+	return /^00000000-0000-/.test(id);
+}
+
+/** An installed repo keeps its kb where its nosedive config says; any other repo keeps it at `kb/`. */
+function repoKbDir(root: string): string {
+	const config = join(root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME);
+	if (existsSync(config)) {
+		const kb = parseYamlBlock(readFileSync(config, "utf8"), config).scalars.kb;
+		if (kb) return resolveFrom(root, kb);
+	}
+	return join(root, "kb");
+}
+
+/**
+ * Where kinds come from right now. Kinds are contextual: with no active dive
+ * they are the bridge's; on one they are the scoped repos' and nothing else,
+ * because a doc written to the bridge mid-dive is outside what the dive packs.
+ * The bridge counts on a dive only when the dive scopes it.
+ */
+export function kindSources(cwd: string): KindSource[] {
+	const rc = readNosediveRc(cwd);
+	if (!rc.kbDir) throw new Error("kinds require a configured kb directory");
+	const docs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const activeId = readActiveDiveId(rc.workspaceDir);
+	if (!activeId) {
+		const bridgeDoc = rc.bridge ? docs.find((doc) => doc.id === rc.bridge) : undefined;
+		return [
+			{ name: bridgeDoc?.name ?? basename(rc.bridgeDir), root: rc.bridgeDir, kbDir: rc.kbDir },
+		];
+	}
+	const dive = readKbDocById(rc.kbDir, rc.bridgeDir, activeId);
+	if (!dive) throw new Error(`active dive ${activeId} has no kb doc`);
+	return dive.scopes
+		.filter((scope) => scope.repoId !== ".")
+		.map((scope) => {
+			const repo = docs.find((doc) => doc.id === scope.repoId && doc.kind === "repo");
+			if (!repo) throw new Error(`dive ${dive.name} scopes ${scope.repoId}, which has no repo doc`);
+			const root = expectedWorktreePath(repo, rc.bridgeDir);
+			if (!existsSync(root))
+				throw new Error(`repo ${repo.name} is scoped on the active dive but not hydrated`);
+			return { name: repo.name, root, kbDir: repoKbDir(root) };
+		});
+}
+
+function kindFiles(kbDir: string): string[] {
+	if (!existsSync(kbDir)) return [];
+	return readdirSync(kbDir)
+		.filter((file) => file.endsWith(".md"))
+		.filter((file) => KIND_LINE.test(readFileSync(join(kbDir, file), "utf8")))
+		.sort();
+}
+
+export function loadKinds(sources: KindSource[]): KindDoc[] {
+	return sources.flatMap((source) =>
+		kindFiles(source.kbDir).map((file) => {
+			const doc = readKbDoc(join(source.kbDir, file), source.root);
+			return { id: doc.id, name: doc.name, path: doc.path, source, meta: doc.metaRaw };
+		}),
+	);
+}
+
+/**
+ * The one kind a name means in context. `<kind>.<repo>` picks among repos
+ * that each define it; a bare name they share is refused rather than guessed.
+ */
+export function resolveKind(kinds: KindDoc[], ref: string): KindDoc | undefined {
+	let matches = kinds.filter((kind) => kind.name === ref);
+	if (matches.length === 0 && ref.includes(".")) {
+		const dot = ref.indexOf(".");
+		const [name, repo] = [ref.slice(0, dot), ref.slice(dot + 1)];
+		matches = kinds.filter((kind) => kind.name === name && kind.source.name === repo);
+	}
+	if (matches.length > 1) {
+		const named = matches
+			.map((kind) => `${kind.name}.${kind.source.name} (${formatPath(kind.path)})`)
+			.join(", ");
+		throw new Error(`kind ${ref} is defined more than once in context: ${named}; name one`);
+	}
+	return matches[0];
+}
+
+const ajv = new Ajv2020({ allErrors: true, strict: false });
+const compiled = new Map<string, ValidateFunction | Error>();
+
+function describe(error: ErrorObject): string {
+	const extra =
+		error.keyword === "additionalProperties"
+			? ` (${String(error.params.additionalProperty)})`
+			: error.keyword === "enum"
+				? ` (${(error.params.allowedValues as unknown[]).join(", ")})`
+				: "";
+	return `${error.instancePath || "/"} ${error.message ?? error.keyword}${extra}`;
+}
+
+/** Path-qualified errors for `meta` against a kind's schema; none means valid. */
+export function validateMeta(kind: KindDoc, meta: unknown): string[] {
+	const key = `${kind.path}#${JSON.stringify(kind.meta.schema)}`;
+	let validate = compiled.get(key);
+	if (!validate) {
+		try {
+			validate = ajv.compile(kind.meta.schema as object);
+		} catch (err) {
+			validate = err instanceof Error ? err : new Error(String(err));
+		}
+		compiled.set(key, validate);
+	}
+	if (validate instanceof Error)
+		return [`kind ${kind.name} has an invalid schema: ${validate.message}`];
+	if (validate(meta ?? {})) return [];
+	return (validate.errors ?? []).map(describe);
+}
+
+/** Validates a doc's meta against its kind in context, or warns that nothing in context declares it. */
+export function checkDocMeta(
+	kinds: KindDoc[],
+	doc: { kind: string; meta: unknown },
+): { kind?: KindDoc; errors: string[]; warning?: string } {
+	const kind = resolveKind(kinds, doc.kind);
+	if (!kind)
+		return { errors: [], warning: `no kind ${doc.kind} in context; its meta is not validated` };
+	return { kind, errors: validateMeta(kind, doc.meta) };
+}
+
+/** `nosedive:<path>` is the package's; any other script belongs to the repo that declares the kind. */
+export function crudScriptPath(kind: KindDoc): string | undefined {
+	const script = kind.meta["crud-script"];
+	if (typeof script !== "string" || !script) return undefined;
+	return script.startsWith(NOSEDIVE_SCRIPT)
+		? join(packageRoot(), script.slice(NOSEDIVE_SCRIPT.length))
+		: join(kind.source.root, script);
+}
+
+/** Every zerostar `kind: kind` doc in a kb: the kinds that ship. */
+export function shippedKindFiles(kbDir: string): string[] {
+	return kindFiles(kbDir).filter((file) => isZerostar(basename(file, ".md")));
+}
+
+/**
+ * Copies the package's shipped kind docs into a bridge kb and returns every
+ * path it owns there. The package owns them: a copy that differs is replaced,
+ * so a bridge customises by declaring a kind of another name.
+ */
+export function copyShippedKinds(kbDir: string, io: { log(message: string): void }): string[] {
+	const packageKb = join(packageRoot(), "kb");
+	return shippedKindFiles(packageKb).map((file) => {
+		const text = readFileSync(join(packageKb, file), "utf8");
+		const path = join(kbDir, file);
+		if (!existsSync(path)) {
+			writeFileAtomic(path, text);
+			io.log(`Wrote ${formatPath(path)}`);
+		} else if (readFileSync(path, "utf8") !== text) {
+			writeFileAtomic(path, text);
+			io.log(`Replaced ${formatPath(path)}`);
+		}
+		return path;
+	});
+}

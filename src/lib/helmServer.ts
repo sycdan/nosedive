@@ -7,7 +7,9 @@ import { dirname } from "node:path";
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { helmContext, helmDeckRepos, helmDecks, helmDoc, helmKindDocs } from "./helm.js";
 import { helmPage } from "./helmPage.js";
-import { helmWrite, HelmRequestError } from "./helmWrites.js";
+import { helmDives } from "./helmDives.js";
+import { streamVerb } from "./helmRun.js";
+import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 
@@ -144,7 +146,11 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
 		const id = url.searchParams.get("id") ?? "";
 		try {
+			if (req.method === "POST" && url.pathname === "/api/run")
+				return streamVerb(cwd, await readJsonBody(req), res);
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));
+			if (url.pathname === "/api/dives")
+				return sendJson(res, helmDives(cwd, url.searchParams.get("q") || undefined));
 			if (req.method !== "GET") return sendJson(res, undefined);
 			if (url.pathname === "/api/decks") return sendJson(res, helmDecks(cwd));
 			if (url.pathname === "/api/deck-repos") return sendJson(res, helmDeckRepos(cwd, id));
@@ -158,6 +164,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 						url.searchParams.get("deck") ?? "",
 						url.searchParams.get("feat") || undefined,
 						url.searchParams.get("repo") || undefined,
+						url.searchParams.get("dive") || undefined,
 					),
 				);
 			if (url.pathname === "/api/kind-docs")

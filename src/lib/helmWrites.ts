@@ -54,7 +54,7 @@ function succeeded(run: CrudRun): CrudRun {
 	throw new HelmRequestError(400, message || `crud exited ${run.exitCode}`);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 	let text = "";
 	for await (const chunk of req) {
 		text += chunk;

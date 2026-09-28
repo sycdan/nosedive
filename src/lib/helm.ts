@@ -225,6 +225,7 @@ export function helmContext(
 	deckId: string,
 	featId?: string,
 	repoId?: string,
+	diveId?: string,
 ): HelmContext | undefined {
 	const { rc, docs } = bridgeDocs(cwd);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
@@ -232,7 +233,9 @@ export function helmContext(
 	if (!deck) return undefined;
 	const feat = featId ? byId.get(featId) : undefined;
 	if (featId && !feat) return undefined;
-	const scopes = feat ? inheritedScopes(feat, docs).scopes : deck.scopes;
+	// A staged or active dive narrows furthest: its scopes are what it will work on.
+	const dive = diveId ? byId.get(diveId) : undefined;
+	const scopes = dive ? dive.scopes : feat ? inheritedScopes(feat, docs).scopes : deck.scopes;
 	const inView = scopes
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");

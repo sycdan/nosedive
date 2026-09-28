@@ -112,18 +112,24 @@ try {
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
-	// A fresh seed writes exactly two kb docs: the backlog memo `backlog:` names,
-	// and the bridge's own `kind: repo` doc, so a new pilot has something to
-	// scope a dive to without first finding `record.repo`.
+	// A fresh seed writes exactly four kb docs: the backlog memo `backlog:` names,
+	// the bridge's own `kind: repo` doc, so a new pilot has something to scope a
+	// dive to without first finding `record.repo`, and the two kinds nosedive
+	// ships -- which only a packed install proves are in the tarball.
 	const seededKb = readdirSync(join(seedBridge, "kb"));
-	assert.equal(seededKb.length, 2, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	assert.equal(seededKb.length, 4, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	for (const shipped of [
+		"00000000-0000-70a0-90bd-1d49dc6264b9.md",
+		"00000000-0000-7d1f-805a-7d0a3bdff309.md",
+	])
+		assert.ok(seededKb.includes(shipped), `seed did not copy shipped kind ${shipped}`);
 	const seededKinds = seededKb
 		.map((entry) => /^kind: (\w+)$/m.exec(readFileSync(join(seedBridge, "kb", entry), "utf8"))?.[1])
 		.sort();
 	assert.deepEqual(
 		seededKinds,
-		["memo", "repo"],
-		"seed should write one backlog memo and one repo",
+		["kind", "kind", "memo", "repo"],
+		"seed should write one backlog memo, one repo and the shipped kinds",
 	);
 	assert.equal(
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),

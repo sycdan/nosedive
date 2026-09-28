@@ -108,7 +108,13 @@ export async function helmWrite(
 		return succeeded(
 			await runCrud(
 				cwd,
-				[...(repo ? ["--repo", repo] : []), text(body, "id")!, "--meta", "-"],
+				[
+					...(repo ? ["--repo", repo] : []),
+					text(body, "id")!,
+					"--meta",
+					"-",
+					...(body.replace === true ? ["--replace"] : []),
+				],
 				JSON.stringify(patch),
 			),
 		);

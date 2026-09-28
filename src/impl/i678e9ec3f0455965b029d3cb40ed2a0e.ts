@@ -7,7 +7,15 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
-import { findDocByQuid, matchDocs, mintDoc, updateMeta, type MintedDoc } from "../lib/crud.js";
+import {
+	BLOCKS,
+	findDocByQuid,
+	matchDocs,
+	mintDoc,
+	updateBlock,
+	type Block,
+	type MintedDoc,
+} from "../lib/crud.js";
 import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
 import {
 	kindSources,
@@ -20,14 +28,27 @@ import {
 import { printCommandHelp } from "../lib/packageBacklog.js";
 import { readStdinText } from "../lib/stdinText.js";
 
-const META_HINT = "--meta reads YAML from stdin: echo 'key: value' | nosedive crud <quid> --meta -";
+const hint = (block: Block) =>
+	`--${block} reads a merge patch from stdin: echo 'key: value' | nosedive crud <quid> --${block} -`;
 
-/** Removes `--meta -` from args; stdin is the only place meta is read from. */
-function takeMeta(args: string[]): boolean {
-	const at = args.indexOf("--meta");
-	if (at === -1) return false;
-	if (args[at + 1] !== "-") throw new Error(META_HINT);
+/** Removes `--meta -`, `--scopes -` or `--links -` from args; stdin is the only place a patch is read from. */
+function takeBlock(args: string[]): Block | undefined {
+	const named = BLOCKS.filter((block) => args.includes(`--${block}`));
+	if (named.length > 1)
+		throw new Error(`crud patches one block at a time: ${named.map((b) => `--${b}`).join(", ")}`);
+	const block = named[0];
+	if (!block) return undefined;
+	const at = args.indexOf(`--${block}`);
+	if (args[at + 1] !== "-") throw new Error(hint(block));
 	args.splice(at, 2);
+	return block;
+}
+
+/** Removes a bare `<flag>` from args, and says whether it was there. */
+function takeSwitch(args: string[], flag: string): boolean {
+	const at = args.indexOf(flag);
+	if (at === -1) return false;
+	args.splice(at, 1);
 	return true;
 }
 
@@ -47,7 +68,9 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		if (args.length === 0) io.setExitCode(1);
 		return;
 	}
-	const meta = takeMeta(args);
+	const block = takeBlock(args);
+	const replace = takeSwitch(args, "--replace");
+	if (replace && !block) throw new Error("--replace goes with --meta, --scopes or --links");
 	const name = takeFlag(args, "--name");
 	const repo = takeFlag(args, "--repo");
 	const sources =
@@ -60,27 +83,30 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, first);
 		if (!target) throw new Error(`no doc ${first} in context`);
-		if (!meta) {
+		if (!block) {
 			io.writeOut(readFileSync(target.path, "utf8"));
 			return;
 		}
-		const patch = parseYaml(readStdinText(META_HINT)) as unknown;
+		const patch = parseYaml(readStdinText(hint(block))) as unknown;
 		if (!patch || typeof patch !== "object" || Array.isArray(patch))
-			throw new Error("--meta reads a YAML mapping of meta keys from stdin");
+			throw new Error(`--${block} reads a YAML or JSON mapping from stdin`);
 		const kinds = loadKinds(sources);
 		const doc = readKbDoc(target.path, target.source.root);
 		const kind = resolveKind(kinds, doc.kind);
 		const script = kind ? postCrudScriptPath(kind) : undefined;
-		await updateMeta(
+		await updateBlock(
 			target,
 			kinds,
+			block,
 			patch as Record<string, unknown>,
+			replace,
 			io,
 			kind && script ? postCrudHook("update", script, kind, doc.gist, io, runtime) : undefined,
 		);
 		return;
 	}
-	if (meta) throw new Error("--meta updates a doc named by its quid: crud <quid> --meta -");
+	if (block)
+		throw new Error(`--${block} updates a doc named by its quid: crud <quid> --${block} -`);
 
 	const gist = rest.join(" ").trim();
 	if (!gist) throw new Error(`crud ${first} requires a gist`);

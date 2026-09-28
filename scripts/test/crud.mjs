@@ -386,6 +386,20 @@ test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching
 	assert.equal(readFileSync(path, "utf8"), text, "a refused merge writes nothing");
 	assert.equal(commits(bridge), before);
 
+	assertOk(run(["crud", id, "--meta", "-"], bridge, '{"topic": "json"}'), "a JSON patch failed");
+	assert.match(readFileSync(path, "utf8"), /^ {2}topic: json$/m, "JSON is read as YAML");
+
+	assertOk(
+		run(["crud", id, "--meta", "-", "--replace"], bridge, "topic: only\n"),
+		"--replace failed",
+	);
+	text = readFileSync(path, "utf8");
+	assert.match(
+		text,
+		/^meta:\n {2}topic: only\n---/m,
+		"--replace drops what the patch does not name",
+	);
+
 	const noValue = run(["crud", id, "--meta"], bridge, "");
 	assert.equal(noValue.status, 1);
 	assert.match(noValue.stderr, /--meta -/);
@@ -406,4 +420,95 @@ test("crud --meta puts a new meta block where KINGSMetaL order wants it", () => 
 		readFileSync(path, "utf8"),
 		`---\nkind: note\nid: ${id}\nname: linked\ngist: "Linked"\nmeta:\n  topic: order\nlinks:\n  - kb/${NOTE_KIND}.md\n---\n\n# Linked\n`,
 	);
+});
+
+test("crud --meta merges nested mappings key by key", () => {
+	const bridge = createBridge(tmp, "meta-nested");
+	const id = SPARE;
+	const path = join(bridge, "kb", `${id}.md`);
+	write(
+		path,
+		`---\nkind: loose\nid: ${id}\nname: nested\ngist: "Nested"\nmeta:\n  box:\n    keep: 1\n    drop: 2\n---\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "nested");
+	assertOk(
+		run(["crud", id, "--meta", "-"], bridge, "box: {drop: null, add: 3}\n"),
+		"nested merge failed",
+	);
+	assert.match(readFileSync(path, "utf8"), /^meta:\n {2}box:\n {4}keep: 1\n {4}add: 3\n---/m);
+});
+
+test("crud --scopes and --links patch one entry by its target, in KINGSMetaL order", () => {
+	const bridge = createBridge(tmp, "blocks");
+	const id = SPARE;
+	const path = join(bridge, "kb", `${id}.md`);
+	write(
+		join(bridge, "kb", `${CARDS_REPO}.md`),
+		`---\nkind: repo\nid: ${CARDS_REPO}\nname: cards\ngist: "Cards"\nmeta:\n  path: workspace/cards\n---\n`,
+	);
+	write(
+		path,
+		`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nmeta:\n  topic: x\n---\n\n# Plan\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "plan");
+	const read = () => readFileSync(path, "utf8");
+
+	assertOk(
+		run(["crud", id, "--scopes", "-"], bridge, "cards: {}\n"),
+		"adding a scope by repo name failed",
+	);
+	assert.match(
+		read(),
+		new RegExp(`gist: "Plan"\\nscopes:\\n {2}- ${CARDS_REPO}\\nmeta:`),
+		"bare, before meta",
+	);
+	assert.equal(subject(bridge), `crud(${id}): updated memo plan`);
+
+	assertOk(
+		run(["crud", id, "--scopes", "-"], bridge, `${CARDS_REPO}: {work-branch: work/cards}\n`),
+		"changing a scope failed",
+	);
+	assert.match(
+		read(),
+		new RegExp(`scopes:\\n {2}- ${CARDS_REPO}:\\n {6}work-branch: work/cards\\n`),
+	);
+
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, `${DIVE}: {rel: mtg.feat}\n`),
+		"linking a quid failed",
+	);
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, "https://example.com: {}\n"),
+		"linking a URL failed",
+	);
+	assert.match(
+		read(),
+		new RegExp(
+			`meta:\\n {2}topic: x\\nlinks:\\n {2}- kb/${DIVE}.md:\\n {6}rel: mtg.feat\\n {2}- https://example.com\\n---`,
+		),
+		"links last, a quid as its kb path, new entries after old",
+	);
+
+	assertOk(run(["crud", id, "--scopes", "-"], bridge, "cards: null\n"), "removing a scope failed");
+	assert.doesNotMatch(read(), /^scopes:/m, "an emptied block is removed");
+
+	assertOk(
+		run(["crud", id, "--links", "-", "--replace"], bridge, "https://example.org: {}\n"),
+		"--replace failed",
+	);
+	assert.match(read(), /^links:\n {2}- https:\/\/example\.org\n---/m);
+
+	const before = commits(bridge);
+	for (const [args, input, pattern] of [
+		[["--scopes", "-"], "nowhere: {}\n", /no repo named nowhere/],
+		[["--scopes", "-", "--links", "-"], "a: {}\n", /one block at a time/],
+		[["--replace"], "", /--replace goes with/],
+	]) {
+		const refused = run(["crud", id, ...args], bridge, input);
+		assert.equal(refused.status, 1, args.join(" "));
+		assert.match(refused.stderr, pattern);
+	}
+	assert.equal(commits(bridge), before, "a refused patch commits nothing");
 });

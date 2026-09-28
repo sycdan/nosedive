@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
-import { formatPath } from "./coreParsing.js";
+import { formatPath, uuidLike } from "./coreParsing.js";
 import { runGit } from "./gitProcess.js";
-import { readKbDoc, type KbDoc } from "./kbDocs.js";
+import { loadKbDocs, readKbDoc, type KbDoc } from "./kbDocs.js";
 import { checkDocMeta, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
+import { entriesToMapping, isMapping, mappingToEntries, mergePatch } from "./mergePatch.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { slugFromGist } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
@@ -156,32 +157,68 @@ async function hookThenCommit(
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
 const TOP_LEVEL_KEY = /^[^\s#]/;
 
+/** The frontmatter blocks crud writes, each ahead of the ones after it in KINGSMetaL order. */
+export const BLOCKS = ["scopes", "meta", "links"] as const;
+export type Block = (typeof BLOCKS)[number];
+
 /**
- * The frontmatter lines with the `meta:` block replaced by `block` (or
- * removed, when it is empty). A doc without meta gets it where KINGSMetaL
- * order puts it: before `links:`, or last. Every other line is left as it was.
+ * The frontmatter lines with the `key:` block replaced by `block` (or removed,
+ * when it is empty). A doc without one gets it where KINGSMetaL order puts
+ * it: before the first later block present, or last. Every other line is left
+ * as it was.
  */
-function withMetaBlock(lines: string[], block: string[]): string[] {
-	const start = lines.findIndex((line) => /^meta:/.test(line));
+function withBlock(lines: string[], key: Block, block: string[]): string[] {
+	const start = lines.findIndex((line) => line.startsWith(`${key}:`));
 	if (start !== -1) {
 		let end = start + 1;
 		while (end < lines.length && !TOP_LEVEL_KEY.test(lines[end]!)) end++;
 		return [...lines.slice(0, start), ...block, ...lines.slice(end)];
 	}
-	const links = lines.findIndex((line) => /^links:/.test(line));
-	const at = links === -1 ? lines.length : links;
+	const later = BLOCKS.slice(BLOCKS.indexOf(key) + 1)
+		.map((next) => lines.findIndex((line) => line.startsWith(`${next}:`)))
+		.filter((at) => at !== -1);
+	const at = later.length > 0 ? Math.min(...later) : lines.length;
 	return [...lines.slice(0, at), ...block, ...lines.slice(at)];
 }
 
 /**
- * Merges `patch` into a doc's meta -- a null value removes its key -- after
- * validating the result against the doc's kind, and rewrites only the meta
- * block. A doc whose kind is not in context is written with a warning.
+ * A patch's targets as the doc writes them: a scope names its repo by id, so
+ * a repo name is looked up in the doc's own kb; a link to a quid is the kb
+ * path of that doc.
  */
-export async function updateMeta(
+function patchTargets(block: Block, patch: Record<string, unknown>, target: CrudTarget) {
+	if (block === "meta") return patch;
+	const repos =
+		block === "scopes"
+			? loadKbDocs(target.source.kbDir, target.source.root).filter((doc) => doc.kind === "repo")
+			: [];
+	const kbRel = relative(target.source.root, target.source.kbDir).split("\\").join("/") || ".";
+	return Object.fromEntries(
+		Object.entries(patch).map(([key, value]) => {
+			if (block === "links")
+				return [uuidLike(key) ? `${kbRel}/${key.toLowerCase()}.md` : key, value];
+			if (uuidLike(key)) return [key.toLowerCase(), value];
+			const repo = repos.find((doc) => doc.name === key);
+			if (!repo) throw new Error(`no repo named ${key} in ${formatPath(target.source.kbDir)}`);
+			return [repo.id, value];
+		}),
+	);
+}
+
+/**
+ * Applies `patch` to one frontmatter block of a doc and rewrites only that
+ * block. The patch is a JSON Merge Patch (RFC 7386): keys merge recursively
+ * and a null removes one. `scopes` and `links` are patched as mappings keyed
+ * by target, so one entry is added, changed or removed by naming it. With
+ * `replace`, the patch is the whole new block. A doc's meta is validated
+ * against its kind first; a kind not in context writes with a warning.
+ */
+export async function updateBlock(
 	target: CrudTarget,
 	kinds: KindDoc[],
+	block: Block,
 	patch: Record<string, unknown>,
+	replace: boolean,
 	io: { log(message: string): void; err(message: string): void },
 	afterWrite?: (doc: MintedDoc) => Promise<void>,
 ): Promise<void> {
@@ -192,33 +229,41 @@ export async function updateMeta(
 	const kindName = String(fm.kind ?? "");
 	const id = String(fm.id ?? "");
 	const name = String(fm.name ?? id);
-	const current = fm.meta ?? {};
-	if (typeof current !== "object" || Array.isArray(current))
-		throw new Error(`${formatPath(target.path)} has a meta that is not a mapping`);
-	const merged: Record<string, unknown> = { ...(current as Record<string, unknown>) };
-	for (const [key, value] of Object.entries(patch)) {
-		if (value === null) delete merged[key];
-		else merged[key] = value;
+	const where = formatPath(target.path);
+	const current =
+		block === "meta" ? (fm.meta ?? {}) : entriesToMapping(fm[block], `${where} ${block}`);
+	if (!isMapping(current)) throw new Error(`${where} has a meta that is not a mapping`);
+	const targets = patchTargets(block, patch, target);
+	const merged = (replace ? mergePatch({}, targets) : mergePatch(current, targets)) as Record<
+		string,
+		unknown
+	>;
+
+	let kind: KindDoc | undefined;
+	if (block === "meta") {
+		const checked = checkDocMeta(kinds, { kind: kindName, meta: merged });
+		if (checked.errors.length > 0)
+			throw new Error(`the ${kindName} meta would not validate:\n  ${checked.errors.join("\n  ")}`);
+		if (checked.warning) io.err(checked.warning);
+		kind = checked.kind;
 	}
 
-	const { kind, errors, warning } = checkDocMeta(kinds, { kind: kindName, meta: merged });
-	if (errors.length > 0)
-		throw new Error(`the ${kindName} meta would not validate:\n  ${errors.join("\n  ")}`);
-	if (warning) io.err(warning);
-
-	const block =
+	const value = block === "meta" ? merged : mappingToEntries(merged, block);
+	const lines =
 		Object.keys(merged).length === 0
 			? []
-			: stringifyYaml({ meta: merged }, { lineWidth: 0 }).replace(/\n$/, "").split("\n");
-	const yaml = withMetaBlock(match[1]!.split(/\r?\n/), block).join("\n");
+			: stringifyYaml({ [block]: value }, { lineWidth: 0 })
+					.replace(/\n$/, "")
+					.split("\n");
+	const yaml = withBlock(match[1]!.split(/\r?\n/), block, lines).join("\n");
 	const next = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
 	if (next === text) {
-		io.log(`Unchanged ${formatPath(target.path)}`);
+		io.log(`Unchanged ${where}`);
 		return;
 	}
 	const before = dirtyState(target.source.root);
 	writeFileAtomic(target.path, next);
-	io.log(`Updated ${formatPath(target.path)}`);
+	io.log(`Updated ${where}`);
 	await hookThenCommit(
 		target.source.root,
 		before,

@@ -39,6 +39,8 @@ export { readKbDocById } from "./lib/kbDocs.js";
 export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 // Exported so every accepted spelling of `decks:` is tested without a bridge per form.
 export { parseDecks } from "./lib/decks.js";
+// Exported so the merge is tested against RFC 7386's own examples.
+export { mergePatch } from "./lib/mergePatch.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

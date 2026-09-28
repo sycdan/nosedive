@@ -231,7 +231,8 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 			verdict));
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: { schema: build() } });
+			const meta = Object.assign({}, kindDoc.meta, { schema: build() });
+			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: meta, replace: true });
 			refreshGroups();
 			rerender(outputBox(run.stdout));
 		} catch (err) {

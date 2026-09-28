@@ -154,7 +154,11 @@ test("with no dive kinds are the bridge's; on a dive only the scoped repos'", ()
 		[repoA, CARD_A],
 		[repoB, CARD_B],
 	]) {
-		write(join(repo.source, "kb", `${id}.md`), kindDoc(id, "card", CARD_META));
+		// repo-b is installed and keeps its kb where its own nosedive config says.
+		const kb = repo === repoB ? "notes" : "kb";
+		if (repo === repoB)
+			write(join(repo.source, ".nosedive", "config.yaml"), "compatibility-level: 2\nkb: ./notes\n");
+		write(join(repo.source, kb, `${id}.md`), kindDoc(id, "card", CARD_META));
 		runTool("git", ["add", "."], repo.source);
 		gitCommit(repo.source, "card kind");
 		runTool("git", ["push", "cloud", "main"], repo.source);

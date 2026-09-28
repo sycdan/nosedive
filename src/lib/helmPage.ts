@@ -327,8 +327,9 @@ async function showKind(kind, path, row, message) {
 				el("button", { class: "linkish", onclick: () => select([...path, { id: d.id, name: d.name, kind: kind.name, repo: kind.repoId, kindRef: kind }]) }, d.gist || d.name),
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
-		const form = mintForm(kind, (msg) => showKind(kind, path, row, msg));
-		view.replaceChildren(...[form, message, list].filter(Boolean), ...docBody(doc, false));
+		const rerender = (msg) => showKind(kind, path, row, msg);
+		const form = mintForm(kind, rerender);
+		view.replaceChildren(...[form, message, list].filter(Boolean), schemaEditor(kind, doc, path, rerender), ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 

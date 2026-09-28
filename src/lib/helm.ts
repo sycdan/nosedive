@@ -5,6 +5,7 @@ import { Marked } from "marked";
 
 import { configuredDecks } from "./decks.js";
 import { inheritedScopes } from "./diveScopes.js";
+import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
 import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
@@ -262,6 +263,26 @@ export function helmContext(
 		inCrudContext: reach.has(kind.source.id),
 	}));
 	return { repos, kinds, unreadable };
+}
+
+/**
+ * Which docs of a kind a proposed schema would reject, before it is saved:
+ * the breakage a schema edit costs, shown while it can still be reconsidered.
+ */
+export function helmKindCheck(
+	cwd: string,
+	repoId: string,
+	kindId: string,
+	schema: unknown,
+): { failures: InstanceFailure[] } | undefined {
+	const { rc, docs } = bridgeDocs(cwd);
+	const repo = docs.find((doc) => doc.id === repoId && doc.kind === "repo");
+	const source = repo ? readableSource(rc, repo) : undefined;
+	const kind = source
+		? loadKinds([source]).find((candidate) => candidate.id === kindId)
+		: undefined;
+	if (!kind) return undefined;
+	return { failures: instanceFailures({ ...kind, meta: { ...kind.meta, schema } }) };
 }
 
 /** The docs of one kind in one repo's kb. */

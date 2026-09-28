@@ -348,6 +348,26 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 	assert.equal(cardKind.kind, "kind");
 	assert.equal(cardKind.name, "card");
 	assert.equal(cardKind.meta.schema.type, "object", "a doc carries its meta, for the page's forms");
+	// A proposed schema is checked against every instance before it is saved.
+	const check = async (schema) => {
+		const res = await fetch(new URL("/api/kind-check", base), {
+			method: "POST",
+			headers: { "x-helm-token": token, "content-type": "application/json" },
+			body: JSON.stringify({ repo: HYDRATED, kind: CARD_KIND, schema }),
+		});
+		assert.equal(res.status, 200);
+		return res.json();
+	};
+	const open = {
+		type: "object",
+		additionalProperties: false,
+		properties: { x: { type: "string" } },
+	};
+	assert.deepEqual((await check(open)).failures, [], "an optional field strands nothing");
+	const strict = await check({ ...open, required: ["x"] });
+	assert.deepEqual(strict.failures.map((f) => f.id).sort(), [CARD_1, CARD_2].sort());
+	assert.match(strict.failures[0].errors[0], /required property 'x'/);
+
 	const cards = await get(`/api/kind-docs?repo=${HYDRATED}&kind=card`);
 	assert.deepEqual(cards.map((doc) => doc.id).sort(), [CARD_1, CARD_2].sort());
 

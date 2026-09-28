@@ -135,5 +135,16 @@ pre.output.streaming { border-left-color: var(--accent); }
 pre.output { max-height: 70vh; overflow: auto; }
 .cardacts { display: flex; gap: 6px; }
 .cardacts form.make { margin: 0; }
+form.schema fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 16px; }
+form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
+.schemarow { display: grid; grid-template-columns: 1.2fr .9fr auto 1.4fr .6fr .6fr 1fr auto; gap: 6px; align-items: center; margin: 0 0 6px; }
+.schemarow input, .schemarow select { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 5px; min-width: 0;
+	border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.schemarow label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.schemaacts { display: flex; gap: 8px; align-items: center; margin: 8px 0 0; }
+.schemaacts button:not(.linkish) { font: inherit; padding: 5px 12px; border-radius: 6px; border: 0; cursor: pointer; background: var(--accent); color: #fff; }
+.verdict { margin-top: 8px; font-size: 13px; }
+.verdict .ok { color: var(--ok); }
+.breaks ul { margin: 6px 0 0; padding-left: 18px; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
 `;

@@ -5,7 +5,14 @@ import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { helmContext, helmDeckRepos, helmDecks, helmDoc, helmKindDocs } from "./helm.js";
+import {
+	helmContext,
+	helmDeckRepos,
+	helmDecks,
+	helmDoc,
+	helmKindCheck,
+	helmKindDocs,
+} from "./helm.js";
 import { helmPage } from "./helmPage.js";
 import { helmDives } from "./helmDives.js";
 import { streamVerb } from "./helmRun.js";
@@ -146,6 +153,13 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
 		const id = url.searchParams.get("id") ?? "";
 		try {
+			if (req.method === "POST" && url.pathname === "/api/kind-check") {
+				const body = await readJsonBody(req);
+				return sendJson(
+					res,
+					helmKindCheck(cwd, String(body.repo ?? ""), String(body.kind ?? ""), body.schema),
+				);
+			}
 			if (req.method === "POST" && url.pathname === "/api/run")
 				return streamVerb(cwd, await readJsonBody(req), res);
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));

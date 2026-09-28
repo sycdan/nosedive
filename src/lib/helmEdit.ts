@@ -155,4 +155,89 @@ function cardActions(repo) {
 	box.append(open);
 	return box;
 }
+
+// --- kind schema ------------------------------------------------------------
+
+const FIELD_TYPES = ["string", "number", "integer", "boolean"];
+
+function schemaRow(name, spec, required, rows) {
+	const input = (attrs, value) => { const node = el("input", attrs); node.value = value == null ? "" : String(value); return node; };
+	const key = input({ type: "text", placeholder: "field", "aria-label": "field name" }, name);
+	const type = el("select", { "aria-label": "type" }, FIELD_TYPES.map((t) => el("option", { value: t }, t)));
+	type.value = FIELD_TYPES.includes(spec.type) ? spec.type : "string";
+	const must = el("input", { type: "checkbox", "aria-label": "required" });
+	must.checked = required;
+	const choices = input({ type: "text", placeholder: "enum: a, b", "aria-label": "allowed values" }, (spec.enum || []).join(", "));
+	const min = input({ type: "number", placeholder: "min", "aria-label": "minimum" }, spec.minimum);
+	const max = input({ type: "number", placeholder: "max", "aria-label": "maximum" }, spec.maximum);
+	const pattern = input({ type: "text", placeholder: "pattern", "aria-label": "pattern" }, spec.pattern);
+	const row = el("div", { class: "schemarow" }, key, type, el("label", {}, must, " req"), choices, min, max, pattern,
+		el("button", { type: "button", class: "linkish", onclick: () => { rows.splice(rows.indexOf(entry), 1); row.remove(); } }, "remove"));
+	const entry = { row, read() {
+		const out = { type: type.value };
+		const numeric = type.value === "number" || type.value === "integer";
+		const values = choices.value.split(",").map((v) => v.trim()).filter(Boolean);
+		if (values.length) out.enum = numeric ? values.map(Number) : values;
+		if (numeric && min.value !== "") out.minimum = Number(min.value);
+		if (numeric && max.value !== "") out.maximum = Number(max.value);
+		if (!numeric && pattern.value.trim()) out.pattern = pattern.value.trim();
+		return { name: key.value.trim(), spec: out, required: must.checked };
+	} };
+	return entry;
+}
+
+/** The kind's schema as editable rows; Check shows what it would strand, Save runs crud on the kind doc. */
+function schemaEditor(kind, kindDoc, path, rerender) {
+	const schema = (kindDoc.meta && kindDoc.meta.schema) || {};
+	const required = schema.required || [];
+	const rows = [];
+	const list = el("div", { class: "schemarows" });
+	const add = (name, spec) => { const entry = schemaRow(name, spec || {}, required.includes(name), rows); rows.push(entry); list.append(entry.row); };
+	for (const [name, spec] of Object.entries(schema.properties || {})) add(name, spec);
+	const verdict = el("div", { class: "verdict" });
+	const build = () => {
+		const next = { type: "object", additionalProperties: false, properties: {} };
+		const must = [];
+		for (const entry of rows) {
+			const field = entry.read();
+			if (!field.name) continue;
+			next.properties[field.name] = field.spec;
+			if (field.required) must.push(field.name);
+		}
+		if (must.length) next.required = must;
+		return next;
+	};
+	const check = async () => {
+		const result = await (await fetch("/api/kind-check", {
+			method: "POST",
+			headers: { "x-helm-token": token, "content-type": "application/json" },
+			body: JSON.stringify({ repo: kind.repoId, kind: kind.id, schema: build() }),
+		})).json();
+		const failures = result.failures || [];
+		verdict.replaceChildren(failures.length
+			? el("div", { class: "breaks" }, el("strong", {}, failures.length + " " + kind.name + " doc(s) would fail this schema:"),
+				el("ul", {}, failures.map((f) => el("li", {},
+					el("button", { class: "linkish", onclick: () => select([...path, { id: f.id, name: f.gist || f.id, kind: kind.name, repo: kind.repoId, kindRef: kind }]) }, f.gist || f.id),
+					" ", el("span", { class: "rel" }, f.errors.join("; "))))))
+			: el("span", { class: "ok" }, "Every " + kind.name + " doc fits this schema."));
+		return failures.length;
+	};
+	const form = el("form", { class: "schema", title: kind.inCrudContext ? null : OUT_OF_REACH },
+		el("fieldset", { disabled: kind.inCrudContext ? null : "" }, el("legend", {}, "schema"), list,
+			el("div", { class: "schemaacts" },
+				el("button", { type: "button", class: "linkish", onclick: () => add("", { type: "string" }) }, "+ field"),
+				el("button", { type: "button", onclick: () => check().catch(showError) }, "Check"),
+				el("button", { type: "submit" }, "Save schema")),
+			verdict));
+	onSubmit(form, async () => {
+		try {
+			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: { schema: build() } });
+			refreshGroups();
+			rerender(outputBox(run.stdout));
+		} catch (err) {
+			rerender(outputBox(String(err.message || err), true));
+		}
+	});
+	return form;
+}
 `;

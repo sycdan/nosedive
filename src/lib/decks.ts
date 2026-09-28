@@ -1,8 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parseDocument } from "yaml";
+
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
-import { parseYamlBlock, readNosediveRc, uuidLike, type NosediveRc } from "./coreParsing.js";
+import { gistSlug } from "./crud.js";
+import {
+	baseConfigPath,
+	formatPath,
+	parseYamlBlock,
+	readNosediveRc,
+	uuidLike,
+	type NosediveRc,
+} from "./coreParsing.js";
 import { namespacedUuid } from "./namespacedUuid.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { titleFromSlug } from "./slugs.js";
@@ -54,6 +64,41 @@ function renderDeckDoc(id: string, tag: string, title: string): string {
 		`# ${title}`,
 		"",
 	].join("\n");
+}
+
+/**
+ * Mints a deck from a gist in the bridge at `root` -- what `crud deck` runs,
+ * through the deck kind's crud-script: the gist's slug is the tag, the doc sits at the tag's
+ * deterministic id, and the tag joins `decks:` unless it is listed already,
+ * all in one commit. With no `decks:` yet the backlog is written in first,
+ * because an absent `decks:` means the backlog is the one deck.
+ */
+export function makeDeck(root: string, gist: string, io: { log(message: string): void }): string {
+	const tag = gistSlug(gist);
+	// The deck kind resolved from this repo, so this repo is where the deck
+	// goes -- never a bridge found by walking up from it.
+	if (!existsSync(baseConfigPath(root)))
+		throw new Error(`a deck lives in a bridge, and ${formatPath(root)} is not a nosedive bridge`);
+	const rc = readNosediveRc(root);
+	if (!rc.kbDir) throw new Error("decks require a configured kb directory");
+	const id = deckId(rc, tag);
+	const path = join(rc.kbDir, `${id}.md`);
+	if (existsSync(path)) throw new Error(`deck ${tag} already exists: ${formatPath(path)}`);
+
+	const decks = configuredDecks(rc);
+	const listed = decks.includes(tag);
+	if (!listed) {
+		const config = parseDocument(readFileSync(rc.path, "utf8"));
+		// Written as a comma string whatever form it was read in: `seed` carries
+		// over the config keys it does not own only when they are scalars.
+		config.set("decks", [...decks, tag].join(", "));
+		writeFileAtomic(rc.path, String(config));
+	}
+	const title = gist.trim() === tag ? titleFromSlug(tag) : gist.trim();
+	writeFileAtomic(path, renderDeckDoc(id, tag, title));
+	io.log(`Minted ${formatPath(path)}`);
+	commitBridgeDocs(rc.bridgeDir, `deck(${tag}): created`, listed ? [path] : [path, rc.path], io);
+	return id;
 }
 
 /** Writes and commits the doc of every configured tag that has none. */

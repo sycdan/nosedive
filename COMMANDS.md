@@ -54,6 +54,19 @@ Abandon the active dive -- delete it if never committed, else record the reason 
 More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 ```
 
+#### [Crud](kb/db6ef67b-dd5f-53a5-bc38-df18628db92b.md)
+
+```sh
+npx -y nosedive@2026.9.18-1789698885570 crud --help
+```
+```md
+Usage: nosedive crud <kind> <gist...> | nosedive crud <quid>
+
+Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
+
+More: nosedive render db6ef67b-dd5f-53a5-bc38-df18628db92b
+```
+
 #### [Dehydrate repo](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md)
 
 ```sh

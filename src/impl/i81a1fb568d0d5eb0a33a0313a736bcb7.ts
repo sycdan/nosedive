@@ -1,17 +1,16 @@
 import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
-import { makeDeck } from "../lib/decks.js";
+import { listDeck } from "../lib/decks.js";
 
 /**
- * The deck kind's crud-script mints through this: `--root <repo>` is the repo
- * the deck kind resolved from, an optional `--name <tag>` names it, and the
- * remaining words are its gist.
+ * The deck kind's post-crud-script calls this once crud has minted a deck:
+ * `--root <repo>` is the repo the deck kind resolved from, `--id` the new deck.
  */
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
 	return captureCommand((commandArgs, io) => {
-		const [flag, root, ...rest] = commandArgs;
-		if (flag !== "--root" || !root) throw new Error("the deck crud impl needs --root <repo>");
-		const named = rest[0] === "--name";
-		makeDeck(root, rest.slice(named ? 2 : 0).join(" "), io, named ? rest[1] : undefined);
+		const [rootFlag, root, idFlag, id] = commandArgs;
+		if (rootFlag !== "--root" || !root || idFlag !== "--id" || !id)
+			throw new Error("the deck post-crud impl needs --root <repo> --id <deck>");
+		listDeck(root, id, io);
 	}, args);
 }

@@ -5,9 +5,16 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
-import { findDocByQuid, matchDocs, mintDoc } from "../lib/crud.js";
+import { findDocByQuid, matchDocs, mintDoc, type MintedDoc } from "../lib/crud.js";
 import { readActiveDiveId } from "../lib/kbDocs.js";
-import { crudScriptPath, kindSources, loadKinds, resolveKind, selectRepo } from "../lib/kinds.js";
+import {
+	kindSources,
+	loadKinds,
+	postCrudScriptPath,
+	resolveKind,
+	selectRepo,
+	type KindDoc,
+} from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
 
 /** Removes `<flag> <value>` from args, wherever it sits, and returns the value. */
@@ -65,22 +72,43 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 				matches.map((match) => `${match.id} (${match.name})`).join(", "),
 		);
 
-	const script = crudScriptPath(kind);
-	if (!script) {
-		mintDoc(kind, gist, io, name);
-		return;
-	}
-	// A kind that mints its own way gets what a command adapter gets.
-	const mod = (await import(pathToFileURL(script).href)) as Record<string, unknown>;
-	if (typeof mod.crud !== "function")
-		throw new Error(`crud-script of kind ${kind.name} must export crud(value, ctx): ${script}`);
-	const result = (await mod.crud(
-		{ args: rest, kind: kind.name, gist, name, root: kind.source.root },
-		{ cwd: process.cwd(), impl: runtime.impl },
-	)) as ImplCommandOutput;
-	if (result.stdout) io.writeOut(result.stdout);
-	if (result.stderr) io.writeErr(result.stderr);
-	if (result.exitCode !== 0) io.setExitCode(result.exitCode);
+	const script = postCrudScriptPath(kind);
+	await mintDoc(
+		kind,
+		gist,
+		io,
+		name,
+		script ? postCrudHook(script, kind, gist, io, runtime) : undefined,
+	);
+}
+
+/**
+ * A kind's post-crud-script, told what crud just did so it can decide whether
+ * to act, and handed what a command adapter gets. A throw or a nonzero exit
+ * fails the crud.
+ */
+function postCrudHook(
+	script: string,
+	kind: KindDoc,
+	gist: string,
+	io: CommandIo,
+	runtime: ImplRuntime,
+): (doc: MintedDoc) => Promise<void> {
+	return async (doc) => {
+		const mod = (await import(pathToFileURL(script).href)) as Record<string, unknown>;
+		if (typeof mod.postCrud !== "function")
+			throw new Error(
+				`post-crud-script of kind ${kind.name} must export postCrud(value, ctx): ${script}`,
+			);
+		const result = (await mod.postCrud(
+			{ action: "create", kind: kind.name, gist, doc, root: kind.source.root },
+			{ cwd: process.cwd(), impl: runtime.impl },
+		)) as ImplCommandOutput | undefined;
+		if (result?.stdout) io.writeOut(result.stdout);
+		if (result?.stderr) io.writeErr(result.stderr);
+		if (result && result.exitCode !== 0)
+			throw new Error(`post-crud-script of kind ${kind.name} exited ${result.exitCode}`);
+	};
 }
 
 export function run(args: string[], runtime: ImplRuntime): Promise<ImplCommandOutput> {

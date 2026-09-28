@@ -167,8 +167,8 @@ export function checkDocMeta(
 }
 
 /** `nosedive:<path>` is the package's; any other script belongs to the repo that declares the kind. */
-export function crudScriptPath(kind: KindDoc): string | undefined {
-	const script = kind.meta["crud-script"];
+export function postCrudScriptPath(kind: KindDoc): string | undefined {
+	const script = kind.meta["post-crud-script"];
 	if (typeof script !== "string" || !script) return undefined;
 	return script.startsWith(NOSEDIVE_SCRIPT)
 		? join(packageRoot(), script.slice(NOSEDIVE_SCRIPT.length))

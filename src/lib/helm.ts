@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 
 import { Marked } from "marked";
 
-import { configuredDecks, deckId, ensureTagDecks } from "./decks.js";
+import { configuredDecks } from "./decks.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
@@ -138,10 +138,9 @@ export function helmDecks(cwd: string): {
 	const { rc, docs } = bridgeDocs(cwd);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
-	const decks = configuredDecks(rc).map((entry) => {
-		const id = deckId(rc, entry);
+	const decks = configuredDecks(rc).map((id) => {
 		const doc = byId.get(id);
-		if (!doc) return { id, name: entry, kind: "missing", gist: `no kb doc ${id}` };
+		if (!doc) return { id, name: id, kind: "missing", gist: `no kb doc ${id}` };
 		return { id, name: doc.name, kind: doc.kind, gist: doc.gist };
 	});
 	return { bridge: { id: rc.bridge, name: bridgeDoc?.name ?? basename(rc.bridgeDir) }, decks };
@@ -308,11 +307,7 @@ function helmToken(rc: NosediveRc): string {
  * the bound address as its Host: helm writes files and pushes, so a page on
  * any other site must not be able to drive it, DNS rebinding included.
  */
-export async function startHelmServer(
-	cwd: string,
-	io: { log(message: string): void },
-): Promise<HelmServer> {
-	ensureTagDecks(cwd, io);
+export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	const rc = readNosediveRc(cwd);
 	const token = helmToken(rc);
 	// Changes on every launch; an open page that sees a new one reloads itself.

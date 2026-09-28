@@ -1,8 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { formatPath } from "./coreParsing.js";
+import { runGit } from "./gitProcess.js";
 import { readKbDoc, type KbDoc } from "./kbDocs.js";
 import { validateMeta, type KindDoc, type KindSource } from "./kinds.js";
 import { writeFileAtomic } from "./renderPlan.js";
@@ -18,8 +20,9 @@ export interface CrudMatch {
 }
 
 /**
- * A gist names a doc by its gist, ignoring case, or by the slug it makes --
- * which finds a doc somebody named by hand.
+ * A gist names a doc whose gist makes the same slug -- so case and
+ * punctuation do not matter -- or whose name is that slug, which finds a doc
+ * somebody named by hand.
  */
 export function gistSlug(gist: string): string {
 	const slug = slugFromGist(gist, 60);
@@ -45,9 +48,8 @@ function docsOfKind(kind: KindDoc): KbDoc[] {
 /** Docs of a kind, in the kb of the repo that defines it, that a gist names. */
 export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
 	const slug = gistSlug(gist);
-	const text = gist.trim().toLowerCase();
 	return docsOfKind(kind)
-		.filter((doc) => doc.name === slug || doc.gist.trim().toLowerCase() === text)
+		.filter((doc) => doc.name === slug || slugFromGist(doc.gist, 60) === slug)
 		.map((doc) => ({ id: doc.id, name: doc.name, path: doc.path }));
 }
 
@@ -59,13 +61,18 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * among the docs of its kind in that repo.
  * The new doc's meta is validated first, so a kind that requires meta refuses
  * a bare mint rather than committing a doc it would reject.
+ *
+ * `afterWrite` is the kind's post-crud-script, run once the doc is on disk.
+ * Whatever it changes in the repo joins the doc's commit; if it fails, the doc
+ * is removed and nothing is committed.
  */
-export function mintDoc(
+export async function mintDoc(
 	kind: KindDoc,
 	gist: string,
 	io: { log(message: string): void },
 	name?: string,
-): string {
+	afterWrite?: (doc: MintedDoc) => Promise<void>,
+): Promise<string> {
 	gistSlug(gist); // refuses a gist with nothing in it
 	if (name !== undefined) {
 		if (!NAME.test(name))
@@ -83,6 +90,8 @@ export function mintDoc(
 	const id = uuid7AtMs(Date.now());
 	const path = join(kind.source.kbDir, `${id}.md`);
 	const title = gist.trim();
+	const root = kind.source.root;
+	const before = dirtyState(root);
 	writeFileAtomic(
 		path,
 		[
@@ -98,8 +107,50 @@ export function mintDoc(
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	commitBridgeDocs(kind.source.root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path], io);
+	if (afterWrite) {
+		try {
+			await afterWrite({ id, name: name ?? id, path });
+		} catch (err) {
+			rmSync(path, { force: true });
+			throw err;
+		}
+	}
+	const touched = [...dirtyState(root)]
+		.filter(([file, hash]) => before.get(file) !== hash)
+		.map(([file]) => join(root, file));
+	commitBridgeDocs(root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path, ...touched], io);
 	return id;
+}
+
+/**
+ * Every path git sees as changed or untracked in a repo, with a hash of what
+ * is on disk now, so what a hook changed can be told from what was already
+ * dirty before it ran.
+ */
+function dirtyState(root: string): Map<string, string> {
+	const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+	const state = new Map<string, string>();
+	const entries = status.stdout.split("\0").filter(Boolean);
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i]!;
+		// A rename carries its old path as the next entry.
+		if (entry[0] === "R" || entry[0] === "C") i++;
+		const file = entry.slice(3);
+		const absolute = join(root, file);
+		state.set(
+			file,
+			existsSync(absolute)
+				? createHash("sha1").update(readFileSync(absolute)).digest("hex")
+				: "gone",
+		);
+	}
+	return state;
+}
+
+export interface MintedDoc {
+	id: string;
+	name: string;
+	path: string;
 }
 
 /** The doc with this id in the first kb in context that holds one. */

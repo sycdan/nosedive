@@ -5,7 +5,6 @@ import { Script } from "node:vm";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { namespacedUuid } from "../command-identifiers.mjs";
 import {
 	assertOk,
 	cli,
@@ -21,9 +20,9 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("helm");
-const minted = run(["mint", "6"], tmp);
+const minted = run(["mint", "7"], tmp);
 assertOk(minted, "mint failed");
-const [BACKLOG, BRIDGE_REPO, HYDRATED, INSTALLED, UNLISTED, FEAT] = minted.stdout
+const [BACKLOG, BRIDGE_REPO, HYDRATED, INSTALLED, UNLISTED, FEAT, IDEAS] = minted.stdout
 	.trim()
 	.split(/\r?\n/);
 const { parseDecks } = await import(libUrl);
@@ -95,7 +94,11 @@ function fixture() {
 		].join("\n"),
 	);
 	const config = join(bridge, ".nosedive", "config.yaml");
-	write(config, `${readFileSync(config, "utf8")}decks: ${BACKLOG}, ideas\n`);
+	write(config, `${readFileSync(config, "utf8")}decks: ${BACKLOG}, ${IDEAS}\n`);
+	write(
+		join(bridge, "kb", `${IDEAS}.md`),
+		`---\nkind: deck\nid: ${IDEAS}\nname: ideas\ngist: "Ideas"\n---\n\n# Ideas\n`,
+	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
 	assertOk(run(["hydrate-repo.workspace", HYDRATED], bridge), "hydrate failed");
@@ -130,11 +133,11 @@ function startHelm(cwd) {
 }
 
 test("helm decks: config forms, missing means the backlog", () => {
-	assert.deepEqual(parseDecks("a, b,c", BACKLOG), ["a", "b", "c"]);
-	assert.deepEqual(parseDecks(["a", "b"], BACKLOG), ["a", "b"]);
+	assert.deepEqual(parseDecks(`${FEAT}, ${IDEAS},${BACKLOG}`, BACKLOG), [FEAT, IDEAS, BACKLOG]);
+	assert.deepEqual(parseDecks([FEAT, IDEAS], BACKLOG), [FEAT, IDEAS]);
 	assert.deepEqual(parseDecks(undefined, BACKLOG), [BACKLOG]);
 	assert.deepEqual(parseDecks(undefined, undefined), []);
-	assert.throws(() => parseDecks("Not A Slug", BACKLOG), /deck tag/);
+	assert.throws(() => parseDecks("ideas", BACKLOG), /decks lists doc ids/);
 });
 
 test("helm serves decks as a link tree over a token-guarded API", async (t) => {
@@ -167,24 +170,13 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		"api with wrong token",
 	);
 
-	// A tag deck is created at a deterministic id and committed on startup.
-	const ideas = namespacedUuid(BRIDGE_REPO, "ideas");
-	const ideasText = readFileSync(join(bridge, "kb", `${ideas}.md`), "utf8");
-	assert.match(ideasText, /^kind: deck$/m);
-	assert.match(ideasText, /^name: ideas$/m);
-	assert.equal(
-		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim(),
-		"deck(ideas): created",
-	);
-	assert.equal(runTool("git", ["status", "--porcelain", "kb"], bridge).stdout.trim(), "");
-
 	const { bridge: bridgeInfo, decks } = await get("/api/decks");
 	assert.deepEqual(bridgeInfo, { id: BRIDGE_REPO, name: "bridge" });
 	assert.deepEqual(
 		decks.map((deck) => [deck.id, deck.name]),
 		[
 			[BACKLOG, "backlog"],
-			[ideas, "ideas"],
+			[IDEAS, "ideas"],
 		],
 	);
 
@@ -205,7 +197,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.equal(hydratedCard.nosedive, null, "no config file means not installed");
 	assert.equal(installedCard.hydrated, null);
 	assert.deepEqual(installedCard.nosedive, { level: 1 }, "read from trunk without hydrating");
-	assert.deepEqual(await get(`/api/deck-repos?id=${ideas}`), []);
+	assert.deepEqual(await get(`/api/deck-repos?id=${IDEAS}`), []);
 
 	const backlog = await get(`/api/doc?id=${BACKLOG}`);
 	assert.deepEqual(
@@ -241,7 +233,6 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {
 	const bridge = join(tmp, "bridge");
-	const commits = runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout;
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
 	const base = await url;
@@ -260,11 +251,6 @@ test("helm refuses a request whose Host is not the address it bound", async (t) 
 		req.end();
 	});
 	assert.equal(status, 403);
-	assert.equal(
-		runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout,
-		commits,
-		"an existing tag deck is not recreated",
-	);
 });
 
 /** Reads server-sent events off a helm stream, one `{ event, data }` at a time. */

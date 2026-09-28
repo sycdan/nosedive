@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { namespacedUuid } from "../command-identifiers.mjs";
 import {
 	assertOk,
 	createBridge,
@@ -19,9 +18,9 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("crud");
-const minted = run(["mint", "6"], tmp);
+const minted = run(["mint", "7"], tmp);
 assertOk(minted, "mint failed");
-const [NOTE_KIND, NEEDY_KIND, CARD_KIND, CARDS_REPO, DIVE, SPARE] = minted.stdout
+const [NOTE_KIND, NEEDY_KIND, CARD_KIND, CARDS_REPO, DIVE, SPARE, HOOK_KIND] = minted.stdout
 	.trim()
 	.split(/\r?\n/);
 
@@ -128,16 +127,15 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	assert.match(bad.stderr, /kebab-case/);
 
 	const { bridge: seeded } = seededBridge(tmp, "named-deck", "pilot@nosedive.invalid");
-	// A crud-script is handed --name and decides; the deck script takes it as its tag.
+	// A deck is named like any doc.
 	const deck = run(["crud", "deck", "--name", "mtg", "Magic:", "The", "Gathering"], seeded);
 	assertOk(deck, "crud deck --name failed");
 	const seededConfig = readFileSync(join(seeded, ".nosedive", "config.yaml"), "utf8");
-	const deckId = namespacedUuid(/^bridge: (\S+)$/m.exec(seededConfig)[1], "mtg");
-	assert.equal(madeId(deck.stdout), deckId);
+	const deckId = madeId(deck.stdout);
 	const deckText = readFileSync(join(seeded, "kb", `${deckId}.md`), "utf8");
 	assert.match(deckText, /^name: mtg$/m);
 	assert.match(deckText, /^# Magic: The Gathering$/m);
-	assert.match(seededConfig, /^decks: .*, mtg$/m);
+	assert.match(seededConfig, new RegExp(`^decks: .*, ${deckId}$`, "m"));
 	assert.equal(subject(seeded), `crud(${deckId}): created deck mtg`);
 });
 
@@ -170,22 +168,22 @@ test("crud refuses an ambiguous match, an unknown kind, and a mint its kind woul
 	);
 });
 
-test("crud deck mints through the deck kind's script: deterministic id and decks entry in one commit", () => {
+test("crud deck mints a deck and its post-crud-script lists it in decks, in one commit", () => {
 	const { bridge } = seededBridge(tmp, "decks", "pilot@nosedive.invalid");
 	const config = () => readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
-	const bridgeId = /^bridge: (\S+)$/m.exec(config())[1];
 	const backlog = /^backlog: (\S+)$/m.exec(config())[1];
 
 	const made = run(["crud", "deck", "Magic:", "The", "Gathering"], bridge);
 	assertOk(made, "crud deck failed");
-	const id = namespacedUuid(bridgeId, "magic-the-gathering");
-	assert.equal(madeId(made.stdout), id);
+	const id = madeId(made.stdout);
+	assert.ok(id, made.stdout);
 	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
 	assert.match(text, /^kind: deck$/m);
-	assert.match(text, /^name: magic-the-gathering$/m);
+	assert.match(text, new RegExp(`^name: ${id}$`, "m"));
 	assert.match(text, /^# Magic: The Gathering$/m);
-	assert.match(config(), new RegExp(`^decks: ${backlog}, magic-the-gathering$`, "m"));
-	assert.equal(subject(bridge), `crud(${id}): created deck magic-the-gathering`);
+	// With no decks: yet, the backlog is written in first so it stays visible.
+	assert.match(config(), new RegExp(`^decks: ${backlog}, ${id}$`, "m"));
+	assert.equal(subject(bridge), `crud(${id}): created deck ${id}`);
 	assert.deepEqual(
 		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
 		[".nosedive/config.yaml", `kb/${id}.md`],
@@ -252,9 +250,68 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	assert.match(deck.stderr, /not a nosedive bridge/);
 	assert.equal(commits(bridge), bridgeBefore);
 	assert.equal(commits(worktree), worktreeBefore);
+	assert.equal(git(["status", "--porcelain"], worktree), "", "the refused mint is undone");
 	assert.equal(readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"), configBefore);
 
 	const bridgeKind = run(["crud", "note", "x"], bridge);
 	assert.equal(bridgeKind.status, 1);
 	assert.match(bridgeKind.stderr, /no kind note/, "the bridge's kinds are not in play on a dive");
+});
+
+test("a post-crud-script runs after the mint with the action; its changes join the commit, its failure undoes the mint", () => {
+	const bridge = createBridge(tmp, "hooked");
+	write(
+		join(bridge, "kb", `${HOOK_KIND}.md`),
+		[
+			"---",
+			"kind: kind",
+			`id: ${HOOK_KIND}`,
+			"name: log",
+			'gist: "A logged kind"',
+			"meta:",
+			"  post-crud-script: scripts/hook.mjs",
+			"  schema:",
+			"    type: object",
+			"    additionalProperties: false",
+			"---",
+			"",
+		].join("\n"),
+	);
+	write(
+		join(bridge, "scripts", "hook.mjs"),
+		[
+			'import { appendFileSync } from "node:fs";',
+			'import { join } from "node:path";',
+			"export async function postCrud(value) {",
+			'	if (value.doc.name === "boom") throw new Error("the hook refused");',
+			'	appendFileSync(join(value.root, "hook-trail.md"), `${value.action} ${value.kind} ${value.doc.id}\\n`);',
+			'	return { stdout: "hooked\\n", stderr: "", exitCode: 0 };',
+			"}",
+			"",
+		].join("\n"),
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "hooked kind");
+
+	const made = run(["crud", "log", "First", "entry"], bridge);
+	assertOk(made, "crud with a hook failed");
+	const id = madeId(made.stdout);
+	assert.match(made.stdout, /^hooked$/m);
+	assert.equal(readFileSync(join(bridge, "hook-trail.md"), "utf8"), `create log ${id}\n`);
+	assert.deepEqual(
+		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
+		[`kb/${id}.md`, "hook-trail.md"].sort(),
+		"the hook's change is in the mint's commit",
+	);
+
+	const before = commits(bridge);
+	const refused = run(["crud", "log", "--name", "boom", "Second"], bridge);
+	assert.equal(refused.status, 1);
+	assert.match(refused.stderr, /the hook refused/);
+	assert.equal(commits(bridge), before);
+	assert.equal(
+		git(["status", "--porcelain"], bridge),
+		"",
+		"the refused mint leaves nothing behind",
+	);
 });

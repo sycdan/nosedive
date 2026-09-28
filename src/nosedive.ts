@@ -42,9 +42,9 @@ export { parseDecks } from "./lib/decks.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,
-	crudScriptPath,
 	kindSources,
 	loadKinds,
+	postCrudScriptPath,
 	resolveKind,
 	selectRepo,
 	shippedKindFiles,

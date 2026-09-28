@@ -18,7 +18,7 @@ export interface ImplRuntime {
 	};
 	/**
 	 * The impl registry the router built, for an impl that hands control to a
-	 * script -- a kind's crud-script -- the way a command adapter is handed it.
+	 * script -- a kind's post-crud-script -- the way a command adapter is handed it.
 	 */
 	impl?: Record<string, (args: string[]) => ImplCommandOutput | Promise<ImplCommandOutput>>;
 }

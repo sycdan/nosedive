@@ -25,7 +25,7 @@ const {
 	resolveKind,
 	validateMeta,
 	checkDocMeta,
-	crudScriptPath,
+	postCrudScriptPath,
 	shippedKindFiles,
 } = await import(libUrl);
 
@@ -115,17 +115,17 @@ test("instances are validated against their kind with path-qualified errors", ()
 	assert.match(unknown.warning, /no kind widget/);
 });
 
-test("crud-script resolves nosedive: in the package and anything else in the kind's repo", () => {
+test("post-crud-script resolves nosedive: in the package and anything else in the kind's repo", () => {
 	assert.equal(
-		crudScriptPath(deckKind),
+		postCrudScriptPath(deckKind),
 		join(root, "kb", "artifacts", `${DECK}.mjs`),
 		"the deck kind names its script in the package",
 	);
 	const kinds = loadKindsFrom("scripts", [
-		kindDoc(CARD_A, "card", [...CARD_META, "crud-script: scripts/card.mjs"]),
+		kindDoc(CARD_A, "card", [...CARD_META, "post-crud-script: scripts/card.mjs"]),
 	]);
 	const card = resolveKind(kinds, "card");
-	assert.equal(crudScriptPath(card), join(tmp, "scripts", "scripts", "card.mjs"));
+	assert.equal(postCrudScriptPath(card), join(tmp, "scripts", "scripts", "card.mjs"));
 });
 
 test("only zerostar kind docs ship", () => {

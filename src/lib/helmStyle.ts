@@ -16,7 +16,7 @@ export const helmStyle = String.raw`
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); display: grid;
-	grid-template-rows: auto 1fr; grid-template-columns: minmax(260px, 340px) 1fr;
+	grid-template-rows: auto auto 1fr; grid-template-columns: minmax(260px, 340px) 1fr;
 	font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10px 16px;
 	display: flex; gap: 12px; align-items: center; }
@@ -111,5 +111,27 @@ form.meta legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 pre.output { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ok);
 	border-radius: 6px; padding: 8px 10px; margin: 0 0 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; }
 pre.output.failed { border-left-color: #d64545; }
+#divebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 16px;
+	border-bottom: 1px solid var(--line); font-size: 13px; min-height: 40px; }
+#divebar .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+#divebar .gap { flex: 1; }
+#divebar .reason { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
+	background: var(--panel); color: var(--text); width: 14em; }
+button.act { font: inherit; padding: 5px 12px; border-radius: 6px; border: 0; cursor: pointer; color: #fff; }
+button.act.jump { background: #2f6fdb; } button.act.land { background: #1f8a4c; }
+button.act.pack { background: #b7791f; } button.act.bail { background: #c53b3b; }
+button.act.unstage { background: var(--hover); color: var(--text); }
+body.diving { box-shadow: inset 0 0 0 3px #1f8a4c; }
+body.diving #divebar { background: color-mix(in srgb, #1f8a4c 10%, var(--bg)); }
+.picker { margin: 0 0 24px; }
+.picker input[type=search] { font: inherit; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line);
+	background: var(--panel); color: var(--text); width: 100%; max-width: 420px; margin: 0 0 12px; }
+form.newdive { display: grid; gap: 6px; max-width: 520px; margin-top: 16px; }
+form.newdive input, form.newdive textarea { font: inherit; padding: 6px 9px; border-radius: 6px;
+	border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+form.newdive button { justify-self: start; font: inherit; padding: 6px 14px; border-radius: 6px; border: 0;
+	cursor: pointer; background: var(--accent); color: #fff; }
+pre.output.streaming { border-left-color: var(--accent); }
+pre.output { max-height: 70vh; overflow: auto; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
 `;

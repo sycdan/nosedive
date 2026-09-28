@@ -1,3 +1,4 @@
+import { helmDiveScript } from "./helmDiveUi.js";
 import { helmEditScript } from "./helmEdit.js";
 import { helmStyle } from "./helmStyle.js";
 
@@ -12,6 +13,7 @@ export const helmPage = String.raw`<!doctype html>
 </head>
 <body>
 <header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav></header>
+<div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Decks"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
 <script>
@@ -58,6 +60,8 @@ function contextQuery(deckId, withRepo) {
 	const params = new URLSearchParams({ deck: deckId });
 	if (ctx.feat && ctx.deck === deckId) params.set("feat", ctx.feat);
 	if (withRepo && ctx.repo && ctx.deck === deckId) params.set("repo", ctx.repo);
+	const dive = diveInContext();
+	if (dive) params.set("dive", dive);
 	return "/api/context?" + params;
 }
 
@@ -235,7 +239,8 @@ function reset() {
 	history.replaceState(null, "", location.pathname + location.search);
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
-		el("div", { class: "start" }, el("p", { class: "empty" }, "Pick a deck, or anything below one."), ...deckForm()));
+		...(dives.active ? [] : [divePicker()]),
+		el("div", { class: "start" }, el("p", { class: "empty" }, "Or pick a deck, or anything below one."), ...deckForm()));
 }
 
 function docBody(doc, withFrontmatter) {
@@ -327,6 +332,7 @@ async function showKind(kind, path, row, message) {
 }
 
 ${helmEditScript}
+${helmDiveScript}
 // Links inside a rendered doc: kb docs open here, everything else in a new tab.
 document.getElementById("view").addEventListener("click", (event) => {
 	const a = event.target.closest(".doc a[href]");
@@ -364,7 +370,7 @@ new EventSource("/api/events?token=" + token).addEventListener("boot", (event) =
 	boot = event.data;
 });
 
-loadDecks().then(() => {
+Promise.all([loadDecks(), loadDives()]).then(() => {
 	const path = currentPath();
 	if (!path.length) return reset();
 	// Names and kinds are unknown after a reload; each step fills its own in.

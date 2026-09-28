@@ -91,15 +91,24 @@ async function runVerb(body) {
 	refreshGroups();
 }
 
+/** Clicking a dive's card stages it and opens its doc, where it can be jumped. */
 function diveCard(dive) {
-	return el("article", { class: "card" },
-		el("div", { class: "name" }, el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title)),
+	return el("article", { class: "card pick", tabindex: "0", onclick: () => {
+		stage(dive);
+		select([{ id: dive.id, name: dive.title, kind: "dive" }]);
+	} },
+		el("div", { class: "name" }, dive.title),
 		el("div", { class: "gist" }, dive.gist),
 		el("div", { class: "facts" },
 			dive.feat ? fact("", "feat", dive.feat) : null,
 			dive.repos.length ? fact("", "repos", dive.repos.join(", ")) : null,
-			dive.diver ? fact("warn", "held by", dive.diver) : null),
-		el("div", {}, el("button", { class: "act jump", onclick: () => stage(dive) }, "Stage")));
+			dive.diver ? fact("warn", "held by", dive.diver) : null));
+}
+
+/** A dive's doc offers Jump while no dive is active. */
+function diveActions(doc) {
+	if (doc.kind !== "dive" || dives.active) return null;
+	return el("div", { class: "cardacts" }, confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: doc.id })));
 }
 
 /** With no active dive, the empty page is for getting onto one. */

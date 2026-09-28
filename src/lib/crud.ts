@@ -59,7 +59,8 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * Mints a doc of a kind where the kind is defined, and commits it there: the
  * bridge with no dive, a scoped repo's worktree on one, for land to publish.
  * It is named by its own id -- the mark of a doc nobody has named yet, so the
- * gist is what finds it again -- unless a name is given, which must be free
+ * gist is what finds it again -- unless a name is given, which is slugged to
+ * kebab-case (each dot-joined part on its own) and must be free
  * among the docs of its kind in that repo.
  * The new doc's meta is validated first, so a kind that requires meta refuses
  * a bare mint rather than committing a doc it would reject.
@@ -77,10 +78,13 @@ export async function mintDoc(
 ): Promise<string> {
 	gistSlug(gist); // refuses a gist with nothing in it
 	if (name !== undefined) {
+		const given = name;
+		name = given
+			.split(".")
+			.map((part) => slugFromGist(part, 60) ?? "")
+			.join(".");
 		if (!NAME.test(name))
-			throw new Error(
-				`--name must be a leaf-first chain of kebab-case slugs joined by dots: ${JSON.stringify(name)}`,
-			);
+			throw new Error(`--name has nothing to slug between its dots: ${JSON.stringify(given)}`);
 		const holder = docsOfKind(kind).find((doc) => doc.name === name);
 		if (holder) throw new Error(`${kind.name} name ${name} is taken by ${holder.id}`);
 	}

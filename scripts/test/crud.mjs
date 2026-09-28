@@ -129,9 +129,16 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	assert.match(taken.stderr, new RegExp(`note name sleeves is taken by ${id}`));
 	assert.equal(commits(bridge), before);
 
-	const bad = run(["crud", "note", "--name", "Not A Name", "x"], bridge);
+	const slugged = run(["crud", "note", "--name", "Card Sleeves.Big Box", "x"], bridge);
+	assertOk(slugged, "crud --name should slug a name");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${madeId(slugged.stdout)}.md`), "utf8"),
+		/^name: card-sleeves\.big-box$/m,
+	);
+
+	const bad = run(["crud", "note", "--name", "sleeves..!", "y"], bridge);
 	assert.equal(bad.status, 1);
-	assert.match(bad.stderr, /kebab-case/);
+	assert.match(bad.stderr, /nothing to slug/);
 
 	const { bridge: seeded } = seededBridge(tmp, "named-deck", "pilot@nosedive.invalid");
 	// A deck is named like any doc.

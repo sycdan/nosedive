@@ -115,18 +115,18 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	return form;
 }
 
-/** The empty page's New deck form: crud deck [--name] <gist>. */
+/** The empty page's New deck form: crud deck --name <name> [<gist>]; helm stamps a gist left empty. */
 function deckForm() {
-	const gist = el("input", { type: "text", placeholder: "New deck", required: "" });
-	const name = el("input", { type: "text", placeholder: "name (optional)" });
+	const name = el("input", { type: "text", placeholder: "New deck name", required: "" });
+	const gist = el("input", { type: "text", placeholder: "What's the deck for?" });
 	const out = outputBox();
-	const form = el("form", { class: "make" }, gist, name, el("button", { type: "submit" }, "Make deck"));
+	const form = el("form", { class: "make" }, name, gist, el("button", { type: "submit" }, "Make deck"));
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/deck", { gist: gist.value, name: name.value || undefined });
+			const run = await write("/api/crud/deck", { name: name.value, gist: gist.value || undefined });
 			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
 			await loadDecks();
-			if (id) select([{ id: id[1], name: name.value || gist.value, kind: "deck" }]);
+			if (id) select([{ id: id[1], name: name.value, kind: "deck" }]);
 		} catch (err) {
 			out.replaceWith(outputBox(String(err.message || err), true));
 		}

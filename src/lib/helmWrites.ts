@@ -3,7 +3,7 @@ import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 
 import { crudReach } from "./helm.js";
-import { packageRoot } from "./packageBacklog.js";
+import { nosedivePackageVersion, packageRoot } from "./packageBacklog.js";
 
 /** A request helm refuses on its merits, answered with its own status. */
 export class HelmRequestError extends Error {
@@ -114,10 +114,10 @@ export async function helmWrite(
 		);
 	}
 	if (path === "/api/crud/deck") {
-		const name = text(body, "name", false);
-		return succeeded(
-			await runCrud(cwd, ["deck", ...(name ? ["--name", name] : []), text(body, "gist")!]),
-		);
+		const gist =
+			text(body, "gist", false) ||
+			`Created by Nosedive Helm v${nosedivePackageVersion()} at ${new Date().toISOString().slice(0, 16)}Z`;
+		return succeeded(await runCrud(cwd, ["deck", "--name", text(body, "name")!, gist]));
 	}
 	return undefined;
 }

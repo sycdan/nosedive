@@ -283,7 +283,7 @@ async function select(path, row, message) {
 		const form = kindDoc
 			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[message, form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[message, diveActions(doc), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 

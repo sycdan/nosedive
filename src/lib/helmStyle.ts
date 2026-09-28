@@ -89,6 +89,7 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 .count { font-size: 11px; color: var(--dim); background: var(--hover); border-radius: 8px; padding: 0 6px; flex: none; }
 .row .icon { width: 18px; font-size: 13px; flex: none; }
 .card.out { opacity: .6; }
+.card.pick { cursor: pointer; } .card.pick:hover, .card.pick:focus-visible { border-color: #2f6fdb; }
 .doclist { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 4px; }
 .doclist li { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .linkish { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }

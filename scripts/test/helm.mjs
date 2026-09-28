@@ -452,14 +452,20 @@ test("helm writes only by running crud: mint, edit meta, refusals, and a deck fr
 	write(join(bridge, "kb", DECK_FILE), readFileSync(join(root, "kb", DECK_FILE), "utf8"));
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "deck kind");
-	const deck = await post("/api/crud/deck", { gist: "Magic: The Gathering", name: "mtg" });
+	const nameless = await post("/api/crud/deck", { gist: "No name" });
+	assert.equal(nameless.status, 400, JSON.stringify(nameless.body));
+	const deck = await post("/api/crud/deck", { name: "Magic Cards" });
 	assert.equal(deck.status, 200, JSON.stringify(deck.body));
 	const deckId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(deck.body.stdout)?.[1];
 	assert.match(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 		new RegExp(`^decks: .*${deckId}$`, "m"),
 	);
-	assert.equal(subject(), `crud(${deckId}): created deck mtg`);
+	assert.equal(subject(), `crud(${deckId}): created deck magic-cards`);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"),
+		/^gist: "Created by Nosedive Helm v\S+ at \d{4}-\d\d-\d\dT\d\d:\d\dZ"$/m,
+	);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

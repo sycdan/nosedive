@@ -41,35 +41,57 @@ function renderBar() {
 	if (dives.active)
 		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
 			el("span", { class: "gap" }),
-			confirmButton("Land", "land", () => runVerb({ verb: "land" })),
-			confirmButton("Pack", "pack", () => runVerb({ verb: "pack" })),
-			el("button", { class: "act bail", onclick: () => bailDialog(dive) }, "Bail"));
+			el("button", { class: "act land", onclick: () => confirmDialog({
+				verb: "Land", cls: "land", target: dive.title,
+				detail: "Pushes " + scopeList(dive) + " to their work branches, closes the dive, and pushes the bridge.",
+				act: () => runVerb({ verb: "land" }),
+			}) }, "Land"),
+			el("button", { class: "act pack", onclick: () => confirmDialog({
+				verb: "Pack", cls: "pack", target: dive.title,
+				detail: "Captures the work in " + scopeList(dive) + " as patches, pushes the bridge, releases the dive, and resets each worktree to its pin.",
+				act: () => runVerb({ verb: "pack" }),
+			}) }, "Pack"),
+			el("button", { class: "act bail", onclick: () => confirmDialog({
+				verb: "Bail", cls: "bail", target: dive.title,
+				detail: "Closes the dive with your reason and resets its worktrees; its work is not kept.",
+				reason: "Why bail?",
+				act: (why) => runVerb({ verb: "bail", reason: why }),
+			}) }, "Bail"));
 	bar.replaceChildren(el("span", { class: "state" }, "Staged"), title,
 		el("span", { class: "gap" }),
 		el("button", { class: "act unstage", onclick: () => stage(null) }, "Unstage"),
 		confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: dive.id })));
 }
 
-/** Bail asks why in a modal: Esc, Cancel or a click outside backs out. */
-function bailDialog(dive) {
-	const reason = el("input", { type: "text", placeholder: "Why bail?", "aria-label": "reason" });
-	const form = el("form", {}, el("h3", {}, "Bail " + dive.title + "?"), reason,
-		el("div", { class: "modalacts" },
-			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Cancel"),
-			el("button", { type: "submit", class: "act bail" }, "Confirm bail")));
+function scopeList(dive) {
+	return dive.repos.length ? dive.repos.join(", ") : "its scopes";
+}
+
+/**
+ * A costly action asks in a modal: "<Verb> <target>?", what it does, then
+ * Cancel and "Confirm <verb>". Focus starts on Cancel -- or on the reason, when
+ * one is asked for -- so a stray Enter or a double-click backs out; Esc or a
+ * click outside closes it too.
+ */
+function confirmDialog({ verb, cls, target, detail, reason, act }) {
+	const why = reason ? el("input", { type: "text", placeholder: reason, "aria-label": "reason" }) : null;
+	const cancel = el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Cancel");
+	const form = el("form", {}, el("h3", {}, verb + " " + target + "?"), el("p", { class: "detail" }, detail), why,
+		el("div", { class: "modalacts" }, cancel,
+			el("button", { type: "submit", class: "act " + cls }, "Confirm " + verb.toLowerCase())));
 	const dialog = el("dialog", { class: "modal" }, form);
 	dialog.addEventListener("close", () => dialog.remove());
 	dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
 	form.addEventListener("submit", (event) => {
 		event.preventDefault();
-		const why = reason.value.trim();
-		if (!why) return reason.focus();
+		const given = why ? why.value.trim() : "";
+		if (why && !given) return why.focus();
 		dialog.close();
-		runVerb({ verb: "bail", reason: why });
+		act(given);
 	});
 	document.body.append(dialog);
 	dialog.showModal();
-	reason.focus();
+	(why || cancel).focus();
 }
 
 /** Staging touches nothing on disk: it narrows what the page shows to the dive's scopes. */

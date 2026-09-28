@@ -139,7 +139,11 @@ function cardActions(repo) {
 	if (repo.isBridge) return null;
 	if (repo.hydrated)
 		return el("div", { class: "cardacts" },
-			confirmButton("Dehydrate", "pack", () => runVerb({ verb: "dehydrate", repo: repo.id })));
+			el("button", { class: "act pack", onclick: () => confirmDialog({
+				verb: "Dehydrate", cls: "pack", target: repo.name,
+				detail: "Removes " + repo.name + "'s checkout from the workspace.",
+				act: () => runVerb({ verb: "dehydrate", repo: repo.id }),
+			}) }, "Dehydrate"));
 	const box = el("div", { class: "cardacts" });
 	const open = el("button", { class: "act jump" }, "Hydrate");
 	open.addEventListener("click", () => {

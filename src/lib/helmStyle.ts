@@ -121,6 +121,7 @@ dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--r
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }
+dialog.modal .detail { margin: 0; color: var(--dim); }
 dialog.modal input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
 	background: var(--bg); color: var(--text); }
 .modalacts { display: flex; justify-content: flex-end; gap: 6px; }

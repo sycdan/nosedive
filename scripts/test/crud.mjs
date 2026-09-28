@@ -83,9 +83,9 @@ test("crud mints a doc of a bridge kind, then reads it on the next run", () => {
 	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
 	assert.match(
 		text,
-		/^---\nkind: note\nid: [0-9a-f-]{36}\nname: buy-more-sleeves\ngist: "Buy more sleeves"\n---\n/,
+		new RegExp(`^---\nkind: note\nid: ${id}\nname: ${id}\ngist: "Buy more sleeves"\n---\n`),
 	);
-	assert.equal(subject(bridge), "note(buy-more-sleeves): created");
+	assert.equal(subject(bridge), `note(${id}): created`, "a minted doc is named by its id");
 	assert.equal(git(["status", "--porcelain"], bridge), "");
 	const before = commits(bridge);
 
@@ -190,13 +190,13 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 		existsSync(join(worktree, "kb", `${id}.md`)),
 		"minted in the repo that defines the kind",
 	);
-	assert.equal(subject(worktree), "card(lightning-bolt): created");
+	assert.equal(subject(worktree), `card(${id}): created`);
 	assert.equal(git(["status", "--porcelain"], worktree), "");
 	assert.equal(commits(bridge), bridgeBefore, "the bridge is untouched on a dive");
 
 	const read = run(["crud", id], bridge);
 	assertOk(read, "crud <quid> on a dive failed");
-	assert.match(read.stdout, /^name: lightning-bolt$/m);
+	assert.match(read.stdout, /^gist: "Lightning Bolt"$/m);
 
 	// A deck belongs to a bridge: minting one through a scoped repo's deck kind
 	// must neither write to that repo nor reach past the dive into the bridge.

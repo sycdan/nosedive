@@ -15,7 +15,10 @@ export interface CrudMatch {
 	path: string;
 }
 
-/** A gist names a doc by the slug it makes or, verbatim but for case, by its gist. */
+/**
+ * A gist names a doc by its gist, ignoring case, or by the slug it makes --
+ * which finds a doc somebody named by hand.
+ */
 export function gistSlug(gist: string): string {
 	const slug = slugFromGist(gist, 60);
 	if (!slug) throw new Error(`gist has nothing to slug: ${JSON.stringify(gist)}`);
@@ -43,11 +46,13 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
 /**
  * Mints a doc of a kind where the kind is defined, and commits it there: the
  * bridge with no dive, a scoped repo's worktree on one, for land to publish.
+ * It is named by its own id -- the mark of a doc nobody has named yet -- so
+ * the gist is what finds it again.
  * The new doc's meta is validated first, so a kind that requires meta refuses
  * a bare mint rather than committing a doc it would reject.
  */
 export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string): void }): string {
-	const slug = gistSlug(gist);
+	gistSlug(gist); // refuses a gist with nothing in it
 	const errors = validateMeta(kind, {});
 	if (errors.length > 0)
 		throw new Error(
@@ -62,7 +67,7 @@ export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string):
 			"---",
 			`kind: ${kind.name}`,
 			`id: ${id}`,
-			`name: ${slug}`,
+			`name: ${id}`,
 			`gist: ${JSON.stringify(title)}`,
 			"---",
 			"",
@@ -71,7 +76,7 @@ export function mintDoc(kind: KindDoc, gist: string, io: { log(message: string):
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	commitBridgeDocs(kind.source.root, `${kind.name}(${slug}): created`, [path], io);
+	commitBridgeDocs(kind.source.root, `${kind.name}(${id}): created`, [path], io);
 	return id;
 }
 

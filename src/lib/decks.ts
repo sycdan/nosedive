@@ -55,6 +55,7 @@ export function listDeck(root: string, id: string, io: { log(message: string): v
 	// Written as a comma string whatever form it was read in: `seed` carries
 	// over the config keys it does not own only when they are scalars.
 	config.set("decks", [...decks, id].join(", "));
-	writeFileAtomic(rc.path, String(config));
+	// Unfolded: a deck list is one grep-able line, however long it grows.
+	writeFileAtomic(rc.path, config.toString({ lineWidth: 0 }));
 	io.log(`Listed ${id} in ${formatPath(rc.path)}`);
 }

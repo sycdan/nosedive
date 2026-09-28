@@ -13,6 +13,7 @@ import {
 	gitCommit,
 	implRepo,
 	libUrl,
+	root,
 	run,
 	runTool,
 	write,
@@ -122,7 +123,16 @@ function fixture() {
 		join(bridge, "kb", `${CHILD}.md`),
 		`---\nkind: feat\nid: ${CHILD}\nname: child.the-feat\ngist: "A child feat"\nlinks:\n  - kb/${FEAT}.md:\n      rel: parent\n---\n`,
 	);
-	write(join(bridge, "kb", `${NOTE_KIND}.md`), kindDoc(NOTE_KIND, "note"));
+	write(
+		join(bridge, "kb", `${NOTE_KIND}.md`),
+		kindDoc(NOTE_KIND, "note", [
+			"topic:",
+			"  type: string",
+			"price:",
+			"  type: number",
+			"  minimum: 0",
+		]),
+	);
 	write(
 		join(bridge, "kb", `${NOTE_1}.md`),
 		`---\nkind: note\nid: ${NOTE_1}\nname: ${NOTE_1}\ngist: "A note"\n---\n`,
@@ -142,7 +152,7 @@ function fixture() {
 	return bridge;
 }
 
-function kindDoc(id, name) {
+function kindDoc(id, name, properties = []) {
 	return [
 		"---",
 		"kind: kind",
@@ -153,6 +163,7 @@ function kindDoc(id, name) {
 		"  schema:",
 		"    type: object",
 		"    additionalProperties: false",
+		...(properties.length ? ["    properties:", ...properties.map((line) => `      ${line}`)] : []),
 		"---",
 		"",
 		`# ${name}`,
@@ -356,6 +367,78 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 			[INSTALLED, false],
 		],
 	);
+});
+
+test("helm writes only by running crud: mint, edit meta, refusals, and a deck from the empty page", async (t) => {
+	const bridge = join(tmp, "bridge");
+	const { url, stop } = startHelm(bridge);
+	t.after(stop);
+	const base = await url;
+	const token = base.searchParams.get("token");
+	const post = async (path, body) => {
+		const res = await fetch(new URL(path, base), {
+			method: "POST",
+			headers: { "x-helm-token": token, "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		return { status: res.status, body: await res.json() };
+	};
+	const subject = () => runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
+
+	const minted = await post("/api/crud/mint", {
+		repo: BRIDGE_REPO,
+		kind: "note",
+		gist: "Buy sleeves",
+	});
+	assert.equal(minted.status, 200, JSON.stringify(minted.body));
+	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.body.stdout)?.[1];
+	assert.ok(id, minted.body.stdout);
+	assert.equal(subject(), `crud(${id}): created note ${id}`, "crud made the commit");
+
+	const named = await post("/api/crud/mint", {
+		repo: BRIDGE_REPO,
+		kind: "note",
+		gist: "Sort bulk",
+		name: "bulk",
+	});
+	assert.equal(named.status, 200, JSON.stringify(named.body));
+	assert.match(subject(), /created note bulk$/);
+
+	const edited = await post("/api/crud/meta", { id, patch: { topic: "sleeves", price: 3 } });
+	assert.equal(edited.status, 200, JSON.stringify(edited.body));
+	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
+	assert.match(text, /^ {2}topic: sleeves$/m);
+	assert.match(text, /^ {2}price: 3$/m);
+	assert.equal(subject(), `crud(${id}): updated note ${id}`);
+
+	const refused = await post("/api/crud/meta", { id, patch: { price: -1 } });
+	assert.equal(refused.status, 400);
+	assert.match(refused.body.error, /the note meta would not validate/, "crud's refusal, verbatim");
+	assert.match(refused.body.error, /\/price/);
+
+	const before = runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout;
+	const outOfReach = await post("/api/crud/mint", {
+		repo: HYDRATED,
+		kind: "card",
+		gist: "Llanowar Elves",
+	});
+	assert.equal(outOfReach.status, 409, "refused before crud runs");
+	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
+	assert.equal(runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout, before);
+
+	// The deck kind ships with nosedive; seed would have copied it in.
+	const DECK_FILE = "00000000-0000-7d1f-805a-7d0a3bdff309.md";
+	write(join(bridge, "kb", DECK_FILE), readFileSync(join(root, "kb", DECK_FILE), "utf8"));
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "deck kind");
+	const deck = await post("/api/crud/deck", { gist: "Magic: The Gathering", name: "mtg" });
+	assert.equal(deck.status, 200, JSON.stringify(deck.body));
+	const deckId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(deck.body.stdout)?.[1];
+	assert.match(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+		new RegExp(`^decks: .*${deckId}$`, "m"),
+	);
+	assert.equal(subject(), `crud(${deckId}): created deck mtg`);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

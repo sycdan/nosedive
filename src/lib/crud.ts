@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -205,7 +205,7 @@ export async function updateMeta(
 	const block =
 		Object.keys(merged).length === 0
 			? []
-			: stringifyYaml({ meta: merged }).replace(/\n$/, "").split("\n");
+			: stringifyYaml({ meta: merged }, { lineWidth: 0 }).replace(/\n$/, "").split("\n");
 	const yaml = withMetaBlock(match[1]!.split(/\r?\n/), block).join("\n");
 	const next = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
 	if (next === text) {
@@ -227,12 +227,14 @@ export async function updateMeta(
 }
 
 /**
- * Every path git sees as changed or untracked in a repo, with a hash of what
+ * Every file git sees as changed or untracked in a repo, with a hash of what
  * is on disk now, so what a hook changed can be told from what was already
- * dirty before it ran.
+ * dirty before it ran. Untracked directories stay collapsed and are skipped --
+ * a bridge's workspace is one, full of nested checkouts -- so a hook's new file
+ * is seen only where git already tracks the directory it lands in.
  */
 function dirtyState(root: string): Map<string, string> {
-	const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+	const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=normal"]);
 	const state = new Map<string, string>();
 	const entries = status.stdout.split("\0").filter(Boolean);
 	for (let i = 0; i < entries.length; i++) {
@@ -241,6 +243,7 @@ function dirtyState(root: string): Map<string, string> {
 		if (entry[0] === "R" || entry[0] === "C") i++;
 		const file = entry.slice(3);
 		const absolute = join(root, file);
+		if (file.endsWith("/") || (existsSync(absolute) && statSync(absolute).isDirectory())) continue;
 		state.set(
 			file,
 			existsSync(absolute)

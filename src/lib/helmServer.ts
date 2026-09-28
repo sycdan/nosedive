@@ -7,6 +7,7 @@ import { dirname } from "node:path";
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { helmContext, helmDeckRepos, helmDecks, helmDoc, helmKindDocs } from "./helm.js";
 import { helmPage } from "./helmPage.js";
+import { helmWrite, HelmRequestError } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 
@@ -119,7 +120,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	const boot = randomBytes(8).toString("hex");
 	let allowedHost = "";
 
-	const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+	const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
 		if (req.headers.host !== allowedHost) return send(res, 403, "text/plain", "forbidden host\n");
 		const url = new URL(req.url ?? "/", `http://${allowedHost}`);
 		if (req.method === "GET" && url.pathname === "/") {
@@ -143,6 +144,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
 		const id = url.searchParams.get("id") ?? "";
 		try {
+			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));
 			if (req.method !== "GET") return sendJson(res, undefined);
 			if (url.pathname === "/api/decks") return sendJson(res, helmDecks(cwd));
 			if (url.pathname === "/api/deck-repos") return sendJson(res, helmDeckRepos(cwd, id));
@@ -166,7 +168,8 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			return sendJson(res, undefined);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			return send(res, 500, "application/json", JSON.stringify({ error: message }));
+			const status = err instanceof HelmRequestError ? err.status : 500;
+			return send(res, status, "application/json", JSON.stringify({ error: message }));
 		}
 	});
 

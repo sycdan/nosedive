@@ -191,7 +191,7 @@ function kindCounts(kbDir: string): Map<string, number> {
 }
 
 /** The ids of the repos crud can write to right now, or none when it cannot tell. */
-function crudReach(cwd: string): Set<string | undefined> {
+export function crudReach(cwd: string): Set<string | undefined> {
 	try {
 		return new Set(kindSources(cwd).map((source) => source.id));
 	} catch {

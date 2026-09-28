@@ -50,7 +50,14 @@ function bridgeWithKinds(name) {
 	const bridge = createBridge(tmp, name);
 	write(
 		join(bridge, "kb", `${NOTE_KIND}.md`),
-		kindDoc(NOTE_KIND, "note", ["properties:", "  topic:", "    type: string"]),
+		kindDoc(NOTE_KIND, "note", [
+			"properties:",
+			"  topic:",
+			"    type: string",
+			"  price:",
+			"    type: number",
+			"    minimum: 0",
+		]),
 	);
 	write(
 		join(bridge, "kb", `${NEEDY_KIND}.md`),
@@ -273,6 +280,9 @@ test("a post-crud-script runs after the mint with the action; its changes join t
 			"  schema:",
 			"    type: object",
 			"    additionalProperties: false",
+			"    properties:",
+			"      note:",
+			"        type: string",
 			"---",
 			"",
 		].join("\n"),
@@ -313,5 +323,80 @@ test("a post-crud-script runs after the mint with the action; its changes join t
 		git(["status", "--porcelain"], bridge),
 		"",
 		"the refused mint leaves nothing behind",
+	);
+
+	const updated = run(["crud", id, "--meta", "-"], bridge, "note: hello\n");
+	assertOk(updated, "crud --meta on a hooked kind failed");
+	assert.equal(
+		readFileSync(join(bridge, "hook-trail.md"), "utf8"),
+		`create log ${id}\nupdate log ${id}\n`,
+		"the hook is told the action",
+	);
+	assert.deepEqual(
+		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
+		[`kb/${id}.md`, "hook-trail.md"].sort(),
+	);
+});
+
+/** A doc's text with its meta block taken out, to show nothing else moved. */
+const withoutMeta = (text) => text.replace(/^meta:\n(?:[ \t].*\n)*/m, "");
+
+test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching nothing else", () => {
+	const bridge = bridgeWithKinds("meta");
+	const id = madeId(run(["crud", "note", "Sleeves"], bridge).stdout);
+	const path = join(bridge, "kb", `${id}.md`);
+	const original = readFileSync(path, "utf8");
+
+	const first = run(["crud", id, "--meta", "-"], bridge, "topic: sleeves\n");
+	assertOk(first, "crud --meta failed");
+	assert.match(first.stdout, /^Updated \S*kb[\\/][0-9a-f-]{36}\.md$/m);
+	let text = readFileSync(path, "utf8");
+	assert.match(text, /^meta:\n {2}topic: sleeves\n/m);
+	assert.equal(withoutMeta(text), original, "only the meta block changed");
+	assert.equal(subject(bridge), `crud(${id}): updated note ${id}`);
+	assert.equal(git(["status", "--porcelain"], bridge), "");
+
+	assertOk(run(["crud", id, "--meta", "-"], bridge, "price: 3\n"), "second merge failed");
+	text = readFileSync(path, "utf8");
+	assert.match(text, /^ {2}topic: sleeves$/m, "a merge keeps what it does not name");
+	assert.match(text, /^ {2}price: 3$/m);
+
+	assertOk(run(["crud", id, "--meta", "-"], bridge, "topic: null\n"), "removal failed");
+	text = readFileSync(path, "utf8");
+	assert.doesNotMatch(text, /topic/, "null removes a key");
+	assert.match(text, /^ {2}price: 3$/m);
+
+	const before = commits(bridge);
+	for (const [input, pattern] of [
+		["price: -1\n", /\/price/],
+		["colour: red\n", /colour/],
+		["- a\n", /mapping/],
+	]) {
+		const refused = run(["crud", id, "--meta", "-"], bridge, input);
+		assert.equal(refused.status, 1, input);
+		assert.match(refused.stderr, pattern);
+	}
+	assert.equal(readFileSync(path, "utf8"), text, "a refused merge writes nothing");
+	assert.equal(commits(bridge), before);
+
+	const noValue = run(["crud", id, "--meta"], bridge, "");
+	assert.equal(noValue.status, 1);
+	assert.match(noValue.stderr, /--meta -/);
+});
+
+test("crud --meta puts a new meta block where KINGSMetaL order wants it", () => {
+	const bridge = bridgeWithKinds("meta-order");
+	const id = SPARE;
+	const path = join(bridge, "kb", `${id}.md`);
+	write(
+		path,
+		`---\nkind: note\nid: ${id}\nname: linked\ngist: "Linked"\nlinks:\n  - kb/${NOTE_KIND}.md\n---\n\n# Linked\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "linked note");
+	assertOk(run(["crud", id, "--meta", "-"], bridge, "topic: order\n"), "crud --meta failed");
+	assert.equal(
+		readFileSync(path, "utf8"),
+		`---\nkind: note\nid: ${id}\nname: linked\ngist: "Linked"\nmeta:\n  topic: order\nlinks:\n  - kb/${NOTE_KIND}.md\n---\n\n# Linked\n`,
 	);
 });

@@ -60,7 +60,7 @@ More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 npx -y nosedive@2026.9.18-1789698885570 crud --help
 ```
 ```md
-Usage: nosedive crud [--repo <repo>] <kind> [--name <name>] <gist...> | nosedive crud [--repo <repo>] <quid>
+Usage: nosedive crud [--repo <repo>] <kind> [--name <name>] <gist...> | nosedive crud [--repo <repo>] <quid> [--meta -]
 
 Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
 

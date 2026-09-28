@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+import { parse as parseYaml } from "yaml";
+
 import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
-import { findDocByQuid, matchDocs, mintDoc, type MintedDoc } from "../lib/crud.js";
-import { readActiveDiveId } from "../lib/kbDocs.js";
+import { findDocByQuid, matchDocs, mintDoc, updateMeta, type MintedDoc } from "../lib/crud.js";
+import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
 import {
 	kindSources,
 	loadKinds,
@@ -16,6 +18,18 @@ import {
 	type KindDoc,
 } from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
+import { readStdinText } from "../lib/stdinText.js";
+
+const META_HINT = "--meta reads YAML from stdin: echo 'key: value' | nosedive crud <quid> --meta -";
+
+/** Removes `--meta -` from args; stdin is the only place meta is read from. */
+function takeMeta(args: string[]): boolean {
+	const at = args.indexOf("--meta");
+	if (at === -1) return false;
+	if (args[at + 1] !== "-") throw new Error(META_HINT);
+	args.splice(at, 2);
+	return true;
+}
 
 /** Removes `<flag> <value>` from args, wherever it sits, and returns the value. */
 function takeFlag(args: string[], flag: string): string | undefined {
@@ -33,6 +47,7 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		if (args.length === 0) io.setExitCode(1);
 		return;
 	}
+	const meta = takeMeta(args);
 	const name = takeFlag(args, "--name");
 	const repo = takeFlag(args, "--repo");
 	const sources =
@@ -43,11 +58,29 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 	if (uuidLike(first)) {
 		if (name !== undefined) throw new Error("crud <quid> takes no --name");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
-		const path = findDocByQuid(sources, first);
-		if (!path) throw new Error(`no doc ${first} in context`);
-		io.writeOut(readFileSync(path, "utf8"));
+		const target = findDocByQuid(sources, first);
+		if (!target) throw new Error(`no doc ${first} in context`);
+		if (!meta) {
+			io.writeOut(readFileSync(target.path, "utf8"));
+			return;
+		}
+		const patch = parseYaml(readStdinText(META_HINT)) as unknown;
+		if (!patch || typeof patch !== "object" || Array.isArray(patch))
+			throw new Error("--meta reads a YAML mapping of meta keys from stdin");
+		const kinds = loadKinds(sources);
+		const doc = readKbDoc(target.path, target.source.root);
+		const kind = resolveKind(kinds, doc.kind);
+		const script = kind ? postCrudScriptPath(kind) : undefined;
+		await updateMeta(
+			target,
+			kinds,
+			patch as Record<string, unknown>,
+			io,
+			kind && script ? postCrudHook("update", script, kind, doc.gist, io, runtime) : undefined,
+		);
 		return;
 	}
+	if (meta) throw new Error("--meta updates a doc named by its quid: crud <quid> --meta -");
 
 	const gist = rest.join(" ").trim();
 	if (!gist) throw new Error(`crud ${first} requires a gist`);
@@ -78,7 +111,7 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		gist,
 		io,
 		name,
-		script ? postCrudHook(script, kind, gist, io, runtime) : undefined,
+		script ? postCrudHook("create", script, kind, gist, io, runtime) : undefined,
 	);
 }
 
@@ -88,6 +121,7 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
  * fails the crud.
  */
 function postCrudHook(
+	action: "create" | "update",
 	script: string,
 	kind: KindDoc,
 	gist: string,
@@ -101,7 +135,7 @@ function postCrudHook(
 				`post-crud-script of kind ${kind.name} must export postCrud(value, ctx): ${script}`,
 			);
 		const result = (await mod.postCrud(
-			{ action: "create", kind: kind.name, gist, doc, root: kind.source.root },
+			{ action, kind: kind.name, gist, doc, root: kind.source.root },
 			{ cwd: process.cwd(), impl: runtime.impl },
 		)) as ImplCommandOutput | undefined;
 		if (result?.stdout) io.writeOut(result.stdout);

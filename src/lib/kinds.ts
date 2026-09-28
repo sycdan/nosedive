@@ -21,6 +21,7 @@ export interface KindSource {
 export interface KindDoc {
 	id: string;
 	name: string;
+	gist: string;
 	path: string;
 	source: KindSource;
 	meta: Record<string, unknown>;
@@ -35,7 +36,7 @@ export function isZerostar(id: string): boolean {
 }
 
 /** An installed repo keeps its kb where its nosedive config says; any other repo keeps it at `kb/`. */
-function repoKbDir(root: string): string {
+export function repoKbDir(root: string): string {
 	const config = join(root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME);
 	if (existsSync(config)) {
 		const kb = parseYamlBlock(readFileSync(config, "utf8"), config).scalars.kb;
@@ -92,7 +93,14 @@ export function loadKinds(sources: KindSource[]): KindDoc[] {
 	return sources.flatMap((source) =>
 		kindFiles(source.kbDir).map((file) => {
 			const doc = readKbDoc(join(source.kbDir, file), source.root);
-			return { id: doc.id, name: doc.name, path: doc.path, source, meta: doc.metaRaw };
+			return {
+				id: doc.id,
+				name: doc.name,
+				gist: doc.gist,
+				path: doc.path,
+				source,
+				meta: doc.metaRaw,
+			};
 		}),
 	);
 }

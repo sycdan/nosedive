@@ -1,12 +1,11 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
-import { basename, dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 
 import { Marked } from "marked";
 
 import { configuredDecks } from "./decks.js";
+import { inheritedScopes } from "./diveScopes.js";
+import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
@@ -16,9 +15,7 @@ import {
 	type NosediveRc,
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
-import { helmPage } from "./helmPage.js";
 import { loadKbDocs, type KbDoc } from "./kbDocs.js";
-import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
@@ -169,8 +166,125 @@ function escapeHtml(text: string): string {
 // never run, because the page holds a token that can drive the bridge.
 const markdown = new Marked({ renderer: { html: ({ text }) => escapeHtml(text) } });
 
-export function helmDoc(cwd: string, id: string): HelmDoc | undefined {
-	const { docs } = bridgeDocs(cwd);
+/**
+ * Where a repo in view keeps its kb, when it can be read: the bridge always,
+ * any other repo only while it is hydrated.
+ */
+function readableSource(rc: NosediveRc, repo: KbDoc): KindSource | undefined {
+	if (repo.id === rc.bridge)
+		return { id: repo.id, name: repo.name, root: rc.bridgeDir, kbDir: rc.kbDir! };
+	const trunk = repo.repoBaseBranch ?? "main";
+	const root = expectedWorktreePath(repo, rc.bridgeDir);
+	if (!hydratedState(root, repo.id, trunk, false)) return undefined;
+	return { id: repo.id, name: repo.name, root, kbDir: repoKbDir(root) };
+}
+
+/** How many docs of each kind a kb holds, from each doc's `kind:` line. */
+function kindCounts(kbDir: string): Map<string, number> {
+	const counts = new Map<string, number>();
+	if (!existsSync(kbDir)) return counts;
+	for (const file of readdirSync(kbDir).filter((name) => name.endsWith(".md"))) {
+		const kind = /^kind: (\S+)\s*$/m.exec(readFileSync(join(kbDir, file), "utf8"))?.[1];
+		if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+	}
+	return counts;
+}
+
+/** The ids of the repos crud can write to right now, or none when it cannot tell. */
+function crudReach(cwd: string): Set<string | undefined> {
+	try {
+		return new Set(kindSources(cwd).map((source) => source.id));
+	} catch {
+		return new Set();
+	}
+}
+
+export interface HelmContext {
+	repos: Array<HelmRepoCard & { inCrudContext: boolean }>;
+	kinds: Array<{
+		id: string;
+		name: string;
+		gist: string;
+		repoId?: string;
+		repoName: string;
+		count: number;
+		inCrudContext: boolean;
+	}>;
+	unreadable: string[];
+}
+
+/**
+ * What is in view under a deck: its scoped repos -- a feat's instead, when one
+ * is selected, inherited from its nearest scoped ancestor -- and the kinds
+ * their kbs declare, narrowed to one repo when one is selected. Each says
+ * whether crud can reach it, because helm writes only through crud.
+ */
+export function helmContext(
+	cwd: string,
+	deckId: string,
+	featId?: string,
+	repoId?: string,
+): HelmContext | undefined {
+	const { rc, docs } = bridgeDocs(cwd);
+	const byId = new Map(docs.map((doc) => [doc.id, doc]));
+	const deck = byId.get(deckId);
+	if (!deck) return undefined;
+	const feat = featId ? byId.get(featId) : undefined;
+	if (featId && !feat) return undefined;
+	const scopes = feat ? inheritedScopes(feat, docs).scopes : deck.scopes;
+	const inView = scopes
+		.map((scope) => byId.get(scope.repoId))
+		.filter((doc): doc is KbDoc => doc?.kind === "repo");
+	const reach = crudReach(cwd);
+	const repos = inView.map((doc) => ({
+		...repoCard(doc, rc.bridgeDir, doc.id === rc.bridge),
+		inCrudContext: reach.has(doc.id),
+	}));
+	const sources: KindSource[] = [];
+	const unreadable: string[] = [];
+	for (const doc of inView.filter((repo) => !repoId || repo.id === repoId)) {
+		const source = readableSource(rc, doc);
+		if (source) sources.push(source);
+		else unreadable.push(doc.name);
+	}
+	const counts = new Map(sources.map((source) => [source.id, kindCounts(source.kbDir)]));
+	const kinds = loadKinds(sources).map((kind) => ({
+		id: kind.id,
+		name: kind.name,
+		gist: kind.gist,
+		repoId: kind.source.id,
+		repoName: kind.source.name,
+		count: counts.get(kind.source.id)?.get(kind.name) ?? 0,
+		inCrudContext: reach.has(kind.source.id),
+	}));
+	return { repos, kinds, unreadable };
+}
+
+/** The docs of one kind in one repo's kb. */
+export function helmKindDocs(
+	cwd: string,
+	repoId: string,
+	kind: string,
+): Array<{ id: string; name: string; gist: string }> | undefined {
+	const { rc, docs } = bridgeDocs(cwd);
+	const repo = docs.find((doc) => doc.id === repoId && doc.kind === "repo");
+	const source = repo ? readableSource(rc, repo) : undefined;
+	if (!source) return undefined;
+	return loadKbDocs(source.kbDir, source.root)
+		.filter((doc) => doc.kind === kind)
+		.map((doc) => ({ id: doc.id, name: doc.name, gist: doc.gist }));
+}
+
+/** A doc from the bridge kb, or from a repo in view's kb when `repoId` names one. */
+export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | undefined {
+	const { rc, docs: bridgeKb } = bridgeDocs(cwd);
+	let docs = bridgeKb;
+	if (repoId && repoId !== rc.bridge) {
+		const repo = bridgeKb.find((doc) => doc.id === repoId && doc.kind === "repo");
+		const source = repo ? readableSource(rc, repo) : undefined;
+		if (!source) return undefined;
+		docs = loadKbDocs(source.kbDir, source.root);
+	}
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const doc = byId.get(id);
 	if (!doc) return undefined;
@@ -202,173 +316,5 @@ export function helmDoc(cwd: string, id: string): HelmDoc | undefined {
 		frontmatter: block?.yaml ?? "",
 		html: markdown.parse(block?.body ?? text, { async: false }),
 		links,
-	};
-}
-
-export interface HelmServer {
-	url: string;
-	close(): Promise<void>;
-}
-
-function send(res: ServerResponse, status: number, type: string, body: string): void {
-	res.writeHead(status, {
-		"content-type": `${type}; charset=utf-8`,
-		"cache-control": "no-store",
-		"x-content-type-options": "nosniff",
-	});
-	res.end(body);
-}
-
-function sendJson(res: ServerResponse, value: unknown): void {
-	if (value === undefined)
-		return send(res, 404, "application/json", JSON.stringify({ error: "not found" }));
-	send(res, 200, "application/json", JSON.stringify(value));
-}
-
-function sameToken(given: string | null | undefined, token: string): boolean {
-	if (!given || given.length !== token.length) return false;
-	return timingSafeEqual(Buffer.from(given), Buffer.from(token));
-}
-
-const PORT_BASE = 20000;
-const PORT_SPAN = 10000;
-const PORT_TRIES = 10;
-
-/**
- * Ports of the bridge's own, in the order helm tries them, so each bridge's
- * helm comes back where its tabs expect it. The first is usually free; the rest
- * cover a port the OS holds without any process owning it. All sit below
- * 32768, where Linux starts handing out ephemeral ports -- which WSL's mirrored
- * networking reserves on the Windows side too, in blocks no process shows as
- * owning -- and so below Windows' own range from 49152.
- */
-export function helmPorts(rc: NosediveRc): number[] {
-	const digest = createHash("sha1")
-		.update(rc.bridge ?? rc.bridgeDir)
-		.digest();
-	const first = digest.readUInt32BE(0) % PORT_SPAN;
-	return Array.from(
-		{ length: PORT_TRIES },
-		(_, index) => PORT_BASE + ((first + index) % PORT_SPAN),
-	);
-}
-
-function helmUrl(port: number, token: string): string {
-	return `http://127.0.0.1:${port}/?token=${token}`;
-}
-
-async function answersAsHelm(port: number, token: string): Promise<boolean> {
-	try {
-		const res = await fetch(`http://127.0.0.1:${port}/api/decks`, {
-			headers: { "x-helm-token": token },
-			signal: AbortSignal.timeout(2000),
-		});
-		return res.ok;
-	} catch {
-		return false;
-	}
-}
-
-function listen(server: ReturnType<typeof createServer>, port: number): Promise<boolean> {
-	return new Promise((resolveListen, reject) => {
-		const onError = (err: NodeJS.ErrnoException) => {
-			server.off("listening", onListening);
-			if (err.code === "EADDRINUSE" || err.code === "EACCES") resolveListen(false);
-			else reject(err);
-		};
-		const onListening = () => {
-			server.off("error", onError);
-			resolveListen(true);
-		};
-		server.once("error", onError);
-		server.once("listening", onListening);
-		server.listen(port, "127.0.0.1");
-	});
-}
-
-/**
- * Kept across launches so a tab left open survives a restart. It lives in the
- * managed cache, which the bridge never commits.
- */
-function helmToken(rc: NosediveRc): string {
-	const path = managedCachePath("helm-token", rc.bridgeDir);
-	if (existsSync(path)) {
-		const saved = readFileSync(path, "utf8").trim();
-		if (/^[0-9a-f]{32}$/.test(saved)) return saved;
-	}
-	const token = randomBytes(16).toString("hex");
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileAtomic(path, `${token}\n`);
-	return token;
-}
-
-/**
- * Loopback only, and every request must carry the bridge's helm token and name
- * the bound address as its Host: helm writes files and pushes, so a page on
- * any other site must not be able to drive it, DNS rebinding included.
- */
-export async function startHelmServer(cwd: string): Promise<HelmServer> {
-	const rc = readNosediveRc(cwd);
-	const token = helmToken(rc);
-	// Changes on every launch; an open page that sees a new one reloads itself.
-	const boot = randomBytes(8).toString("hex");
-	let allowedHost = "";
-
-	const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-		if (req.headers.host !== allowedHost) return send(res, 403, "text/plain", "forbidden host\n");
-		const url = new URL(req.url ?? "/", `http://${allowedHost}`);
-		if (req.method === "GET" && url.pathname === "/") {
-			if (!sameToken(url.searchParams.get("token"), token))
-				return send(res, 403, "text/plain", "missing or wrong token\n");
-			return send(res, 200, "text/html", helmPage);
-		}
-		// EventSource cannot send headers, so the stream takes its token in the query.
-		if (req.method === "GET" && url.pathname === "/api/events") {
-			if (!sameToken(url.searchParams.get("token"), token))
-				return send(res, 403, "text/plain", "missing or wrong token\n");
-			res.writeHead(200, {
-				"content-type": "text/event-stream; charset=utf-8",
-				"cache-control": "no-store",
-			});
-			res.write(`retry: 500\nevent: boot\ndata: ${boot}\n\n`);
-			return;
-		}
-		const header = req.headers["x-helm-token"];
-		if (!sameToken(Array.isArray(header) ? header[0] : header, token))
-			return send(res, 403, "application/json", JSON.stringify({ error: "forbidden" }));
-		const id = url.searchParams.get("id") ?? "";
-		try {
-			if (req.method !== "GET") return sendJson(res, undefined);
-			if (url.pathname === "/api/decks") return sendJson(res, helmDecks(cwd));
-			if (url.pathname === "/api/deck-repos") return sendJson(res, helmDeckRepos(cwd, id));
-			if (url.pathname === "/api/doc") return sendJson(res, helmDoc(cwd, id));
-			return sendJson(res, undefined);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			return send(res, 500, "application/json", JSON.stringify({ error: message }));
-		}
-	});
-
-	const ports = helmPorts(rc);
-	let listening = false;
-	// Only a helm holding this bridge's token answers. Every port is asked
-	// first, because a running helm may sit past a port that has since freed.
-	for (const port of ports) {
-		if (await answersAsHelm(port, token))
-			throw new Error(`helm is already running for this bridge: ${helmUrl(port, token)}`);
-	}
-	for (const port of ports) if ((listening = await listen(server, port))) break;
-	if (!listening)
-		throw new Error(`helm could not bind any of its ports for this bridge: ${ports.join(", ")}`);
-	const bound = (server.address() as AddressInfo).port;
-	allowedHost = `127.0.0.1:${bound}`;
-	return {
-		url: helmUrl(bound, token),
-		close: () =>
-			new Promise((resolveClose) => {
-				server.close(() => resolveClose());
-				// An open browser tab holds keep-alive sockets that would stall close.
-				server.closeAllConnections();
-			}),
 	};
 }

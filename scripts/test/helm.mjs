@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { Script } from "node:vm";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -20,11 +20,24 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("helm");
-const minted = run(["mint", "7"], tmp);
+const minted = run(["mint", "14"], tmp);
 assertOk(minted, "mint failed");
-const [BACKLOG, BRIDGE_REPO, HYDRATED, INSTALLED, UNLISTED, FEAT, IDEAS] = minted.stdout
-	.trim()
-	.split(/\r?\n/);
+const [
+	BACKLOG,
+	BRIDGE_REPO,
+	HYDRATED,
+	INSTALLED,
+	UNLISTED,
+	FEAT,
+	IDEAS,
+	CHILD,
+	CARD_KIND,
+	NOTE_KIND,
+	CARD_1,
+	CARD_2,
+	NOTE_1,
+	DIVE,
+] = minted.stdout.trim().split(/\r?\n/);
 const { parseDecks } = await import(libUrl);
 
 function fixture() {
@@ -32,6 +45,16 @@ function fixture() {
 	const hydrated = implRepo(tmp, "hydrated");
 	const installed = implRepo(tmp, "installed");
 	const unlisted = implRepo(tmp, "unlisted");
+
+	write(join(hydrated.source, "kb", `${CARD_KIND}.md`), kindDoc(CARD_KIND, "card"));
+	for (const id of [CARD_1, CARD_2])
+		write(
+			join(hydrated.source, "kb", `${id}.md`),
+			`---\nkind: card\nid: ${id}\nname: ${id}\ngist: "A card"\n---\n`,
+		);
+	runTool("git", ["add", "."], hydrated.source);
+	gitCommit(hydrated.source, "cards");
+	runTool("git", ["push", "cloud", "main"], hydrated.source);
 
 	// An installed repo is one whose trunk carries a nosedive config with a level.
 	write(
@@ -78,6 +101,8 @@ function fixture() {
 			`id: ${FEAT}`,
 			"name: the-feat",
 			'gist: "A feat"',
+			"scopes:",
+			`  - ${HYDRATED}`,
 			"links:",
 			"  - https://example.com/pr/1:",
 			"      rel: pr",
@@ -93,6 +118,15 @@ function fixture() {
 			"",
 		].join("\n"),
 	);
+	write(
+		join(bridge, "kb", `${CHILD}.md`),
+		`---\nkind: feat\nid: ${CHILD}\nname: child.the-feat\ngist: "A child feat"\nlinks:\n  - kb/${FEAT}.md:\n      rel: parent\n---\n`,
+	);
+	write(join(bridge, "kb", `${NOTE_KIND}.md`), kindDoc(NOTE_KIND, "note"));
+	write(
+		join(bridge, "kb", `${NOTE_1}.md`),
+		`---\nkind: note\nid: ${NOTE_1}\nname: ${NOTE_1}\ngist: "A note"\n---\n`,
+	);
 	const config = join(bridge, ".nosedive", "config.yaml");
 	write(config, `${readFileSync(config, "utf8")}decks: ${BACKLOG}, ${IDEAS}\n`);
 	write(
@@ -106,6 +140,24 @@ function fixture() {
 	assertOk(run(["hydrate-repo.workspace", INSTALLED], bridge), "hydrate failed");
 	assertOk(run(["dehydrate-repo.workspace", INSTALLED], bridge), "dehydrate failed");
 	return bridge;
+}
+
+function kindDoc(id, name) {
+	return [
+		"---",
+		"kind: kind",
+		`id: ${id}`,
+		`name: ${name}`,
+		`gist: "The ${name} kind"`,
+		"meta:",
+		"  schema:",
+		"    type: object",
+		"    additionalProperties: false",
+		"---",
+		"",
+		`# ${name}`,
+		"",
+	].join("\n");
 }
 
 /** Starts helm and resolves with its URL once it says where it is listening. */
@@ -229,6 +281,81 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		headers: { "x-helm-token": token },
 	});
 	assert.equal(missing.status, 404);
+});
+
+test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, narrowed by a repo", async (t) => {
+	const bridge = join(tmp, "bridge");
+	const { url, stop } = startHelm(bridge);
+	t.after(stop);
+	const base = await url;
+	const token = base.searchParams.get("token");
+	const get = async (path) => {
+		const res = await fetch(new URL(path, base), { headers: { "x-helm-token": token } });
+		assert.equal(res.status, 200, `${path}: ${res.status}`);
+		return res.json();
+	};
+
+	const deck = await get(`/api/context?deck=${BACKLOG}`);
+	assert.deepEqual(
+		deck.repos.map((repo) => [repo.id, repo.inCrudContext]),
+		[
+			[BRIDGE_REPO, true],
+			[HYDRATED, false],
+			[INSTALLED, false],
+		],
+		"no dive: crud reaches only the bridge",
+	);
+	assert.deepEqual(
+		deck.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.count, kind.inCrudContext]),
+		[
+			[NOTE_KIND, "note", BRIDGE_REPO, 1, true],
+			[CARD_KIND, "card", HYDRATED, 2, false],
+		],
+	);
+	assert.deepEqual(deck.unreadable, ["installed"], "a repo not hydrated has no kb to read");
+
+	const feat = await get(`/api/context?deck=${BACKLOG}&feat=${FEAT}`);
+	assert.deepEqual(
+		feat.repos.map((repo) => repo.id),
+		[HYDRATED],
+	);
+	const child = await get(`/api/context?deck=${BACKLOG}&feat=${CHILD}`);
+	assert.deepEqual(
+		child.repos.map((repo) => repo.id),
+		[HYDRATED],
+		"a feat with no scopes inherits its parent's",
+	);
+
+	const bridgeOnly = await get(`/api/context?deck=${BACKLOG}&repo=${BRIDGE_REPO}`);
+	assert.deepEqual(
+		bridgeOnly.kinds.map((kind) => kind.name),
+		["note"],
+		"a selected repo narrows the kinds",
+	);
+
+	const cardKind = await get(`/api/doc?id=${CARD_KIND}&repo=${HYDRATED}`);
+	assert.equal(cardKind.kind, "kind");
+	assert.equal(cardKind.name, "card");
+	const cards = await get(`/api/kind-docs?repo=${HYDRATED}&kind=card`);
+	assert.deepEqual(cards.map((doc) => doc.id).sort(), [CARD_1, CARD_2].sort());
+
+	// On a dive crud reaches only the scoped repos.
+	write(
+		join(bridge, "kb", `${DIVE}.md`),
+		`---\nkind: dive\nid: ${DIVE}\nname: a-dive\ngist: "A dive"\nscopes:\n  - ${HYDRATED}\n---\n`,
+	);
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	write(marker, `id: ${DIVE}\n`);
+	t.after(() => rmSync(marker, { force: true }));
+	const diving = await get(`/api/context?deck=${BACKLOG}`);
+	assert.deepEqual(
+		diving.repos.map((repo) => [repo.id, repo.inCrudContext]),
+		[
+			[BRIDGE_REPO, false],
+			[HYDRATED, true],
+			[INSTALLED, false],
+		],
+	);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

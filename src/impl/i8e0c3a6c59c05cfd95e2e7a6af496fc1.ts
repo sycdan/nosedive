@@ -1,6 +1,6 @@
 import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
-import { startHelmServer } from "../lib/helm.js";
+import { startHelmServer } from "../lib/helmServer.js";
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
 	return captureCommand(async (commandArgs, io) => {

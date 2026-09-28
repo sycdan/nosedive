@@ -1,3 +1,5 @@
+import { helmStyle } from "./helmStyle.js";
+
 /** The whole helm UI: one page, no build step, talking to helm's JSON API. */
 export const helmPage = String.raw`<!doctype html>
 <html lang="en">
@@ -5,92 +7,7 @@ export const helmPage = String.raw`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>helm</title>
-<style>
-:root {
-	--bg: #f6f6f4; --panel: #ffffff; --line: #e3e3de; --text: #1c1c1a; --dim: #6b6b66;
-	--accent: #2f6fdb; --hover: #ecece8; --ok: #1f8a4c; --warn: #b7791f; --off: #9a9a94;
-	--radius: 8px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg: #131417; --panel: #1b1c20; --line: #2a2c31; --text: #e8e8e6; --dim: #8d8f96;
-		--accent: #6ea0ff; --hover: #24262b; --ok: #4cc27f; --warn: #e0a84a; --off: #62646b;
-		color-scheme: dark;
-	}
-}
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); display: grid;
-	grid-template-rows: auto 1fr; grid-template-columns: minmax(260px, 340px) 1fr;
-	font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10px 16px;
-	display: flex; gap: 12px; align-items: center; }
-header h1 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0; }
-#crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
-#crumbs .sep { color: var(--line); }
-#crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 4px; cursor: pointer;
-	color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
-#crumbs button:hover { background: var(--hover); color: var(--text); }
-#crumbs button:last-child { color: var(--text); font-weight: 600; }
-aside { border-right: 1px solid var(--line); overflow: auto; padding: 8px 6px 24px; }
-main { overflow: auto; padding: 16px 24px 48px; min-width: 0; }
-button { font: inherit; color: inherit; }
-
-/* tree */
-.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree ul { padding-left: 14px; border-left: 1px solid var(--line); margin-left: 10px; }
-.row { display: flex; align-items: center; gap: 2px; border-radius: 5px; min-height: 26px; }
-.row:hover { background: var(--hover); }
-.row.selected { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
-.twisty { width: 20px; height: 22px; border: 0; background: none; cursor: pointer; color: var(--dim);
-	flex: none; padding: 0; font-size: 10px; }
-.twisty:disabled { cursor: default; opacity: .35; }
-.label { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; border: 0; background: none;
-	padding: 3px 4px; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-decoration: none; }
-.label .text { overflow: hidden; text-overflow: ellipsis; }
-.deck > .row .label { font-weight: 600; }
-.kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); flex: none; }
-.rel { font-size: 11px; color: var(--dim); flex: none; }
-.url .text { color: var(--accent); }
-.file .text, .cycle .text { color: var(--dim); }
-
-/* main */
-.empty { color: var(--dim); padding: 48px 0; text-align: center; }
-.cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-	padding: 12px 14px; display: grid; gap: 8px; }
-.card .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.icon { width: 22px; text-align: center; font-size: 17px; }
-.gist { color: var(--dim); font-size: 12px; overflow: hidden;
-	display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.facts { display: flex; flex-wrap: wrap; gap: 6px; }
-.fact { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px;
-	border-radius: 4px; background: var(--bg); color: var(--dim); }
-.fact code { font-family: var(--mono); color: var(--text); }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); }
-.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
-.tag { font-size: 11px; color: var(--accent); font-weight: 500; }
-details.fm { margin: 0 0 16px; }
-details.fm summary { display: inline-block; cursor: pointer; color: var(--dim); font-size: 12px;
-	padding: 2px 6px; border-radius: 4px; list-style: none; }
-details.fm summary::before { content: "▸ "; }
-details.fm[open] summary::before { content: "▾ "; }
-details.fm summary:hover { background: var(--hover); color: var(--text); }
-details.fm summary:focus { outline: none; }
-details.fm summary:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-details.fm pre { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-	padding: 10px 12px; overflow: auto; font: 12px/1.5 var(--mono); }
-.doc { max-width: 80ch; }
-.doc a { color: var(--accent); }
-.doc pre { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-	padding: 10px 12px; overflow: auto; }
-.doc code { font-family: var(--mono); font-size: 12.5px; }
-.doc table { border-collapse: collapse; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 8px; }
-.deck-body { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--line); }
-.deck-body:empty { display: none; }
-#error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
-</style>
+<style>${helmStyle}</style>
 </head>
 <body>
 <header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav></header>
@@ -101,6 +18,10 @@ const token = new URLSearchParams(location.search).get("token");
 const deckIds = new Set();
 let bridge = { name: "" };
 let selectedRow = null;
+/** What is selected, and so what the Repos and Kinds subtrees show. */
+const ctx = { deck: null, feat: null, repo: null, kind: null };
+const groups = [];
+const OUT_OF_REACH = "crud cannot write here now: jump a dive that scopes it to edit";
 
 async function api(path) {
 	const res = await fetch(path, { headers: { "x-helm-token": token } });
@@ -127,50 +48,136 @@ function showError(err) {
 	box.hidden = !err;
 }
 
+function contextQuery(deckId, withRepo) {
+	const params = new URLSearchParams({ deck: deckId });
+	if (ctx.feat && ctx.deck === deckId) params.set("feat", ctx.feat);
+	if (withRepo && ctx.repo && ctx.deck === deckId) params.set("repo", ctx.repo);
+	return "/api/context?" + params;
+}
+
 // --- tree -------------------------------------------------------------------
 
-/** One tree node; docs expand lazily into their links, never into an ancestor. */
-function node(item, ancestors) {
-	const isDoc = item.type === "doc";
-	const cycle = isDoc && ancestors.some((a) => a.id === item.id);
-	const li = el("li", { class: (item.isDeck ? "deck " : "") + (cycle ? "cycle" : item.type) });
+/** A row: a twisty that expands load() into children lazily, and a label. */
+function branch(cls, parts, title, load, onPick) {
+	const li = el("li", { class: cls });
 	const children = el("ul", { hidden: "" });
-	const twisty = el("button", { class: "twisty", "aria-label": "expand", disabled: isDoc && !cycle ? null : "" },
-		isDoc && !cycle ? "▶" : "");
+	const twisty = el("button", { class: "twisty", "aria-label": "expand", disabled: load ? null : "" }, load ? "▶" : "");
+	const label = el("button", { class: "label", title }, parts);
+	const row = el("div", { class: "row" }, twisty, label);
 	let loaded = false;
-	twisty.addEventListener("click", async () => {
+	const fill = async () => {
+		try {
+			const items = await load();
+			children.replaceChildren(...items);
+			if (!items.length) { twisty.disabled = true; twisty.textContent = ""; }
+		} catch (err) { showError(err); }
+	};
+	twisty.addEventListener("click", () => {
 		const open = children.hidden;
 		children.hidden = !open;
 		twisty.textContent = open ? "▼" : "▶";
-		if (!open || loaded) return;
-		loaded = true;
-		try {
-			const doc = await api("/api/doc?id=" + item.id);
-			children.replaceChildren(...doc.links.map((link) => node(link, [...ancestors, { id: item.id, name: item.name }])));
-			if (!doc.links.length) { twisty.disabled = true; twisty.textContent = ""; }
-		} catch (err) { showError(err); }
+		if (open && !loaded) { loaded = true; fill(); }
 	});
+	if (onPick) label.addEventListener("click", () => onPick(row));
+	li.append(row, children);
+	return { li, row, refill: () => { if (loaded) fill(); } };
+}
+
+/** One doc in the tree; it expands into its links, never into an ancestor. */
+function node(item, ancestors) {
+	if (item.type !== "doc") {
+		const parts = [el("span", { class: "text" }, item.target), item.rel ? el("span", { class: "rel" }, item.rel) : null];
+		const li = el("li", { class: item.type });
+		const label = item.type === "url"
+			? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
+			: el("button", { class: "label", title: item.target, disabled: "" }, parts);
+		li.append(el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label));
+		return li;
+	}
+	const cycle = ancestors.some((a) => a.id === item.id);
+	const step = { id: item.id, name: item.name, kind: item.kind };
+	const path = [...ancestors, step];
 	const parts = [
-		isDoc ? el("span", { class: "kind" }, item.kind) : null,
-		el("span", { class: "text" }, isDoc ? item.name : item.target),
+		el("span", { class: "kind" }, item.kind),
+		el("span", { class: "text" }, item.name),
 		item.rel ? el("span", { class: "rel" }, item.rel) : null,
 		cycle ? el("span", { class: "rel" }, "↺") : null,
 	];
-	const label = item.type === "url"
-		? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
-		: el("button", { class: "label", title: item.gist || item.target, disabled: isDoc ? null : "" }, parts);
-	const row = el("div", { class: "row" }, twisty, label);
-	if (isDoc) label.addEventListener("click", () => select([...ancestors, { id: item.id, name: item.name }], row));
-	li.append(row, children);
+	const load = cycle ? null : async () => {
+		const doc = await api("/api/doc?id=" + item.id);
+		const links = doc.links.map((link) => node(link, path));
+		return item.isDeck ? [group("repos", item.id, path), group("kinds", item.id, path), ...links] : links;
+	};
+	const b = branch((item.isDeck ? "deck " : "") + (cycle ? "cycle" : "doc"), parts, item.gist, load,
+		(row) => select(path, row));
+	return b.li;
+}
+
+/** A deck's Repos or Kinds subtree, refilled whenever the context changes. */
+function group(type, deckId, deckPath) {
+	const title = type === "repos" ? "Repos" : "Kinds";
+	const load = async () => {
+		const context = await api(contextQuery(deckId, type === "kinds"));
+		if (type === "repos") return context.repos.map((repo) => repoItem(repo, deckId, deckPath));
+		const kinds = context.kinds.map((kind) => kindItem(kind, deckId, deckPath));
+		const blind = context.unreadable.map((name) =>
+			el("li", { class: "file" }, el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }),
+				el("button", { class: "label", disabled: "", title: "not hydrated, so its kb cannot be read" },
+					el("span", { class: "text" }, name + ": kb not readable")))));
+		return [...kinds, ...blind];
+	};
+	const b = branch("group", [el("span", { class: "text" }, title)], null, load,
+		(row) => showGroup(type, deckId, [...deckPath.slice(0, 1), { id: "#" + type, name: title }], row));
+	groups.push(b);
+	return b.li;
+}
+
+function repoItem(repo, deckId, deckPath) {
+	const picked = ctx.repo === repo.id && ctx.deck === deckId;
+	const li = el("li", { class: "repo" + (repo.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
+	const label = el("button", { class: "label", title: repo.inCrudContext ? repo.gist : OUT_OF_REACH },
+		el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "text" }, repo.name));
+	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label);
+	label.addEventListener("click", () => {
+		ctx.deck = deckId;
+		ctx.repo = picked ? null : repo.id;
+		ctx.kind = null;
+		refreshGroups();
+		if (ctx.repo) select([deckPath[0], { id: repo.id, name: repo.name, kind: "repo" }], row);
+		else writeHash(currentPath());
+	});
+	li.append(row);
 	return li;
+}
+
+function kindItem(kind, deckId, deckPath) {
+	const picked = ctx.kind && ctx.kind.id === kind.id && ctx.kind.repoId === kind.repoId;
+	const li = el("li", { class: "kindnode" + (kind.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
+	const label = el("button", { class: "label", title: kind.inCrudContext ? kind.gist : OUT_OF_REACH },
+		el("span", { class: "text" }, kind.name), el("span", { class: "count" }, String(kind.count)),
+		el("span", { class: "rel" }, kind.repoName));
+	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label);
+	label.addEventListener("click", () => {
+		ctx.deck = deckId;
+		ctx.kind = picked ? null : { id: kind.id, repoId: kind.repoId, name: kind.name };
+		refreshGroups();
+		if (ctx.kind) showKind(kind, [deckPath[0], { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }], row);
+		else writeHash(currentPath());
+	});
+	li.append(row);
+	return li;
+}
+
+function refreshGroups() {
+	for (const g of groups) if (g.li.isConnected) g.refill();
 }
 
 async function loadDecks() {
 	const listing = await api("/api/decks");
 	bridge = listing.bridge;
-	const decks = listing.decks;
-	for (const deck of decks) deckIds.add(deck.id);
-	document.getElementById("tree").replaceChildren(...decks.map((deck) =>
+	for (const deck of listing.decks) deckIds.add(deck.id);
+	groups.length = 0;
+	document.getElementById("tree").replaceChildren(...listing.decks.map((deck) =>
 		node({ type: "doc", isDeck: true, ...deck }, [])));
 }
 
@@ -184,7 +191,7 @@ function fact(dotClass, label, value) {
 function repoCard(repo) {
 	const h = repo.hydrated;
 	const n = repo.nosedive;
-	return el("article", { class: "card" },
+	return el("article", { class: "card" + (repo.inCrudContext === false ? " out" : ""), title: repo.inCrudContext === false ? OUT_OF_REACH : null },
 		el("div", { class: "name" }, el("span", { class: "icon" }, repo.icon || "▢"), repo.name,
 			repo.isBridge ? el("span", { class: "tag" }, "bridge") : null),
 		el("div", { class: "gist" }, repo.gist),
@@ -207,37 +214,101 @@ function highlight(row) {
 	if (row) row.classList.add("selected");
 }
 
+function writeHash(path) {
+	const params = new URLSearchParams();
+	if (ctx.repo) params.set("repo", ctx.repo);
+	if (ctx.kind) params.set("kind", ctx.kind.repoId + ":" + ctx.kind.id + ":" + ctx.kind.name);
+	const tail = params.toString();
+	history.replaceState(null, "", "#" + path.map((step) => step.repo ? step.repo + ":" + step.id : step.id).join("/") + (tail ? "?" + tail : ""));
+}
+
 function reset() {
 	highlight(null);
+	Object.assign(ctx, { deck: null, feat: null, repo: null, kind: null });
+	refreshGroups();
 	history.replaceState(null, "", location.pathname + location.search);
 	crumbs([]);
 	document.getElementById("view").replaceChildren(el("p", { class: "empty" }, "Pick a deck, or anything below one."));
 }
 
-/** Selects the last doc on a path of { id, name } steps from a deck down. */
+function docBody(doc, withFrontmatter) {
+	const body = el("div", { class: "doc" + (withFrontmatter ? "" : " deck-body") });
+	body.innerHTML = doc.html;
+	return withFrontmatter
+		? [el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), body]
+		: [body];
+}
+
+/** Selects the last doc on a path of steps from a deck down. */
 async function select(path, row) {
 	highlight(row);
-	const id = path[path.length - 1].id;
-	history.replaceState(null, "", "#" + path.map((step) => step.id).join("/"));
+	const last = path[path.length - 1];
+	const deck = deckIds.has(path[0].id) ? path[0].id : null;
+	const feat = [...path].reverse().find((step) => step.kind === "feat");
+	const narrowed = ctx.deck !== deck || ctx.feat !== (feat ? feat.id : null);
+	if (ctx.deck !== deck) Object.assign(ctx, { repo: null, kind: null });
+	ctx.deck = deck;
+	ctx.feat = feat ? feat.id : null;
+	if (narrowed) refreshGroups();
+	writeHash(path);
 	crumbs(path);
 	const view = document.getElementById("view");
 	try {
-		const doc = await api("/api/doc?id=" + id);
+		const doc = await api("/api/doc?id=" + last.id + (last.repo ? "&repo=" + last.repo : ""));
 		showError(null);
-		if (path[path.length - 1].name !== doc.name) { path[path.length - 1].name = doc.name; crumbs(path); }
-		if (deckIds.has(id)) {
-			const repos = await api("/api/deck-repos?id=" + id);
-			const body = el("div", { class: "doc deck-body" });
-			body.innerHTML = doc.html;
-			view.replaceChildren(repos.length
-				? el("div", { class: "cards" }, repos.map(repoCard))
-				: el("p", { class: "empty" }, "This deck scopes no repos."), body);
+		if (last.name !== doc.name) { last.name = doc.name; crumbs(path); }
+		if (deckIds.has(last.id)) {
+			const context = await api(contextQuery(last.id, false));
+			view.replaceChildren(context.repos.length
+				? el("div", { class: "cards" }, context.repos.map(repoCard))
+				: el("p", { class: "empty" }, "This deck scopes no repos."), ...docBody(doc, false));
 			return;
 		}
-		const body = el("div", { class: "doc" });
-		body.innerHTML = doc.html;
-		view.replaceChildren(
-			el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), body);
+		view.replaceChildren(...docBody(doc, true));
+	} catch (err) { showError(err); }
+}
+
+async function showGroup(type, deckId, path, row) {
+	highlight(row);
+	ctx.deck = deckId;
+	crumbs(path);
+	const view = document.getElementById("view");
+	try {
+		const context = await api(contextQuery(deckId, type === "kinds"));
+		showError(null);
+		if (type === "repos") {
+			view.replaceChildren(context.repos.length
+				? el("div", { class: "cards" }, context.repos.map(repoCard))
+				: el("p", { class: "empty" }, "No repos in view."));
+			return;
+		}
+		view.replaceChildren(context.kinds.length
+			? el("ul", { class: "doclist" }, context.kinds.map((kind) =>
+				el("li", { class: kind.inCrudContext ? "" : "out", title: kind.inCrudContext ? null : OUT_OF_REACH },
+					el("strong", {}, kind.name), " ", el("span", { class: "count" }, String(kind.count)), " ",
+					el("span", { class: "rel" }, kind.repoName), " — ", kind.gist)))
+			: el("p", { class: "empty" }, "No kinds in view."));
+	} catch (err) { showError(err); }
+}
+
+/** A kind: the docs of it listed above the kind doc's own body. */
+async function showKind(kind, path, row) {
+	highlight(row);
+	writeHash(path);
+	crumbs(path);
+	const view = document.getElementById("view");
+	try {
+		const [doc, docs] = await Promise.all([
+			api("/api/doc?id=" + kind.id + "&repo=" + kind.repoId),
+			api("/api/kind-docs?repo=" + kind.repoId + "&kind=" + encodeURIComponent(kind.name)),
+		]);
+		showError(null);
+		const list = docs.length
+			? el("ul", { class: "doclist" }, docs.map((d) => el("li", {},
+				el("button", { class: "linkish", onclick: () => select([...path, { id: d.id, name: d.name, kind: kind.name, repo: kind.repoId }]) }, d.gist || d.name),
+				" ", el("span", { class: "rel" }, d.name))))
+			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
+		view.replaceChildren(list, ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 
@@ -252,7 +323,22 @@ document.getElementById("view").addEventListener("click", (event) => {
 });
 
 function currentPath() {
-	return location.hash.slice(1).split("/").filter(Boolean).map((id) => ({ id, name: id.slice(0, 8) }));
+	const [path] = location.hash.slice(1).split("?");
+	return path.split("/").filter(Boolean).map((part) => {
+		const [repo, id] = part.includes(":") ? part.split(":") : [null, part];
+		return { id, name: id.slice(0, 8), repo: repo || undefined };
+	});
+}
+
+function restoreContext() {
+	const [, query] = location.hash.slice(1).split("?");
+	const params = new URLSearchParams(query || "");
+	ctx.repo = params.get("repo");
+	const kind = params.get("kind");
+	if (kind) {
+		const [repoId, id, name] = kind.split(":");
+		ctx.kind = { repoId, id, name };
+	}
 }
 
 // A restarted helm (a rebuild under node --watch, say) comes back on the same
@@ -266,9 +352,14 @@ new EventSource("/api/events?token=" + token).addEventListener("boot", (event) =
 loadDecks().then(() => {
 	const path = currentPath();
 	if (!path.length) return reset();
-	// Names are unknown after a reload; each step fills its own in as it loads.
-	Promise.all(path.map((step) => api("/api/doc?id=" + step.id).then((doc) => { step.name = doc.name; }, () => {})))
-		.then(() => select(path));
+	// Names and kinds are unknown after a reload; each step fills its own in.
+	Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
+		.then((doc) => { step.name = doc.name; step.kind = doc.kind; }, () => {})))
+		.then(() => {
+			restoreContext();
+			ctx.deck = deckIds.has(path[0].id) ? path[0].id : null;
+			select(path);
+		});
 }).catch(showError);
 </script>
 </body>

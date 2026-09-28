@@ -92,5 +92,24 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 .doclist { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 4px; }
 .doclist li { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .linkish { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.start { max-width: 520px; margin: 48px auto; text-align: center; }
+.start .empty { padding: 0 0 16px; }
+form.make { display: flex; gap: 8px; margin: 0 0 12px; }
+form.make input { flex: 1; min-width: 0; }
+form.make input, form.meta input, form.meta select { font: inherit; padding: 6px 9px; border-radius: 6px;
+	border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+form.make input:focus, form.meta input:focus, form.meta select:focus { outline: none; border-color: var(--accent); }
+form.make button, form.meta button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 0; cursor: pointer;
+	background: var(--accent); color: #fff; }
+form button:disabled, fieldset:disabled button { opacity: .5; cursor: not-allowed; }
+form.meta fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 16px;
+	display: grid; gap: 8px; max-width: 520px; }
+form.meta button { justify-self: start; }
+form.meta legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
+.field { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 10px; font-size: 13px; }
+.field span { color: var(--dim); }
+pre.output { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ok);
+	border-radius: 6px; padding: 8px 10px; margin: 0 0 12px; font: 12px/1.5 var(--mono); white-space: pre-wrap; }
+pre.output.failed { border-left-color: #d64545; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
 `;

@@ -347,6 +347,7 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 	const cardKind = await get(`/api/doc?id=${CARD_KIND}&repo=${HYDRATED}`);
 	assert.equal(cardKind.kind, "kind");
 	assert.equal(cardKind.name, "card");
+	assert.equal(cardKind.meta.schema.type, "object", "a doc carries its meta, for the page's forms");
 	const cards = await get(`/api/kind-docs?repo=${HYDRATED}&kind=card`);
 	assert.deepEqual(cards.map((doc) => doc.id).sort(), [CARD_1, CARD_2].sort());
 

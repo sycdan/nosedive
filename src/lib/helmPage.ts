@@ -1,3 +1,4 @@
+import { helmEditScript } from "./helmEdit.js";
 import { helmStyle } from "./helmStyle.js";
 
 /** The whole helm UI: one page, no build step, talking to helm's JSON API. */
@@ -48,6 +49,11 @@ function showError(err) {
 	box.hidden = !err;
 }
 
+/** A doc crud named by its id has no name yet; its gist says what it is. */
+function display(doc) {
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(doc.name) && doc.gist ? doc.gist : doc.name;
+}
+
 function contextQuery(deckId, withRepo) {
 	const params = new URLSearchParams({ deck: deckId });
 	if (ctx.feat && ctx.deck === deckId) params.set("feat", ctx.feat);
@@ -95,11 +101,11 @@ function node(item, ancestors) {
 		return li;
 	}
 	const cycle = ancestors.some((a) => a.id === item.id);
-	const step = { id: item.id, name: item.name, kind: item.kind };
+	const step = { id: item.id, name: display(item), kind: item.kind };
 	const path = [...ancestors, step];
 	const parts = [
 		el("span", { class: "kind" }, item.kind),
-		el("span", { class: "text" }, item.name),
+		el("span", { class: "text" }, display(item)),
 		item.rel ? el("span", { class: "rel" }, item.rel) : null,
 		cycle ? el("span", { class: "rel" }, "↺") : null,
 	];
@@ -228,7 +234,8 @@ function reset() {
 	refreshGroups();
 	history.replaceState(null, "", location.pathname + location.search);
 	crumbs([]);
-	document.getElementById("view").replaceChildren(el("p", { class: "empty" }, "Pick a deck, or anything below one."));
+	document.getElementById("view").replaceChildren(
+		el("div", { class: "start" }, el("p", { class: "empty" }, "Pick a deck, or anything below one."), ...deckForm()));
 }
 
 function docBody(doc, withFrontmatter) {
@@ -240,7 +247,7 @@ function docBody(doc, withFrontmatter) {
 }
 
 /** Selects the last doc on a path of steps from a deck down. */
-async function select(path, row) {
+async function select(path, row, message) {
 	highlight(row);
 	const last = path[path.length - 1];
 	const deck = deckIds.has(path[0].id) ? path[0].id : null;
@@ -256,7 +263,7 @@ async function select(path, row) {
 	try {
 		const doc = await api("/api/doc?id=" + last.id + (last.repo ? "&repo=" + last.repo : ""));
 		showError(null);
-		if (last.name !== doc.name) { last.name = doc.name; crumbs(path); }
+		if (last.name !== display(doc)) { last.name = display(doc); crumbs(path); }
 		if (deckIds.has(last.id)) {
 			const context = await api(contextQuery(last.id, false));
 			view.replaceChildren(context.repos.length
@@ -264,7 +271,13 @@ async function select(path, row) {
 				: el("p", { class: "empty" }, "This deck scopes no repos."), ...docBody(doc, false));
 			return;
 		}
-		view.replaceChildren(...docBody(doc, true));
+		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
+		const ref = last.kindRef;
+		const kindDoc = ref ? await api("/api/doc?id=" + ref.id + "&repo=" + ref.repoId) : null;
+		const form = kindDoc
+			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
+			: null;
+		view.replaceChildren(...[message, form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 
@@ -292,7 +305,7 @@ async function showGroup(type, deckId, path, row) {
 }
 
 /** A kind: the docs of it listed above the kind doc's own body. */
-async function showKind(kind, path, row) {
+async function showKind(kind, path, row, message) {
 	highlight(row);
 	writeHash(path);
 	crumbs(path);
@@ -305,13 +318,15 @@ async function showKind(kind, path, row) {
 		showError(null);
 		const list = docs.length
 			? el("ul", { class: "doclist" }, docs.map((d) => el("li", {},
-				el("button", { class: "linkish", onclick: () => select([...path, { id: d.id, name: d.name, kind: kind.name, repo: kind.repoId }]) }, d.gist || d.name),
+				el("button", { class: "linkish", onclick: () => select([...path, { id: d.id, name: d.name, kind: kind.name, repo: kind.repoId, kindRef: kind }]) }, d.gist || d.name),
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
-		view.replaceChildren(list, ...docBody(doc, false));
+		const form = mintForm(kind, (msg) => showKind(kind, path, row, msg));
+		view.replaceChildren(...[form, message, list].filter(Boolean), ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 
+${helmEditScript}
 // Links inside a rendered doc: kb docs open here, everything else in a new tab.
 document.getElementById("view").addEventListener("click", (event) => {
 	const a = event.target.closest(".doc a[href]");
@@ -354,7 +369,7 @@ loadDecks().then(() => {
 	if (!path.length) return reset();
 	// Names and kinds are unknown after a reload; each step fills its own in.
 	Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
-		.then((doc) => { step.name = doc.name; step.kind = doc.kind; }, () => {})))
+		.then((doc) => { step.name = display(doc); step.kind = doc.kind; }, () => {})))
 		.then(() => {
 			restoreContext();
 			ctx.deck = deckIds.has(path[0].id) ? path[0].id : null;

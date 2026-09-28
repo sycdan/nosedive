@@ -26,6 +26,7 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import { strandedInstancesOnLand } from "../lib/kindInstances.js";
 import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
 import {
@@ -409,6 +410,10 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	assertScopesCanPublish(writableScopes, hard, dive, cli);
+
+	// A schema change that strands its own instances would publish broken docs.
+	const stranded = strandedInstancesOnLand(writableScopes, kbDocs);
+	if (stranded) throw new Error(`${refusalPrefix}${stranded}`);
 
 	/**
 	 * Gates run before anything is published, and all of them run: a dive that

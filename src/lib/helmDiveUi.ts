@@ -36,12 +36,11 @@ function confirmButton(label, cls, act) {
 function renderBar() {
 	const bar = document.getElementById("divebar");
 	const dive = dives.active || dives.staged;
-	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"), el("span", { class: "gap" }), noteButton());
+	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
 	if (dives.active)
 		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
 			el("span", { class: "gap" }),
-			noteButton(),
 			el("button", { class: "act land", onclick: () => confirmDialog({
 				verb: "Land", cls: "land", target: dive.title,
 				detail: "Pushes " + scopeList(dive) + (dive.repos.length === 1 ? " to its work branch" : " to their work branches") + ", closes the dive, and pushes the bridge.",
@@ -60,11 +59,11 @@ function renderBar() {
 			}) }, "Bail"));
 	bar.replaceChildren(el("span", { class: "state" }, "Staged"), title,
 		el("span", { class: "gap" }),
-		noteButton(),
 		el("button", { class: "act unstage", onclick: () => { stage(null); reset(); } }, "Unstage"),
 		confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: dive.id })));
 }
 
+/** In the header, not the dive bar: a note needs no dive. */
 function noteButton() {
 	return el("button", { class: "act unstage", onclick: noteDialog }, "Note");
 }

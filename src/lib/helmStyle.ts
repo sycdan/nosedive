@@ -117,7 +117,7 @@ pre.output.failed { border-left-color: #d64545; }
 #divebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 16px;
 	border-bottom: 1px solid var(--line); font-size: 13px; min-height: 40px; }
 #divebar .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
-#divebar .gap { flex: 1; }
+#divebar .gap, header .gap { flex: 1; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
 	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }

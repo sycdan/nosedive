@@ -13,7 +13,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav></header>
+<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -249,6 +249,8 @@ new EventSource("/api/events?token=" + token).addEventListener("boot", (event) =
 	if (boot && boot !== event.data) location.reload();
 	boot = event.data;
 });
+
+document.getElementById("headacts").append(noteButton());
 
 Promise.all([loadDecks(), loadDives()]).then(() => {
 	const path = currentPath();

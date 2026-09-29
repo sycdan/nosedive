@@ -122,6 +122,8 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }
 dialog.modal .detail { margin: 0; color: var(--dim); }
+dialog.modal textarea { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+	background: var(--bg); color: var(--text); resize: vertical; }
 dialog.modal input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
 	background: var(--bg); color: var(--text); }
 .modalacts { display: flex; justify-content: flex-end; gap: 6px; }
@@ -129,7 +131,8 @@ button.act { font: inherit; padding: 5px 12px; border-radius: 6px; border: 0; cu
 button.act.jump { background: #2f6fdb; } button.act.land { background: #1f8a4c; }
 button.act.pack { background: #b7791f; } button.act.bail { background: #c53b3b; }
 button.act.unstage { background: var(--hover); color: var(--text); }
-body.diving { box-shadow: inset 0 0 0 3px #1f8a4c; }
+body.diving::after { content: ""; position: fixed; inset: 0; border: 3px solid #1f8a4c;
+	pointer-events: none; z-index: 10; }
 body.diving #divebar { background: color-mix(in srgb, #1f8a4c 10%, var(--bg)); }
 .picker { margin: 0 0 24px; }
 .picker input[type=search] { font: inherit; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line);

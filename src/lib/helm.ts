@@ -16,7 +16,7 @@ import {
 	type NosediveRc,
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
-import { loadKbDocs, type KbDoc } from "./kbDocs.js";
+import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
@@ -192,9 +192,14 @@ function kindCounts(kbDir: string): Map<string, number> {
 	return counts;
 }
 
-/** The ids of the repos crud can write to right now, or none when it cannot tell. */
+/**
+ * The ids of the repos helm may write to through crud: the active dive's
+ * scopes. With no dive, none -- helm writes only on a dive (a note aside) --
+ * and none when it cannot tell.
+ */
 export function crudReach(cwd: string): Set<string | undefined> {
 	try {
+		if (!readActiveDiveId(readNosediveRc(cwd).workspaceDir)) return new Set();
 		return new Set(kindSources(cwd).map((source) => source.id));
 	} catch {
 		return new Set();

@@ -5,13 +5,17 @@ import { join } from "node:path";
 import { HelmRequestError } from "./helmWrites.js";
 import { packageRoot } from "./packageBacklog.js";
 
+/** Terminal colour and cursor codes: a page shows them as noise. */
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+
 function field(body: Record<string, unknown>, key: string): string {
 	const value = body[key];
 	if (typeof value === "string" && value.trim()) return value.trim();
 	throw new HelmRequestError(400, `${key} is required`);
 }
 
-/** The verbs the page may run -- the dive lifecycle and the workspace pair -- and the argv and stdin each becomes. */
+/** The verbs the page may run -- the dive lifecycle, a note, and the workspace pair -- and the argv and stdin each becomes. */
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
 		case "dive":
@@ -30,6 +34,15 @@ function command(body: Record<string, unknown>): { args: string[]; stdin: string
 		case "hydrate": {
 			const at = typeof body.at === "string" && body.at.trim() ? ["--at", body.at.trim()] : [];
 			return { args: ["hydrate-repo.workspace", field(body, "repo"), ...at], stdin: "" };
+		}
+		case "note": {
+			// The first line is the gist, a leading `<kind>:` included, as `nosedive note` reads it.
+			const [first, ...rest] = field(body, "text").split(/\r?\n/);
+			const noteBody = rest.join("\n").trim();
+			return {
+				args: ["note", ...first!.trim().split(/\s+/), ...(noteBody ? ["--body", "-"] : [])],
+				stdin: noteBody,
+			};
 		}
 		case "dehydrate":
 			return { args: ["dehydrate-repo.workspace", field(body, "repo")], stdin: "" };
@@ -54,8 +67,11 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 		cwd,
 		stdio: ["pipe", "pipe", "pipe"],
 	});
-	child.stdout.on("data", (chunk) => res.write(chunk));
-	child.stderr.on("data", (chunk) => res.write(chunk));
+	// Decoded as text so an escape split across chunks is never half-stripped mid-character.
+	child.stdout.setEncoding("utf8");
+	child.stderr.setEncoding("utf8");
+	child.stdout.on("data", (chunk: string) => res.write(chunk.replace(ANSI, "")));
+	child.stderr.on("data", (chunk: string) => res.write(chunk.replace(ANSI, "")));
 	child.on("error", (err) => res.end(`\n${err.message}\n[exit 1]\n`));
 	child.on("close", (code) => res.end(`\n[exit ${code ?? 1}]\n`));
 	child.stdin.end(stdin);

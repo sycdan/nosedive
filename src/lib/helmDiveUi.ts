@@ -36,14 +36,15 @@ function confirmButton(label, cls, act) {
 function renderBar() {
 	const bar = document.getElementById("divebar");
 	const dive = dives.active || dives.staged;
-	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
+	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"), el("span", { class: "gap" }), noteButton());
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
 	if (dives.active)
 		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
 			el("span", { class: "gap" }),
+			noteButton(),
 			el("button", { class: "act land", onclick: () => confirmDialog({
 				verb: "Land", cls: "land", target: dive.title,
-				detail: "Pushes " + scopeList(dive) + " to their work branches, closes the dive, and pushes the bridge.",
+				detail: "Pushes " + scopeList(dive) + (dive.repos.length === 1 ? " to its work branch" : " to their work branches") + ", closes the dive, and pushes the bridge.",
 				act: () => runVerb({ verb: "land" }),
 			}) }, "Land"),
 			el("button", { class: "act pack", onclick: () => confirmDialog({
@@ -59,8 +60,53 @@ function renderBar() {
 			}) }, "Bail"));
 	bar.replaceChildren(el("span", { class: "state" }, "Staged"), title,
 		el("span", { class: "gap" }),
-		el("button", { class: "act unstage", onclick: () => stage(null) }, "Unstage"),
+		noteButton(),
+		el("button", { class: "act unstage", onclick: () => { stage(null); reset(); } }, "Unstage"),
 		confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: dive.id })));
+}
+
+function noteButton() {
+	return el("button", { class: "act unstage", onclick: noteDialog }, "Note");
+}
+
+/**
+ * A note needs no dive: nosedive note writes to the bridge directly. The
+ * first line is its gist -- a leading <kind>: sets its kind -- and the rest
+ * its body. The result shows in the modal, so the page underneath stays put.
+ */
+function noteDialog() {
+	const text = el("textarea", { rows: "4", placeholder: "todo: take over the world", "aria-label": "note" });
+	const out = el("pre", { class: "output", hidden: "" });
+	const save = el("button", { type: "submit", class: "act jump" }, "Save note");
+	const form = el("form", {}, el("h3", {}, "Note"), text, out,
+		el("div", { class: "modalacts" },
+			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Close"), save));
+	const dialog = el("dialog", { class: "modal" }, form);
+	dialog.addEventListener("close", () => dialog.remove());
+	dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		if (!text.value.trim()) return text.focus();
+		save.disabled = true;
+		try {
+			const res = await fetch("/api/run", {
+				method: "POST",
+				headers: { "x-helm-token": token, "content-type": "application/json" },
+				body: JSON.stringify({ verb: "note", text: text.value }),
+			});
+			out.textContent = res.ok ? await res.text() : (await res.json()).error;
+		} catch (err) {
+			out.textContent = String(err.message || err);
+		}
+		const ok = /\[exit 0\]\s*$/.test(out.textContent);
+		out.hidden = false;
+		out.classList.toggle("failed", !ok);
+		if (ok) { text.value = ""; refreshGroups(); }
+		save.disabled = false;
+	});
+	document.body.append(dialog);
+	dialog.showModal();
+	text.focus();
 }
 
 function scopeList(dive) {

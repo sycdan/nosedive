@@ -21,6 +21,7 @@ export interface CrudRun {
 	stderr: string;
 }
 
+const NO_DIVE = "helm writes only on an active dive: jump one first (a note needs none)";
 const OUT_OF_REACH = "crud cannot write to that repo now: jump a dive that scopes it to edit";
 
 /**
@@ -84,6 +85,7 @@ export async function helmWrite(
 	req: IncomingMessage,
 ): Promise<CrudRun | undefined> {
 	if (!path.startsWith("/api/crud/")) return undefined;
+	if (crudReach(cwd).size === 0) throw new HelmRequestError(409, NO_DIVE);
 	const body = await readJsonBody(req);
 	if (path === "/api/crud/mint") {
 		const repo = text(body, "repo")!;

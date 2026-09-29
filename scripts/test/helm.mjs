@@ -310,16 +310,16 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 	assert.deepEqual(
 		deck.repos.map((repo) => [repo.id, repo.inCrudContext]),
 		[
-			[BRIDGE_REPO, true],
+			[BRIDGE_REPO, false],
 			[HYDRATED, false],
 			[INSTALLED, false],
 		],
-		"no dive: crud reaches only the bridge",
+		"no dive: helm writes nowhere",
 	);
 	assert.deepEqual(
 		deck.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.count, kind.inCrudContext]),
 		[
-			[NOTE_KIND, "note", BRIDGE_REPO, 1, true],
+			[NOTE_KIND, "note", BRIDGE_REPO, 1, false],
 			[CARD_KIND, "card", HYDRATED, 2, false],
 		],
 	);
@@ -390,7 +390,7 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 	);
 });
 
-test("helm writes only by running crud: mint, edit meta, refusals, and a deck from the empty page", async (t) => {
+test("helm writes only by running crud, and only on an active dive; a note needs none", async (t) => {
 	const bridge = join(tmp, "bridge");
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
@@ -402,70 +402,102 @@ test("helm writes only by running crud: mint, edit meta, refusals, and a deck fr
 			headers: { "x-helm-token": token, "content-type": "application/json" },
 			body: JSON.stringify(body),
 		});
-		return { status: res.status, body: await res.json() };
+		const text = await res.text();
+		return {
+			status: res.status,
+			text,
+			body: res.headers.get("content-type")?.includes("json") ? JSON.parse(text) : {},
+		};
 	};
-	const subject = () => runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim();
+	const count = (cwd) => Number(runTool("git", ["rev-list", "--count", "HEAD"], cwd).stdout.trim());
+	const worktree = join(bridge, "workspace", "hydrated");
+	const subject = () => runTool("git", ["log", "-1", "--format=%s"], worktree).stdout.trim();
+
+	const before = count(bridge);
+	for (const [path, body] of [
+		["/api/crud/mint", { repo: BRIDGE_REPO, kind: "note", gist: "Buy sleeves" }],
+		["/api/crud/meta", { id: NOTE_1, patch: { topic: "x" } }],
+		["/api/crud/deck", { name: "Magic Cards" }],
+	]) {
+		const refused = await post(path, body);
+		assert.equal(refused.status, 409, path);
+		assert.match(refused.body.error, /only on an active dive/);
+	}
+	assert.equal(count(bridge), before, "nothing was written with no dive");
+
+	const noted = await post("/api/run", {
+		verb: "note",
+		text: "todo: buy sleeves\n\nThe matte ones.",
+	});
+	assert.equal(noted.status, 200, noted.text);
+	assert.match(noted.text, /\[exit 0\]\s*$/);
+	const notePath = /^Noted (\S+)$/m.exec(noted.text)?.[1];
+	assert.ok(notePath, noted.text);
+	const note = readFileSync(join(bridge, notePath), "utf8");
+	assert.match(note, /^kind: todo$/m, "a leading <kind>: sets the note's kind");
+	assert.match(note, /The matte ones\./, "lines after the first are its body");
+
+	// On a dive that scopes the hydrated repo, helm writes there and nowhere else.
+	write(
+		join(bridge, "kb", `${DIVE}.md`),
+		`---\nkind: dive\nid: ${DIVE}\nname: a-dive\ngist: "A dive"\nscopes:\n  - ${HYDRATED}\n---\n`,
+	);
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	write(marker, `id: ${DIVE}\n`);
+	t.after(() => rmSync(marker, { force: true }));
+
+	const schema = await post("/api/crud/meta", {
+		id: CARD_KIND,
+		repo: HYDRATED,
+		replace: true,
+		patch: {
+			schema: {
+				type: "object",
+				additionalProperties: false,
+				properties: { condition: { enum: ["mint", "played"] } },
+			},
+		},
+	});
+	assert.equal(schema.status, 200, schema.text);
+	assert.equal(
+		subject(),
+		`crud(${CARD_KIND}): updated kind card`,
+		"crud committed in the scoped repo",
+	);
 
 	const minted = await post("/api/crud/mint", {
-		repo: BRIDGE_REPO,
-		kind: "note",
-		gist: "Buy sleeves",
-	});
-	assert.equal(minted.status, 200, JSON.stringify(minted.body));
-	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.body.stdout)?.[1];
-	assert.ok(id, minted.body.stdout);
-	assert.equal(subject(), `crud(${id}): created note ${id}`, "crud made the commit");
-
-	const named = await post("/api/crud/mint", {
-		repo: BRIDGE_REPO,
-		kind: "note",
-		gist: "Sort bulk",
-		name: "bulk",
-	});
-	assert.equal(named.status, 200, JSON.stringify(named.body));
-	assert.match(subject(), /created note bulk$/);
-
-	const edited = await post("/api/crud/meta", { id, patch: { topic: "sleeves", price: 3 } });
-	assert.equal(edited.status, 200, JSON.stringify(edited.body));
-	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
-	assert.match(text, /^ {2}topic: sleeves$/m);
-	assert.match(text, /^ {2}price: 3$/m);
-	assert.equal(subject(), `crud(${id}): updated note ${id}`);
-
-	const refused = await post("/api/crud/meta", { id, patch: { price: -1 } });
-	assert.equal(refused.status, 400);
-	assert.match(refused.body.error, /the note meta would not validate/, "crud's refusal, verbatim");
-	assert.match(refused.body.error, /\/price/);
-
-	const before = runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout;
-	const outOfReach = await post("/api/crud/mint", {
 		repo: HYDRATED,
 		kind: "card",
 		gist: "Llanowar Elves",
 	});
-	assert.equal(outOfReach.status, 409, "refused before crud runs");
-	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
-	assert.equal(runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout, before);
+	assert.equal(minted.status, 200, minted.text);
+	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.body.stdout)?.[1];
+	assert.equal(subject(), `crud(${id}): created card ${id}`);
 
-	// The deck kind ships with nosedive; seed would have copied it in.
-	const DECK_FILE = "00000000-0000-7d1f-805a-7d0a3bdff309.md";
-	write(join(bridge, "kb", DECK_FILE), readFileSync(join(root, "kb", DECK_FILE), "utf8"));
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "deck kind");
+	const edited = await post("/api/crud/meta", { id, repo: HYDRATED, patch: { condition: "mint" } });
+	assert.equal(edited.status, 200, edited.text);
+	assert.match(readFileSync(join(worktree, "kb", `${id}.md`), "utf8"), /^ {2}condition: mint$/m);
+
+	const refused = await post("/api/crud/meta", {
+		id,
+		repo: HYDRATED,
+		patch: { condition: "bent" },
+	});
+	assert.equal(refused.status, 400);
+	assert.match(refused.body.error, /the card meta would not validate/, "crud's refusal, verbatim");
+	assert.match(refused.body.error, /\/condition/);
+
+	const outOfReach = await post("/api/crud/mint", {
+		repo: BRIDGE_REPO,
+		kind: "note",
+		gist: "Sort bulk",
+	});
+	assert.equal(outOfReach.status, 409, "the bridge is not scoped, so refused before crud runs");
+	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
+	assert.equal(count(bridge), before + 1, "only the note reached the bridge");
+
 	const nameless = await post("/api/crud/deck", { gist: "No name" });
-	assert.equal(nameless.status, 400, JSON.stringify(nameless.body));
-	const deck = await post("/api/crud/deck", { name: "Magic Cards" });
-	assert.equal(deck.status, 200, JSON.stringify(deck.body));
-	const deckId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(deck.body.stdout)?.[1];
-	assert.match(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-		new RegExp(`^decks: .*${deckId}$`, "m"),
-	);
-	assert.equal(subject(), `crud(${deckId}): created deck magic-cards`);
-	assert.match(
-		readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"),
-		/^gist: "Created by Nosedive Helm v\S+ at \d{4}-\d\d-\d\dT\d\d:\d\dZ"$/m,
-	);
+	assert.equal(nameless.status, 400, nameless.text);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

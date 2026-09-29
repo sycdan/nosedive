@@ -117,6 +117,7 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 
 /** The empty page's New deck form: crud deck --name <name> [<gist>]; helm stamps a gist left empty. */
 function deckForm() {
+	if (!dives.active) return [el("p", { class: "empty" }, "Jump a dive to make a deck.")];
 	const name = el("input", { type: "text", placeholder: "New deck name", required: "" });
 	const gist = el("input", { type: "text", placeholder: "What's the deck for?" });
 	const out = outputBox();

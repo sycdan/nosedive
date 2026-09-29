@@ -13,10 +13,12 @@ import {
 	bridgeHomed,
 	DECK_KIND_ID,
 	DIVE_KIND_ID,
+	KIND_KIND_ID,
 	kindSources,
 	loadKinds,
 	resolveKind,
 	selectRepo,
+	STARTER_SCHEMA,
 } from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
 import { recordDive } from "../lib/recordDive.js";
@@ -91,7 +93,7 @@ function crud(args: string[], io: CommandIo): void {
 		updateBlock(target, loadKinds(sources), block, patch as Record<string, unknown>, replace, io);
 		return;
 	}
-	if (block)
+	if (block && (block !== "meta" || replace))
 		throw new Error(`--${block} updates a doc named by its quid: crud <quid> --${block} -`);
 
 	const gist = rest.join(" ").trim();
@@ -106,7 +108,16 @@ function crud(args: string[], io: CommandIo): void {
 		);
 	}
 
+	// A new doc's meta, from stdin, whole; a new kind starts with a closed, empty schema.
+	const meta = block
+		? (parseYaml(readStdinText(hint("meta"))) as Record<string, unknown>)
+		: kind.id === KIND_KIND_ID
+			? { schema: STARTER_SCHEMA }
+			: {};
+	if (!meta || typeof meta !== "object" || Array.isArray(meta))
+		throw new Error("--meta reads a YAML or JSON mapping from stdin");
 	if (kind.id === DIVE_KIND_ID) {
+		if (block) throw new Error("a dive's meta is nosedive's: crud dive takes no --meta");
 		if (name !== undefined) throw new Error("a dive's name is managed: crud dive takes no --name");
 		if (!feat)
 			throw new Error(
@@ -126,6 +137,10 @@ function crud(args: string[], io: CommandIo): void {
 	// default deck gist does, within a minute), so only the name is checked, by the mint.
 	const matches = name === undefined ? matchDocs(kind, gist) : [];
 	if (matches.length === 1) {
+		if (block)
+			throw new Error(
+				`${kind.name} ${matches[0]!.id} already has that gist; patch its meta with crud ${matches[0]!.id} --meta -`,
+			);
 		io.writeOut(readFileSync(matches[0]!.path, "utf8"));
 		return;
 	}
@@ -141,6 +156,7 @@ function crud(args: string[], io: CommandIo): void {
 		io,
 		name,
 		kind.id === DECK_KIND_ID ? (doc) => listDeck(kind.source.root, doc.id, io) : undefined,
+		meta,
 	);
 }
 

@@ -91,14 +91,23 @@ export async function helmWrite(
 		const repo = text(body, "repo")!;
 		if (!crudReach(cwd).has(repo)) throw new HelmRequestError(409, OUT_OF_REACH);
 		const name = text(body, "name", false);
+		const meta = body.meta;
+		if (meta !== undefined && (!meta || typeof meta !== "object" || Array.isArray(meta)))
+			throw new HelmRequestError(400, "meta must be an object of meta keys");
+		// JSON is YAML, so a new doc's meta goes to crud's stdin as it is.
 		return succeeded(
-			await runCrud(cwd, [
-				"--repo",
-				repo,
-				text(body, "kind")!,
-				...(name ? ["--name", name] : []),
-				text(body, "gist")!,
-			]),
+			await runCrud(
+				cwd,
+				[
+					"--repo",
+					repo,
+					text(body, "kind")!,
+					...(name ? ["--name", name] : []),
+					...(meta ? ["--meta", "-"] : []),
+					text(body, "gist")!,
+				],
+				meta ? JSON.stringify(meta) : "",
+			),
 		);
 	}
 	if (path === "/api/crud/meta") {

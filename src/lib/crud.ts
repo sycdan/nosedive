@@ -61,8 +61,9 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * gist is what finds it again -- unless a name is given, which is slugged to
  * kebab-case (each dot-joined part on its own) and must be free
  * among the docs of its kind in that repo.
- * The new doc's meta is validated first, so a kind that requires meta refuses
- * a bare mint rather than committing a doc it would reject.
+ * The new doc's meta -- `meta`, or none -- is validated first, so a kind that
+ * requires meta refuses a mint without it rather than committing a doc it
+ * would reject.
  *
  * `afterWrite` is what nosedive does for the kind once the doc is on disk; the
  * files it returns join the doc's commit, and if it throws, the doc is removed
@@ -74,6 +75,7 @@ export function mintDoc(
 	io: { log(message: string): void },
 	name?: string,
 	afterWrite?: (doc: MintedDoc) => string[],
+	meta: Record<string, unknown> = {},
 ): string {
 	gistSlug(gist); // refuses a gist with nothing in it
 	if (name !== undefined) {
@@ -87,10 +89,10 @@ export function mintDoc(
 		const holder = docsOfKind(kind).find((doc) => doc.name === name);
 		if (holder) throw new Error(`${kind.name} name ${name} is taken by ${holder.id}`);
 	}
-	const errors = validateMeta(kind, {});
+	const errors = validateMeta(kind, meta);
 	if (errors.length > 0)
 		throw new Error(
-			`a ${kind.name} cannot be minted without meta its kind requires:\n  ${errors.join("\n  ")}`,
+			`a ${kind.name} cannot be minted with that meta; pass what its kind requires with --meta -:\n  ${errors.join("\n  ")}`,
 		);
 	const id = uuid7AtMs(Date.now());
 	const path = join(kind.source.kbDir, `${id}.md`);
@@ -103,6 +105,9 @@ export function mintDoc(
 			`id: ${id}`,
 			`name: ${name ?? id}`,
 			`gist: ${JSON.stringify(title)}`,
+			...(Object.keys(meta).length > 0
+				? stringifyYaml({ meta }, { lineWidth: 0 }).replace(/\n$/, "").split("\n")
+				: []),
 			"---",
 			"",
 			`# ${title}`,

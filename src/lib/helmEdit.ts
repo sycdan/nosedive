@@ -33,16 +33,30 @@ function onSubmit(form, run) {
 	});
 }
 
-/** The + form over a kind's doc list: crud --repo <repo> <kind> [--name] <gist>. */
-function mintForm(kind, rerender) {
+/**
+ * The + form over a kind's doc list: crud --repo <repo> <kind> [--name] <gist>,
+ * with a field for each property the kind's schema requires, sent as the new
+ * doc's meta. A required property no simple field can hold is left to crud.
+ */
+function mintForm(kind, rerender, schema) {
 	const reach = kind.inCrudContext;
 	const gist = el("input", { type: "text", placeholder: "Gist of a new " + kind.name, required: "", disabled: reach ? null : "" });
 	const name = el("input", { type: "text", placeholder: "name (optional)", disabled: reach ? null : "" });
+	const properties = (schema && schema.properties) || {};
+	const needed = ((schema && schema.required) || [])
+		.map((key) => fieldFor(key, properties[key] || {}, undefined))
+		.filter((input) => !input.disabled);
+	for (const input of needed) if (input.dataset.kind !== "boolean") input.required = true;
+	const fields = needed.map((input) => el("label", { class: "field" }, el("span", {}, input.name + " *"), input));
 	const form = el("form", { class: "make", title: reach ? null : OUT_OF_REACH },
-		gist, name, el("button", { type: "submit", disabled: reach ? null : "" }, "+ " + kind.name));
+		gist, name, ...fields, el("button", { type: "submit", disabled: reach ? null : "" }, "+ " + kind.name));
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/mint", { repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined });
+			const meta = patchFrom(needed, {});
+			const run = await write("/api/crud/mint", {
+				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
+				meta: Object.keys(meta).length ? meta : undefined,
+			});
 			refreshGroups();
 			rerender(outputBox(run.stdout));
 		} catch (err) {

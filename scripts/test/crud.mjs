@@ -190,6 +190,41 @@ test("crud refuses an ambiguous match, an unknown kind, and a mint its kind woul
 	);
 });
 
+test("a new doc takes its meta whole from stdin, validated; a new kind starts with a closed schema", () => {
+	const bridge = bridgeWithKinds("mint-meta");
+	const owned = run(
+		["crud", "needy", "--meta", "-", "Somebody", "owns", "this"],
+		bridge,
+		"owner: pilot\n",
+	);
+	assertOk(owned, "crud needy --meta failed");
+	const doc = readFileSync(join(bridge, "kb", `${madeId(owned.stdout)}.md`), "utf8");
+	assert.match(doc, /^meta:\n {2}owner: pilot\n---$/m);
+
+	const before = commits(bridge);
+	const bad = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "price: -1\n");
+	assert.equal(bad.status, 1);
+	assert.match(bad.stderr, /\/price/);
+	assert.equal(commits(bridge), before, "an invalid mint writes nothing");
+	const taken = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "{}\n");
+	assertOk(taken, "crud note --meta {} failed");
+	const again = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "topic: x\n");
+	assert.equal(again.status, 1);
+	assert.match(again.stderr, /already has that gist; patch its meta/);
+
+	write(
+		join(bridge, "kb", "00000000-0000-70a0-90bd-1d49dc6264b9.md"),
+		readFileSync(join(root, "kb", "00000000-0000-70a0-90bd-1d49dc6264b9.md"), "utf8"),
+	);
+	const kind = run(["crud", "kind", "--name", "bug", "A", "defect"], bridge);
+	assertOk(kind, "crud kind failed");
+	const kindText = readFileSync(join(bridge, "kb", `${madeId(kind.stdout)}.md`), "utf8");
+	assert.match(
+		kindText,
+		/^meta:\n {2}schema:\n {4}type: object\n {4}additionalProperties: false\n {4}properties: \{\}\n---$/m,
+	);
+});
+
 test("crud deck mints a deck and lists it in decks, in one commit", () => {
 	const { bridge } = seededBridge(tmp, "decks", "pilot@nosedive.invalid");
 	const config = () => readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");

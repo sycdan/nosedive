@@ -30,6 +30,10 @@ const KIND_LINE = /^kind: kind\s*$/m;
 /** Shipped kinds whose docs live only in a bridge, and whose crud does more than write the doc. */
 export const DECK_KIND_ID = "00000000-0000-7d1f-805a-7d0a3bdff309";
 export const DIVE_KIND_ID = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
+export const KIND_KIND_ID = "00000000-0000-70a0-90bd-1d49dc6264b9";
+
+/** What a new kind starts as when nobody says: closed, with nothing declared yet. */
+export const STARTER_SCHEMA = { type: "object", additionalProperties: false, properties: {} };
 const BRIDGE_ONLY = new Set([DECK_KIND_ID, DIVE_KIND_ID]);
 
 /** Minted at timestamp 0: the mark of a kind doc nosedive ships. */

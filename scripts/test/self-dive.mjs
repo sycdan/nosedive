@@ -44,8 +44,31 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 
-	// Land publishes the checkout's work branch; the live bridge's config still waits for it.
-	assertOk(run(["land"], bridge), "land failed");
+	// Land publishes the checkout to its work branch and fast-forwards the bridge's trunk with it.
+	const landed = run(["land"], bridge);
+	assertOk(landed, "land failed");
+	assert.match(landed.stderr, /published the bridge's own scope to main/);
 	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), new RegExp(deckId));
-	assert.equal(readFileSync(configPath, "utf8"), liveConfig);
+	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(deckId));
+	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^decks: .*${deckId}$`, "m"));
+	assert.match(readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"), /^name: magic-cards$/m);
+	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
+});
+
+test("land refuses to publish the bridge's own scope while the bridge holds unpushed commits", () => {
+	const { bridge } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
+	const recorded = run(["dive", KB_FEAT, "Add", "a", "deck"], bridge, "Make a deck.\n");
+	assertOk(recorded, "dive failed");
+	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1]], bridge), "jump failed");
+	assertOk(run(["crud", "deck", "--name", "ideas", "Ideas"], bridge), "crud deck failed");
+	runTool("git", ["commit", "--allow-empty", "-m", "local only"], bridge);
+
+	const refused = run(["land"], bridge);
+	assert.equal(refused.status, 1, refused.stdout);
+	assert.match(refused.stderr, /1 commit\(s\) not on origin\/main/);
+	assert.match(
+		git(["log", "-1", "--format=%s", "HEAD"], bridge),
+		/local only/,
+		"nothing was rewritten",
+	);
 });

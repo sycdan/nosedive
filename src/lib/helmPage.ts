@@ -146,6 +146,7 @@ async function select(path, row, message) {
 	try {
 		const doc = await api("/api/doc?id=" + last.id + (last.repo ? "&repo=" + last.repo : ""));
 		showError(null);
+		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
 		if (deckIds.has(last.id)) {
 			const context = await api(contextQuery(last.id, false));
@@ -160,7 +161,7 @@ async function select(path, row, message) {
 		const form = kindDoc
 			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[message, diveActions(doc), featActions(doc, last), form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[message, featActions(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 

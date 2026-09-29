@@ -178,12 +178,9 @@ async function runVerb(body) {
 	refreshGroups();
 }
 
-/** Clicking a dive's card stages it and opens its doc, where it can be jumped. */
+/** Clicking a dive's card opens its doc, which stages it. */
 function diveCard(dive) {
-	return el("article", { class: "card pick", tabindex: "0", onclick: () => {
-		stage(dive);
-		select([{ id: dive.id, name: dive.title, kind: "dive" }]);
-	} },
+	return el("article", { class: "card pick", tabindex: "0", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) },
 		el("div", { class: "name" }, dive.title),
 		el("div", { class: "gist" }, dive.gist),
 		el("div", { class: "facts" },
@@ -192,7 +189,6 @@ function diveCard(dive) {
 			dive.diver ? fact("warn", "held by", dive.diver) : null));
 }
 
-/** A dive's doc offers Jump while no dive is active. */
 /** A feat is a feat doc, or any doc a deck links as <type>.feat. */
 function isFeatStep(step) {
 	return step.kind === "feat" || /(^|\.)feat$/.test(step.rel || "");
@@ -231,9 +227,13 @@ function jumpInto(doc) {
 	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id }));
 }
 
-function diveActions(doc) {
-	if (doc.kind !== "dive" || dives.active) return null;
-	return el("div", { class: "cardacts" }, confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: doc.id })));
+/**
+ * Opening a dive's doc with no dive active stages it: the dive bar names it
+ * and offers Jump, and the tree narrows to its scopes until it is unstaged.
+ */
+function stageOpened(doc) {
+	if (doc.kind !== "dive" || dives.active || (dives.staged && dives.staged.id === doc.id)) return;
+	stage({ id: doc.id, title: label(doc), gist: doc.gist, repos: [] });
 }
 
 /** With no active dive, the empty page is for getting onto one. */

@@ -167,6 +167,17 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const packed = await runVerb({ verb: "pack" });
 	assert.equal(packed.exit, 0, packed.text);
 	assert.equal(existsSync(marker), false, "pack puts the dive down");
+	const log = readFileSync(join(bridge, "workspace", ".scratch", dive.id, "helm.log"), "utf8");
+	assert.match(
+		log,
+		/^## \S+ nosedive jump /m,
+		"what helm ran on the dive is logged in its scratch",
+	);
+	assert.match(
+		log,
+		/^## \S+ nosedive pack\n\n[\s\S]*\[exit 0\]/m,
+		"pack, which ends the dive, too",
+	);
 	assert.equal((await get("/api/dives")).active, null);
 
 	const refused = await runVerb({ verb: "land" });

@@ -8,7 +8,7 @@ import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { helmContext, helmDeckRepos, helmDoc, helmKindCheck, helmKindDocs } from "./helm.js";
 import { helmPage } from "./helmPage.js";
 import { helmCreatableKinds } from "./helmCreate.js";
-import { helmDecks } from "./helmDeck.js";
+import { helmDecks, helmRepoList } from "./helmDeck.js";
 import { helmDives } from "./helmDives.js";
 import { streamVerb } from "./helmRun.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
@@ -169,6 +169,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 					),
 				);
 			if (req.method !== "GET") return sendJson(res, undefined);
+			if (url.pathname === "/api/repos") return sendJson(res, helmRepoList(cwd));
 			if (url.pathname === "/api/creatable") return sendJson(res, helmCreatableKinds(cwd));
 			if (url.pathname === "/api/decks")
 				return sendJson(res, helmDecks(cwd, url.searchParams.get("deck") || undefined));

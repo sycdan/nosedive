@@ -69,3 +69,11 @@ export function helmDecks(
 		diving: Boolean(activeId),
 	};
 }
+
+/** Every repo the bridge knows, by name: what a note can scope. */
+export function helmRepoList(cwd: string): { id: string; name: string }[] {
+	return bridgeView(cwd)
+		.docs.filter((doc) => doc.kind === "repo")
+		.map((doc) => ({ id: doc.id, name: doc.name }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+}

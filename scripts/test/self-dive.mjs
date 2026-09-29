@@ -137,9 +137,13 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	runTool("git", ["add", "shared.md"], self);
 	runTool("git", ["commit", "-m", "dive edit"], self);
 	const head = git(["rev-parse", "HEAD"], bridge);
+	const workBranch = () => git(["branch", "--list", "--format=%(objectname)", "work/kb"], origin);
+	const pushedBefore = workBranch();
 	const refused = run(["land"], bridge);
 	assert.equal(refused.status, 1, refused.stdout);
 	assert.match(refused.stderr, /does not apply to the bridge/);
+	assert.match(refused.stderr, /nothing was pushed/);
+	assert.equal(workBranch(), pushedBefore, "a refused land strands nothing on the work branch");
 	assert.match(refused.stderr, /shared\.md/);
 	assert.equal(git(["rev-parse", "HEAD"], bridge), head, "the live bridge is as it was");
 	assert.equal(git(["status", "--porcelain", "--", "shared.md"], bridge), "");

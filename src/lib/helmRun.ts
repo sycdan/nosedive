@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 
+import { appendDiveLog, diveLogDir } from "./helmLog.js";
 import { HelmRequestError } from "./helmWrites.js";
 import { packageRoot } from "./packageBacklog.js";
 
@@ -37,8 +38,16 @@ function command(body: Record<string, unknown>): { args: string[]; stdin: string
 			// The first line is the gist, a leading `<kind>:` included, as `nosedive note` reads it.
 			const [first, ...rest] = field(body, "text").split(/\r?\n/);
 			const noteBody = rest.join("\n").trim();
+			const scopes = Array.isArray(body.scopes)
+				? body.scopes.filter((scope): scope is string => typeof scope === "string" && scope !== "")
+				: [];
 			return {
-				args: ["note", ...first!.trim().split(/\s+/), ...(noteBody ? ["--body", "-"] : [])],
+				args: [
+					"note",
+					...first!.trim().split(/\s+/),
+					...scopes.flatMap((scope) => ["--scope", scope]),
+					...(noteBody ? ["--body", "-"] : []),
+				],
 				stdin: noteBody,
 			};
 		}
@@ -61,6 +70,20 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 		"cache-control": "no-store",
 		"x-content-type-options": "nosniff",
 	});
+	// Read before the run: a land or a bail ends the dive whose log it belongs in.
+	const logDir = diveLogDir(cwd);
+	let transcript = "";
+	const out = (text: string) => {
+		transcript += text;
+		res.write(text);
+	};
+	const end = (text: string) => {
+		transcript += text;
+		// Logged before the response ends, so what the page shows is already on disk.
+		// A jump starts a dive, so its log is known only once it has run.
+		appendDiveLog(logDir ?? diveLogDir(cwd), args, transcript);
+		res.end(text);
+	};
 	const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {
 		cwd,
 		stdio: ["pipe", "pipe", "pipe"],
@@ -68,9 +91,9 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 	// Decoded as text so an escape split across chunks is never half-stripped mid-character.
 	child.stdout.setEncoding("utf8");
 	child.stderr.setEncoding("utf8");
-	child.stdout.on("data", (chunk: string) => res.write(chunk.replace(ANSI, "")));
-	child.stderr.on("data", (chunk: string) => res.write(chunk.replace(ANSI, "")));
-	child.on("error", (err) => res.end(`\n${err.message}\n[exit 1]\n`));
-	child.on("close", (code) => res.end(`\n[exit ${code ?? 1}]\n`));
+	child.stdout.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
+	child.stderr.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
+	child.on("error", (err) => end(`\n${err.message}\n[exit 1]\n`));
+	child.on("close", (code) => end(`\n[exit ${code ?? 1}]\n`));
 	child.stdin.end(stdin);
 }

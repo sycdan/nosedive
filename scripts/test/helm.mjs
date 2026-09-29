@@ -432,6 +432,7 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	const noted = await post("/api/run", {
 		verb: "note",
 		text: "todo: buy sleeves\n\nThe matte ones.",
+		scopes: [BRIDGE_REPO],
 	});
 	assert.equal(noted.status, 200, noted.text);
 	assert.match(noted.text, /\[exit 0\]\s*$/);
@@ -440,6 +441,16 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	const note = readFileSync(join(bridge, notePath), "utf8");
 	assert.match(note, /^kind: todo$/m, "a leading <kind>: sets the note's kind");
 	assert.match(note, /The matte ones\./, "lines after the first are its body");
+	assert.match(
+		note,
+		new RegExp(`^scopes:\\n {2}- ${BRIDGE_REPO}`, "m"),
+		"scoped to the repos picked",
+	);
+	const repos = await fetch(new URL("/api/repos", base), { headers: { "x-helm-token": token } });
+	assert.ok(
+		(await repos.json()).some((repo) => repo.id === BRIDGE_REPO),
+		"the picker lists repos",
+	);
 
 	// On a dive that scopes the hydrated repo, helm writes there and nowhere else.
 	write(

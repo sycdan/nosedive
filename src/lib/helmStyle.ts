@@ -129,6 +129,10 @@ dialog.modal fieldset.meta { border: 1px solid var(--line); border-radius: var(-
 dialog.modal fieldset.meta legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 dialog.modal select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
 	background: var(--bg); color: var(--text); }
+dialog.modal fieldset.repos { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px;
+	margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+dialog.modal fieldset.repos legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
+dialog.modal label.check { display: flex; align-items: center; gap: 6px; }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }

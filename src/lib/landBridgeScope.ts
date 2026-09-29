@@ -7,12 +7,21 @@ import { gitRun } from "./repoWorkspaceCore.js";
  * what `tip` holds beyond the dive's pin that the live bridge (`base`) does
  * not, leaving out merges. Beyond the pin, because the work branch still
  * carries earlier dives' commits, landed into the bridge under other hashes;
- * not in the live bridge, because jump merges it in.
+ * not in the live bridge, because jump merges it in, nor already there under
+ * another hash, so a land retried after a refused push picks nothing twice.
  */
 export function ownCommits(repo: string, base: string, tip: string, pin: string): string[] {
 	const listed = gitRun(
 		repo,
-		["rev-list", "--reverse", "--no-merges", tip, `^${base}`, `^${pin}`],
+		[
+			"rev-list",
+			"--reverse",
+			"--no-merges",
+			"--right-only",
+			"--cherry-pick",
+			`${base}...${tip}`,
+			`^${pin}`,
+		],
 		`failed to list the commits ${tip} holds beyond ${base} and ${pin}`,
 	);
 	return listed ? listed.split(/\r?\n/).filter(Boolean) : [];
@@ -49,11 +58,11 @@ export function followLiveBridge(
 
 /**
  * What a dive changed in its checkout of the bridge itself (`__self`) is the
- * bridge's own kb, so once land has pushed that scope to its work branch it
- * also brings the dive's own commits into the live bridge: cherry-picked onto
- * the branch the live bridge has checked out, so the bridge push land already
- * makes carries them out. Otherwise a deck or feat made on the dive never
- * reaches the bridge.
+ * bridge's own kb, so land brings the dive's own commits into the live
+ * bridge -- before any scope is pushed, so a refusal strands nothing on the
+ * work branch -- cherry-picked from the checkout onto the branch the live
+ * bridge has checked out, so the bridge push land makes carries them out.
+ * Otherwise a deck or feat made on the dive never reaches the bridge.
  *
  * Into the live bridge rather than pushed to its remote from the checkout: the
  * live bridge may hold commits of its own that land publishes (a `record.gate`
@@ -64,16 +73,14 @@ export function followLiveBridge(
 export function bringBridgeScopeIn(
 	scopes: Array<{ scope: { repoId: string; ref?: string; workBranch?: string }; path: string }>,
 	rc: NosediveRc,
-	upstream: string,
 	io: { err(message: string): void },
 ): void {
 	const self = scopes.find(({ scope }) => scope.repoId === rc.bridge);
 	if (!self?.scope.ref || !self.scope.workBranch) return;
-	const [remote] = upstream.split("/");
 	gitRun(
 		rc.bridgeDir,
-		["fetch", remote!, self.scope.workBranch],
-		`failed to fetch ${self.scope.workBranch} into the bridge`,
+		["fetch", "--quiet", self.path, "HEAD"],
+		`failed to fetch ${formatPath(self.path)} into the bridge`,
 	);
 	const commits = ownCommits(rc.bridgeDir, "HEAD", "FETCH_HEAD", self.scope.ref);
 	if (commits.length === 0) return;
@@ -84,7 +91,7 @@ export function bringBridgeScopeIn(
 		runGit(rc.bridgeDir, ["cherry-pick", "--abort"]);
 		throw new Error(
 			`land refused: the bridge's own scope does not apply to the bridge at ${formatPath(rc.bridgeDir)}; ` +
-				`its work is pushed to ${self.scope.workBranch}. Resolve these and land again:\n  ` +
+				`nothing was pushed. Resolve these in ${formatPath(self.path)} and land again:\n  ` +
 				(conflicts.split(/\r?\n/).filter(Boolean).join("\n  ") || picked.stderr.trim()),
 		);
 	}

@@ -490,6 +490,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		io.err("land: land gates passed");
 	}
 
+	// Before any push, so a refusal leaves every work branch where it was.
+	bringBridgeScopeIn(writableScopes, rc, io);
 	for (const { scope, path } of writableScopes) {
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
@@ -508,7 +510,6 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}
-	bringBridgeScopeIn(writableScopes, rc, upstream, io);
 
 	const text = readFileSync(dive.path, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(dive.path));

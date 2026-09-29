@@ -77,9 +77,13 @@ function noteButton() {
  */
 function noteDialog() {
 	const text = el("textarea", { rows: "4", placeholder: "todo: take over the world", "aria-label": "note" });
+	// The repos it is about: nosedive note scopes the note to them and links it from each.
+	const repos = el("fieldset", { class: "repos" }, el("legend", {}, "about"));
+	api("/api/repos").then((list) => repos.append(...list.map((repo) => el("label", { class: "check" },
+		el("input", { type: "checkbox", value: repo.id }), repo.name))), showError);
 	const out = el("pre", { class: "output", hidden: "" });
 	const save = el("button", { type: "submit", class: "act jump" }, "Save note");
-	const form = el("form", {}, el("h3", {}, "Note"), text, out,
+	const form = el("form", {}, el("h3", {}, "Note"), text, repos, out,
 		el("div", { class: "modalacts" },
 			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Close"), save));
 	const dialog = el("dialog", { class: "modal" }, form);
@@ -93,7 +97,8 @@ function noteDialog() {
 			const res = await fetch("/api/run", {
 				method: "POST",
 				headers: { "x-helm-token": token, "content-type": "application/json" },
-				body: JSON.stringify({ verb: "note", text: text.value }),
+				body: JSON.stringify({ verb: "note", text: text.value,
+					scopes: [...repos.querySelectorAll("input:checked")].map((box) => box.value) }),
 			});
 			out.textContent = res.ok ? await res.text() : (await res.json()).error;
 		} catch (err) {

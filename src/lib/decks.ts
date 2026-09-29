@@ -6,7 +6,6 @@ import {
 	baseConfigPath,
 	formatPath,
 	parseYamlBlock,
-	readNosediveRc,
 	uuidLike,
 	type NosediveRc,
 } from "./coreParsing.js";
@@ -44,18 +43,22 @@ export function configuredDecks(rc: NosediveRc): string[] {
  * the one deck, and adding a deck must not hide it.
  */
 export function listDeck(root: string, id: string, io: { log(message: string): void }): void {
-	// The deck kind resolved from this repo, so this repo is where the deck
-	// goes -- never a bridge found by walking up from it.
-	if (!existsSync(baseConfigPath(root)))
+	// The deck kind resolved from this repo, so this repo's own config is where
+	// the deck goes. Read it by path: resolving the bridge would walk up, and a
+	// bridge checked out as a dive's __self sits inside the live bridge's
+	// workspace, so it would find the live one.
+	const path = baseConfigPath(root);
+	if (!existsSync(path))
 		throw new Error(`a deck lives in a bridge, and ${formatPath(root)} is not a nosedive bridge`);
-	const rc = readNosediveRc(root);
-	const decks = configuredDecks(rc);
+	const text = readFileSync(path, "utf8");
+	const scalars = parseYamlBlock(text, path);
+	const decks = parseDecks(scalars.raw.decks, scalars.scalars.backlog);
 	if (decks.includes(id)) return;
-	const config = parseDocument(readFileSync(rc.path, "utf8"));
+	const config = parseDocument(text);
 	// Written as a comma string whatever form it was read in: `seed` carries
 	// over the config keys it does not own only when they are scalars.
 	config.set("decks", [...decks, id].join(", "));
 	// Unfolded: a deck list is one grep-able line, however long it grows.
-	writeFileAtomic(rc.path, config.toString({ lineWidth: 0 }));
-	io.log(`Listed ${id} in ${formatPath(rc.path)}`);
+	writeFileAtomic(path, config.toString({ lineWidth: 0 }));
+	io.log(`Listed ${id} in ${formatPath(path)}`);
 }

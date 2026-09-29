@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -44,10 +44,10 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 
-	// Land publishes the checkout to its work branch and fast-forwards the bridge's trunk with it.
+	// Land pushes the checkout to its work branch and brings it into the live bridge, which publishes it.
 	const landed = run(["land"], bridge);
 	assertOk(landed, "land failed");
-	assert.match(landed.stderr, /published the bridge's own scope to main/);
+	assert.match(landed.stderr, /brought the bridge's own scope into the bridge/);
 	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), new RegExp(deckId));
 	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(deckId));
 	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^decks: .*${deckId}$`, "m"));
@@ -55,20 +55,38 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 });
 
-test("land refuses to publish the bridge's own scope while the bridge holds unpushed commits", () => {
-	const { bridge } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
+test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {
+	const { bridge, origin } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
 	const recorded = run(["dive", KB_FEAT, "Add", "a", "deck"], bridge, "Make a deck.\n");
 	assertOk(recorded, "dive failed");
 	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1]], bridge), "jump failed");
+	const self = join(bridge, "workspace", "__self");
 	assertOk(run(["crud", "deck", "--name", "ideas", "Ideas"], bridge), "crud deck failed");
-	runTool("git", ["commit", "--allow-empty", "-m", "local only"], bridge);
 
+	// A local-only bridge commit adding the same file the dive adds conflicts.
+	writeFileSync(join(bridge, "shared.md"), "the live bridge says one thing\n");
+	runTool("git", ["add", "shared.md"], bridge);
+	runTool("git", ["commit", "-m", "live edit"], bridge);
+	writeFileSync(join(self, "shared.md"), "the dive says another\n");
+	runTool("git", ["add", "shared.md"], self);
+	runTool("git", ["commit", "-m", "dive edit"], self);
+	const head = git(["rev-parse", "HEAD"], bridge);
 	const refused = run(["land"], bridge);
 	assert.equal(refused.status, 1, refused.stdout);
-	assert.match(refused.stderr, /1 commit\(s\) not on origin\/main/);
-	assert.match(
-		git(["log", "-1", "--format=%s", "HEAD"], bridge),
-		/local only/,
-		"nothing was rewritten",
-	);
+	assert.match(refused.stderr, /does not apply to the bridge/);
+	assert.match(refused.stderr, /shared\.md/);
+	assert.equal(git(["rev-parse", "HEAD"], bridge), head, "the live bridge is as it was");
+	assert.equal(git(["status", "--porcelain", "--", "shared.md"], bridge), "");
+
+	// Without the conflict, the live bridge's own commit and the dive's publish together.
+	runTool("git", ["reset", "--hard", "HEAD~1"], bridge);
+	writeFileSync(join(bridge, "local.md"), "only here\n");
+	runTool("git", ["add", "local.md"], bridge);
+	runTool("git", ["commit", "-m", "local only"], bridge);
+	const landed = run(["land"], bridge);
+	assertOk(landed, "land failed");
+	const published = git(["log", "--format=%s", "main"], origin);
+	assert.match(published, /local only/);
+	assert.match(published, /created deck ideas/);
+	assert.match(published, /dive edit/);
 });

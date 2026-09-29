@@ -26,7 +26,7 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
-import { publishBridgeScope } from "../lib/landBridgeScope.js";
+import { bringBridgeScopeIn } from "../lib/landBridgeScope.js";
 import { strandedInstancesOnLand } from "../lib/kindInstances.js";
 import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
@@ -508,7 +508,7 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
 		pushed.push(`${scope.repoId} -> ${branch}`);
 	}
-	publishBridgeScope(writableScopes, rc, kbDocs, upstream, io);
+	bringBridgeScopeIn(writableScopes, rc, upstream, io);
 
 	const text = readFileSync(dive.path, "utf8");
 	const parsed = parseMarkdownDoc(text, formatPath(dive.path));

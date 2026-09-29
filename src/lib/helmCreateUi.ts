@@ -11,6 +11,8 @@ export const helmCreateScript = String.raw`
 const DECK_KIND = "${DECK_KIND_ID}";
 /** The kinds the active dive can make, by repo then name; none with no dive. */
 let creatable = [];
+/** The kind last picked, by repo and id, so redrawing the bar keeps it. */
+let pickedKind = null;
 
 async function loadCreatable() {
 	creatable = dives.active ? await api("/api/creatable") : [];
@@ -25,6 +27,9 @@ function createControl() {
 	});
 	const picker = el("select", { class: "kindpick", "aria-label": "Kind to create" },
 		[...byRepo].map(([repo, options]) => el("optgroup", { label: repo }, options)));
+	const kept = creatable.findIndex((kind) => pickedKind && kind.id === pickedKind.id && kind.repoId === pickedKind.repoId);
+	if (kept !== -1) picker.value = String(kept);
+	picker.addEventListener("change", () => { pickedKind = creatable[Number(picker.value)]; });
 	return [picker, el("button", { class: "act jump", onclick: () => createDialog(creatable[Number(picker.value)]) }, "Add")];
 }
 
@@ -56,7 +61,10 @@ function createDialog(kind) {
 	// A deck is known by its name; helm stamps a gist left empty.
 	const gist = el("input", { type: "text", placeholder: isDeck ? "What's the deck for?" : "Gist", required: isDeck ? null : "", "aria-label": "gist" });
 	const name = el("input", { type: "text", placeholder: isDeck ? "Name" : "name (optional)", required: isDeck ? "" : null, "aria-label": "name" });
-	const inputs = Object.entries(properties).map(([key, spec]) => fieldFor(key, spec || {}, undefined)).filter((input) => !input.disabled);
+	// A property built from other schemas (a kind's own schema, say) is no simple field.
+	const composite = (spec) => !spec.type && !Array.isArray(spec.enum) && !!(spec.allOf || spec.anyOf || spec.oneOf || spec.$ref || spec.properties);
+	const inputs = Object.entries(properties).filter(([, spec]) => !composite(spec || {}))
+		.map(([key, spec]) => fieldFor(key, spec || {}, undefined)).filter((input) => !input.disabled);
 	for (const input of inputs) if (required.includes(input.name) && input.dataset.kind !== "boolean") input.required = true;
 	const rows = inputs.map((input) => el("label", { class: "field" },
 		el("span", {}, input.name + (required.includes(input.name) ? " *" : "")), input));
@@ -88,6 +96,9 @@ function createDialog(kind) {
 			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
 			refreshGroups();
 			if (isDeck) await loadDecks();
+			// A new kind can be made at once; the dropdown and its schemas are read again.
+			await loadCreatable();
+			renderBar();
 			if (id) {
 				const title = gist.value || name.value;
 				actions.replaceChildren(
@@ -97,7 +108,7 @@ function createDialog(kind) {
 						// The kind rides along, so the new doc opens with its meta form.
 						const kindRef = { id: kind.id, repoId: kind.repoId, name: kind.name, inCrudContext: true };
 						select([deckStep(ctx.deck), { id: id[1], name: title, kind: kind.name, repo: kind.repoId, kindRef }]);
-					} }, "Open"));
+					} }, "View"));
 			}
 		} catch (err) {
 			out.textContent = String(err.message || err);

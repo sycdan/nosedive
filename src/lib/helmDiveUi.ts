@@ -40,8 +40,9 @@ function renderBar() {
 	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
 	if (dives.active)
-		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title, ...createControl(),
+		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
 			el("span", { class: "gap" }),
+			...createControl(),
 			el("button", { class: "act land", onclick: () => confirmDialog({
 				verb: "Land", cls: "land", target: dive.title,
 				detail: "Pushes " + scopeList(dive) + (dive.repos.length === 1 ? " to its work branch" : " to their work branches") + ", closes the dive, and pushes the bridge.",

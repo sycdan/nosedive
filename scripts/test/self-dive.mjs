@@ -156,3 +156,24 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	assert.match(published, /created deck ideas/);
 	assert.match(published, /dive edit/);
 });
+
+test("a second dive on the bridge lands only its own work, after the first landed through a merge", () => {
+	const { bridge, origin } = seededBridge(tmp, "self-twice", "pilot@nosedive.invalid");
+	const dive = (name) => {
+		assertOk(run(["jump", KB_FEAT], bridge), "jump failed");
+		assertOk(run(["crud", "deck", "--name", name, name], bridge), "crud deck failed");
+		// Edit the dived feat too: the first dive's bookkeeping touched it, and so did jump's.
+		assertOk(
+			run(["crud", KB_FEAT, "--meta", "-"], bridge, `note: ${name}\n`),
+			"crud --meta on the kb feat failed",
+		);
+		const landed = run(["land"], bridge);
+		assertOk(landed, `land of ${name} failed`);
+	};
+	dive("first");
+	dive("second");
+	const published = git(["log", "--format=%s", "main"], origin);
+	assert.equal(published.match(/created deck first/g)?.length, 1, "the first deck lands once");
+	assert.equal(published.match(/created deck second/g)?.length, 1);
+	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
+});

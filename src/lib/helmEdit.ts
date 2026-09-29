@@ -216,6 +216,9 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 			const meta = Object.assign({}, kindDoc.meta, { schema: build() });
 			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: meta, replace: true });
 			refreshGroups();
+			// The dive bar's forms are built from schemas, so it reads them again.
+			await loadCreatable();
+			renderBar();
 			rerender(outputBox(run.stdout));
 		} catch (err) {
 			rerender(outputBox(String(err.message || err), true));

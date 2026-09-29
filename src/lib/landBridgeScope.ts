@@ -3,17 +3,17 @@ import { gitOutput, runGit } from "./gitProcess.js";
 import { gitRun } from "./repoWorkspaceCore.js";
 
 /**
- * The commits `tip` holds that `base` lacks, oldest first, leaving out merges
- * and any commit `base` already has under another hash. For a dive's checkout
- * of the bridge (`__self`) against the live bridge, that is the dive's own
- * work: jump merges the live bridge in, and earlier lands cherry-picked the
- * work branch's history into it, so neither is the dive's to pack or land.
+ * The dive's own work in its checkout of the bridge (`__self`), oldest first:
+ * what `tip` holds beyond the dive's pin that the live bridge (`base`) does
+ * not, leaving out merges. Beyond the pin, because the work branch still
+ * carries earlier dives' commits, landed into the bridge under other hashes;
+ * not in the live bridge, because jump merges it in.
  */
-export function ownCommits(repo: string, base: string, tip: string): string[] {
+export function ownCommits(repo: string, base: string, tip: string, pin: string): string[] {
 	const listed = gitRun(
 		repo,
-		["rev-list", "--reverse", "--no-merges", "--right-only", "--cherry-pick", `${base}...${tip}`],
-		`failed to list the commits ${tip} holds beyond ${base}`,
+		["rev-list", "--reverse", "--no-merges", tip, `^${base}`, `^${pin}`],
+		`failed to list the commits ${tip} holds beyond ${base} and ${pin}`,
 	);
 	return listed ? listed.split(/\r?\n/).filter(Boolean) : [];
 }
@@ -62,20 +62,20 @@ export function followLiveBridge(
  * the live bridge as it was, and refused with the files named.
  */
 export function bringBridgeScopeIn(
-	scopes: Array<{ scope: { repoId: string; workBranch?: string }; path: string }>,
+	scopes: Array<{ scope: { repoId: string; ref?: string; workBranch?: string }; path: string }>,
 	rc: NosediveRc,
 	upstream: string,
 	io: { err(message: string): void },
 ): void {
 	const self = scopes.find(({ scope }) => scope.repoId === rc.bridge);
-	if (!self?.scope.workBranch) return;
+	if (!self?.scope.ref || !self.scope.workBranch) return;
 	const [remote] = upstream.split("/");
 	gitRun(
 		rc.bridgeDir,
 		["fetch", remote!, self.scope.workBranch],
 		`failed to fetch ${self.scope.workBranch} into the bridge`,
 	);
-	const commits = ownCommits(rc.bridgeDir, "HEAD", "FETCH_HEAD");
+	const commits = ownCommits(rc.bridgeDir, "HEAD", "FETCH_HEAD", self.scope.ref);
 	if (commits.length === 0) return;
 	io.err(`land: bringing the bridge's own scope into the bridge`);
 	const picked = runGit(rc.bridgeDir, ["cherry-pick", "--keep-redundant-commits", ...commits]);

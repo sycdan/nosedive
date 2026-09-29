@@ -53,7 +53,7 @@ function packRepoScope(
 	// A checkout of the bridge itself has the live bridge merged in by jump:
 	// only the dive's own commits are its to pack.
 	const commits = bridgeDir
-		? ownCommits(repoPath, fetchLiveBridge(bridgeDir, repoPath), "HEAD")
+		? ownCommits(repoPath, fetchLiveBridge(bridgeDir, repoPath), "HEAD", scope.ref)
 		: listAheadCommits(repoPath, scope.ref, scope.repoId);
 	const entries: CapturedPatch[] = [];
 	for (const sha of commits) {

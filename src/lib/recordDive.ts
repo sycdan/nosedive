@@ -201,21 +201,41 @@ function replaceTitle(body: string, title: string): string {
 	return `# ${title}\n\n${body}`;
 }
 
+/** Where `crud dive` has a new dive written: the kb the dive kind resolved from. */
+export interface DiveTarget {
+	root: string;
+	kbDir: string;
+}
+
 /**
  * `brief` is for the in-process caller that already holds the text -- `test`
  * minting a dive for a failed gate. Every other caller is the CLI, where the
  * brief arrives on stdin because an argument cannot carry paragraphs.
+ *
+ * `target` writes and commits a new dive in another checkout of the bridge --
+ * a dive's `__self` -- while its scopes still resolve against the live bridge
+ * and workspace. Such a dive is recorded, never claimed.
  */
-export function recordDive(args: string[], io: CommandIo, brief?: string, newId?: string): void {
+export function recordDive(
+	args: string[],
+	io: CommandIo,
+	brief?: string,
+	newId?: string,
+	target?: DiveTarget,
+): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
+	const docRoot = target?.root ?? rc.bridgeDir;
+	const kbDir = target?.kbDir ?? rc.kbDir;
 	// Before the parse, because whether the positional is a document is a
 	// question only the bridge can answer.
-	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
+	const kbDocs = loadKbDocs(kbDir, docRoot);
+	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(docRoot, kbDocs));
 	if (options.briefStdin) brief = readDiveBrief();
-	const active = activeDive(kbDocs, rc.workspaceDir);
+	if (target && (options.ref || options.free || options.diver))
+		throw new Error("a dive recorded elsewhere is only created, never claimed");
+	const active = target ? undefined : activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
 
@@ -267,20 +287,25 @@ export function recordDive(args: string[], io: CommandIo, brief?: string, newId?
 		}
 		// `jump <feat>` mints the id first, to title the dive with the name it derives.
 		const id = newId ?? uuid7AtMs(Date.now());
-		const path = join(rc.kbDir, `${id}.md`);
+		const path = join(kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
 		commitBridgeDocs(
-			rc.bridgeDir,
-			`dive(${readKbDoc(path, rc.bridgeDir).name}): created`,
+			docRoot,
+			`dive(${readKbDoc(path, docRoot).name}): created`,
 			[path, feat.path],
 			io,
 			feat.id,
 		);
-		printNextSteps(io, [`nosedive jump kb/${id}.md`]);
+		printNextSteps(
+			io,
+			docRoot === rc.bridgeDir
+				? [`nosedive jump kb/${id}.md`]
+				: ["nosedive land -- publish it to the bridge, to be jumped from there"],
+		);
 		return;
 	}
 

@@ -121,6 +121,22 @@ export async function helmWrite(
 			),
 		);
 	}
+	if (path === "/api/crud/dive") {
+		const title = text(body, "title", false);
+		return succeeded(
+			await runCrud(
+				cwd,
+				[
+					"dive",
+					"--feat",
+					text(body, "feat")!,
+					...(title ? ["--title", title] : []),
+					text(body, "gist")!,
+				],
+				text(body, "brief")!,
+			),
+		);
+	}
 	if (path === "/api/crud/deck") {
 		const gist =
 			text(body, "gist", false) ||

@@ -6,7 +6,6 @@ import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
 import { formatPath, parseYamlBlock, readNosediveRc, resolveFrom } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById } from "./kbDocs.js";
-import { packageRoot } from "./packageBacklog.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
@@ -28,7 +27,10 @@ export interface KindDoc {
 }
 
 const KIND_LINE = /^kind: kind\s*$/m;
-const NOSEDIVE_SCRIPT = "nosedive:";
+/** Shipped kinds whose docs live only in a bridge, and whose crud does more than write the doc. */
+export const DECK_KIND_ID = "00000000-0000-7d1f-805a-7d0a3bdff309";
+export const DIVE_KIND_ID = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
+const BRIDGE_ONLY = new Set([DECK_KIND_ID, DIVE_KIND_ID]);
 
 /** Minted at timestamp 0: the mark of a kind doc nosedive ships. */
 export function isZerostar(id: string): boolean {
@@ -116,6 +118,18 @@ export function selectRepo(sources: KindSource[], ref: string): KindSource[] {
 }
 
 /**
+ * A deck or a dive lives only in a bridge, so a copy of its kind in a repo in
+ * play that is not one -- a scoped nosedive checkout -- is not a candidate.
+ */
+export function bridgeHomed(kinds: KindDoc[]): KindDoc[] {
+	return kinds.filter(
+		(kind) =>
+			!BRIDGE_ONLY.has(kind.id) ||
+			existsSync(join(kind.source.root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME)),
+	);
+}
+
+/**
  * The one kind a name means in context. A name several repos in play define
  * is refused rather than guessed; `--repo` narrows the context to one.
  */
@@ -172,13 +186,4 @@ export function checkDocMeta(
 	if (!kind)
 		return { errors: [], warning: `no kind ${doc.kind} in context; its meta is not validated` };
 	return { kind, errors: validateMeta(kind, doc.meta) };
-}
-
-/** `nosedive:<path>` is the package's; any other script belongs to the repo that declares the kind. */
-export function postCrudScriptPath(kind: KindDoc): string | undefined {
-	const script = kind.meta["post-crud-script"];
-	if (typeof script !== "string" || !script) return undefined;
-	return script.startsWith(NOSEDIVE_SCRIPT)
-		? join(packageRoot(), script.slice(NOSEDIVE_SCRIPT.length))
-		: join(kind.source.root, script);
 }

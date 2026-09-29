@@ -18,9 +18,9 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("crud");
-const minted = run(["mint", "7"], tmp);
+const minted = run(["mint", "6"], tmp);
 assertOk(minted, "mint failed");
-const [NOTE_KIND, NEEDY_KIND, CARD_KIND, CARDS_REPO, DIVE, SPARE, HOOK_KIND] = minted.stdout
+const [NOTE_KIND, NEEDY_KIND, CARD_KIND, CARDS_REPO, DIVE, SPARE] = minted.stdout
 	.trim()
 	.split(/\r?\n/);
 
@@ -190,7 +190,7 @@ test("crud refuses an ambiguous match, an unknown kind, and a mint its kind woul
 	);
 });
 
-test("crud deck mints a deck and its post-crud-script lists it in decks, in one commit", () => {
+test("crud deck mints a deck and lists it in decks, in one commit", () => {
 	const { bridge } = seededBridge(tmp, "decks", "pilot@nosedive.invalid");
 	const config = () => readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
 	const backlog = /^backlog: (\S+)$/m.exec(config())[1];
@@ -269,7 +269,11 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	const worktreeBefore = commits(worktree);
 	const deck = run(["crud", "deck", "Elves"], bridge);
 	assert.equal(deck.status, 1, deck.stdout);
-	assert.match(deck.stderr, /not a nosedive bridge/);
+	assert.match(
+		deck.stderr,
+		/no kind deck in context/,
+		"a deck kind outside a bridge is not in play",
+	);
 	assert.equal(commits(bridge), bridgeBefore);
 	assert.equal(commits(worktree), worktreeBefore);
 	assert.equal(git(["status", "--porcelain"], worktree), "", "the refused mint is undone");
@@ -280,77 +284,36 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	assert.match(bridgeKind.stderr, /no kind note/, "the bridge's kinds are not in play on a dive");
 });
 
-test("a post-crud-script runs after the mint with the action; its changes join the commit, its failure undoes the mint", () => {
-	const bridge = createBridge(tmp, "hooked");
-	write(
-		join(bridge, "kb", `${HOOK_KIND}.md`),
-		[
-			"---",
-			"kind: kind",
-			`id: ${HOOK_KIND}`,
-			"name: log",
-			'gist: "A logged kind"',
-			"meta:",
-			"  post-crud-script: scripts/hook.mjs",
-			"  schema:",
-			"    type: object",
-			"    additionalProperties: false",
-			"    properties:",
-			"      note:",
-			"        type: string",
-			"---",
-			"",
-		].join("\n"),
+test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {
+	const { bridge } = seededBridge(tmp, "dives", "pilot@nosedive.invalid");
+	const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
+	const made = run(
+		["crud", "dive", "--feat", KB_FEAT, "--title", "Note button", "Add", "the", "note", "button"],
+		bridge,
+		"Put a Note button in the dive bar.\n\nIt takes free text.\n",
 	);
-	write(
-		join(bridge, "scripts", "hook.mjs"),
-		[
-			'import { appendFileSync } from "node:fs";',
-			'import { join } from "node:path";',
-			"export async function postCrud(value) {",
-			'	if (value.doc.name === "boom") throw new Error("the hook refused");',
-			'	appendFileSync(join(value.root, "hook-trail.md"), `${value.action} ${value.kind} ${value.doc.id}\\n`);',
-			'	return { stdout: "hooked\\n", stderr: "", exitCode: 0 };',
-			"}",
-			"",
-		].join("\n"),
-	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "hooked kind");
+	assertOk(made, "crud dive failed");
+	const path = /^Recorded (\S+)$/m.exec(made.stdout)?.[1];
+	assert.ok(path, made.stdout);
+	const doc = readFileSync(join(bridge, path), "utf8");
+	assert.match(doc, /^kind: dive$/m);
+	assert.match(doc, /^gist: "Add the note button"$/m);
+	assert.match(doc, new RegExp(`^  feat: ${KB_FEAT}$`, "m"));
+	assert.match(doc, /^  diver: null$/m, "recording claims nothing");
+	assert.match(doc, /^# Note button$/m);
+	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
+	assert.match(subject(bridge), /^dive\(\S+\): created$/);
+	assert.ok(!existsSync(join(bridge, "workspace", ".nosedive-ref")), "nothing is on deck");
 
-	const made = run(["crud", "log", "First", "entry"], bridge);
-	assertOk(made, "crud with a hook failed");
-	const id = madeId(made.stdout);
-	assert.match(made.stdout, /^hooked$/m);
-	assert.equal(readFileSync(join(bridge, "hook-trail.md"), "utf8"), `create log ${id}\n`);
-	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
-		[`kb/${id}.md`, "hook-trail.md"].sort(),
-		"the hook's change is in the mint's commit",
-	);
-
-	const before = commits(bridge);
-	const refused = run(["crud", "log", "--name", "boom", "Second"], bridge);
-	assert.equal(refused.status, 1);
-	assert.match(refused.stderr, /the hook refused/);
-	assert.equal(commits(bridge), before);
-	assert.equal(
-		git(["status", "--porcelain"], bridge),
-		"",
-		"the refused mint leaves nothing behind",
-	);
-
-	const updated = run(["crud", id, "--meta", "-"], bridge, "note: hello\n");
-	assertOk(updated, "crud --meta on a hooked kind failed");
-	assert.equal(
-		readFileSync(join(bridge, "hook-trail.md"), "utf8"),
-		`create log ${id}\nupdate log ${id}\n`,
-		"the hook is told the action",
-	);
-	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
-		[`kb/${id}.md`, "hook-trail.md"].sort(),
-	);
+	for (const [args, pattern] of [
+		[["dive", "No", "feat"], /crud dive needs --feat/],
+		[["dive", "--feat", KB_FEAT, "--name", "mine", "Named"], /a dive's name is managed/],
+		[["deck", "--feat", KB_FEAT, "Elves"], /--feat and --title go with crud dive/],
+	]) {
+		const refused = run(["crud", ...args], bridge, "brief\n");
+		assert.equal(refused.status, 1, args.join(" "));
+		assert.match(refused.stderr, pattern);
+	}
 });
 
 /** A doc's text with its meta block taken out, to show nothing else moved. */

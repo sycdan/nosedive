@@ -460,7 +460,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 
 	printNextSteps(io, [
 		"nosedive preflight -- what needs attention now",
-		"nosedive record.feat -- start something new",
+		"nosedive helm -- see the bridge, and jump its kb feat to start something new",
 		"nosedive help -- what else nosedive can do",
 		`or ask your agent "What's next?"`,
 	]);

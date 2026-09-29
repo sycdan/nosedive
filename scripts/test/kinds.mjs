@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -23,7 +24,7 @@ const {
 	resolveKind,
 	validateMeta,
 	checkDocMeta,
-	postCrudScriptPath,
+	bridgeHomed,
 	shippedFiles,
 } = await import(libUrl);
 
@@ -113,17 +114,20 @@ test("instances are validated against their kind with path-qualified errors", ()
 	assert.match(unknown.warning, /no kind widget/);
 });
 
-test("post-crud-script resolves nosedive: in the package and anything else in the kind's repo", () => {
-	assert.equal(
-		postCrudScriptPath(deckKind),
-		join(root, "kb", "artifacts", `${DECK}.mjs`),
-		"the deck kind names its script in the package",
+test("a deck or dive kind counts only from a bridge; other kinds count anywhere", () => {
+	const bridge = createBridge(tmp, "homed");
+	write(join(bridge, "kb", `${DECK}.md`), readFileSync(join(root, "kb", `${DECK}.md`), "utf8"));
+	const bridgeSource = { name: "homed", root: bridge, kbDir: join(bridge, "kb") };
+	const homed = bridgeHomed(loadKinds([packageSource, bridgeSource]));
+	assert.deepEqual(
+		homed
+			.filter((kind) => kind.name === "deck" || kind.name === "dive")
+			.map((kind) => kind.source.name),
+		["homed"],
+		"nosedive's own deck and dive kinds are not candidates; the bridge's deck is",
 	);
-	const kinds = loadKindsFrom("scripts", [
-		kindDoc(CARD_A, "card", [...CARD_META, "post-crud-script: scripts/card.mjs"]),
-	]);
-	const card = resolveKind(kinds, "card");
-	assert.equal(postCrudScriptPath(card), join(tmp, "scripts", "scripts", "card.mjs"));
+	assert.equal(resolveKind(homed, "deck").source.root, bridge);
+	assert.ok(resolveKind(homed, "memo"), "memo is not bridge-only");
 });
 
 test("every unscoped zerostar ships; a scoped or minted one stays in its repo", () => {

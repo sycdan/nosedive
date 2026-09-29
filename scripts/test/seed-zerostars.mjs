@@ -18,6 +18,7 @@ const tmp = createTmp("seed-zerostars");
 const KIND = "00000000-0000-70a0-90bd-1d49dc6264b9";
 const DECK = "00000000-0000-7d1f-805a-7d0a3bdff309";
 const MEMO = "00000000-0000-7bb2-8122-2cad84184e09";
+const DIVE = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
@@ -37,8 +38,8 @@ function commitAll(bridge, message) {
 test("seed ships the unscoped zerostars, scopes the kb feat to the bridge, and links it from the backlog", () => {
 	const { bridge } = seededBridge(tmp, "fresh", "pilot@nosedive.invalid");
 	const kb = join(bridge, "kb");
-	assert.deepEqual(zerostars(kb), [KB_FEAT, KIND, MEMO, DECK].map((id) => `${id}.md`).sort());
-	for (const id of [KIND, MEMO, DECK])
+	assert.deepEqual(zerostars(kb), [KB_FEAT, KIND, MEMO, DECK, DIVE].map((id) => `${id}.md`).sort());
+	for (const id of [KIND, MEMO, DECK, DIVE])
 		assert.equal(
 			readFileSync(join(kb, `${id}.md`), "utf8"),
 			readFileSync(join(root, "kb", `${id}.md`), "utf8"),

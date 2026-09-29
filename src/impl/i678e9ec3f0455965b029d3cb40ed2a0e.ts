@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 
 import { parse as parseYaml } from "yaml";
 
@@ -7,25 +6,20 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
+import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
+import { listDeck } from "../lib/decks.js";
+import { readActiveDiveId } from "../lib/kbDocs.js";
 import {
-	BLOCKS,
-	findDocByQuid,
-	matchDocs,
-	mintDoc,
-	updateBlock,
-	type Block,
-	type MintedDoc,
-} from "../lib/crud.js";
-import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
-import {
+	bridgeHomed,
+	DECK_KIND_ID,
+	DIVE_KIND_ID,
 	kindSources,
 	loadKinds,
-	postCrudScriptPath,
 	resolveKind,
 	selectRepo,
-	type KindDoc,
 } from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
+import { recordDive } from "../lib/recordDive.js";
 import { readStdinText } from "../lib/stdinText.js";
 
 const hint = (block: Block) =>
@@ -62,7 +56,7 @@ function takeFlag(args: string[], flag: string): string | undefined {
 	return value;
 }
 
-async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promise<void> {
+function crud(args: string[], io: CommandIo): void {
 	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
 		printCommandHelp("crud", io);
 		if (args.length === 0) io.setExitCode(1);
@@ -72,6 +66,8 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 	const replace = takeSwitch(args, "--replace");
 	if (replace && !block) throw new Error("--replace goes with --meta, --scopes or --links");
 	const name = takeFlag(args, "--name");
+	const feat = takeFlag(args, "--feat");
+	const title = takeFlag(args, "--title");
 	const repo = takeFlag(args, "--repo");
 	const sources =
 		repo === undefined ? kindSources(process.cwd()) : selectRepo(kindSources(process.cwd()), repo);
@@ -79,7 +75,8 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 	const [first, ...rest] = args as [string, ...string[]];
 
 	if (uuidLike(first)) {
-		if (name !== undefined) throw new Error("crud <quid> takes no --name");
+		if (name !== undefined || feat !== undefined || title !== undefined)
+			throw new Error("crud <quid> takes no --name, --feat or --title");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, first);
 		if (!target) throw new Error(`no doc ${first} in context`);
@@ -90,19 +87,7 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		const patch = parseYaml(readStdinText(hint(block))) as unknown;
 		if (!patch || typeof patch !== "object" || Array.isArray(patch))
 			throw new Error(`--${block} reads a YAML or JSON mapping from stdin`);
-		const kinds = loadKinds(sources);
-		const doc = readKbDoc(target.path, target.source.root);
-		const kind = resolveKind(kinds, doc.kind);
-		const script = kind ? postCrudScriptPath(kind) : undefined;
-		await updateBlock(
-			target,
-			kinds,
-			block,
-			patch as Record<string, unknown>,
-			replace,
-			io,
-			kind && script ? postCrudHook("update", script, kind, doc.gist, io, runtime) : undefined,
-		);
+		updateBlock(target, loadKinds(sources), block, patch as Record<string, unknown>, replace, io);
 		return;
 	}
 	if (block)
@@ -110,7 +95,7 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 
 	const gist = rest.join(" ").trim();
 	if (!gist) throw new Error(`crud ${first} requires a gist`);
-	const kind = resolveKind(loadKinds(sources), first);
+	const kind = resolveKind(bridgeHomed(loadKinds(sources)), first);
 	if (!kind) {
 		const rc = readNosediveRc(process.cwd());
 		throw new Error(
@@ -119,6 +104,24 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 				: `no kind ${first} in context: the bridge kb declares none by that name, and \`nosedive seed\` copies in nosedive's own`,
 		);
 	}
+
+	if (kind.id === DIVE_KIND_ID) {
+		if (name !== undefined) throw new Error("a dive's name is managed: crud dive takes no --name");
+		if (!feat)
+			throw new Error(
+				"crud dive needs --feat: echo <brief> | nosedive crud dive --feat <feat> <gist...>",
+			);
+		recordDive(
+			["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : []), "--brief", "-"],
+			io,
+			undefined,
+			undefined,
+			{ root: kind.source.root, kbDir: kind.source.kbDir },
+		);
+		return;
+	}
+	if (feat !== undefined || title !== undefined)
+		throw new Error(`--feat and --title go with crud dive, not crud ${kind.name}`);
 
 	// A name is the doc's identity when given: two docs may share a gist (helm's
 	// default deck gist does, within a minute), so only the name is checked, by the mint.
@@ -133,46 +136,15 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 				matches.map((match) => `${match.id} (${match.name})`).join(", "),
 		);
 
-	const script = postCrudScriptPath(kind);
-	await mintDoc(
+	mintDoc(
 		kind,
 		gist,
 		io,
 		name,
-		script ? postCrudHook("create", script, kind, gist, io, runtime) : undefined,
+		kind.id === DECK_KIND_ID ? (doc) => listDeck(kind.source.root, doc.id, io) : undefined,
 	);
 }
 
-/**
- * A kind's post-crud-script, told what crud just did so it can decide whether
- * to act, and handed what a command adapter gets. A throw or a nonzero exit
- * fails the crud.
- */
-function postCrudHook(
-	action: "create" | "update",
-	script: string,
-	kind: KindDoc,
-	gist: string,
-	io: CommandIo,
-	runtime: ImplRuntime,
-): (doc: MintedDoc) => Promise<void> {
-	return async (doc) => {
-		const mod = (await import(pathToFileURL(script).href)) as Record<string, unknown>;
-		if (typeof mod.postCrud !== "function")
-			throw new Error(
-				`post-crud-script of kind ${kind.name} must export postCrud(value, ctx): ${script}`,
-			);
-		const result = (await mod.postCrud(
-			{ action, kind: kind.name, gist, doc, root: kind.source.root },
-			{ cwd: process.cwd(), impl: runtime.impl },
-		)) as ImplCommandOutput | undefined;
-		if (result?.stdout) io.writeOut(result.stdout);
-		if (result?.stderr) io.writeErr(result.stderr);
-		if (result && result.exitCode !== 0)
-			throw new Error(`post-crud-script of kind ${kind.name} exited ${result.exitCode}`);
-	};
-}
-
-export function run(args: string[], runtime: ImplRuntime): Promise<ImplCommandOutput> {
-	return captureCommand((commandArgs, io) => crud(commandArgs, io, runtime), args);
+export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {
+	return captureCommand((commandArgs, io) => crud(commandArgs, io), args);
 }

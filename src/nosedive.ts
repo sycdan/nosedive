@@ -48,7 +48,7 @@ export {
 	checkDocMeta,
 	kindSources,
 	loadKinds,
-	postCrudScriptPath,
+	bridgeHomed,
 	resolveKind,
 	selectRepo,
 	validateMeta,

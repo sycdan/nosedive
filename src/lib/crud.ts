@@ -1,12 +1,10 @@
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { formatPath, uuidLike } from "./coreParsing.js";
-import { runGit } from "./gitProcess.js";
 import { loadKbDocs, readKbDoc, type KbDoc } from "./kbDocs.js";
 import { checkDocMeta, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
 import { entriesToMapping, isMapping, mappingToEntries, mergePatch } from "./mergePatch.js";
@@ -66,17 +64,17 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * The new doc's meta is validated first, so a kind that requires meta refuses
  * a bare mint rather than committing a doc it would reject.
  *
- * `afterWrite` is the kind's post-crud-script, run once the doc is on disk.
- * Whatever it changes in the repo joins the doc's commit; if it fails, the doc
- * is removed and nothing is committed.
+ * `afterWrite` is what nosedive does for the kind once the doc is on disk; the
+ * files it returns join the doc's commit, and if it throws, the doc is removed
+ * and nothing is committed.
  */
-export async function mintDoc(
+export function mintDoc(
 	kind: KindDoc,
 	gist: string,
 	io: { log(message: string): void },
 	name?: string,
-	afterWrite?: (doc: MintedDoc) => Promise<void>,
-): Promise<string> {
+	afterWrite?: (doc: MintedDoc) => string[],
+): string {
 	gistSlug(gist); // refuses a gist with nothing in it
 	if (name !== undefined) {
 		const given = name;
@@ -97,8 +95,6 @@ export async function mintDoc(
 	const id = uuid7AtMs(Date.now());
 	const path = join(kind.source.kbDir, `${id}.md`);
 	const title = gist.trim();
-	const root = kind.source.root;
-	const before = dirtyState(root);
 	writeFileAtomic(
 		path,
 		[
@@ -114,44 +110,20 @@ export async function mintDoc(
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	await hookThenCommit(
-		root,
-		before,
-		{ id, name: name ?? id, path },
+	let touched: string[] = [];
+	try {
+		touched = afterWrite?.({ id, name: name ?? id, path }) ?? [];
+	} catch (err) {
+		rmSync(path, { force: true });
+		throw err;
+	}
+	commitBridgeDocs(
+		kind.source.root,
 		`crud(${id}): created ${kind.name} ${name ?? id}`,
-		() => rmSync(path, { force: true }),
+		[path, ...touched],
 		io,
-		afterWrite,
 	);
 	return id;
-}
-
-/**
- * Runs a kind's post-crud-script on a doc crud has just written, then commits
- * the doc with whatever the script changed in the repo. A failing script is
- * undone with the doc and nothing is committed.
- */
-async function hookThenCommit(
-	root: string,
-	before: Map<string, string>,
-	doc: MintedDoc,
-	subject: string,
-	undo: () => void,
-	io: { log(message: string): void },
-	afterWrite?: (doc: MintedDoc) => Promise<void>,
-): Promise<void> {
-	if (afterWrite) {
-		try {
-			await afterWrite(doc);
-		} catch (err) {
-			undo();
-			throw err;
-		}
-	}
-	const touched = [...dirtyState(root)]
-		.filter(([file, hash]) => before.get(file) !== hash)
-		.map(([file]) => join(root, file));
-	commitBridgeDocs(root, subject, [doc.path, ...touched], io);
 }
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
@@ -213,15 +185,14 @@ function patchTargets(block: Block, patch: Record<string, unknown>, target: Crud
  * `replace`, the patch is the whole new block. A doc's meta is validated
  * against its kind first; a kind not in context writes with a warning.
  */
-export async function updateBlock(
+export function updateBlock(
 	target: CrudTarget,
 	kinds: KindDoc[],
 	block: Block,
 	patch: Record<string, unknown>,
 	replace: boolean,
 	io: { log(message: string): void; err(message: string): void },
-	afterWrite?: (doc: MintedDoc) => Promise<void>,
-): Promise<void> {
+): void {
 	const text = readFileSync(target.path, "utf8");
 	const match = FRONTMATTER.exec(text);
 	if (!match) throw new Error(`${formatPath(target.path)} has no frontmatter`);
@@ -261,46 +232,14 @@ export async function updateBlock(
 		io.log(`Unchanged ${where}`);
 		return;
 	}
-	const before = dirtyState(target.source.root);
 	writeFileAtomic(target.path, next);
 	io.log(`Updated ${where}`);
-	await hookThenCommit(
+	commitBridgeDocs(
 		target.source.root,
-		before,
-		{ id, name, path: target.path },
 		`crud(${id}): updated ${kind?.name ?? kindName} ${name}`,
-		() => writeFileAtomic(target.path, text),
+		[target.path],
 		io,
-		afterWrite,
 	);
-}
-
-/**
- * Every file git sees as changed or untracked in a repo, with a hash of what
- * is on disk now, so what a hook changed can be told from what was already
- * dirty before it ran. Untracked directories stay collapsed and are skipped --
- * a bridge's workspace is one, full of nested checkouts -- so a hook's new file
- * is seen only where git already tracks the directory it lands in.
- */
-function dirtyState(root: string): Map<string, string> {
-	const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=normal"]);
-	const state = new Map<string, string>();
-	const entries = status.stdout.split("\0").filter(Boolean);
-	for (let i = 0; i < entries.length; i++) {
-		const entry = entries[i]!;
-		// A rename carries its old path as the next entry.
-		if (entry[0] === "R" || entry[0] === "C") i++;
-		const file = entry.slice(3);
-		const absolute = join(root, file);
-		if (file.endsWith("/") || (existsSync(absolute) && statSync(absolute).isDirectory())) continue;
-		state.set(
-			file,
-			existsSync(absolute)
-				? createHash("sha1").update(readFileSync(absolute)).digest("hex")
-				: "gone",
-		);
-	}
-	return state;
 }
 
 export interface MintedDoc {

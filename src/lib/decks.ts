@@ -37,12 +37,12 @@ export function configuredDecks(rc: NosediveRc): string[] {
 }
 
 /**
- * Lists a deck in the bridge config at `root` -- what the deck kind's
- * post-crud-script does once crud has minted it. With no `decks:` yet the
+ * Lists a deck in the bridge config at `root` -- what crud does once it has
+ * minted a deck -- and returns the config path when it changed it. With no `decks:` yet the
  * backlog is written in first, because an absent `decks:` means the backlog is
  * the one deck, and adding a deck must not hide it.
  */
-export function listDeck(root: string, id: string, io: { log(message: string): void }): void {
+export function listDeck(root: string, id: string, io: { log(message: string): void }): string[] {
 	// The deck kind resolved from this repo, so this repo's own config is where
 	// the deck goes. Read it by path: resolving the bridge would walk up, and a
 	// bridge checked out as a dive's __self sits inside the live bridge's
@@ -53,7 +53,7 @@ export function listDeck(root: string, id: string, io: { log(message: string): v
 	const text = readFileSync(path, "utf8");
 	const scalars = parseYamlBlock(text, path);
 	const decks = parseDecks(scalars.raw.decks, scalars.scalars.backlog);
-	if (decks.includes(id)) return;
+	if (decks.includes(id)) return [];
 	const config = parseDocument(text);
 	// Written as a comma string whatever form it was read in: `seed` carries
 	// over the config keys it does not own only when they are scalars.
@@ -61,4 +61,5 @@ export function listDeck(root: string, id: string, io: { log(message: string): v
 	// Unfolded: a deck list is one grep-able line, however long it grows.
 	writeFileAtomic(path, config.toString({ lineWidth: 0 }));
 	io.log(`Listed ${id} in ${formatPath(path)}`);
+	return [path];
 }

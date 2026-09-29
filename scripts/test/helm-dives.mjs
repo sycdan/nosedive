@@ -114,14 +114,27 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 
 	assert.deepEqual((await get("/api/dives")).dives, [], "nothing planned yet");
 
-	const recorded = await runVerb({
-		verb: "dive",
-		feat: FEAT,
-		gist: "Sort the elves",
-		title: "Sort elves",
-		brief: "Put the elves in order.",
-	});
-	assert.equal(recorded.exit, 0, recorded.text);
+	// Planning a dive is a crud write, so helm refuses it with no dive; it is recorded outside.
+	const planned = await runVerb({ verb: "dive", feat: FEAT, gist: "x", brief: "x" });
+	assert.equal(planned.status, 400, "helm no longer runs a dive verb");
+	assertOk(
+		run(
+			[
+				"record.dive",
+				"--feat",
+				FEAT,
+				"--gist",
+				"Sort the elves",
+				"--title",
+				"Sort elves",
+				"--brief",
+				"-",
+			],
+			bridge,
+			"Put the elves in order.\n",
+		),
+		"record.dive failed",
+	);
 	const listing = await get("/api/dives");
 	assert.equal(listing.active, null);
 	assert.equal(listing.dives.length, 1);

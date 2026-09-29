@@ -17,8 +17,12 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	const liveConfig = readFileSync(configPath, "utf8");
 
 	// The kb feat scopes the bridge itself, so jumping a dive on it hydrates __self.
-	const recorded = run(["dive", KB_FEAT, "Add", "a", "deck"], bridge, "Make a deck.\n");
-	assertOk(recorded, "dive failed");
+	const recorded = run(
+		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "deck"],
+		bridge,
+		"Make a deck.\n",
+	);
+	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	assertOk(run(["jump", divePath], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
@@ -37,13 +41,41 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	);
 	assert.equal(view.feats[0].id, KB_FEAT);
 
+	// A dive planned on the dive -- on a feat made there -- is written and committed in __self
+	// too, and claims nothing.
+	const feat = run(["crud", "memo", "--name", "later", "Later", "work"], bridge);
+	assertOk(feat, "crud memo failed");
+	const featId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(feat.stdout)?.[1];
+	const planned = run(
+		["crud", "dive", "--feat", featId, "--title", "Next", "Plan", "the", "next", "one"],
+		bridge,
+		"Do the next thing.\n",
+	);
+	assertOk(planned, "crud dive on a dive failed");
+	const plannedPath = /^Recorded (\S+)$/m.exec(planned.stdout)?.[1];
+	assert.match(plannedPath, /^workspace[\\/]__self[\\/]kb[\\/]/);
+	assert.match(planned.stdout, /nosedive land/);
+	const plannedId = /([0-9a-f-]{36})\.md$/.exec(plannedPath)[1];
+	assert.match(git(["log", "-1", "--format=%s"], self), /^dive\(\S+\): created$/);
+	assert.match(
+		readFileSync(join(self, "kb", `${featId}.md`), "utf8"),
+		new RegExp(`${plannedId}\\.md:\\n\\s+rel: planned\\.dive`),
+		"linked from the feat in __self",
+	);
+	assert.equal(git(["status", "--porcelain"], self), "");
+	assert.match(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
+		new RegExp(/[0-9a-f-]{36}/.exec(divePath)[0]),
+		"the dive on deck is still the one jumped",
+	);
+
 	assert.match(
 		readFileSync(join(self, ".nosedive", "config.yaml"), "utf8"),
 		new RegExp(`^decks: .*${deckId}$`, "m"),
 		"listed in the checkout's own config",
 	);
 	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD"], self).split(/\r?\n/).sort(),
+		git(["show", "--name-only", "--format=", "HEAD~2"], self).split(/\r?\n/).sort(),
 		[".nosedive/config.yaml", `kb/${deckId}.md`],
 		"the deck and its listing are one commit in __self",
 	);
@@ -62,13 +94,18 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(deckId));
 	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^decks: .*${deckId}$`, "m"));
 	assert.match(readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"), /^name: magic-cards$/m);
+	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {
 	const { bridge, origin } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
-	const recorded = run(["dive", KB_FEAT, "Add", "a", "deck"], bridge, "Make a deck.\n");
-	assertOk(recorded, "dive failed");
+	const recorded = run(
+		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "deck"],
+		bridge,
+		"Make a deck.\n",
+	);
+	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1]], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
 	assertOk(run(["crud", "deck", "--name", "ideas", "Ideas"], bridge), "crud deck failed");

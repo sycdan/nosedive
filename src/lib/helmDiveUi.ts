@@ -198,10 +198,33 @@ function isFeatStep(step) {
 	return step.kind === "feat" || /(^|\.)feat$/.test(step.rel || "");
 }
 
-/** With no dive active, a feat can be jumped straight into: jump records the dive. */
+/**
+ * With no dive active, a feat can be jumped straight into: jump records the
+ * dive. On one, it can have a dive planned on it, through crud dive.
+ */
 function featActions(doc, step) {
-	if (dives.active || !isFeatStep(step)) return null;
-	return el("div", { class: "cardacts" }, jumpInto(doc));
+	if (!isFeatStep(step)) return null;
+	return dives.active ? planForm(doc) : el("div", { class: "cardacts" }, jumpInto(doc));
+}
+
+function planForm(doc) {
+	const title = el("input", { type: "text", placeholder: "Title" });
+	const gist = el("input", { type: "text", placeholder: "Gist", required: "" });
+	const brief = el("textarea", { placeholder: "Brief", required: "", rows: "4" });
+	let out = outputBox("");
+	const show = (text, failed) => { const next = outputBox(text, failed); out.replaceWith(next); out = next; };
+	const form = el("form", { class: "newdive" }, el("h3", {}, "Plan a dive"), title, gist, brief,
+		el("button", { type: "submit" }, "Plan dive"), out);
+	onSubmit(form, async () => {
+		try {
+			const run = await write("/api/crud/dive", { feat: doc.id, title: title.value || undefined, gist: gist.value, brief: brief.value });
+			show(run.stdout);
+			form.reset();
+		} catch (err) {
+			show(String(err.message || err), true);
+		}
+	});
+	return form;
 }
 
 function jumpInto(doc) {
@@ -224,16 +247,6 @@ function divePicker() {
 	let timer;
 	search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(fill, 200); });
 	fill().catch(showError);
-	const feat = el("input", { type: "text", placeholder: "feat (quid or name)", required: "" });
-	const title = el("input", { type: "text", placeholder: "Title", required: "" });
-	const gist = el("input", { type: "text", placeholder: "Gist", required: "" });
-	const brief = el("textarea", { placeholder: "Brief", required: "", rows: "4" });
-	const form = el("form", { class: "newdive" }, el("h3", {}, "New dive"), feat, title, gist, brief,
-		el("button", { type: "submit" }, "Record dive"));
-	form.addEventListener("submit", (event) => {
-		event.preventDefault();
-		runVerb({ verb: "dive", feat: feat.value, title: title.value, gist: gist.value, brief: brief.value });
-	});
-	return el("section", { class: "picker" }, el("h3", {}, "Dives"), search, cards, form);
+	return el("section", { class: "picker" }, el("h3", {}, "Dives"), search, cards);
 }
 `;

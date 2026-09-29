@@ -120,7 +120,9 @@ async function crud(args: string[], io: CommandIo, runtime: ImplRuntime): Promis
 		);
 	}
 
-	const matches = matchDocs(kind, gist);
+	// A name is the doc's identity when given: two docs may share a gist (helm's
+	// default deck gist does, within a minute), so only the name is checked, by the mint.
+	const matches = name === undefined ? matchDocs(kind, gist) : [];
 	if (matches.length === 1) {
 		io.writeOut(readFileSync(matches[0]!.path, "utf8"));
 		return;

@@ -136,6 +136,14 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 		/^name: card-sleeves\.big-box$/m,
 	);
 
+	// A name is the identity: a second doc with the first one's gist is still minted.
+	const twin = run(["crud", "note", "--name", "gloves", "Buy", "more", "sleeves"], bridge);
+	assertOk(twin, "a named doc sharing a gist should mint");
+	assert.match(
+		readFileSync(join(bridge, "kb", `${madeId(twin.stdout)}.md`), "utf8"),
+		/^name: gloves$/m,
+	);
+
 	const bad = run(["crud", "note", "--name", "sleeves..!", "y"], bridge);
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /nothing to slug/);

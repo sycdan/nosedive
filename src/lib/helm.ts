@@ -3,7 +3,6 @@ import { basename, join } from "node:path";
 
 import { Marked } from "marked";
 
-import { configuredDecks } from "./decks.js";
 import { inheritedScopes } from "./diveScopes.js";
 import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
 import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
@@ -17,7 +16,9 @@ import {
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
+import { bridgeView, viewDecks, type BridgeView } from "./helmView.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
+import { KB_FEAT_ID } from "./shipZerostars.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
 export interface HelmRepoCard {
@@ -49,6 +50,7 @@ export type HelmLink =
 			name: string;
 			kind: string;
 			gist: string;
+			title?: string;
 	  }
 	| { type: "url" | "file"; target: string; rel?: string };
 
@@ -124,26 +126,62 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 	};
 }
 
-function bridgeDocs(cwd: string): { rc: NosediveRc; docs: KbDoc[] } {
-	const rc = readNosediveRc(cwd);
-	if (!rc.kbDir) throw new Error("helm requires a configured kb directory");
-	return { rc, docs: loadKbDocs(rc.kbDir, rc.bridgeDir) };
+function bridgeDocs(cwd: string): BridgeView {
+	return bridgeView(cwd);
 }
 
-/** The bridge helm serves -- the root of the breadcrumb -- and its decks in config order. */
+const FEAT_ROLE = /(^|\.)(feat|effort)$/;
+
+/**
+ * The root of helm's tree: the bridge, its bridge deck -- the backlog memo --
+ * with the feats it links (the kb feat first), and the other decks, which
+ * the page shows only on a dive. All read through the view, so a dive that
+ * scopes the bridge shows what it has written.
+ */
 export function helmDecks(cwd: string): {
 	bridge: { id?: string; name: string };
+	bridgeDeck?: HelmDeck;
+	feats: HelmLink[];
 	decks: HelmDeck[];
+	diving: boolean;
 } {
-	const { rc, docs } = bridgeDocs(cwd);
+	const view = bridgeDocs(cwd);
+	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
-	const decks = configuredDecks(rc).map((id) => {
+	const deck = (id: string): HelmDeck => {
 		const doc = byId.get(id);
 		if (!doc) return { id, name: id, kind: "missing", gist: `no kb doc ${id}` };
 		return { id, name: doc.name, kind: doc.kind, gist: doc.gist };
-	});
-	return { bridge: { id: rc.bridge, name: bridgeDoc?.name ?? basename(rc.bridgeDir) }, decks };
+	};
+	const backlog = rc.backlog ? byId.get(rc.backlog) : undefined;
+	const feats = (backlog?.links ?? [])
+		.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
+		.map((link) => byId.get(link.id))
+		.filter((doc): doc is KbDoc => doc !== undefined)
+		.sort((a, b) => Number(b.id === KB_FEAT_ID) - Number(a.id === KB_FEAT_ID))
+		.map((doc): HelmLink => {
+			const rel = backlog!.links.find((link) => link.id === doc.id)?.rel;
+			return {
+				type: "doc",
+				target: `kb/${doc.id}.md`,
+				rel,
+				id: doc.id,
+				name: doc.name,
+				kind: doc.kind,
+				gist: doc.gist,
+				title: doc.h1,
+			};
+		});
+	return {
+		bridge: { id: rc.bridge, name: bridgeDoc?.name ?? basename(rc.bridgeDir) },
+		bridgeDeck: backlog ? deck(backlog.id) : undefined,
+		feats,
+		decks: viewDecks(view)
+			.filter((id) => id !== rc.backlog)
+			.map(deck),
+		diving: Boolean(readActiveDiveId(rc.workspaceDir)),
+	};
 }
 
 /** The repos a deck scopes, in its scope order; links are not followed. */
@@ -173,9 +211,12 @@ const markdown = new Marked({ renderer: { html: ({ text }) => escapeHtml(text) }
  * Where a repo in view keeps its kb, when it can be read: the bridge always,
  * any other repo only while it is hydrated.
  */
-function readableSource(rc: NosediveRc, repo: KbDoc): KindSource | undefined {
+function readableSource(view: BridgeView, repo: KbDoc): KindSource | undefined {
+	const { rc } = view;
 	if (repo.id === rc.bridge)
-		return { id: repo.id, name: repo.name, root: rc.bridgeDir, kbDir: rc.kbDir! };
+		return view.self
+			? { id: repo.id, name: repo.name, root: view.self.root, kbDir: view.self.kbDir }
+			: { id: repo.id, name: repo.name, root: rc.bridgeDir, kbDir: rc.kbDir! };
 	const trunk = repo.repoBaseBranch ?? "main";
 	const root = expectedWorktreePath(repo, rc.bridgeDir);
 	if (!hydratedState(root, repo.id, trunk, false)) return undefined;
@@ -234,7 +275,8 @@ export function helmContext(
 	repoId?: string,
 	diveId?: string,
 ): HelmContext | undefined {
-	const { rc, docs } = bridgeDocs(cwd);
+	const view = bridgeDocs(cwd);
+	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const deck = byId.get(deckId);
 	if (!deck) return undefined;
@@ -254,7 +296,7 @@ export function helmContext(
 	const sources: KindSource[] = [];
 	const unreadable: string[] = [];
 	for (const doc of inView.filter((repo) => !repoId || repo.id === repoId)) {
-		const source = readableSource(rc, doc);
+		const source = readableSource(view, doc);
 		if (source) sources.push(source);
 		else unreadable.push(doc.name);
 	}
@@ -281,9 +323,9 @@ export function helmKindCheck(
 	kindId: string,
 	schema: unknown,
 ): { failures: InstanceFailure[] } | undefined {
-	const { rc, docs } = bridgeDocs(cwd);
-	const repo = docs.find((doc) => doc.id === repoId && doc.kind === "repo");
-	const source = repo ? readableSource(rc, repo) : undefined;
+	const view = bridgeDocs(cwd);
+	const repo = view.docs.find((doc) => doc.id === repoId && doc.kind === "repo");
+	const source = repo ? readableSource(view, repo) : undefined;
 	const kind = source
 		? loadKinds([source]).find((candidate) => candidate.id === kindId)
 		: undefined;
@@ -297,9 +339,9 @@ export function helmKindDocs(
 	repoId: string,
 	kind: string,
 ): Array<{ id: string; name: string; gist: string }> | undefined {
-	const { rc, docs } = bridgeDocs(cwd);
-	const repo = docs.find((doc) => doc.id === repoId && doc.kind === "repo");
-	const source = repo ? readableSource(rc, repo) : undefined;
+	const view = bridgeDocs(cwd);
+	const repo = view.docs.find((doc) => doc.id === repoId && doc.kind === "repo");
+	const source = repo ? readableSource(view, repo) : undefined;
 	if (!source) return undefined;
 	return loadKbDocs(source.kbDir, source.root)
 		.filter((doc) => doc.kind === kind)
@@ -308,11 +350,12 @@ export function helmKindDocs(
 
 /** A doc from the bridge kb, or from a repo in view's kb when `repoId` names one. */
 export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | undefined {
-	const { rc, docs: bridgeKb } = bridgeDocs(cwd);
+	const view = bridgeDocs(cwd);
+	const { rc, docs: bridgeKb } = view;
 	let docs = bridgeKb;
 	if (repoId && repoId !== rc.bridge) {
 		const repo = bridgeKb.find((doc) => doc.id === repoId && doc.kind === "repo");
-		const source = repo ? readableSource(rc, repo) : undefined;
+		const source = repo ? readableSource(view, repo) : undefined;
 		if (!source) return undefined;
 		docs = loadKbDocs(source.kbDir, source.root);
 	}
@@ -332,6 +375,7 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 				name: target.name,
 				kind: target.kind,
 				gist: target.gist,
+				title: target.h1,
 			};
 		return {
 			type: URL_TARGET.test(link.target) ? "url" : "file",

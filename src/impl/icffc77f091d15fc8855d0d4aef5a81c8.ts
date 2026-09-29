@@ -168,11 +168,12 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): Minte
 			"---",
 			"kind: memo",
 			`id: ${id}`,
-			`name: backlog.${name}`,
-			`gist: ${quoteYamlString(`Current backlog for ${name}.`)}`,
+			// The bridge deck: the deck helm roots its tree in, whose feats a pilot sees first.
+			"name: bridge-deck",
+			`gist: ${quoteYamlString(`The bridge deck of ${name}: the feats every pilot starts from.`)}`,
 			"---",
 			"",
-			"# Backlog",
+			"# Bridge deck",
 			"",
 			// What `update-backlog` renders for a memo that links no work, so a
 			// fresh bridge starts holding the body the renderer would give it. The

@@ -233,15 +233,19 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		"api with wrong token",
 	);
 
-	const { bridge: bridgeInfo, decks } = await get("/api/decks");
+	// The backlog is the bridge deck at the root, with its feats; the other decks follow.
+	const { bridge: bridgeInfo, bridgeDeck, feats, decks, diving } = await get("/api/decks");
 	assert.deepEqual(bridgeInfo, { id: BRIDGE_REPO, name: "bridge" });
+	assert.equal(bridgeDeck.id, BACKLOG);
+	assert.deepEqual(
+		feats.map((feat) => [feat.id, feat.rel]),
+		[[FEAT, "current.feat"]],
+	);
 	assert.deepEqual(
 		decks.map((deck) => [deck.id, deck.name]),
-		[
-			[BACKLOG, "backlog"],
-			[IDEAS, "ideas"],
-		],
+		[[IDEAS, "ideas"]],
 	);
+	assert.equal(diving, false);
 
 	const repos = await get(`/api/deck-repos?id=${BACKLOG}`);
 	assert.deepEqual(

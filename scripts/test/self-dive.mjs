@@ -3,8 +3,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, run, runTool, seededBridge } from "../test-helpers.mjs";
+import { assertOk, createTmp, libUrl, run, runTool, seededBridge } from "../test-helpers.mjs";
 
+const { helmDecks } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
@@ -26,6 +27,15 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	assertOk(made, "crud deck failed");
 	const deckId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
 	assert.match(made.stdout, /Listed \S+ in workspace[\\/]__self[\\/]\.nosedive[\\/]config\.yaml/);
+
+	// Helm shows the bridge as the dive has it: the new deck already, the kb feat first at the root.
+	const view = helmDecks(bridge);
+	assert.equal(view.diving, true);
+	assert.deepEqual(
+		view.decks.map((deck) => deck.id),
+		[deckId],
+	);
+	assert.equal(view.feats[0].id, KB_FEAT);
 
 	assert.match(
 		readFileSync(join(self, ".nosedive", "config.yaml"), "utf8"),

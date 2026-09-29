@@ -1,6 +1,7 @@
 import { helmDiveScript } from "./helmDiveUi.js";
 import { helmEditScript } from "./helmEdit.js";
 import { helmStyle } from "./helmStyle.js";
+import { helmTreeScript } from "./helmTree.js";
 
 /** The whole helm UI: one page, no build step, talking to helm's JSON API. */
 export const helmPage = String.raw`<!doctype html>
@@ -14,7 +15,7 @@ export const helmPage = String.raw`<!doctype html>
 <body>
 <header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav></header>
 <div id="divebar" aria-label="Dive"></div>
-<aside><ul class="tree" id="tree" aria-label="Decks"></ul></aside>
+<aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
 <script>
 const token = new URLSearchParams(location.search).get("token");
@@ -51,9 +52,9 @@ function showError(err) {
 	box.hidden = !err;
 }
 
-/** A doc crud named by its id has no name yet; its gist says what it is. */
+/** A doc named by its own id has no name to show; its heading, else its gist, says what it is. */
 function display(doc) {
-	return /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(doc.name) && doc.gist ? doc.gist : doc.name;
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(doc.name) ? doc.title || doc.gist || doc.name : doc.name;
 }
 
 function contextQuery(deckId, withRepo) {
@@ -65,131 +66,7 @@ function contextQuery(deckId, withRepo) {
 	return "/api/context?" + params;
 }
 
-// --- tree -------------------------------------------------------------------
-
-/** A row: a twisty that expands load() into children lazily, and a label. */
-function branch(cls, parts, title, load, onPick) {
-	const li = el("li", { class: cls });
-	const children = el("ul", { hidden: "" });
-	const twisty = el("button", { class: "twisty", "aria-label": "expand", disabled: load ? null : "" }, load ? "▶" : "");
-	const label = el("button", { class: "label", title }, parts);
-	const row = el("div", { class: "row" }, twisty, label);
-	let loaded = false;
-	const fill = async () => {
-		try {
-			const items = await load();
-			children.replaceChildren(...items);
-			if (!items.length) { twisty.disabled = true; twisty.textContent = ""; }
-		} catch (err) { showError(err); }
-	};
-	twisty.addEventListener("click", () => {
-		const open = children.hidden;
-		children.hidden = !open;
-		twisty.textContent = open ? "▼" : "▶";
-		if (open && !loaded) { loaded = true; fill(); }
-	});
-	if (onPick) label.addEventListener("click", () => onPick(row));
-	li.append(row, children);
-	return { li, row, refill: () => { if (loaded) fill(); } };
-}
-
-/** One doc in the tree; it expands into its links, never into an ancestor. */
-function node(item, ancestors) {
-	if (item.type !== "doc") {
-		const parts = [el("span", { class: "text" }, item.target), item.rel ? el("span", { class: "rel" }, item.rel) : null];
-		const li = el("li", { class: item.type });
-		const label = item.type === "url"
-			? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
-			: el("button", { class: "label", title: item.target, disabled: "" }, parts);
-		li.append(el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label));
-		return li;
-	}
-	const cycle = ancestors.some((a) => a.id === item.id);
-	const step = { id: item.id, name: display(item), kind: item.kind, rel: item.rel };
-	const path = [...ancestors, step];
-	const parts = [
-		el("span", { class: "kind" }, item.kind),
-		el("span", { class: "text" }, display(item)),
-		item.rel ? el("span", { class: "rel" }, item.rel) : null,
-		cycle ? el("span", { class: "rel" }, "↺") : null,
-	];
-	const load = cycle ? null : async () => {
-		const doc = await api("/api/doc?id=" + item.id);
-		const links = doc.links.map((link) => node(link, path));
-		return item.isDeck ? [group("repos", item.id, path), group("kinds", item.id, path), ...links] : links;
-	};
-	const b = branch((item.isDeck ? "deck " : "") + (cycle ? "cycle" : "doc"), parts, item.gist, load,
-		(row) => select(path, row));
-	return b.li;
-}
-
-/** A deck's Repos or Kinds subtree, refilled whenever the context changes. */
-function group(type, deckId, deckPath) {
-	const title = type === "repos" ? "Repos" : "Kinds";
-	const load = async () => {
-		const context = await api(contextQuery(deckId, type === "kinds"));
-		if (type === "repos") return context.repos.map((repo) => repoItem(repo, deckId, deckPath));
-		const kinds = context.kinds.map((kind) => kindItem(kind, deckId, deckPath));
-		const blind = context.unreadable.map((name) =>
-			el("li", { class: "file" }, el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }),
-				el("button", { class: "label", disabled: "", title: "not hydrated, so its kb cannot be read" },
-					el("span", { class: "text" }, name + ": kb not readable")))));
-		return [...kinds, ...blind];
-	};
-	const b = branch("group", [el("span", { class: "text" }, title)], null, load,
-		(row) => showGroup(type, deckId, [...deckPath.slice(0, 1), { id: "#" + type, name: title }], row));
-	groups.push(b);
-	return b.li;
-}
-
-function repoItem(repo, deckId, deckPath) {
-	const picked = ctx.repo === repo.id && ctx.deck === deckId;
-	const li = el("li", { class: "repo" + (repo.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
-	const label = el("button", { class: "label", title: repo.inCrudContext ? repo.gist : OUT_OF_REACH },
-		el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "text" }, repo.name));
-	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label);
-	label.addEventListener("click", () => {
-		ctx.deck = deckId;
-		ctx.repo = picked ? null : repo.id;
-		ctx.kind = null;
-		refreshGroups();
-		if (ctx.repo) select([deckPath[0], { id: repo.id, name: repo.name, kind: "repo" }], row);
-		else writeHash(currentPath());
-	});
-	li.append(row);
-	return li;
-}
-
-function kindItem(kind, deckId, deckPath) {
-	const picked = ctx.kind && ctx.kind.id === kind.id && ctx.kind.repoId === kind.repoId;
-	const li = el("li", { class: "kindnode" + (kind.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
-	const label = el("button", { class: "label", title: kind.inCrudContext ? kind.gist : OUT_OF_REACH },
-		el("span", { class: "text" }, kind.name), el("span", { class: "count" }, String(kind.count)),
-		el("span", { class: "rel" }, kind.repoName));
-	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), label);
-	label.addEventListener("click", () => {
-		ctx.deck = deckId;
-		ctx.kind = picked ? null : { id: kind.id, repoId: kind.repoId, name: kind.name };
-		refreshGroups();
-		if (ctx.kind) showKind(kind, [deckPath[0], { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }], row);
-		else writeHash(currentPath());
-	});
-	li.append(row);
-	return li;
-}
-
-function refreshGroups() {
-	for (const g of groups) if (g.li.isConnected) g.refill();
-}
-
-async function loadDecks() {
-	const listing = await api("/api/decks");
-	bridge = listing.bridge;
-	for (const deck of listing.decks) deckIds.add(deck.id);
-	groups.length = 0;
-	document.getElementById("tree").replaceChildren(...listing.decks.map((deck) =>
-		node({ type: "doc", isDeck: true, ...deck }, [])));
-}
+${helmTreeScript}
 
 // --- main pane --------------------------------------------------------------
 
@@ -269,7 +146,7 @@ async function select(path, row, message) {
 	try {
 		const doc = await api("/api/doc?id=" + last.id + (last.repo ? "&repo=" + last.repo : ""));
 		showError(null);
-		if (last.name !== display(doc)) { last.name = display(doc); crumbs(path); }
+		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
 		if (deckIds.has(last.id)) {
 			const context = await api(contextQuery(last.id, false));
 			view.replaceChildren(context.repos.length
@@ -377,7 +254,7 @@ Promise.all([loadDecks(), loadDives()]).then(() => {
 	if (!path.length) return reset();
 	// Names and kinds are unknown after a reload; each step fills its own in.
 	Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
-		.then((doc) => { step.name = display(doc); step.kind = doc.kind; }, () => {})))
+		.then((doc) => { step.name = label(doc); step.kind = doc.kind; }, () => {})))
 		.then(() => {
 			restoreContext();
 			ctx.deck = deckIds.has(path[0].id) ? path[0].id : null;

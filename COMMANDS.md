@@ -127,7 +127,7 @@ npx -y nosedive@2026.9.18-1789698885570 helm --help
 ```md
 Usage: nosedive helm
 
-Serve a local admin UI for the bridge: its decks as a link tree, each deck's repos with hydration and nosedive install state, and kb docs rendered.
+Serve a local admin UI for the bridge: its bridge deck's feats and its decks as a link tree, each deck's repos with hydration and nosedive install state, and kb docs rendered.
 
 More: nosedive render 6a704279-69c1-5dcb-a2c0-b0b5dc93d56e
 ```

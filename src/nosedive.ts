@@ -41,6 +41,8 @@ export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 export { parseDecks } from "./lib/decks.js";
 // Exported so the merge is tested against RFC 7386's own examples.
 export { mergePatch } from "./lib/mergePatch.js";
+// Exported so helm's view of a dive's __self checkout is tested below the server.
+export { helmDecks } from "./lib/helm.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

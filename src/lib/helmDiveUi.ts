@@ -110,7 +110,7 @@ function noteDialog() {
 		const ok = /\[exit 0\]\s*$/.test(out.textContent);
 		out.hidden = false;
 		out.classList.toggle("failed", !ok);
-		if (ok) { text.value = ""; refreshGroups(); }
+		if (ok) { text.value = ""; refreshRepos(); }
 		save.disabled = false;
 	});
 	document.body.append(dialog);
@@ -153,7 +153,7 @@ function confirmDialog({ verb, cls, target, detail, reason, act }) {
 function stage(dive) {
 	dives.staged = dive;
 	renderBar();
-	refreshGroups();
+	refreshRepos();
 }
 
 /** Runs a dive verb and shows its output as it streams in. */
@@ -184,7 +184,7 @@ async function runVerb(body) {
 	await loadDives();
 	// A land can add a deck to the bridge, so the tree re-reads them too.
 	await loadDecks();
-	refreshGroups();
+	refreshRepos();
 }
 
 /** Clicking a dive's card opens its doc, which stages it. */

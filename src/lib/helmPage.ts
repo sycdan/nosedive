@@ -14,7 +14,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
+<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -25,7 +25,6 @@ let bridge = { name: "" };
 let selectedRow = null;
 /** What is picked and selected: the deck, a feat under it, and the repo and kind the subtrees show. */
 const ctx = { deck: null, feat: null, repo: null, kind: null };
-const groups = [];
 const OUT_OF_REACH = "crud cannot write here now: jump a dive that scopes it to edit";
 
 async function api(path) {
@@ -93,7 +92,7 @@ function repoCard(repo) {
 function crumbs(path) {
 	const parts = [el("button", { title: "Nothing selected", onclick: reset }, bridge.name)];
 	path.forEach((step, index) => parts.push(el("span", { class: "sep" }, "/"),
-		el("button", { title: step.name, onclick: () => select(path.slice(0, index + 1)) }, step.name)));
+		el("button", { title: step.name, onclick: () => step.id === "#repos" ? showRepos() : select(path.slice(0, index + 1)) }, step.name)));
 	document.getElementById("crumbs").replaceChildren(...parts);
 }
 
@@ -114,8 +113,10 @@ function writeHash(path) {
 function reset() {
 	highlight(null);
 	Object.assign(ctx, { feat: null, repo: null, kind: null });
-	refreshGroups();
 	history.replaceState(null, "", location.pathname + location.search);
+	// On a dive, home is the Repos view: where making things starts.
+	if (dives.active) return showRepos();
+	reposOpen = false;
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
 		...(dives.active ? [] : [divePicker()]),
@@ -132,12 +133,13 @@ function docBody(doc, withFrontmatter) {
 
 /** Selects the last doc on a path of steps from a deck down. */
 async function select(path, row, message) {
+	reposOpen = false;
 	highlight(row);
 	const last = path[path.length - 1];
 	const feat = [...path].reverse().find(isFeatStep);
 	const narrowed = ctx.feat !== (feat ? feat.id : null);
 	ctx.feat = feat ? feat.id : null;
-	if (narrowed) refreshGroups();
+	if (narrowed) refreshRepos();
 	writeHash(path);
 	crumbs(path);
 	const view = document.getElementById("view");
@@ -160,31 +162,46 @@ async function select(path, row, message) {
 	} catch (err) { showError(err); }
 }
 
-async function showGroup(type, deckId, path, row) {
-	highlight(row);
-	ctx.deck = deckId;
+/** Whether the main pane shows the Repos view, so a write can redraw its counts. */
+let reposOpen = false;
+
+function refreshRepos() {
+	if (reposOpen) showRepos();
+}
+
+/**
+ * The picked deck's repos, each card with the kinds its kb declares and how
+ * many docs of each it holds; a kind opens its page. A repo whose kb cannot
+ * be read -- not hydrated -- says so.
+ */
+async function showRepos() {
+	reposOpen = true;
+	highlight(null);
+	const path = [deckStep(ctx.deck), { id: "#repos", name: "Repos" }];
 	crumbs(path);
 	const view = document.getElementById("view");
 	try {
-		const context = await api(contextQuery(deckId, type === "kinds"));
+		const context = await api(contextQuery(ctx.deck, false));
 		showError(null);
-		if (type === "repos") {
-			view.replaceChildren(context.repos.length
-				? el("div", { class: "cards" }, context.repos.map(repoCard))
-				: el("p", { class: "empty" }, "No repos in view."));
-			return;
-		}
-		view.replaceChildren(context.kinds.length
-			? el("ul", { class: "doclist" }, context.kinds.map((kind) =>
-				el("li", { class: kind.inCrudContext ? "" : "out", title: kind.inCrudContext ? null : OUT_OF_REACH },
-					el("strong", {}, kind.name), " ", el("span", { class: "count" }, String(kind.count)), " ",
-					el("span", { class: "rel" }, kind.repoName), " — ", kind.gist)))
-			: el("p", { class: "empty" }, "No kinds in view."));
+		if (!reposOpen) return;
+		const unreadable = new Set(context.unreadable);
+		view.replaceChildren(context.repos.length
+			? el("div", { class: "repos" }, context.repos.map((repo) => {
+				const kinds = context.kinds.filter((kind) => kind.repoId === repo.id);
+				const list = kinds.length
+					? el("ul", { class: "doclist" }, kinds.map((kind) => el("li", { class: kind.inCrudContext ? "" : "out", title: kind.inCrudContext ? null : OUT_OF_REACH },
+						el("button", { class: "linkish", onclick: () => showKind(kind, [...path, { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }]) }, kind.name),
+						" ", el("span", { class: "count" }, String(kind.count)), " — ", kind.gist)))
+					: el("p", { class: "empty" }, unreadable.has(repo.name) ? "Not hydrated, so its kb cannot be read." : "Declares no kinds.");
+				return el("section", { class: "repo" }, repoCard(repo), list);
+			}))
+			: el("p", { class: "empty" }, "This deck scopes no repos."));
 	} catch (err) { showError(err); }
 }
 
 /** A kind: the docs of it listed above the kind doc's own body. */
 async function showKind(kind, path, row, message) {
+	reposOpen = false;
 	highlight(row);
 	writeHash(path);
 	crumbs(path);
@@ -246,6 +263,7 @@ new EventSource("/api/events?token=" + token).addEventListener("boot", (event) =
 });
 
 document.getElementById("headacts").append(noteButton());
+document.getElementById("reposbtn").addEventListener("click", showRepos);
 
 Promise.all([loadDecks(), loadDives()]).then(() => {
 	const path = currentPath();

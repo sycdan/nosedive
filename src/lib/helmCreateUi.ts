@@ -94,7 +94,7 @@ function createDialog(kind) {
 			out.textContent = run.stdout;
 			out.classList.remove("failed");
 			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
-			refreshGroups();
+			refreshRepos();
 			if (isDeck) await loadDecks();
 			// A new kind can be made at once; the dropdown and its schemas are read again.
 			await loadCreatable();

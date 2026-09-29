@@ -91,7 +91,7 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 		if (!Object.keys(patch).length) return rerender(outputBox("Nothing changed."));
 		try {
 			const run = await write("/api/crud/meta", { id: doc.id, repo: repoId, patch });
-			refreshGroups();
+			refreshRepos();
 			rerender(outputBox(run.stdout));
 		} catch (err) {
 			rerender(outputBox(String(err.message || err), true));
@@ -215,7 +215,7 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 		try {
 			const meta = Object.assign({}, kindDoc.meta, { schema: build() });
 			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: meta, replace: true });
-			refreshGroups();
+			refreshRepos();
 			// The dive bar's forms are built from schemas, so it reads them again.
 			await loadCreatable();
 			renderBar();

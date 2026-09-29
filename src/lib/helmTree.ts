@@ -1,8 +1,7 @@
 /**
  * The page's left tree and deck picker, spliced into its script. The picked
  * deck heads the tree, then the feats it links and theirs -- dives are cards
- * in the main view, never rows -- then one Repos and one Kinds section
- * showing that deck.
+ * in the main view, never rows; repos and kinds have a view of their own.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
@@ -93,66 +92,6 @@ function node(item, ancestors) {
 	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;
 }
 
-/** The Repos or Kinds section, refilled whenever the context changes. */
-function group(type) {
-	const title = type === "repos" ? "Repos" : "Kinds";
-	const load = async () => {
-		const deckId = ctx.deck;
-		if (!deckId) return [];
-		const context = await api(contextQuery(deckId, type === "kinds"));
-		const deckPath = [deckStep(deckId)];
-		if (type === "repos") return context.repos.map((repo) => repoItem(repo, deckId, deckPath));
-		const kinds = context.kinds.map((kind) => kindItem(kind, deckId, deckPath));
-		const blind = context.unreadable.map((name) =>
-			el("li", { class: "file" }, el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }),
-				el("button", { class: "label", disabled: "", title: "not hydrated, so its kb cannot be read" },
-					el("span", { class: "text" }, name + ": kb not readable")))));
-		return [...kinds, ...blind];
-	};
-	const b = branch("group", [el("span", { class: "text" }, title)], null, load,
-		(row) => showGroup(type, ctx.deck, [deckStep(ctx.deck), { id: "#" + type, name: title }], row));
-	groups.push(b);
-	return b.li;
-}
-
-function repoItem(repo, deckId, deckPath) {
-	const picked = ctx.repo === repo.id;
-	const li = el("li", { class: "repo" + (repo.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
-	const button = el("button", { class: "label", title: repo.inCrudContext ? repo.gist : OUT_OF_REACH },
-		el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "text" }, repo.name));
-	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), button);
-	button.addEventListener("click", () => {
-		ctx.repo = picked ? null : repo.id;
-		ctx.kind = null;
-		refreshGroups();
-		if (ctx.repo) select([deckPath[0], { id: repo.id, name: repo.name, kind: "repo" }], row);
-		else writeHash(currentPath());
-	});
-	li.append(row);
-	return li;
-}
-
-function kindItem(kind, deckId, deckPath) {
-	const picked = ctx.kind && ctx.kind.id === kind.id && ctx.kind.repoId === kind.repoId;
-	const li = el("li", { class: "kindnode" + (kind.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
-	const button = el("button", { class: "label", title: kind.inCrudContext ? kind.gist : OUT_OF_REACH },
-		el("span", { class: "text" }, kind.name), el("span", { class: "count" }, String(kind.count)),
-		el("span", { class: "rel" }, kind.repoName));
-	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), button);
-	button.addEventListener("click", () => {
-		ctx.kind = picked ? null : { id: kind.id, repoId: kind.repoId, name: kind.name };
-		refreshGroups();
-		if (ctx.kind) showKind(kind, [deckPath[0], { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }], row);
-		else writeHash(currentPath());
-	});
-	li.append(row);
-	return li;
-}
-
-function refreshGroups() {
-	for (const g of groups) if (g.li.isConnected) g.refill();
-}
-
 /** A heading in the tree; the bridge deck's opens that deck. */
 function section(title, onPick) {
 	const heading = el("button", { class: "label", disabled: onPick ? null : "" }, el("span", { class: "text" }, title));
@@ -191,13 +130,11 @@ async function loadDecks() {
 	if (ctx.deck !== listing.deck) Object.assign(ctx, { feat: null, repo: null, kind: null });
 	ctx.deck = listing.deck || null;
 	renderPicker(listing);
-	groups.length = 0;
 	const home = ctx.deck ? [deckStep(ctx.deck)] : [];
 	const items = [];
 	if (ctx.deck)
 		items.push(section(deckNames.get(ctx.deck), (row) => { highlight(row); reset(); }),
 			...listing.feats.map((feat) => node(feat, home)));
-	items.push(group("repos"), group("kinds"));
 	document.getElementById("tree").replaceChildren(...items);
 }
 `;

@@ -15,6 +15,17 @@ function takeFlag(args: string[], flag: string): string | undefined {
 	return value;
 }
 
+/** Hands args to another command's impl; `contracts.ts` fills the registry before any command runs. */
+function delegate(
+	runtime: ImplRuntime,
+	id: string,
+	args: string[],
+): ImplCommandOutput | Promise<ImplCommandOutput> {
+	const impl = runtime.impl?.[id];
+	if (!impl) throw new Error(`dive: ${id} is not in the impl registry`);
+	return impl(args);
+}
+
 /**
  * The record family's dive commands under one name: `dive <feat> <gist...>`
  * is `record.dive` and `dive --log[:<event>] -` is `append-log.dive`. It only
@@ -28,13 +39,13 @@ async function dive(args: string[], runtime: ImplRuntime): Promise<ImplCommandOu
 		const rest = args.filter((_, i) => i !== log && i !== log + 1);
 		if (rest.length > 0) throw new Error(`dive --log takes nothing else: ${rest.join(" ")}`);
 		const event = args[log]!.slice("--log:".length);
-		return runtime.impl.i00671103fb8b50d89ffc60e3eb0f4745(event ? ["--label", event] : []);
+		return delegate(runtime, "i00671103fb8b50d89ffc60e3eb0f4745", event ? ["--label", event] : []);
 	}
 	const title = takeFlag(args, "--title");
 	const [feat, ...words] = args;
 	const gist = words.join(" ").trim();
 	if (!feat || feat.startsWith("--") || !gist) throw new Error(DIVE_HINT);
-	return runtime.impl.idfa77573dddc590cb8f5f5ff784c3384([
+	return delegate(runtime, "idfa77573dddc590cb8f5f5ff784c3384", [
 		"--feat",
 		feat,
 		"--gist",

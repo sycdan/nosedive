@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
+import { followLiveBridge } from "../lib/landBridgeScope.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
@@ -482,6 +483,11 @@ export function jump(args: string[], io: CommandIo): void {
 			feat.id,
 		);
 	}
+
+	// After the bookkeeping is pushed, so the dive's checkout of the bridge
+	// starts with it.
+	const self = rc.bridge ? scopePaths.get(rc.bridge) : undefined;
+	if (self && failedChains === 0) followLiveBridge(rc.bridgeDir, self, io);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 

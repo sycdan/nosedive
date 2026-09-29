@@ -20,6 +20,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { fetchLiveBridge, ownCommits } from "./landBridgeScope.js";
 import { printNextSteps } from "./nextSteps.js";
 import {
 	CapturedPatch,
@@ -45,11 +46,17 @@ function packRepoScope(
 	repoPath: string,
 	kbDir: string,
 	mintUuid: () => string,
+	bridgeDir?: string,
 ): CapturedPatch[] {
 	if (!scope.ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
 
+	// A checkout of the bridge itself has the live bridge merged in by jump:
+	// only the dive's own commits are its to pack.
+	const commits = bridgeDir
+		? ownCommits(repoPath, fetchLiveBridge(bridgeDir, repoPath), "HEAD")
+		: listAheadCommits(repoPath, scope.ref, scope.repoId);
 	const entries: CapturedPatch[] = [];
-	for (const sha of listAheadCommits(repoPath, scope.ref, scope.repoId)) {
+	for (const sha of commits) {
 		const patch = gitRunPatch(
 			repoPath,
 			["format-patch", "-1", sha, "--stdout", "--binary", "--no-signature"],
@@ -383,7 +390,13 @@ export function packDive(args: string[], io: CommandIo): void {
 			continue;
 		}
 
-		const patches = packRepoScope(scope, resolved.path, rc.kbDir, mintUuid);
+		const patches = packRepoScope(
+			scope,
+			resolved.path,
+			rc.kbDir,
+			mintUuid,
+			scope.repoId === rc.bridge ? rc.bridgeDir : undefined,
+		);
 		if (patches.length > 0) groups.push(patches);
 	}
 	const bridgeWip = packBridgeWip(

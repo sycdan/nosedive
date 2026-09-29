@@ -41,11 +41,10 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	);
 	assert.equal(view.feats[0].id, KB_FEAT);
 
-	// A dive planned on the dive -- on a feat made there -- is written and committed in __self
-	// too, and claims nothing.
-	const feat = run(["crud", "memo", "--name", "later", "Later", "work"], bridge);
-	assertOk(feat, "crud memo failed");
-	const featId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(feat.stdout)?.[1];
+	// A dive planned on the dive -- on the very feat being dived, which jump has
+	// just edited in the live bridge -- is written and committed in __self too,
+	// claims nothing, and lands without a conflict.
+	const featId = KB_FEAT;
 	const planned = run(
 		["crud", "dive", "--feat", featId, "--title", "Next", "Plan", "the", "next", "one"],
 		bridge,
@@ -75,7 +74,7 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 		"listed in the checkout's own config",
 	);
 	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD~2"], self).split(/\r?\n/).sort(),
+		git(["show", "--name-only", "--format=", "HEAD~1"], self).split(/\r?\n/).sort(),
 		[".nosedive/config.yaml", `kb/${deckId}.md`],
 		"the deck and its listing are one commit in __self",
 	);

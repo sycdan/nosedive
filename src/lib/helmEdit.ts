@@ -1,9 +1,13 @@
+import { KB_FEAT_ID } from "./shipZerostars.js";
+
 /**
  * The page's write controls, spliced into its script: every one posts to a
  * helm endpoint that runs `nosedive crud`, and shows crud's output or refusal.
  */
 export const helmEditScript = String.raw`
 // --- writes -----------------------------------------------------------------
+
+const KB_FEAT = "${KB_FEAT_ID}";
 
 async function write(path, body) {
 	const res = await fetch(path, {
@@ -117,7 +121,12 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 
 /** The empty page's New deck form: crud deck --name <name> [<gist>]; helm stamps a gist left empty. */
 function deckForm() {
-	if (!dives.active) return [el("p", { class: "empty" }, "Jump a dive to make a deck.")];
+	if (!dives.active) {
+		// Decks live in the bridge, so the bridge's own standing feat is the dive to make one on.
+		const hint = el("p", { class: "empty" }, "Jump a dive to make a deck.");
+		api("/api/doc?id=" + KB_FEAT).then((feat) => hint.replaceWith(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
+		return [hint];
+	}
 	const name = el("input", { type: "text", placeholder: "New deck name", required: "" });
 	const gist = el("input", { type: "text", placeholder: "What's the deck for?" });
 	const out = outputBox();

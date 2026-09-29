@@ -206,7 +206,7 @@ function replaceTitle(body: string, title: string): string {
  * minting a dive for a failed gate. Every other caller is the CLI, where the
  * brief arrives on stdin because an argument cannot carry paragraphs.
  */
-export function recordDive(args: string[], io: CommandIo, brief?: string): void {
+export function recordDive(args: string[], io: CommandIo, brief?: string, newId?: string): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
@@ -265,7 +265,8 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
 			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
-		const id = uuid7AtMs(Date.now());
+		// `jump <feat>` mints the id first, to title the dive with the name it derives.
+		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(rc.kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");

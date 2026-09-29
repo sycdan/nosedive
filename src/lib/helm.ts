@@ -57,6 +57,7 @@ export interface HelmDoc {
 	kind: string;
 	name: string;
 	gist: string;
+	title?: string;
 	meta: Record<string, unknown>;
 	frontmatter: string;
 	html: string;
@@ -343,6 +344,7 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 		kind: doc.kind,
 		name: doc.name,
 		gist: doc.gist,
+		title: doc.h1,
 		meta: doc.metaRaw,
 		frontmatter: block?.yaml ?? "",
 		html: markdown.parse(block?.body ?? text, { async: false }),

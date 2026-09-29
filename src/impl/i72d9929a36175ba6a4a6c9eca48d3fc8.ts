@@ -25,6 +25,7 @@ import { recreateDiveScratch } from "../lib/diveScratch.js";
 import { appendTimestampedSection, latestLoggedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { printWorkDirective } from "../lib/jumpHandoff.js";
+import { diveToJump } from "../lib/jumpFeat.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
@@ -329,12 +330,13 @@ function jumpSubject(
 }
 
 export function jump(args: string[], io: CommandIo): void {
-	const ref = parseJumpArgs(args);
+	const asked = parseJumpArgs(args);
 
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
+	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked, io);
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	// A refusal here is already on stderr with the exit code set: what it has to
 	// say is a list of the dives that could be jumped instead, which reads far

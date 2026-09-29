@@ -151,7 +151,7 @@ More: nosedive render c4e93002-2925-58bd-9b70-d917017a9fc7
 npx -y nosedive@2026.9.18-1789698885570 jump --help
 ```
 ```md
-Usage: nosedive jump [<dive-ref>]
+Usage: nosedive jump [<dive-ref> | <feat-ref>]
 
 Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top.
 

@@ -173,6 +173,8 @@ async function runVerb(body) {
 	}
 	out.classList.remove("streaming");
 	await loadDives();
+	// A land can add a deck to the bridge, so the tree re-reads them too.
+	await loadDecks();
 	refreshGroups();
 }
 
@@ -191,6 +193,21 @@ function diveCard(dive) {
 }
 
 /** A dive's doc offers Jump while no dive is active. */
+/** A feat is a feat doc, or any doc a deck links as <type>.feat. */
+function isFeatStep(step) {
+	return step.kind === "feat" || /(^|\.)feat$/.test(step.rel || "");
+}
+
+/** With no dive active, a feat can be jumped straight into: jump records the dive. */
+function featActions(doc, step) {
+	if (dives.active || !isFeatStep(step)) return null;
+	return el("div", { class: "cardacts" }, jumpInto(doc));
+}
+
+function jumpInto(doc) {
+	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id }));
+}
+
 function diveActions(doc) {
 	if (doc.kind !== "dive" || dives.active) return null;
 	return el("div", { class: "cardacts" }, confirmButton("Jump", "jump", () => runVerb({ verb: "jump", ref: doc.id })));

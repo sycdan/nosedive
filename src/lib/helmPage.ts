@@ -105,7 +105,7 @@ function node(item, ancestors) {
 		return li;
 	}
 	const cycle = ancestors.some((a) => a.id === item.id);
-	const step = { id: item.id, name: display(item), kind: item.kind };
+	const step = { id: item.id, name: display(item), kind: item.kind, rel: item.rel };
 	const path = [...ancestors, step];
 	const parts = [
 		el("span", { class: "kind" }, item.kind),
@@ -257,7 +257,7 @@ async function select(path, row, message) {
 	highlight(row);
 	const last = path[path.length - 1];
 	const deck = deckIds.has(path[0].id) ? path[0].id : null;
-	const feat = [...path].reverse().find((step) => step.kind === "feat");
+	const feat = [...path].reverse().find(isFeatStep);
 	const narrowed = ctx.deck !== deck || ctx.feat !== (feat ? feat.id : null);
 	if (ctx.deck !== deck) Object.assign(ctx, { repo: null, kind: null });
 	ctx.deck = deck;
@@ -283,7 +283,7 @@ async function select(path, row, message) {
 		const form = kindDoc
 			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[message, diveActions(doc), form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[message, diveActions(doc), featActions(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 

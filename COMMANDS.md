@@ -60,7 +60,7 @@ More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 npx -y nosedive@2026.9.18-1789698885570 crud --help
 ```
 ```md
-Usage: nosedive crud [--repo <repo>] <kind> [--name <name>] <gist...> | nosedive crud [--repo <repo>] <quid> [--meta -]
+Usage: nosedive crud [--repo <repo>] <kind> [--name <name>] <gist...> | nosedive crud [--repo <repo>] <quid> [--meta - | --scopes - | --links -] [--replace]
 
 Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
 
@@ -78,6 +78,19 @@ Usage: nosedive dehydrate-repo.workspace <repo-id-or-name-or-workspace-path> [--
 Remove one hydrated workspace checkout for a kb repo without touching managed cache or bridge metadata.
 
 More: nosedive render 32123800-a61d-5ea1-8b85-98c288b127b3
+```
+
+#### [dive](kb/3861db95-aa40-545e-b040-d74dcf9c5052.md)
+
+```sh
+npx -y nosedive@2026.9.18-1789698885570 dive --help
+```
+```md
+Usage: nosedive dive <feat> [--title <title>] <gist...> < brief | nosedive dive --log[:<event>] - < body
+
+Record a dive on a feat, or log progress on the active one: `dive <feat> <gist...>` with the brief on stdin, `dive --log[:<event>] -` with the body on stdin.
+
+More: nosedive render 3861db95-aa40-545e-b040-d74dcf9c5052
 ```
 
 #### [Dump backlog](kb/cf4c3d4b-5b5c-5e5d-98e5-af659f591aa1.md)

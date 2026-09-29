@@ -169,7 +169,7 @@ function divePicker() {
 		el("button", { type: "submit" }, "Record dive"));
 	form.addEventListener("submit", (event) => {
 		event.preventDefault();
-		runVerb({ verb: "record.dive", feat: feat.value, title: title.value, gist: gist.value, brief: brief.value });
+		runVerb({ verb: "dive", feat: feat.value, title: title.value, gist: gist.value, brief: brief.value });
 	});
 	return el("section", { class: "picker" }, el("h3", {}, "Dives"), search, cards, form);
 }

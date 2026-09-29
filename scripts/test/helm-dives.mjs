@@ -115,7 +115,7 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	assert.deepEqual((await get("/api/dives")).dives, [], "nothing planned yet");
 
 	const recorded = await runVerb({
-		verb: "record.dive",
+		verb: "dive",
 		feat: FEAT,
 		gist: "Sort the elves",
 		title: "Sort elves",

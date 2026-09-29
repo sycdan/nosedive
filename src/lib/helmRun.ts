@@ -14,19 +14,9 @@ function field(body: Record<string, unknown>, key: string): string {
 /** The verbs the page may run -- the dive lifecycle and the workspace pair -- and the argv and stdin each becomes. */
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
-		case "record.dive":
+		case "dive":
 			return {
-				args: [
-					"record.dive",
-					"--feat",
-					field(body, "feat"),
-					"--gist",
-					field(body, "gist"),
-					"--title",
-					field(body, "title"),
-					"--brief",
-					"-",
-				],
+				args: ["dive", field(body, "feat"), "--title", field(body, "title"), field(body, "gist")],
 				stdin: field(body, "brief"),
 			};
 		case "jump":

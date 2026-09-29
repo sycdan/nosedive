@@ -13,7 +13,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><span id="headacts"></span></header>
+<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -22,7 +22,7 @@ const token = new URLSearchParams(location.search).get("token");
 const deckIds = new Set();
 let bridge = { name: "" };
 let selectedRow = null;
-/** What is selected, and so what the Repos and Kinds subtrees show. */
+/** What is picked and selected: the deck, a feat under it, and the repo and kind the subtrees show. */
 const ctx = { deck: null, feat: null, repo: null, kind: null };
 const groups = [];
 const OUT_OF_REACH = "crud cannot write here now: jump a dive that scopes it to edit";
@@ -112,13 +112,13 @@ function writeHash(path) {
 
 function reset() {
 	highlight(null);
-	Object.assign(ctx, { deck: null, feat: null, repo: null, kind: null });
+	Object.assign(ctx, { feat: null, repo: null, kind: null });
 	refreshGroups();
 	history.replaceState(null, "", location.pathname + location.search);
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
 		...(dives.active ? [] : [divePicker()]),
-		el("div", { class: "start" }, el("p", { class: "empty" }, "Or pick a deck, or anything below one."), ...deckForm()));
+		el("div", { class: "start" }, ...deckForm()));
 }
 
 function docBody(doc, withFrontmatter) {
@@ -133,11 +133,8 @@ function docBody(doc, withFrontmatter) {
 async function select(path, row, message) {
 	highlight(row);
 	const last = path[path.length - 1];
-	const deck = deckIds.has(path[0].id) ? path[0].id : null;
 	const feat = [...path].reverse().find(isFeatStep);
-	const narrowed = ctx.deck !== deck || ctx.feat !== (feat ? feat.id : null);
-	if (ctx.deck !== deck) Object.assign(ctx, { repo: null, kind: null });
-	ctx.deck = deck;
+	const narrowed = ctx.feat !== (feat ? feat.id : null);
 	ctx.feat = feat ? feat.id : null;
 	if (narrowed) refreshGroups();
 	writeHash(path);
@@ -149,10 +146,7 @@ async function select(path, row, message) {
 		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
 		if (deckIds.has(last.id)) {
-			const context = await api(contextQuery(last.id, false));
-			view.replaceChildren(context.repos.length
-				? el("div", { class: "cards" }, context.repos.map(repoCard))
-				: el("p", { class: "empty" }, "This deck scopes no repos."), ...docBody(doc, false));
+			view.replaceChildren(...(dives.active ? [] : [divePicker()]), ...docBody(doc, false));
 			return;
 		}
 		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
@@ -255,12 +249,17 @@ document.getElementById("headacts").append(noteButton());
 Promise.all([loadDecks(), loadDives()]).then(() => {
 	const path = currentPath();
 	if (!path.length) return reset();
-	// Names and kinds are unknown after a reload; each step fills its own in.
+	// Names, kinds and link types are unknown after a reload: each step fills
+	// in its own, and takes its rel -- what makes a feat a feat -- from the
+	// step before it.
 	Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
-		.then((doc) => { step.name = label(doc); step.kind = doc.kind; }, () => {})))
-		.then(() => {
+		.then((doc) => { step.name = label(doc); step.kind = doc.kind; return doc; }, () => null)))
+		.then((docs) => {
+			path.forEach((step, i) => {
+				const link = i > 0 && docs[i - 1] ? docs[i - 1].links.find((l) => l.id === step.id) : null;
+				if (link) step.rel = link.rel;
+			});
 			restoreContext();
-			ctx.deck = deckIds.has(path[0].id) ? path[0].id : null;
 			select(path);
 		});
 }).catch(showError);

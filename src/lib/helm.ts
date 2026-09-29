@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { Marked } from "marked";
 
@@ -16,9 +16,8 @@ import {
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
-import { bridgeView, viewDecks, type BridgeView } from "./helmView.js";
+import { bridgeView, type BridgeView } from "./helmView.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
-import { KB_FEAT_ID } from "./shipZerostars.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
 export interface HelmRepoCard {
@@ -39,6 +38,7 @@ export interface HelmDeck {
 	name: string;
 	kind: string;
 	gist: string;
+	title?: string;
 }
 
 export type HelmLink =
@@ -128,60 +128,6 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 
 function bridgeDocs(cwd: string): BridgeView {
 	return bridgeView(cwd);
-}
-
-const FEAT_ROLE = /(^|\.)(feat|effort)$/;
-
-/**
- * The root of helm's tree: the bridge, its bridge deck -- the backlog memo --
- * with the feats it links (the kb feat first), and the other decks, which
- * the page shows only on a dive. All read through the view, so a dive that
- * scopes the bridge shows what it has written.
- */
-export function helmDecks(cwd: string): {
-	bridge: { id?: string; name: string };
-	bridgeDeck?: HelmDeck;
-	feats: HelmLink[];
-	decks: HelmDeck[];
-	diving: boolean;
-} {
-	const view = bridgeDocs(cwd);
-	const { rc, docs } = view;
-	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
-	const deck = (id: string): HelmDeck => {
-		const doc = byId.get(id);
-		if (!doc) return { id, name: id, kind: "missing", gist: `no kb doc ${id}` };
-		return { id, name: doc.name, kind: doc.kind, gist: doc.gist };
-	};
-	const backlog = rc.backlog ? byId.get(rc.backlog) : undefined;
-	const feats = (backlog?.links ?? [])
-		.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
-		.map((link) => byId.get(link.id))
-		.filter((doc): doc is KbDoc => doc !== undefined)
-		.sort((a, b) => Number(b.id === KB_FEAT_ID) - Number(a.id === KB_FEAT_ID))
-		.map((doc): HelmLink => {
-			const rel = backlog!.links.find((link) => link.id === doc.id)?.rel;
-			return {
-				type: "doc",
-				target: `kb/${doc.id}.md`,
-				rel,
-				id: doc.id,
-				name: doc.name,
-				kind: doc.kind,
-				gist: doc.gist,
-				title: doc.h1,
-			};
-		});
-	return {
-		bridge: { id: rc.bridge, name: bridgeDoc?.name ?? basename(rc.bridgeDir) },
-		bridgeDeck: backlog ? deck(backlog.id) : undefined,
-		feats,
-		decks: viewDecks(view)
-			.filter((id) => id !== rc.backlog)
-			.map(deck),
-		diving: Boolean(readActiveDiveId(rc.workspaceDir)),
-	};
 }
 
 /** The repos a deck scopes, in its scope order; links are not followed. */

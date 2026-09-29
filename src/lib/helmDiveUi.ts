@@ -194,12 +194,13 @@ function isFeatStep(step) {
 }
 
 /**
- * With no dive active, a feat can be jumped straight into: jump records the
- * dive. On one, it can have a dive planned on it, through crud dive.
+ * With no dive active, a feat lists the dives it reaches, and one with none
+ * can be jumped straight into: jump records the dive. On a dive, it can have
+ * a dive planned on it, through crud dive.
  */
 function featActions(doc, step) {
 	if (!isFeatStep(step)) return null;
-	return dives.active ? planForm(doc) : el("div", { class: "cardacts" }, jumpInto(doc));
+	return dives.active ? planForm(doc) : divePicker(doc);
 }
 
 function planForm(doc) {
@@ -212,7 +213,7 @@ function planForm(doc) {
 		el("button", { type: "submit" }, "Plan dive"), out);
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/dive", { feat: doc.id, title: title.value || undefined, gist: gist.value, brief: brief.value });
+			const run = await write("/api/crud/dive", { feat: doc.id, deck: ctx.deck || undefined, title: title.value || undefined, gist: gist.value, brief: brief.value });
 			show(run.stdout);
 			form.reset();
 		} catch (err) {
@@ -223,7 +224,7 @@ function planForm(doc) {
 }
 
 function jumpInto(doc) {
-	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id }));
+	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id, deck: ctx.deck || undefined }));
 }
 
 /**
@@ -235,13 +236,23 @@ function stageOpened(doc) {
 	stage({ id: doc.id, title: label(doc), gist: doc.gist, repos: [] });
 }
 
-/** With no active dive, the empty page is for getting onto one. */
-function divePicker() {
+/**
+ * With no active dive, the page is for getting onto one: the dives the picked
+ * deck reaches, or -- given a feat -- the ones that feat reaches, which, when
+ * it has none, can be jumped straight into.
+ */
+function divePicker(feat) {
 	const search = el("input", { type: "search", placeholder: "Find a dive" });
 	const cards = el("div", { class: "cards" });
 	const fill = async () => {
-		const listing = await api("/api/dives?q=" + encodeURIComponent(search.value.trim()));
-		cards.replaceChildren(...(listing.dives.length ? listing.dives.map(diveCard) : [el("p", { class: "empty" }, "No dives found.")]));
+		const params = new URLSearchParams({ q: search.value.trim() });
+		if (ctx.deck) params.set("deck", ctx.deck);
+		if (feat) params.set("feat", feat.id);
+		const listing = await api("/api/dives?" + params);
+		const none = feat && !search.value.trim()
+			? [el("div", { class: "nodives" }, el("p", { class: "empty" }, "No dives planned on this feat."), el("div", { class: "cardacts" }, jumpInto(feat)))]
+			: [el("p", { class: "empty" }, "No dives found.")];
+		cards.replaceChildren(...(listing.dives.length ? listing.dives.map(diveCard) : none));
 	};
 	let timer;
 	search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(fill, 200); });

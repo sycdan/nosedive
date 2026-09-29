@@ -145,6 +145,12 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	assert.deepEqual(dive.repos, ["cards"]);
 	assert.equal((await get("/api/dives?q=elves")).dives.length, 1, "search by term");
 	assert.equal((await get("/api/dives?q=goblins")).dives.length, 0);
+	assert.equal((await get(`/api/dives?deck=${BACKLOG}&feat=${FEAT}`)).dives.length, 1, "by feat");
+	assert.equal(
+		(await get(`/api/dives?deck=${BACKLOG}&feat=${REPO}`)).dives.length,
+		0,
+		"a doc reaching no dive lists none",
+	);
 
 	const staged = await get(`/api/context?deck=${BACKLOG}&dive=${dive.id}`);
 	assert.deepEqual(

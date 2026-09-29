@@ -118,6 +118,9 @@ pre.output.failed { border-left-color: #d64545; }
 	border-bottom: 1px solid var(--line); font-size: 13px; min-height: 40px; }
 #divebar .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 #divebar .gap, header .gap { flex: 1; }
+.cards .nodives { grid-column: 1 / -1; }
+#deckpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+	background: var(--panel); color: var(--text); max-width: 16em; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
 	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }

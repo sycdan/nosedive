@@ -40,6 +40,10 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 		[deckId],
 	);
 	assert.equal(view.feats[0].id, KB_FEAT);
+	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
+	assert.equal(view.locked, true, "on a dive the deck is the dive's");
+	assert.equal(view.deck, backlog, "a dive naming no deck is on the bridge deck");
+	assert.equal(helmDecks(bridge, deckId).deck, backlog, "a pick cannot move a locked deck");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -95,6 +99,13 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.match(readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"), /^name: magic-cards$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
+
+	// With no dive the pilot picks: the deck is theirs, and its feats are its own.
+	const picked = helmDecks(bridge, deckId);
+	assert.equal(picked.locked, false);
+	assert.equal(picked.deck, deckId);
+	assert.deepEqual(picked.feats, [], "the new deck links no feats yet");
+	assert.equal(helmDecks(bridge, "not-a-deck").deck, backlog, "an unknown pick falls back");
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {

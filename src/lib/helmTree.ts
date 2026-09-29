@@ -1,20 +1,23 @@
 /**
- * The page's left tree, spliced into its script. Top to bottom: the bridge
- * deck's feats, one Repos and one Kinds section showing the open deck (the
- * bridge deck, read-only, when none is open), and -- on a dive -- the other
- * decks, one open at a time.
+ * The page's left tree and deck picker, spliced into its script. The picked
+ * deck heads the tree, then the feats it links and theirs -- dives are cards
+ * in the main view, never rows -- then one Repos and one Kinds section
+ * showing that deck.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
 
-/** The backlog memo, shown as the bridge deck at the root of the tree. */
+/** The backlog memo, the bridge deck: the deck picked when nothing else is. */
 let bridgeDeck = null;
 const deckNames = new Map();
-let openDeckBranch = null;
+const DECK_KEY = "helm-deck";
 
-/** The deck the Repos and Kinds sections show: the open one, else the bridge deck. */
-function openDeck() {
-	return ctx.deck || (bridgeDeck ? bridgeDeck.id : null);
+function rememberedDeck() {
+	try { return localStorage.getItem(DECK_KEY); } catch { return null; }
+}
+
+function rememberDeck(id) {
+	try { localStorage.setItem(DECK_KEY, id); } catch { /* a private window keeps nothing */ }
 }
 
 function deckStep(id) {
@@ -24,6 +27,11 @@ function deckStep(id) {
 /** A doc's name in the tree and the breadcrumbs; the backlog is always the bridge deck. */
 function label(doc) {
 	return bridgeDeck && doc.id === bridgeDeck.id ? "Bridge deck" : display(doc);
+}
+
+/** Dives are cards in the main view, so the tree leaves them out. */
+function notADive(link) {
+	return !/(^|\.)dive$/.test(link.rel || "") && link.kind !== "dive";
 }
 
 /** A row: a twisty that expands load() into children lazily, and a label. */
@@ -58,19 +66,6 @@ function branch(cls, parts, title, load, onPick, onToggle) {
 	return self;
 }
 
-/** Opening a deck closes the one open before it and points Repos and Kinds at it. */
-function toggleDeck(deckId, open, b) {
-	if (open) {
-		if (openDeckBranch && openDeckBranch !== b) openDeckBranch.close();
-		openDeckBranch = b;
-		Object.assign(ctx, { deck: deckId, feat: null, repo: null, kind: null });
-	} else if (openDeckBranch === b) {
-		openDeckBranch = null;
-		Object.assign(ctx, { deck: null, feat: null, repo: null, kind: null });
-	}
-	refreshGroups();
-}
-
 /** One doc in the tree; it expands into its links, never into an ancestor. */
 function node(item, ancestors) {
 	if (item.type !== "doc") {
@@ -93,28 +88,21 @@ function node(item, ancestors) {
 	];
 	const load = cycle ? null : async () => {
 		const doc = await api("/api/doc?id=" + item.id);
-		return doc.links.map((link) => node(link, path));
+		return doc.links.filter(notADive).map((link) => node(link, path));
 	};
-	const b = branch((item.isDeck ? "deck " : "") + (cycle ? "cycle" : "doc"), parts, item.gist, load,
-		(row) => select(path, row), item.isDeck ? (open, self) => toggleDeck(item.id, open, self) : null);
-	return b.li;
+	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;
 }
 
-/**
- * The Repos or Kinds section, refilled whenever the context changes. On the
- * bridge deck it is for looking: crud needs a deck of its own open.
- */
+/** The Repos or Kinds section, refilled whenever the context changes. */
 function group(type) {
 	const title = type === "repos" ? "Repos" : "Kinds";
 	const load = async () => {
-		const deckId = openDeck();
+		const deckId = ctx.deck;
 		if (!deckId) return [];
 		const context = await api(contextQuery(deckId, type === "kinds"));
-		const readOnly = bridgeDeck && deckId === bridgeDeck.id;
 		const deckPath = [deckStep(deckId)];
-		if (type === "repos")
-			return context.repos.map((repo) => repoItem(readOnly ? { ...repo, inCrudContext: false } : repo, deckId, deckPath));
-		const kinds = context.kinds.map((kind) => kindItem(readOnly ? { ...kind, inCrudContext: false } : kind, deckId, deckPath));
+		if (type === "repos") return context.repos.map((repo) => repoItem(repo, deckId, deckPath));
+		const kinds = context.kinds.map((kind) => kindItem(kind, deckId, deckPath));
 		const blind = context.unreadable.map((name) =>
 			el("li", { class: "file" }, el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }),
 				el("button", { class: "label", disabled: "", title: "not hydrated, so its kb cannot be read" },
@@ -122,19 +110,18 @@ function group(type) {
 		return [...kinds, ...blind];
 	};
 	const b = branch("group", [el("span", { class: "text" }, title)], null, load,
-		(row) => showGroup(type, openDeck(), [deckStep(openDeck()), { id: "#" + type, name: title }], row));
+		(row) => showGroup(type, ctx.deck, [deckStep(ctx.deck), { id: "#" + type, name: title }], row));
 	groups.push(b);
 	return b.li;
 }
 
 function repoItem(repo, deckId, deckPath) {
-	const picked = ctx.repo === repo.id && openDeck() === deckId;
+	const picked = ctx.repo === repo.id;
 	const li = el("li", { class: "repo" + (repo.inCrudContext ? "" : " out") + (picked ? " picked" : "") });
 	const button = el("button", { class: "label", title: repo.inCrudContext ? repo.gist : OUT_OF_REACH },
 		el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "text" }, repo.name));
 	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), button);
 	button.addEventListener("click", () => {
-		ctx.deck = deckId;
 		ctx.repo = picked ? null : repo.id;
 		ctx.kind = null;
 		refreshGroups();
@@ -153,7 +140,6 @@ function kindItem(kind, deckId, deckPath) {
 		el("span", { class: "rel" }, kind.repoName));
 	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), button);
 	button.addEventListener("click", () => {
-		ctx.deck = deckId;
 		ctx.kind = picked ? null : { id: kind.id, repoId: kind.repoId, name: kind.name };
 		refreshGroups();
 		if (ctx.kind) showKind(kind, [deckPath[0], { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }], row);
@@ -175,23 +161,43 @@ function section(title, onPick) {
 	return el("li", { class: "section" }, row);
 }
 
+/** The picker in the header: the bridge deck and the other decks; locked on a dive. */
+function renderPicker(listing) {
+	const picker = document.getElementById("deckpick");
+	const options = [bridgeDeck, ...listing.decks].filter(Boolean)
+		.map((deck) => el("option", { value: deck.id }, deckNames.get(deck.id)));
+	picker.replaceChildren(...options);
+	picker.value = ctx.deck || "";
+	picker.disabled = listing.locked;
+	picker.title = listing.locked ? "On a dive, the deck is the dive's" : "Pick a deck";
+	picker.onchange = async () => {
+		rememberDeck(picker.value);
+		Object.assign(ctx, { deck: picker.value, feat: null, repo: null, kind: null });
+		await loadDecks();
+		reset();
+	};
+}
+
+/** Reads the picked deck and fills the tree with it. */
 async function loadDecks() {
-	const listing = await api("/api/decks");
+	const wanted = ctx.deck || rememberedDeck();
+	const listing = await api("/api/decks" + (wanted ? "?deck=" + wanted : ""));
 	bridge = listing.bridge;
 	bridgeDeck = listing.bridgeDeck || null;
 	deckIds.clear();
 	deckNames.clear();
 	if (bridgeDeck) { deckIds.add(bridgeDeck.id); deckNames.set(bridgeDeck.id, "Bridge deck"); }
 	for (const deck of listing.decks) { deckIds.add(deck.id); deckNames.set(deck.id, display(deck)); }
+	if (ctx.deck !== listing.deck) Object.assign(ctx, { feat: null, repo: null, kind: null });
+	ctx.deck = listing.deck || null;
+	renderPicker(listing);
 	groups.length = 0;
-	openDeckBranch = null;
-	const home = bridgeDeck ? [deckStep(bridgeDeck.id)] : [];
+	const home = ctx.deck ? [deckStep(ctx.deck)] : [];
 	const items = [];
-	if (bridgeDeck)
-		items.push(section("Bridge deck", (row) => select(home, row)), ...listing.feats.map((feat) => node(feat, home)));
+	if (ctx.deck)
+		items.push(section(deckNames.get(ctx.deck), (row) => { highlight(row); reset(); }),
+			...listing.feats.map((feat) => node(feat, home)));
 	items.push(group("repos"), group("kinds"));
-	if (listing.diving && listing.decks.length)
-		items.push(section("Decks"), ...listing.decks.map((deck) => node({ type: "doc", isDeck: true, ...deck }, [])));
 	document.getElementById("tree").replaceChildren(...items);
 }
 `;

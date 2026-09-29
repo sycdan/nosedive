@@ -129,10 +129,20 @@ dialog.modal fieldset.meta { border: 1px solid var(--line); border-radius: var(-
 dialog.modal fieldset.meta legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 dialog.modal select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
 	background: var(--bg); color: var(--text); }
-dialog.modal fieldset.repos { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px;
-	margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+dialog.modal fieldset.repos { border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 12px;
+	margin: 0; display: grid; font-size: 13px; max-height: 40vh; overflow-y: auto; }
 dialog.modal fieldset.repos legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
-dialog.modal label.check { display: flex; align-items: center; gap: 6px; }
+label.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+	padding: 6px 0; cursor: pointer; }
+label.toggle + label.toggle { border-top: 1px solid var(--line); }
+label.toggle input[role="switch"] { appearance: none; margin: 0; padding: 0; border: 0; flex: none; width: 34px; height: 20px; border-radius: 10px;
+	background: color-mix(in srgb, var(--dim) 55%, var(--line)); position: relative; cursor: pointer;
+	transition: background .15s; }
+label.toggle input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+	border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+label.toggle input[role="switch"]:checked { background: var(--accent); }
+label.toggle input[role="switch"]:checked::after { transform: translateX(14px); }
+label.toggle input[role="switch"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }

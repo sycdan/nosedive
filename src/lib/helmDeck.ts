@@ -70,10 +70,15 @@ export function helmDecks(
 	};
 }
 
-/** Every repo the bridge knows, by name: what a note can scope. */
-export function helmRepoList(cwd: string): { id: string; name: string }[] {
-	return bridgeView(cwd)
-		.docs.filter((doc) => doc.kind === "repo")
+/** The repos a deck scopes -- the bridge deck when none is named -- by name: what a note can be about. */
+export function helmRepoList(cwd: string, deckId?: string): { id: string; name: string }[] {
+	const { rc, docs } = bridgeView(cwd);
+	const byId = new Map(docs.map((doc) => [doc.id, doc]));
+	const wanted = deckId ?? rc.backlog;
+	const deck = wanted ? byId.get(wanted) : undefined;
+	return (deck?.scopes ?? [])
+		.map((scope) => byId.get(scope.repoId))
+		.filter((doc): doc is KbDoc => doc?.kind === "repo")
 		.map((doc) => ({ id: doc.id, name: doc.name }))
 		.sort((a, b) => a.name.localeCompare(b.name));
 }

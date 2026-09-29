@@ -169,7 +169,8 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 					),
 				);
 			if (req.method !== "GET") return sendJson(res, undefined);
-			if (url.pathname === "/api/repos") return sendJson(res, helmRepoList(cwd));
+			if (url.pathname === "/api/repos")
+				return sendJson(res, helmRepoList(cwd, url.searchParams.get("deck") || undefined));
 			if (url.pathname === "/api/creatable") return sendJson(res, helmCreatableKinds(cwd));
 			if (url.pathname === "/api/decks")
 				return sendJson(res, helmDecks(cwd, url.searchParams.get("deck") || undefined));

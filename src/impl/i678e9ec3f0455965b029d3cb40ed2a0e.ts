@@ -68,6 +68,7 @@ function crud(args: string[], io: CommandIo): void {
 	const name = takeFlag(args, "--name");
 	const feat = takeFlag(args, "--feat");
 	const title = takeFlag(args, "--title");
+	const deck = takeFlag(args, "--deck");
 	const repo = takeFlag(args, "--repo");
 	const sources =
 		repo === undefined ? kindSources(process.cwd()) : selectRepo(kindSources(process.cwd()), repo);
@@ -75,8 +76,8 @@ function crud(args: string[], io: CommandIo): void {
 	const [first, ...rest] = args as [string, ...string[]];
 
 	if (uuidLike(first)) {
-		if (name !== undefined || feat !== undefined || title !== undefined)
-			throw new Error("crud <quid> takes no --name, --feat or --title");
+		if (name !== undefined || feat !== undefined || title !== undefined || deck !== undefined)
+			throw new Error("crud <quid> takes no --name, --feat, --title or --deck");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, first);
 		if (!target) throw new Error(`no doc ${first} in context`);
@@ -114,14 +115,12 @@ function crud(args: string[], io: CommandIo): void {
 		recordDive(
 			["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : []), "--brief", "-"],
 			io,
-			undefined,
-			undefined,
-			{ root: kind.source.root, kbDir: kind.source.kbDir },
+			{ target: { root: kind.source.root, kbDir: kind.source.kbDir }, deck },
 		);
 		return;
 	}
-	if (feat !== undefined || title !== undefined)
-		throw new Error(`--feat and --title go with crud dive, not crud ${kind.name}`);
+	if (feat !== undefined || title !== undefined || deck !== undefined)
+		throw new Error(`--feat, --title and --deck go with crud dive, not crud ${kind.name}`);
 
 	// A name is the doc's identity when given: two docs may share a gist (helm's
 	// default deck gist does, within a minute), so only the name is checked, by the mint.

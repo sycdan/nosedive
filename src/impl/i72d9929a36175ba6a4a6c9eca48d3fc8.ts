@@ -337,7 +337,7 @@ export function jump(args: string[], io: CommandIo): void {
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
 
-	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked, io);
+	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked.ref, io, asked.deck);
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	// A refusal here is already on stderr with the exit code set: what it has to
 	// say is a list of the dives that could be jumped instead, which reads far

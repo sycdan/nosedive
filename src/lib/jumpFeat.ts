@@ -18,16 +18,22 @@ export function diveToJump(
 	kbDocs: KbDoc[],
 	ref: string | undefined,
 	io: CommandIo,
+	deck?: string,
 ): string | undefined {
-	if (!ref) return ref;
+	// Only a dive jump records carries the deck it came from.
+	const unrecorded = (given: string | undefined) => {
+		if (deck !== undefined) throw new Error("jump --deck goes with a feat, not a dive");
+		return given;
+	};
+	if (!ref) return unrecorded(ref);
 	let feat: KbDoc;
 	try {
 		feat = resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref);
 	} catch {
-		return ref;
+		return unrecorded(ref);
 	}
 	// A dive jumps as itself; a repo is not work, so jump refuses it as it always has.
-	if (feat.kind === "dive" || feat.kind === "repo") return ref;
+	if (feat.kind === "dive" || feat.kind === "repo") return unrecorded(ref);
 	const active = readActiveDiveId(rc.workspaceDir);
 	if (active)
 		throw new Error(
@@ -49,8 +55,7 @@ export function diveToJump(
 		["--feat", feat.id, "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
 		quiet,
 		// jump reads every dive's brief; this one says there was no plan.
-		`An unplanned dive into ${label}: no brief was written.`,
-		id,
+		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id, deck },
 	);
 	return id;
 }

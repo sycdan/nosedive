@@ -184,9 +184,17 @@ function setDiveDiver(divePath: string, email: string): void {
 }
 
 /** `jump [<dive-ref>]` -- one optional positional, and no flags to confuse it with. */
-export function parseJumpArgs(args: string[]): string | undefined {
-	if (args.length > 1) throw new Error(`jump takes at most one <dive-ref>: ${args.join(" ")}`);
-	const ref = args[0];
+export function parseJumpArgs(args: string[]): { ref?: string; deck?: string } {
+	const rest = [...args];
+	let deck: string | undefined;
+	const at = rest.indexOf("--deck");
+	if (at !== -1) {
+		deck = rest[at + 1];
+		if (!deck || deck.startsWith("-")) throw new Error("--deck needs a deck id");
+		rest.splice(at, 2);
+	}
+	if (rest.length > 1) throw new Error(`jump takes at most one <dive-ref>: ${rest.join(" ")}`);
+	const ref = rest[0];
 	if (ref !== undefined && ref.startsWith("-")) throw new Error(`jump takes no options: ${ref}`);
-	return ref;
+	return { ref, deck };
 }

@@ -287,8 +287,24 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {
 	const { bridge } = seededBridge(tmp, "dives", "pilot@nosedive.invalid");
 	const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
+	const deck = /^backlog: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
 	const made = run(
-		["crud", "dive", "--feat", KB_FEAT, "--title", "Note button", "Add", "the", "note", "button"],
+		[
+			"crud",
+			"dive",
+			"--feat",
+			KB_FEAT,
+			"--deck",
+			deck,
+			"--title",
+			"Note button",
+			"Add",
+			"the",
+			"note",
+			"button",
+		],
 		bridge,
 		"Put a Note button in the dive bar.\n\nIt takes free text.\n",
 	);
@@ -300,6 +316,7 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	assert.match(doc, /^gist: "Add the note button"$/m);
 	assert.match(doc, new RegExp(`^  feat: ${KB_FEAT}$`, "m"));
 	assert.match(doc, /^  diver: null$/m, "recording claims nothing");
+	assert.match(doc, new RegExp(`^  deck: ${deck}$`, "m"));
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
 	assert.match(subject(bridge), /^dive\(\S+\): created$/);
@@ -308,7 +325,8 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	for (const [args, pattern] of [
 		[["dive", "No", "feat"], /crud dive needs --feat/],
 		[["dive", "--feat", KB_FEAT, "--name", "mine", "Named"], /a dive's name is managed/],
-		[["deck", "--feat", KB_FEAT, "Elves"], /--feat and --title go with crud dive/],
+		[["deck", "--feat", KB_FEAT, "Elves"], /--feat, --title and --deck go with crud dive/],
+		[["dive", "--feat", KB_FEAT, "--deck", "nope", "Lost"], /no deck nope/],
 	]) {
 		const refused = run(["crud", ...args], bridge, "brief\n");
 		assert.equal(refused.status, 1, args.join(" "));

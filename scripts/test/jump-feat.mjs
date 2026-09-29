@@ -11,8 +11,11 @@ const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 test("jump <feat> records an unplanned dive on the feat and jumps it", () => {
 	const { bridge } = seededBridge(tmp, "free", "pilot@nosedive.invalid");
 	const before = readdirSync(join(bridge, "kb")).length;
+	const deck = /^backlog: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
 
-	const jumped = run(["jump", KB_FEAT], bridge);
+	const jumped = run(["jump", KB_FEAT, "--deck", deck], bridge);
 	assertOk(jumped, "jump <feat> failed");
 	const recorded = /^jump: recorded (\S+)$/m.exec(jumped.stderr)?.[1];
 	assert.ok(recorded, jumped.stderr);
@@ -35,6 +38,7 @@ test("jump <feat> records an unplanned dive on the feat and jumps it", () => {
 		"titled with its name, the feat's heading for an id-named feat",
 	);
 	assert.match(dive, /^## Brief\n\nAn unplanned dive into kb: no brief was written\.$/m);
+	assert.match(dive, new RegExp(`^  deck: ${deck}$`, "m"), "the deck it was jumped from");
 	assert.match(
 		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
 		new RegExp(`id: ${id}`),
@@ -47,6 +51,9 @@ test("jump <feat> records an unplanned dive on the feat and jumps it", () => {
 	const again = run(["jump", KB_FEAT], bridge);
 	assert.equal(again.status, 1);
 	assert.match(again.stderr, /is active; land, pack or bail it/);
+	const onDive = run(["jump", id, "--deck", deck], bridge);
+	assert.equal(onDive.status, 1);
+	assert.match(onDive.stderr, /jump --deck goes with a feat, not a dive/);
 	assert.equal(
 		readdirSync(join(bridge, "kb")).length,
 		before + 1,

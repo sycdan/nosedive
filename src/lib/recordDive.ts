@@ -81,6 +81,7 @@ function renderNewDive(
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
 	brief: string | undefined,
+	deck: string | undefined,
 ): string {
 	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
@@ -92,6 +93,7 @@ function renderNewDive(
 		...renderScopes(scopes),
 		"meta:",
 		`  feat: ${feat.id}`,
+		...(deck ? [`  deck: ${deck}`] : []),
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -207,22 +209,29 @@ export interface DiveTarget {
 	kbDir: string;
 }
 
-/**
- * `brief` is for the in-process caller that already holds the text -- `test`
- * minting a dive for a failed gate. Every other caller is the CLI, where the
- * brief arrives on stdin because an argument cannot carry paragraphs.
- *
- * `target` writes and commits a new dive in another checkout of the bridge --
- * a dive's `__self` -- while its scopes still resolve against the live bridge
- * and workspace. Such a dive is recorded, never claimed.
- */
-export function recordDive(
-	args: string[],
-	io: CommandIo,
-	brief?: string,
-	newId?: string,
-	target?: DiveTarget,
-): void {
+/** What an in-process caller hands `recordDive` beyond the CLI's own arguments. */
+export interface RecordDiveExtras {
+	/**
+	 * For the caller that already holds the text -- `test` minting a dive for a
+	 * failed gate. Every other caller is the CLI, where the brief arrives on
+	 * stdin because an argument cannot carry paragraphs.
+	 */
+	brief?: string;
+	/** `jump <feat>` mints the id first, to title the dive with the name it derives. */
+	newId?: string;
+	/**
+	 * Writes and commits a new dive in another checkout of the bridge -- a
+	 * dive's `__self` -- while its scopes still resolve against the live bridge
+	 * and workspace. Such a dive is recorded, never claimed.
+	 */
+	target?: DiveTarget;
+	/** The deck a new dive was planned or jumped from, kept as `meta.deck`. */
+	deck?: string;
+}
+
+export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtras = {}): void {
+	const { newId, target, deck } = extras;
+	let brief = extras.brief;
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
@@ -252,6 +261,8 @@ export function recordDive(
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
+		if (deck !== undefined && !kbDocs.some((doc) => doc.id === deck))
+			throw new Error(`no deck ${deck} in ${formatPath(kbDir)}`);
 		/**
 		 * A new dive inherits its feat's repos, and inherits where they land only
 		 * where the feat has said. A feat that has not said hands down a pinned but
@@ -285,10 +296,9 @@ export function recordDive(
 		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
 			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
-		// `jump <feat>` mints the id first, to title the dive with the name it derives.
 		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
+		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, deck));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);

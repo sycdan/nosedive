@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { assertOk, createTmp, libUrl, run, runTool, seededBridge } from "../test-helpers.mjs";
 
-const { helmDecks } = await import(libUrl);
+const { helmCreatableKinds, helmDecks } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
@@ -26,6 +26,13 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	assertOk(run(["jump", divePath], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
+
+	// The dive bar offers what the dive can make: the bridge's kinds, but no dive kind.
+	assert.deepEqual(
+		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
+		["self:deck", "self:kind", "self:memo"],
+	);
+	assert.ok(helmCreatableKinds(bridge)[1].schema, "each kind carries its schema for the form");
 
 	const made = run(["crud", "deck", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
 	assertOk(made, "crud deck failed");
@@ -99,6 +106,8 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.match(readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"), /^name: magic-cards$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
+
+	assert.deepEqual(helmCreatableKinds(bridge), [], "with no dive helm makes nothing");
 
 	// With no dive the pilot picks: the deck is theirs, and its feats are its own.
 	const picked = helmDecks(bridge, deckId);

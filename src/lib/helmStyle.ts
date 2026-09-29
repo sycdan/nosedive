@@ -119,10 +119,16 @@ pre.output.failed { border-left-color: #d64545; }
 #divebar .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 #divebar .gap, header .gap { flex: 1; }
 .cards .nodives { grid-column: 1 / -1; }
-#deckpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+#deckpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
 	background: var(--panel); color: var(--text); max-width: 16em; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
 	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }
+dialog.modal.wide { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+dialog.modal fieldset.meta { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px;
+	margin: 0; display: grid; gap: 8px; }
+dialog.modal fieldset.meta legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
+dialog.modal select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+	background: var(--bg); color: var(--text); }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }

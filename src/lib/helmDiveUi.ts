@@ -17,6 +17,7 @@ async function loadDives() {
 	dives.active = listing.active;
 	if (dives.active) dives.staged = null;
 	document.body.classList.toggle("diving", !!dives.active);
+	await loadCreatable();
 	renderBar();
 	return listing;
 }
@@ -39,7 +40,7 @@ function renderBar() {
 	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
 	if (dives.active)
-		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
+		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title, ...createControl(),
 			el("span", { class: "gap" }),
 			el("button", { class: "act land", onclick: () => confirmDialog({
 				verb: "Land", cls: "land", target: dive.title,

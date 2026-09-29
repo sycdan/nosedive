@@ -1,3 +1,4 @@
+import { helmCreateScript } from "./helmCreateUi.js";
 import { helmDiveScript } from "./helmDiveUi.js";
 import { helmEditScript } from "./helmEdit.js";
 import { helmStyle } from "./helmStyle.js";
@@ -200,13 +201,13 @@ async function showKind(kind, path, row, message) {
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
 		const rerender = (msg) => showKind(kind, path, row, msg);
-		const form = mintForm(kind, rerender, doc.meta && doc.meta.schema);
-		view.replaceChildren(...[form, message, list].filter(Boolean), schemaEditor(kind, doc, path, rerender), ...docBody(doc, false));
+		view.replaceChildren(...[message, list].filter(Boolean), schemaEditor(kind, doc, path, rerender), ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 
 ${helmEditScript}
 ${helmDiveScript}
+${helmCreateScript}
 // Links inside a rendered doc: kb docs open here, everything else in a new tab.
 document.getElementById("view").addEventListener("click", (event) => {
 	const a = event.target.closest(".doc a[href]");

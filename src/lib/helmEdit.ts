@@ -33,39 +33,6 @@ function onSubmit(form, run) {
 	});
 }
 
-/**
- * The + form over a kind's doc list: crud --repo <repo> <kind> [--name] <gist>,
- * with a field for each property the kind's schema requires, sent as the new
- * doc's meta. A required property no simple field can hold is left to crud.
- */
-function mintForm(kind, rerender, schema) {
-	const reach = kind.inCrudContext;
-	const gist = el("input", { type: "text", placeholder: "Gist of a new " + kind.name, required: "", disabled: reach ? null : "" });
-	const name = el("input", { type: "text", placeholder: "name (optional)", disabled: reach ? null : "" });
-	const properties = (schema && schema.properties) || {};
-	const needed = ((schema && schema.required) || [])
-		.map((key) => fieldFor(key, properties[key] || {}, undefined))
-		.filter((input) => !input.disabled);
-	for (const input of needed) if (input.dataset.kind !== "boolean") input.required = true;
-	const fields = needed.map((input) => el("label", { class: "field" }, el("span", {}, input.name + " *"), input));
-	const form = el("form", { class: "make", title: reach ? null : OUT_OF_REACH },
-		gist, name, ...fields, el("button", { type: "submit", disabled: reach ? null : "" }, "+ " + kind.name));
-	onSubmit(form, async () => {
-		try {
-			const meta = patchFrom(needed, {});
-			const run = await write("/api/crud/mint", {
-				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
-				meta: Object.keys(meta).length ? meta : undefined,
-			});
-			refreshGroups();
-			rerender(outputBox(run.stdout));
-		} catch (err) {
-			rerender(outputBox(String(err.message || err), true));
-		}
-	});
-	return form;
-}
-
 function fieldFor(key, spec, value) {
 	const shown = value == null ? "" : String(value);
 	let input;
@@ -133,29 +100,12 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	return form;
 }
 
-/** The empty page's New deck form: crud deck --name <name> [<gist>]; helm stamps a gist left empty. */
+/** With no dive, the empty page's way onto one: the bridge's own standing feat. */
 function deckForm() {
-	if (!dives.active) {
-		// Decks live in the bridge, so the bridge's own standing feat is the dive to make one on.
-		const hint = el("p", { class: "empty" }, "Jump a dive to make a deck.");
-		api("/api/doc?id=" + KB_FEAT).then((feat) => hint.replaceWith(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
-		return [hint];
-	}
-	const name = el("input", { type: "text", placeholder: "New deck name", required: "" });
-	const gist = el("input", { type: "text", placeholder: "What's the deck for?" });
-	const out = outputBox();
-	const form = el("form", { class: "make" }, name, gist, el("button", { type: "submit" }, "Make deck"));
-	onSubmit(form, async () => {
-		try {
-			const run = await write("/api/crud/deck", { name: name.value, gist: gist.value || undefined });
-			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
-			await loadDecks();
-			if (id) select([{ id: id[1], name: name.value, kind: "deck" }]);
-		} catch (err) {
-			out.replaceWith(outputBox(String(err.message || err), true));
-		}
-	});
-	return [form, out];
+	if (dives.active) return [];
+	const hint = el("p", { class: "empty" }, "Jump a dive to make a deck.");
+	api("/api/doc?id=" + KB_FEAT).then((feat) => hint.replaceWith(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
+	return [hint];
 }
 
 /** Hydrate (a ref, prefilled with trunk) or dehydrate (confirmed once) a repo from its card. */

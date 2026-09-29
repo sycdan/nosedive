@@ -43,6 +43,8 @@ export { parseDecks } from "./lib/decks.js";
 export { mergePatch } from "./lib/mergePatch.js";
 // Exported so helm's view of a dive's __self checkout is tested below the server.
 export { helmDecks } from "./lib/helmDeck.js";
+// Exported so what the dive bar can create is tested below the server.
+export { helmCreatableKinds } from "./lib/helmCreate.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

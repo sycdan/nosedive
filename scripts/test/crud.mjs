@@ -475,6 +475,11 @@ test("crud --scopes and --links patch one entry by its target, in KINGSMetaL ord
 		path,
 		`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nmeta:\n  topic: x\n---\n\n# Plan\n`,
 	);
+	// The linked dive must exist: crud refuses a link to a missing doc.
+	write(
+		join(bridge, "kb", `${DIVE}.md`),
+		`---\nkind: dive\nid: ${DIVE}\nname: mtg\ngist: "Mtg"\n---\n`,
+	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "plan");
 	const read = () => readFileSync(path, "utf8");
@@ -535,4 +540,55 @@ test("crud --scopes and --links patch one entry by its target, in KINGSMetaL ord
 		assert.match(refused.stderr, pattern);
 	}
 	assert.equal(commits(bridge), before, "a refused patch commits nothing");
+});
+
+test("crud --links refuses a link to a doc that does not exist, but removes one and passes URLs", () => {
+	const bridge = createBridge(tmp, "dead-links");
+	const id = SPARE;
+	const path = join(bridge, "kb", `${id}.md`);
+	write(
+		join(bridge, "kb", `${CARDS_REPO}.md`),
+		`---\nkind: memo\nid: ${CARDS_REPO}\nname: there\ngist: "There"\n---\n`,
+	);
+	// A dead link written by hand: kb/${DIVE}.md is never made in this bridge.
+	write(
+		path,
+		`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nlinks:\n  - kb/${DIVE}.md\n---\n\n# Plan\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "dead link");
+	const read = () => readFileSync(path, "utf8");
+
+	for (const [args, input, named] of [
+		[[], `${DIVE}: {rel: x.feat}\n`, [DIVE, `kb/${DIVE}.md`]],
+		[[], "docs/nowhere.md: {}\n", ["docs/nowhere.md"]],
+		[["--replace"], `${CARDS_REPO}: {}\n${DIVE}: {}\n`, [DIVE]],
+	]) {
+		const before = { text: read(), count: commits(bridge) };
+		const refused = run(["crud", id, "--links", "-", ...args], bridge, input);
+		assert.equal(refused.status, 1, `${args.join(" ")} ${input}`);
+		for (const name of named) assert.ok(refused.stderr.includes(name), refused.stderr);
+		assert.equal(read(), before.text, "a refused link writes nothing");
+		assert.equal(commits(bridge), before.count, "a refused link commits nothing");
+	}
+
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, `${CARDS_REPO}: {rel: x.feat}\n`),
+		"linking an existing doc failed",
+	);
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, "https://example.com/none: {}\n"),
+		"linking a URL failed",
+	);
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, `${DIVE}: null\n`),
+		"removing a dead link failed",
+	);
+	assert.match(
+		read(),
+		new RegExp(
+			`^links:\n {2}- kb/${CARDS_REPO}.md:\n {6}rel: x.feat\n {2}- https://example.com/none\n---`,
+			"m",
+		),
+	);
 });

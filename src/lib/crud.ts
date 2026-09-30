@@ -183,6 +183,29 @@ function patchTargets(block: Block, patch: Record<string, unknown>, target: Crud
 }
 
 /**
+ * Refuses a links patch that adds or changes a link to a doc that does not
+ * exist. `targets` is `patch` as `patchTargets` resolved it, key for key. A
+ * removal (null) and a URL are not checked; with `replace` the patch is the
+ * whole block, so every entry is checked.
+ */
+function checkLinkTargets(
+	patch: Record<string, unknown>,
+	targets: Record<string, unknown>,
+	target: CrudTarget,
+): void {
+	const resolved = Object.keys(targets);
+	const missing = Object.entries(patch)
+		.map(([key, value], i) => ({ key, value, path: resolved[i]! }))
+		.filter(({ value }) => value !== null)
+		.filter(({ path }) => !/^[a-z][a-z0-9+.-]*:\/\//i.test(path))
+		.filter(({ path }) => !existsSync(join(target.source.root, path)));
+	if (missing.length > 0)
+		throw new Error(
+			`no doc to link to:\n  ${missing.map(({ key, path }) => `${key} (${formatPath(join(target.source.root, path))})`).join("\n  ")}`,
+		);
+}
+
+/**
  * Applies `patch` to one frontmatter block of a doc and rewrites only that
  * block. The patch is a JSON Merge Patch (RFC 7386): keys merge recursively
  * and a null removes one. `scopes` and `links` are patched as mappings keyed
@@ -210,6 +233,7 @@ export function updateBlock(
 		block === "meta" ? (fm.meta ?? {}) : entriesToMapping(fm[block], `${where} ${block}`);
 	if (!isMapping(current)) throw new Error(`${where} has a meta that is not a mapping`);
 	const targets = patchTargets(block, patch, target);
+	if (block === "links") checkLinkTargets(patch, targets, target);
 	const merged = (replace ? mergePatch({}, targets) : mergePatch(current, targets)) as Record<
 		string,
 		unknown

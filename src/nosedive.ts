@@ -57,6 +57,7 @@ export {
 	kindSources,
 	loadKinds,
 	bridgeHomed,
+	parseQualifiedRef,
 	resolveKind,
 	selectRepo,
 	validateMeta,

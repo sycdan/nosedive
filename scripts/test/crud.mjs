@@ -287,10 +287,10 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	assert.equal(git(["status", "--porcelain"], worktree), "");
 	assert.equal(commits(bridge), bridgeBefore, "the bridge is untouched on a dive");
 
-	const pinned = run(["crud", "--repo", "cards", "card", "Black", "Lotus"], bridge);
-	assertOk(pinned, "crud --repo failed");
+	const pinned = run(["crud", "cards:card", "Black", "Lotus"], bridge);
+	assertOk(pinned, "crud <repo>:<kind> failed");
 	assert.ok(existsSync(join(worktree, "kb", `${madeId(pinned.stdout)}.md`)));
-	const elsewhere = run(["crud", "--repo", "nope", "card", "x"], bridge);
+	const elsewhere = run(["crud", "nope:card", "x"], bridge);
 	assert.equal(elsewhere.status, 1);
 	assert.match(elsewhere.stderr, /repo nope is not in context/);
 
@@ -317,6 +317,71 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	const bridgeKind = run(["crud", "note", "x"], bridge);
 	assert.equal(bridgeKind.status, 1);
 	assert.match(bridgeKind.stderr, /no kind note/, "the bridge's kinds are not in play on a dive");
+});
+
+test("a kind two repos in play define is named <repo>:<kind>, and a doc's meta checks against its own repo's", () => {
+	const ids = run(["mint", "5"], tmp);
+	assertOk(ids, "mint failed");
+	const [MEMO_A, MEMO_B, REPO_A, REPO_B, MEMO_DIVE] = ids.stdout.trim().split(/\r?\n/);
+	const bridge = createBridge(tmp, "memo-bridge");
+	const repoA = implRepo(tmp, "memos-a");
+	const repoB = implRepo(tmp, "memos-b");
+	for (const [repo, id, schema] of [
+		[repoA, MEMO_A, ["properties:", "  topic:", "    type: string"]],
+		[repoB, MEMO_B, ["properties:", "  price:", "    type: number"]],
+	]) {
+		write(join(repo.source, "kb", `${id}.md`), kindDoc(id, "memo", schema));
+		runTool("git", ["add", "."], repo.source);
+		gitCommit(repo.source, "memo kind");
+		runTool("git", ["push", "cloud", "main"], repo.source);
+	}
+	writeImplRepoDoc(bridge, REPO_A, repoA);
+	writeImplRepoDoc(bridge, REPO_B, repoB);
+	write(
+		join(bridge, "kb", `${MEMO_DIVE}.md`),
+		`---\nkind: dive\nid: ${MEMO_DIVE}\nname: the-dive\ngist: "A dive"\nscopes:\n  - ${REPO_A}\n  - ${REPO_B}\n---\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "fixture");
+	assertOk(run(["hydrate-repo.workspace", REPO_A], bridge), "hydrate failed");
+	assertOk(run(["hydrate-repo.workspace", REPO_B], bridge), "hydrate failed");
+	write(join(bridge, "workspace", ".nosedive-ref"), `id: ${MEMO_DIVE}\n`);
+	const kbA = join(bridge, "workspace", "memos-a", "kb");
+	const kbB = join(bridge, "workspace", "memos-b", "kb");
+
+	const bare = run(["crud", "memo", "x"], bridge);
+	assert.equal(bare.status, 1);
+	assert.match(bare.stderr, /name one: memos-a:memo, memos-b:memo/);
+
+	const byName = run(["crud", "memos-a:memo", "From", "A"], bridge);
+	assertOk(byName, "crud <name>:memo failed");
+	const idA = madeId(byName.stdout);
+	assert.match(readFileSync(join(kbA, `${idA}.md`), "utf8"), /^kind: memo$/m);
+	const byId = run(["crud", `${REPO_B}:memo`, "From", "B"], bridge);
+	assertOk(byId, "crud <repo-id>:memo failed");
+	const idB = madeId(byId.stdout);
+	assert.match(readFileSync(join(kbB, `${idB}.md`), "utf8"), /^kind: memo$/m);
+
+	// A bare quid finds the doc; its meta checks against its own repo's memo.
+	assertOk(run(["crud", idB, "--meta", "-"], bridge, "price: 3\n"), "patching B's memo failed");
+	const wrong = run(["crud", idB, "--meta", "-"], bridge, "topic: t\n");
+	assert.equal(wrong.status, 1);
+	assert.match(wrong.stderr, /would not validate/);
+
+	// The same quid in both repos: the qualified ref patches that repo's copy.
+	const copyB = join(kbB, `${idA}.md`);
+	write(copyB, readFileSync(join(kbA, `${idA}.md`), "utf8"));
+	const beforeA = readFileSync(join(kbA, `${idA}.md`), "utf8");
+	assertOk(
+		run(["crud", `memos-b:${idA}`, "--meta", "-"], bridge, "price: 7\n"),
+		"memos-b:<quid> failed",
+	);
+	assert.match(readFileSync(copyB, "utf8"), /price: 7/);
+	assert.equal(readFileSync(join(kbA, `${idA}.md`), "utf8"), beforeA);
+
+	const flag = run(["crud", "--repo", "memos-a", "memo", "y"], bridge);
+	assert.equal(flag.status, 1);
+	assert.match(flag.stderr, /<repo>:<kind>/);
 });
 
 test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {

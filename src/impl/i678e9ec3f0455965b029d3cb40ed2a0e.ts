@@ -16,6 +16,7 @@ import {
 	KIND_KIND_ID,
 	kindSources,
 	loadKinds,
+	parseQualifiedRef,
 	resolveKind,
 	selectRepo,
 	STARTER_SCHEMA,
@@ -71,17 +72,24 @@ function crud(args: string[], io: CommandIo): void {
 	const feat = takeFlag(args, "--feat");
 	const title = takeFlag(args, "--title");
 	const deck = takeFlag(args, "--deck");
-	const repo = takeFlag(args, "--repo");
-	const sources =
-		repo === undefined ? kindSources(process.cwd()) : selectRepo(kindSources(process.cwd()), repo);
+	if (args.includes("--repo"))
+		throw new Error(
+			"crud takes no --repo; name the repo on the ref: crud <repo>:<kind> or <repo>:<quid>",
+		);
 	if (args.length === 0) throw new Error("crud needs a kind and a gist, or a quid");
 	const [first, ...rest] = args as [string, ...string[]];
+	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo.
+	const qualified = parseQualifiedRef(first);
+	const sources =
+		qualified.repo === undefined
+			? kindSources(process.cwd())
+			: selectRepo(kindSources(process.cwd()), qualified.repo);
 
-	if (uuidLike(first)) {
+	if (uuidLike(qualified.ref)) {
 		if (name !== undefined || feat !== undefined || title !== undefined || deck !== undefined)
 			throw new Error("crud <quid> takes no --name, --feat, --title or --deck");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
-		const target = findDocByQuid(sources, first);
+		const target = findDocByQuid(sources, qualified.ref);
 		if (!target) throw new Error(`no doc ${first} in context`);
 		if (!block) {
 			io.writeOut(readFileSync(target.path, "utf8"));

@@ -9,7 +9,7 @@ import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById } from "./kbDocs
 import { writeFileAtomic } from "./renderPlan.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
-/** A repo whose kb can declare kinds, named and identified so `--repo` can pick it. */
+/** A repo whose kb can declare kinds, named and identified so a `<repo>:<ref>` can pick it. */
 export interface KindSource {
 	id?: string;
 	name: string;
@@ -134,17 +134,34 @@ export function bridgeHomed(kinds: KindDoc[]): KindDoc[] {
 }
 
 /**
+ * Splits `<repo>:<ref>` at its last colon; a repo is a name or an id, and an
+ * id has no colon. Either side empty leaves the ref bare.
+ */
+export function parseQualifiedRef(ref: string): { repo?: string; ref: string } {
+	const at = ref.lastIndexOf(":");
+	if (at <= 0 || at === ref.length - 1) return { ref };
+	return { repo: ref.slice(0, at), ref: ref.slice(at + 1) };
+}
+
+/**
  * The one kind a name means in context. A name several repos in play define
- * is refused rather than guessed; `--repo` narrows the context to one.
+ * is refused rather than guessed; `<repo>:<kind>` names the repo to take it from.
  */
 export function resolveKind(kinds: KindDoc[], ref: string): KindDoc | undefined {
-	const matches = kinds.filter((kind) => kind.name === ref);
+	const parsed = parseQualifiedRef(ref);
+	// A repo that declares no kinds has none to offer; that is "no kind", not "no repo".
+	const candidates =
+		parsed.repo === undefined
+			? kinds
+			: kinds.filter((kind) => kind.source.name === parsed.repo || kind.source.id === parsed.repo);
+	const matches = candidates.filter((kind) => kind.name === parsed.ref);
 	if (matches.length > 1) {
 		const named = matches
 			.map((kind) => `${kind.source.name} (${formatPath(kind.path)})`)
 			.join(", ");
+		const choices = matches.map((kind) => `${kind.source.name}:${parsed.ref}`).join(", ");
 		throw new Error(
-			`kind ${ref} is defined by more than one repo in context: ${named}; pick one with --repo <repo>`,
+			`kind ${ref} is defined by more than one repo in context: ${named}; name one: ${choices}`,
 		);
 	}
 	return matches[0];
@@ -181,12 +198,27 @@ export function validateMeta(kind: KindDoc, meta: unknown): string[] {
 	return (validate.errors ?? []).map(describe);
 }
 
-/** Validates a doc's meta against its kind in context, or warns that nothing in context declares it. */
+/**
+ * Validates a doc's meta against its kind in context, or warns that nothing in
+ * context declares it. A bare kind several repos define is taken from the doc's
+ * own repo, when `source` says which that is.
+ */
 export function checkDocMeta(
 	kinds: KindDoc[],
 	doc: { kind: string; meta: unknown },
+	source?: KindSource,
 ): { kind?: KindDoc; errors: string[]; warning?: string } {
-	const kind = resolveKind(kinds, doc.kind);
+	let kind: KindDoc | undefined;
+	try {
+		kind = resolveKind(kinds, doc.kind);
+	} catch (err) {
+		const parsed = parseQualifiedRef(doc.kind);
+		const own = source
+			? kinds.filter((k) => k.name === parsed.ref && k.source.root === source.root)
+			: [];
+		if (parsed.repo !== undefined || own.length !== 1) throw err;
+		kind = own[0];
+	}
 	if (!kind)
 		return { errors: [], warning: `no kind ${doc.kind} in context; its meta is not validated` };
 	return { kind, errors: validateMeta(kind, doc.meta) };

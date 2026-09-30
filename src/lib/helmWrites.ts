@@ -112,9 +112,7 @@ export async function helmWrite(
 			await runCrud(
 				cwd,
 				[
-					"--repo",
-					repo,
-					text(body, "kind")!,
+					`${repo}:${text(body, "kind")!}`,
 					...(name ? ["--name", name] : []),
 					...(meta ? ["--meta", "-"] : []),
 					text(body, "gist")!,
@@ -133,8 +131,7 @@ export async function helmWrite(
 			await runCrud(
 				cwd,
 				[
-					...(repo ? ["--repo", repo] : []),
-					text(body, "id")!,
+					repo ? `${repo}:${text(body, "id")!}` : text(body, "id")!,
 					"--meta",
 					"-",
 					...(body.replace === true ? ["--replace"] : []),

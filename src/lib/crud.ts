@@ -241,7 +241,7 @@ export function updateBlock(
 
 	let kind: KindDoc | undefined;
 	if (block === "meta") {
-		const checked = checkDocMeta(kinds, { kind: kindName, meta: merged });
+		const checked = checkDocMeta(kinds, { kind: kindName, meta: merged }, target.source);
 		if (checked.errors.length > 0)
 			throw new Error(`the ${kindName} meta would not validate:\n  ${checked.errors.join("\n  ")}`);
 		if (checked.warning) io.err(checked.warning);

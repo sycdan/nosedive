@@ -22,6 +22,7 @@ const {
 	kindSources,
 	loadKinds,
 	resolveKind,
+	parseQualifiedRef,
 	validateMeta,
 	checkDocMeta,
 	bridgeHomed,
@@ -203,9 +204,20 @@ test("with no dive kinds are the bridge's; on a dive only the scoped repos'", ()
 	assert.equal(resolveKind(diving, "backlog"), undefined, "on a dive the bridge is not consulted");
 	assert.throws(
 		() => resolveKind(diving, "card"),
-		(err) => /repo-a/.test(err.message) && /repo-b/.test(err.message) && /--repo/.test(err.message),
+		(err) =>
+			/repo-a/.test(err.message) &&
+			/repo-b/.test(err.message) &&
+			/name one: repo-a:card, repo-b:card/.test(err.message),
 	);
-	// --repo narrows what is in play to one repo, by name or id.
+	// <repo>:<kind> takes the kind from one repo, by name or id.
+	assert.equal(resolveKind(diving, "repo-a:card")?.id, CARD_A);
+	assert.equal(resolveKind(diving, `${REPO_B}:card`)?.id, CARD_B);
+	assert.equal(
+		resolveKind(diving, "nope:card"),
+		undefined,
+		"a repo with no such kind has none; crud's selectRepo refuses a repo not in play",
+	);
+	// selectRepo narrows what is in play to one repo, by name or id.
 	const onlyA = loadKinds(selectRepo(kindSources(bridge), "repo-a"));
 	assert.equal(resolveKind(onlyA, "card")?.id, CARD_A);
 	assert.equal(resolveKind(loadKinds(selectRepo(kindSources(bridge), REPO_B)), "card")?.id, CARD_B);
@@ -222,3 +234,12 @@ function loadKindsFrom(name, docs) {
 	});
 	return loadKinds([{ name, root: repoRoot, kbDir: join(repoRoot, "kb") }]);
 }
+
+test("parseQualifiedRef splits <repo>:<ref> at the last colon, and leaves an empty side bare", () => {
+	assert.deepEqual(parseQualifiedRef("memo"), { ref: "memo" });
+	assert.deepEqual(parseQualifiedRef("nosedive:memo"), { repo: "nosedive", ref: "memo" });
+	assert.deepEqual(parseQualifiedRef(`${REPO_A}:memo`), { repo: REPO_A, ref: "memo" });
+	assert.deepEqual(parseQualifiedRef(`__self:${CARD_A}`), { repo: "__self", ref: CARD_A });
+	assert.deepEqual(parseQualifiedRef(":x"), { ref: ":x" });
+	assert.deepEqual(parseQualifiedRef("x:"), { ref: "x:" });
+});

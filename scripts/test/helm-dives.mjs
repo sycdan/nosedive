@@ -167,15 +167,16 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const packed = await runVerb({ verb: "pack" });
 	assert.equal(packed.exit, 0, packed.text);
 	assert.equal(existsSync(marker), false, "pack puts the dive down");
-	const log = readFileSync(join(bridge, "workspace", ".scratch", dive.id, "helm.log"), "utf8");
+	const today = new Date().toISOString().slice(0, 10);
+	const log = readFileSync(join(bridge, ".nosedive", "logs", `helm-${today}.log`), "utf8");
 	assert.match(
 		log,
-		/^## \S+ nosedive jump /m,
-		"what helm ran on the dive is logged in its scratch",
+		new RegExp(String.raw`^## \S+ \[${dive.id}\] nosedive jump `, "m"),
+		"a jump is filed under the dive it jumped",
 	);
 	assert.match(
 		log,
-		/^## \S+ nosedive pack\n\n[\s\S]*\[exit 0\]/m,
+		new RegExp(String.raw`^## \S+ \[${dive.id}\] nosedive pack\n\n[\s\S]*\[exit 0\]`, "m"),
 		"pack, which ends the dive, too",
 	);
 	assert.equal((await get("/api/dives")).active, null);
@@ -183,6 +184,17 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const refused = await runVerb({ verb: "land" });
 	assert.equal(refused.exit, 1, "land with no dive fails, and says why");
 	assert.match(refused.text, /active dive, and there isn't one/, "the command's own words");
+	assert.match(
+		readFileSync(join(bridge, ".nosedive", "logs", `helm-${today}.log`), "utf8"),
+		/^## \S+ \[no dive\] nosedive land\n/m,
+		"a command run with no dive is logged too",
+	);
+	assert.match(readFileSync(join(bridge, ".nosedive", "logs", ".gitignore"), "utf8"), /^\*$/m);
+	assert.doesNotMatch(
+		runTool("git", ["status", "--porcelain", "--untracked-files=all"], bridge).stdout,
+		/\.nosedive\/logs/,
+		"git never picks a log up",
+	);
 
 	// Hydrate and dehydrate from a card run the workspace commands themselves.
 	const worktree = join(bridge, "workspace", "cards");

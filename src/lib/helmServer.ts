@@ -12,6 +12,7 @@ import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
 import { helmDecks, helmRepoList } from "./helmDeck.js";
 import { helmDives } from "./helmDives.js";
+import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
 import { helmPull, helmPush } from "./helmSync.js";
@@ -128,6 +129,7 @@ function helmToken(rc: NosediveRc): string {
 export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	const rc = readNosediveRc(cwd);
 	const token = helmToken(rc);
+	pruneHelmLogs(cwd, new Date());
 	// Changes on every launch; an open page that sees a new one reloads itself.
 	const boot = randomBytes(8).toString("hex");
 	let allowedHost = "";

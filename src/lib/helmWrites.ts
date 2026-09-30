@@ -3,7 +3,9 @@ import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 
 import { crudReach } from "./helm.js";
-import { appendDiveLog, diveLogDir } from "./helmLog.js";
+import { readNosediveRc } from "./coreParsing.js";
+import { appendHelmLog } from "./helmLog.js";
+import { readActiveDiveId } from "./kbDocs.js";
 import { nosedivePackageVersion, packageRoot } from "./packageBacklog.js";
 
 /** A request helm refuses on its merits, answered with its own status. */
@@ -31,6 +33,8 @@ const OUT_OF_REACH = "crud cannot write to that repo now: jump a dive that scope
  * the command's own and there is one implementation to trust.
  */
 function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
+	const activeDive = () => readActiveDiveId(readNosediveRc(cwd).workspaceDir);
+	const diveBefore = activeDive();
 	return new Promise((resolveRun, reject) => {
 		const child = spawn(
 			process.execPath,
@@ -46,7 +50,12 @@ function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
 		child.stderr.on("data", (chunk) => (stderr += chunk));
 		child.on("error", reject);
 		child.on("close", (code) => {
-			appendDiveLog(diveLogDir(cwd), ["crud", ...args], `${stdout}${stderr}\n[exit ${code ?? 1}]`);
+			appendHelmLog(
+				cwd,
+				diveBefore ?? activeDive(),
+				["crud", ...args],
+				`${stdout}${stderr}\n[exit ${code ?? 1}]`,
+			);
 			resolveRun({ exitCode: code ?? 1, stdout, stderr });
 		});
 		child.stdin.end(stdin);

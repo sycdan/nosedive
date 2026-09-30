@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 
-import { appendDiveLog, diveLogDir } from "./helmLog.js";
+import { readNosediveRc } from "./coreParsing.js";
+import { appendHelmLog } from "./helmLog.js";
+import { readActiveDiveId } from "./kbDocs.js";
 import { HelmRequestError } from "./helmWrites.js";
 import { packageRoot } from "./packageBacklog.js";
 
@@ -70,8 +72,9 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 		"cache-control": "no-store",
 		"x-content-type-options": "nosniff",
 	});
-	// Read before the run: a land or a bail ends the dive whose log it belongs in.
-	const logDir = diveLogDir(cwd);
+	// Read before the run: a land or a bail ends the dive its entry belongs to.
+	const activeDive = () => readActiveDiveId(readNosediveRc(cwd).workspaceDir);
+	const diveBefore = activeDive();
 	let transcript = "";
 	const out = (text: string) => {
 		transcript += text;
@@ -80,8 +83,8 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 	const end = (text: string) => {
 		transcript += text;
 		// Logged before the response ends, so what the page shows is already on disk.
-		// A jump starts a dive, so its log is known only once it has run.
-		appendDiveLog(logDir ?? diveLogDir(cwd), args, transcript);
+		// A jump starts a dive, so its dive is known only once it has run.
+		appendHelmLog(cwd, diveBefore ?? activeDive(), args, transcript);
 		res.end(text);
 	};
 	const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {

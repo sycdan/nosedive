@@ -13,6 +13,7 @@ import { helmCreatableKinds } from "./helmCreate.js";
 import { helmDecks, helmRepoList } from "./helmDeck.js";
 import { helmDives } from "./helmDives.js";
 import { streamVerb } from "./helmRun.js";
+import { helmPull, helmPush } from "./helmSync.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
@@ -163,6 +164,10 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			}
 			if (req.method === "POST" && url.pathname === "/api/run")
 				return streamVerb(cwd, await readJsonBody(req), res);
+			if (req.method === "POST" && url.pathname === "/api/sync/pull")
+				return sendJson(res, helmPull(cwd));
+			if (req.method === "POST" && url.pathname === "/api/sync/push")
+				return sendJson(res, helmPush(cwd));
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));
 			if (url.pathname === "/api/dives")
 				return sendJson(

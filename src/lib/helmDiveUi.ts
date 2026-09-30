@@ -19,6 +19,7 @@ async function loadDives() {
 	document.body.classList.toggle("diving", !!dives.active);
 	await loadCreatable();
 	renderBar();
+	renderSync();
 	return listing;
 }
 

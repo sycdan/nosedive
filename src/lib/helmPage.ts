@@ -259,9 +259,31 @@ function restoreContext() {
 // A restarted helm (a rebuild under node --watch, say) comes back on the same
 // port with the same token but a new boot id; the page follows it.
 let boot = null;
-new EventSource("/api/events?token=" + token).addEventListener("boot", (event) => {
+const events = new EventSource("/api/events?token=" + token);
+events.addEventListener("boot", (event) => {
 	if (boot && boot !== event.data) location.reload();
 	boot = event.data;
+});
+// A dive or commit made outside the page -- a jump in a terminal, say -- is
+// pushed as a new state; the first is only the baseline. A command streaming
+// here refreshes when it ends, so the page leaves it be.
+let bridgeState = null;
+events.addEventListener("state", async (event) => {
+	const next = JSON.parse(event.data);
+	const last = bridgeState;
+	bridgeState = next;
+	if (!last || (last.dive === next.dive && last.head === next.head)) return;
+	if (document.querySelector("#view .output.streaming")) return;
+	try {
+		await loadDives();
+		await loadDecks();
+		refreshRepos();
+		// A verb run here changes the dive too, often just after its output
+		// ends; going home then would wipe that output.
+		if (last.dive !== next.dive && !document.querySelector("#view > .output")) reset();
+	} catch (err) {
+		showError(err);
+	}
 });
 
 document.getElementById("headacts").append(noteButton());

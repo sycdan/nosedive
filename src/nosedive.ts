@@ -49,6 +49,7 @@ export { helmCreatableKinds } from "./lib/helmCreate.js";
 export { branchWorktree, helmBranchStatus } from "./lib/helmBranch.js";
 export { helmPull, helmPush } from "./lib/helmSync.js";
 export { helmPorts } from "./lib/helmServer.js";
+export { helmState } from "./lib/helmState.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

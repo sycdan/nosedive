@@ -12,6 +12,7 @@ import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
 import { helmDecks, helmRepoList } from "./helmDeck.js";
 import { helmDives } from "./helmDives.js";
+import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
 import { helmPull, helmPush } from "./helmSync.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
@@ -130,6 +131,25 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	// Changes on every launch; an open page that sees a new one reloads itself.
 	const boot = randomBytes(8).toString("hex");
 	let allowedHost = "";
+	// Open event streams; while any is, the bridge state is polled and each
+	// change is pushed to them, so a page follows dives and commits made outside it.
+	const streams = new Set<ServerResponse>();
+	let lastState: string | undefined;
+	const readState = (): string | undefined => {
+		try {
+			return JSON.stringify(helmState(cwd));
+		} catch {
+			return undefined;
+		}
+	};
+	const poll = setInterval(() => {
+		if (!streams.size) return;
+		const state = readState();
+		if (state === undefined || state === lastState) return;
+		lastState = state;
+		for (const stream of streams) stream.write(`event: state\ndata: ${state}\n\n`);
+	}, 2000);
+	poll.unref();
 
 	const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
 		if (req.headers.host !== allowedHost) return send(res, 403, "text/plain", "forbidden host\n");
@@ -148,6 +168,14 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				"cache-control": "no-store",
 			});
 			res.write(`retry: 500\nevent: boot\ndata: ${boot}\n\n`);
+			// The current state as this tab's baseline.
+			const state = readState();
+			if (state !== undefined) {
+				if (!streams.size) lastState = state;
+				res.write(`event: state\ndata: ${state}\n\n`);
+			}
+			streams.add(res);
+			res.on("close", () => streams.delete(res));
 			return;
 		}
 		const header = req.headers["x-helm-token"];
@@ -229,6 +257,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 		url: helmUrl(bound, token),
 		close: () =>
 			new Promise((resolveClose) => {
+				clearInterval(poll);
 				server.close(() => resolveClose());
 				// An open browser tab holds keep-alive sockets that would stall close.
 				server.closeAllConnections();

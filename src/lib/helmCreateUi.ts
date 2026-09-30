@@ -121,4 +121,59 @@ function createDialog(kind) {
 	dialog.showModal();
 	(isDeck ? name : gist).focus();
 }
+
+/**
+ * On a dive, a doc that is not yet a feat of the picked deck can become one:
+ * linked from the deck as <type>.feat, or from one of its feats as
+ * child.feat, through crud <deck-or-feat> --links -.
+ */
+function featLinker(doc, step) {
+	if (!dives.active || !ctx.deck || doc.kind === "dive" || doc.kind === "deck" || doc.id === ctx.deck) return null;
+	if (isFeatStep(step) || deckFeats.some((feat) => feat.id === doc.id)) return null;
+	return el("div", { class: "cardacts" },
+		el("button", { class: "act unstage", onclick: () => featDialog(doc) }, "Add as feat"));
+}
+
+function featDialog(doc) {
+	const types = [...new Set(deckFeats.map((feat) => (feat.rel || "").replace(/\.feat$/, "")).filter((t) => t && t !== "zerostar"))];
+	const onDeck = el("input", { type: "radio", name: "place", value: "deck", checked: "" });
+	const underFeat = el("input", { type: "radio", name: "place", value: "feat", disabled: deckFeats.length ? null : "" });
+	const type = el("input", { type: "text", placeholder: "type, e.g. " + (types[0] || "current"), list: "feat-types",
+		pattern: "[a-z0-9]+(-[a-z0-9]+)*", "aria-label": "type" });
+	const parent = el("select", { "aria-label": "parent feat" },
+		deckFeats.map((feat) => el("option", { value: feat.id }, label(feat))));
+	const out = el("pre", { class: "output", hidden: "" });
+	const add = el("button", { type: "submit", class: "act jump" }, "Add");
+	const form = el("form", {},
+		el("h3", {}, "Add " + label(doc) + " as a feat"),
+		el("datalist", { id: "feat-types" }, types.map((t) => el("option", { value: t }))),
+		el("label", { class: "field" }, el("span", {}, onDeck, " on " + deckNames.get(ctx.deck)), type),
+		el("label", { class: "field" }, el("span", {}, underFeat, " under a feat"), parent),
+		out,
+		el("div", { class: "modalacts" },
+			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Close"), add));
+	const dialog = el("dialog", { class: "modal" }, form);
+	dialog.addEventListener("close", () => dialog.remove());
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const nested = underFeat.checked;
+		if (!nested && !type.value.trim()) return type.focus();
+		add.disabled = true;
+		try {
+			const rel = nested ? "child.feat" : type.value.trim() + ".feat";
+			const run = await write("/api/crud/links", { id: nested ? parent.value : ctx.deck, patch: { [doc.id]: { rel } } });
+			dialog.close();
+			await loadDecks();
+			select([deckStep(ctx.deck), { id: doc.id, name: label(doc), kind: doc.kind, rel }], null, outputBox(run.stdout));
+		} catch (err) {
+			out.textContent = String(err.message || err);
+			out.classList.add("failed");
+			out.hidden = false;
+			add.disabled = false;
+		}
+	});
+	document.body.append(dialog);
+	dialog.showModal();
+	type.focus();
+}
 `;

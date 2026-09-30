@@ -158,6 +158,8 @@ function stage(dive) {
 
 /** Runs a dive verb and shows its output as it streams in. */
 async function runVerb(body) {
+	// The output takes the main pane; the Repos view must not redraw over it.
+	reposOpen = false;
 	const out = el("pre", { class: "output streaming" }, "");
 	document.getElementById("view").replaceChildren(el("h3", {}, "nosedive " + body.verb), out);
 	try {

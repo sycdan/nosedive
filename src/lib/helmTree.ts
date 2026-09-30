@@ -10,6 +10,8 @@ export const helmTreeScript = String.raw`
 let bridgeDeck = null;
 const deckNames = new Map();
 const DECK_KEY = "helm-deck";
+/** The picked deck's feats, as its links name them: what Add as feat offers to nest under. */
+let deckFeats = [];
 
 function rememberedDeck() {
 	try { return localStorage.getItem(DECK_KEY); } catch { return null; }
@@ -130,6 +132,7 @@ async function loadDecks() {
 	if (ctx.deck !== listing.deck) Object.assign(ctx, { feat: null, repo: null, kind: null });
 	ctx.deck = listing.deck || null;
 	renderPicker(listing);
+	deckFeats = listing.feats;
 	const home = ctx.deck ? [deckStep(ctx.deck)] : [];
 	const items = [];
 	if (ctx.deck)

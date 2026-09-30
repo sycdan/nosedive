@@ -134,6 +134,15 @@ export async function helmWrite(
 			),
 		);
 	}
+	if (path === "/api/crud/links") {
+		const patch = body.patch;
+		if (!patch || typeof patch !== "object" || Array.isArray(patch))
+			throw new HelmRequestError(400, "patch must be an object of link targets");
+		// JSON is YAML, so the patch goes to crud's stdin as it is.
+		return succeeded(
+			await runCrud(cwd, [text(body, "id")!, "--links", "-"], JSON.stringify(patch)),
+		);
+	}
 	if (path === "/api/crud/dive") {
 		const title = text(body, "title", false);
 		const deck = text(body, "deck", false);

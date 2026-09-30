@@ -158,7 +158,7 @@ async function select(path, row, message) {
 		const form = kindDoc
 			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[message, featActions(doc, last), form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[message, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 

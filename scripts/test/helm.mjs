@@ -422,6 +422,7 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 		["/api/crud/mint", { repo: BRIDGE_REPO, kind: "note", gist: "Buy sleeves" }],
 		["/api/crud/meta", { id: NOTE_1, patch: { topic: "x" } }],
 		["/api/crud/deck", { name: "Magic Cards" }],
+		["/api/crud/links", { id: NOTE_1, patch: { [NOTE_1]: { rel: "idea.feat" } } }],
 	]) {
 		const refused = await post(path, body);
 		assert.equal(refused.status, 409, path);

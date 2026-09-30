@@ -82,6 +82,25 @@ test("helm shows its internals and streams poll ticks and the live log", async (
 	assert.equal(body.pollEvery, 2000);
 	assert.equal(body.lastChangeAt, null);
 
+	// The bridge's HEAD comes first; "init" is not on origin, "base" is.
+	const head = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	assert.ok(head.startsWith(body.commits[0].hash));
+	assert.equal(body.commits[0].subject, "init");
+	assert.equal(body.commits[0].pushed, false);
+	assert.equal(body.commits[1].subject, "base");
+	assert.equal(body.commits[1].pushed, true);
+	assert.equal(typeof body.commits[0].author, "string");
+	assert.equal(typeof body.commits[0].at, "number");
+
+	// A new unpushed commit leads the list.
+	gitCommitEmpty(bridge, "fresh work");
+	const after = await (await fetch(internals, { headers: { "x-helm-token": token } })).json();
+	const fresh = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	assert.ok(fresh.startsWith(after.commits[0].hash));
+	assert.equal(after.commits[0].subject, "fresh work");
+	assert.equal(after.commits[0].pushed, false);
+	assert.equal(after.commits.find((c) => c.subject === "base").pushed, true);
+
 	const stream = events(await fetch(new URL(`/api/events?token=${token}`, base)));
 	t.after(() => stream.cancel().catch(() => {}));
 

@@ -29,11 +29,17 @@ async function showInternals() {
 		const next = el("span", {});
 		const change = el("span", {});
 		const log = el("pre", { class: "output" }, info.log);
+		const commits = el("ul", { class: "doclist" });
+		const drawCommits = (list) => commits.replaceChildren(...(list.length ? list.map((c) => el("li", {},
+			el("code", {}, c.hash), " ", c.subject, " ", el("span", { class: "rel" }, c.author + " · " + ago(c.at)),
+			c.pushed === false ? el("span", { class: "count", title: "Not on the upstream yet" }, "unpushed") : null)) : [el("li", { class: "rel" }, "no commits")]));
+		drawCommits(info.commits || []);
 		const root = el("section", { class: "internals" },
 			el("h3", {}, "Internals"),
 			el("h4", {}, "Config"), el("p", {}, el("code", {}, info.configPath)),
 			el("pre", { class: "output" }, info.config),
 			el("h4", {}, "Poll"), el("p", {}, next, " · ", change),
+			el("h4", {}, "Commits"), commits,
 			el("h4", {}, "Log"), el("p", {}, el("code", {}, info.logPath)), log);
 		const tick = () => {
 			if (!root.isConnected) { clearInterval(timer); if (onLogText === append) onLogText = null; return; }
@@ -48,10 +54,10 @@ async function showInternals() {
 			log.append(text);
 			if (pinned) log.scrollTop = log.scrollHeight;
 		};
-		// A state change seen while open moves "last change seen" along.
+		// A state change seen while open moves "last change seen" along and redraws the commits.
 		events.addEventListener("state", function seen() {
 			if (!root.isConnected) return events.removeEventListener("state", seen);
-			api("/api/internals").then((fresh) => { info.lastChangeAt = fresh.lastChangeAt; }, () => {});
+			api("/api/internals").then((fresh) => { info.lastChangeAt = fresh.lastChangeAt; drawCommits(fresh.commits || []); }, () => {});
 		});
 		onLogText = append;
 		const timer = setInterval(tick, 150);

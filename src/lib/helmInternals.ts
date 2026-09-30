@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
 import { readNosediveRc } from "./coreParsing.js";
+import { gitOutput } from "./gitProcess.js";
 import { helmLogPath, readLogSince, readLogTail, type LogCursor } from "./helmLog.js";
 
 /** How often helm polls the bridge while a page listens, in ms. */
@@ -16,6 +17,16 @@ export interface HelmInternals {
 	log: string;
 	pollEvery: number;
 	lastChangeAt: number | null;
+	commits: HelmCommit[];
+}
+
+/** One of the bridge's recent commits; `pushed` is null when the branch has no upstream. */
+export interface HelmCommit {
+	hash: string;
+	subject: string;
+	author: string;
+	at: number;
+	pushed: boolean | null;
 }
 
 /** Reads the bridge's config and today's log for the Internals view. */
@@ -39,7 +50,34 @@ export function helmInternals(cwd: string, lastChangeAt: number | null): HelmInt
 		log: readLogTail(logPath),
 		pollEvery: HELM_POLL_MS,
 		lastChangeAt,
+		commits: recentCommits(cwd),
 	};
+}
+
+/**
+ * The checkout's last 20 commits from HEAD, each marked whether its upstream
+ * has it (null without an upstream). A failing git call gives an empty list.
+ */
+export function recentCommits(cwd: string): HelmCommit[] {
+	// The full hash rides along so the unpushed set compares exactly.
+	const log = gitOutput(cwd, ["log", "-20", "--format=%H%x1f%h%x1f%s%x1f%an%x1f%ct"]);
+	if (!log) return [];
+	let unpushed: Set<string> | null = null;
+	if (gitOutput(cwd, ["rev-parse", "--abbrev-ref", "@{u}"])) {
+		const listed = gitOutput(cwd, ["rev-list", "HEAD", "--not", "@{u}"]);
+		if (listed === undefined) return [];
+		unpushed = new Set(listed.split("\n").filter(Boolean));
+	}
+	return log.split("\n").map((line) => {
+		const [full = "", hash = "", subject = "", author = "", ct = "0"] = line.split("\x1f");
+		return {
+			hash,
+			subject,
+			author,
+			at: Number(ct) * 1000,
+			pushed: unpushed ? !unpushed.has(full) : null,
+		};
+	});
 }
 
 /**

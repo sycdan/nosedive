@@ -445,7 +445,8 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	const notePath = /^Noted (\S+)$/m.exec(noted.text)?.[1];
 	assert.ok(notePath, noted.text);
 	const note = readFileSync(join(bridge, notePath), "utf8");
-	assert.match(note, /^kind: todo$/m, "a leading <kind>: sets the note's kind");
+	assert.match(note, /^kind: memo$/m, "a leading <prefix>: leaves the note a memo");
+	assert.match(note, /^gist: "buy sleeves"$/m, "the prefix leaves the gist");
 	assert.match(note, /The matte ones\./, "lines after the first are its body");
 	assert.match(
 		note,

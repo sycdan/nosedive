@@ -61,17 +61,56 @@ test("note writes a default-scoped memo from a bare gist", () => {
 	);
 });
 
-test("note feat mints a feat doc and prints the backlog injection command", () => {
+test("note feat: is only a link label, with no backlog injection hint", () => {
 	const bridge = createBridge(tmp, "note-feat-bridge");
 	seedBridge(bridge);
+	const bridgeRepo = configValue(bridge, "bridge");
 
 	const noted = run(["note", "feat:", "build", "the", "thing"], bridge);
 	assertOk(noted, "feat note failed");
 	const doc = notedDoc(bridge, noted.stdout);
 
-	assert.match(doc.text, /^kind: feat$/m);
-	assert.match(noted.stdout, /^Next steps:$/m);
-	assert.match(noted.stdout, new RegExp(`^nosedive update-backlog --inject ${doc.id}$`, "m"));
+	assert.match(doc.text, /^kind: memo$/m);
+	assert.match(doc.text, /^gist: "build the thing"$/m);
+	assert.doesNotMatch(noted.stdout, /update-backlog/);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${bridgeRepo}.md`), "utf8"),
+		new RegExp(`- kb/${doc.id}\\.md:\n\\s+rel: feat\\.note`),
+	);
+});
+
+test("note slugifies a punctuated prefix into the link rel", () => {
+	const bridge = createBridge(tmp, "note-todo-prefix-bridge");
+	seedBridge(bridge);
+	const bridgeRepo = configValue(bridge, "bridge");
+
+	const noted = run(["note", "todo(note):", "decide", "y"], bridge);
+	assertOk(noted, "prefixed note failed");
+	const doc = notedDoc(bridge, noted.stdout);
+
+	assert.match(doc.text, /^kind: memo$/m);
+	assert.match(doc.text, /^gist: "decide y"$/m);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${bridgeRepo}.md`), "utf8"),
+		new RegExp(`- kb/${doc.id}\\.md:\n\\s+rel: todo-note\\.note`),
+	);
+});
+
+test("note keeps a prefix that slugifies to nothing in the gist", () => {
+	const bridge = createBridge(tmp, "note-empty-prefix-bridge");
+	seedBridge(bridge);
+	const bridgeRepo = configValue(bridge, "bridge");
+
+	const noted = run(["note", "(:", "odd", "start"], bridge);
+	assertOk(noted, "empty-prefix note failed");
+	const doc = notedDoc(bridge, noted.stdout);
+
+	assert.match(doc.text, /^kind: memo$/m);
+	assert.match(doc.text, /^gist: "\(: odd start"$/m);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${bridgeRepo}.md`), "utf8"),
+		new RegExp(`- kb/${doc.id}\\.md:\n\\s+rel: memo\\.note`),
+	);
 });
 
 test("note records explicit scopes and body from stdin", () => {
@@ -109,7 +148,8 @@ test("note records explicit scopes and body from stdin", () => {
 	assert.doesNotMatch(noted.stdout, /^Scoped note to bridge repo:/m);
 	const doc = notedDoc(bridge, noted.stdout);
 
-	assert.match(doc.text, /^kind: bug$/m);
+	assert.match(doc.text, /^kind: memo$/m);
+	assert.match(doc.text, /^gist: "explicit scope body"$/m);
 	assert.match(doc.text, new RegExp(`^scopes:\n  - ${repoA}\n  - ${repoB}$`, "m"));
 	assert.match(doc.text, /# Explicit Scope Body\n\n## Details\n\nBody text\.\n$/);
 	for (const repoId of [repoA, repoB]) {

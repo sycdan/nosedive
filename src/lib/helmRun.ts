@@ -35,7 +35,7 @@ function command(body: Record<string, unknown>): { args: string[]; stdin: string
 			return { args: ["hydrate-repo.workspace", field(body, "repo"), ...at], stdin: "" };
 		}
 		case "note": {
-			// The first line is the gist, a leading `<kind>:` included, as `nosedive note` reads it.
+			// The first line is the gist, a leading `<prefix>:` included, as `nosedive note` reads it.
 			const [first, ...rest] = field(body, "text").split(/\r?\n/);
 			const noteBody = rest.join("\n").trim();
 			const scopes = Array.isArray(body.scopes)

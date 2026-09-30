@@ -190,7 +190,7 @@ More: nosedive render e8909eff-aee5-54f2-9ce2-85c2582e39f0
 npx -y nosedive@2026.9.18-1789698885570 note --help
 ```
 ```md
-Usage: nosedive note [<kind>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
+Usage: nosedive note [<prefix>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
 
 Create one KB document and link it from the repos it is about.
 

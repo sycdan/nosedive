@@ -93,6 +93,8 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 .card.out { opacity: .6; }
 .tree li.section > .row .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 .tree li.section:not(:first-child) { margin-top: 10px; }
+.tree li.featgroup { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+	opacity: .8; padding: 6px 0 1px 22px; cursor: default; user-select: none; }
 .card.pick { cursor: pointer; } .card.pick:hover, .card.pick:focus-visible { border-color: #2f6fdb; }
 .doclist { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 4px; }
 .doclist li { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }

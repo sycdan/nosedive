@@ -67,10 +67,33 @@ function branch(cls, parts, title, load, onPick, onToggle) {
 	return self;
 }
 
-/** One doc in the tree; it expands into its links, never into an ancestor. */
-function node(item, ancestors) {
+/** Splits items into feat groups, named for what their rel says before .feat in first-seen order, and the rest. */
+function featGroups(items) {
+	const groups = [];
+	const rest = [];
+	for (const item of items) {
+		const m = /^(.+)\.feat$/.exec(item.rel || "");
+		if (!m) { rest.push(item); continue; }
+		let group = groups.find((g) => g.group === m[1]);
+		if (!group) { group = { group: m[1], items: [] }; groups.push(group); }
+		group.items.push(item);
+	}
+	return { groups, rest };
+}
+
+/** A level's rows: each feat group under its heading, rows without their rel, then the rest as they are. */
+function groupedRows(items, render) {
+	const { groups, rest } = featGroups(items);
+	const rows = [];
+	for (const { group, items: members } of groups)
+		rows.push(el("li", { class: "featgroup" }, group), ...members.map((item) => render(item, true)));
+	return [...rows, ...rest.map((item) => render(item, false))];
+}
+
+/** One doc in the tree; it expands into its links, never into an ancestor. hideRel leaves off the rel its group heading already says. */
+function node(item, ancestors, hideRel) {
 	if (item.type !== "doc") {
-		const parts = [el("span", { class: "text" }, item.target), item.rel ? el("span", { class: "rel" }, item.rel) : null];
+		const parts = [el("span", { class: "text" }, item.target), item.rel && !hideRel ? el("span", { class: "rel" }, item.rel) : null];
 		const li = el("li", { class: item.type });
 		const link = item.type === "url"
 			? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
@@ -84,12 +107,12 @@ function node(item, ancestors) {
 	const parts = [
 		el("span", { class: "kind" }, item.kind),
 		el("span", { class: "text" }, label(item)),
-		item.rel ? el("span", { class: "rel" }, item.rel) : null,
+		item.rel && !hideRel ? el("span", { class: "rel" }, item.rel) : null,
 		cycle ? el("span", { class: "rel" }, "↺") : null,
 	];
 	const load = cycle ? null : async () => {
 		const doc = await api("/api/doc?id=" + item.id);
-		return doc.links.filter(notADive).map((link) => node(link, path));
+		return groupedRows(doc.links.filter(notADive), (link, hideRel) => node(link, path, hideRel));
 	};
 	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;
 }
@@ -148,7 +171,7 @@ async function loadDecks() {
 	const items = [];
 	if (ctx.deck)
 		items.push(section(deckNames.get(ctx.deck), (row) => { highlight(row); reset(); }),
-			...listing.feats.map((feat) => node(feat, home)));
+			...groupedRows(listing.feats, (feat, hideRel) => node(feat, home, hideRel)));
 	document.getElementById("tree").replaceChildren(...items);
 }
 `;

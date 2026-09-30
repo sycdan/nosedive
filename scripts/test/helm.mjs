@@ -264,6 +264,60 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		deckForm.indexOf("bridgeDeck.id") < deckForm.indexOf("KB_FEAT"),
 		"the guard comes before the kb fetch",
 	);
+	// The tree groups feat links under what their rel says before .feat, at every level.
+	const featGroupsSource = /function featGroups\(items\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+	assert.ok(featGroupsSource, "page carries featGroups");
+	const featGroups = new Script(`(${featGroupsSource})`).runInNewContext({});
+	const grouped = featGroups([
+		{ id: "a", rel: "future.feat" },
+		{ id: "b", rel: "bug.note" },
+		{ id: "c", rel: "current.feat" },
+		{ id: "d", rel: "future.feat" },
+		{ id: "e" },
+		{ id: "f", rel: "https://example.com/x.feat.md" },
+	]);
+	assert.deepEqual(
+		JSON.parse(JSON.stringify(grouped)),
+		{
+			groups: [
+				{
+					group: "future",
+					items: [
+						{ id: "a", rel: "future.feat" },
+						{ id: "d", rel: "future.feat" },
+					],
+				},
+				{ group: "current", items: [{ id: "c", rel: "current.feat" }] },
+			],
+			rest: [
+				{ id: "b", rel: "bug.note" },
+				{ id: "e" },
+				{ id: "f", rel: "https://example.com/x.feat.md" },
+			],
+		},
+		"feat links group by prefix in first-seen order; the rest keep their order",
+	);
+	assert.match(script, /function groupedRows\(items, render\)/, "page carries groupedRows");
+	assert.match(
+		script,
+		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel\)\)/,
+		"loadDecks groups the deck's feats",
+	);
+	assert.match(
+		script,
+		/groupedRows\(doc\.links\.filter\(notADive\), \(link, hideRel\) => node\(link, path, hideRel\)\)/,
+		"an expanded doc groups its links",
+	);
+	assert.match(
+		script,
+		/item\.rel && !hideRel \? el\("span", \{ class: "rel" \}, item\.rel\)/,
+		"grouped rows leave the rel off",
+	);
+	assert.match(
+		script,
+		/const step = \{ id: item\.id, name: label\(item\), kind: item\.kind, rel: item\.rel \}/,
+		"the path step keeps the full rel",
+	);
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
 	const api = new URL("/api/decks", base);

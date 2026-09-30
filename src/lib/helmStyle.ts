@@ -193,4 +193,17 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 .verdict .ok { color: var(--ok); }
 .breaks ul { margin: 6px 0 0; padding-left: 18px; }
 #error { color: #d64545; white-space: pre-wrap; font-family: var(--mono); margin: 0 0 12px; }
+#syncnotice { position: fixed; right: 16px; bottom: 16px; z-index: 20; width: min(420px, calc(100vw - 32px));
+	background: var(--panel); color: var(--text); border: 1px solid var(--line); border-left: 3px solid var(--ok);
+	border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0, 0, 0, .18); padding: 8px 12px; font-size: 13px; }
+#syncnotice.failed { border-left-color: #d64545; }
+#syncnotice.failed strong { color: #d64545; }
+#syncnotice .head { display: flex; align-items: center; gap: 10px; }
+#syncnotice .head strong { flex: 1; }
+#syncnotice .linkish { font-size: 12px; }
+#syncnotice .close { border: 0; background: none; padding: 0 4px; cursor: pointer; color: var(--dim); font-size: 16px; line-height: 1; }
+#syncnotice .close:hover { color: var(--text); }
+#syncnotice pre { margin: 8px 0 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono);
+	background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+#syncnotice pre[hidden] { display: none; }
 `;

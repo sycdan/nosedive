@@ -25,6 +25,12 @@ function confirmPush() {
 }
 
 async function runSync(action) {
+	const verb = action === "pull" ? "Pull" : "Push";
+	const buttons = document.querySelectorAll("#syncacts button");
+	for (const button of buttons) {
+		button.disabled = true;
+		if (button.textContent === verb) button.textContent = action === "pull" ? "Pulling…" : "Pushing…";
+	}
 	let text = "";
 	let failed = false;
 	try {
@@ -33,7 +39,25 @@ async function runSync(action) {
 		text = String(err.message || err);
 		failed = true;
 	}
-	document.getElementById("view").replaceChildren(el("h3", {}, action === "pull" ? "Pull" : "Push"), outputBox(text, failed));
+	renderSync();
+	syncNotice(failed ? verb + " refused" : verb + "ed", text, failed);
 	await loadDecks();
+}
+
+/** The corner notice: replaces any before it; success fades after 5 s unless opened, failure waits for ×. */
+function syncNotice(title, text, failed) {
+	const old = document.getElementById("syncnotice");
+	if (old) old.remove();
+	const pre = el("pre", { hidden: "" }, text);
+	const toggle = el("button", { class: "linkish", "aria-expanded": "false", onclick: () => {
+		pre.hidden = !pre.hidden;
+		toggle.setAttribute("aria-expanded", String(!pre.hidden));
+	} }, "details");
+	const notice = el("div", { id: "syncnotice", class: failed ? "failed" : null, role: failed ? "alert" : "status" },
+		el("div", { class: "head" }, el("strong", {}, title), toggle,
+			el("button", { class: "close", title: "Dismiss", "aria-label": "Dismiss", onclick: () => notice.remove() }, "×")),
+		pre);
+	document.body.append(notice);
+	if (!failed) setTimeout(() => { if (pre.hidden) notice.remove(); }, 5000);
 }
 `;

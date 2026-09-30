@@ -1,6 +1,7 @@
 import { readNosediveRc } from "./coreParsing.js";
 import { gitOutput, runGit, type GitCommandResult } from "./gitProcess.js";
 import { bridgeTrunk } from "./helmBranch.js";
+import { appendHelmLog } from "./helmLog.js";
 import { HelmRequestError } from "./helmWrites.js";
 import { readActiveDiveId } from "./kbDocs.js";
 import { gitRun } from "./repoWorkspaceCore.js";
@@ -11,6 +12,22 @@ export interface HelmSyncResult {
 
 function said(result: GitCommandResult): string {
 	return [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+}
+
+/**
+ * Runs a pull or push and logs it, whatever the outcome, filed under the dive
+ * active before it. A refusal or failure is logged, then rethrown unchanged.
+ */
+function logged(cwd: string, action: string, run: () => HelmSyncResult): HelmSyncResult {
+	const dive = readActiveDiveId(readNosediveRc(cwd).workspaceDir);
+	try {
+		const result = run();
+		appendHelmLog(cwd, dive, [action], `${result.output}\n[exit 0]`);
+		return result;
+	} catch (err) {
+		appendHelmLog(cwd, dive, [action], `${(err as Error).message}\n[exit 1]`);
+		throw err;
+	}
 }
 
 /** The trunk and branch of the checkout helm serves, refused while a dive is active. */
@@ -37,6 +54,10 @@ function fetchTrunk(cwd: string, trunk: string): string {
  * conflicting rebase is aborted, leaving the checkout as it was.
  */
 export function helmPull(cwd: string): HelmSyncResult {
+	return logged(cwd, "pull", () => pull(cwd));
+}
+
+function pull(cwd: string): HelmSyncResult {
 	const { trunk } = syncTarget(cwd, "pull");
 	if (gitRun(cwd, ["status", "--porcelain", "--untracked-files=no"], "failed to read status"))
 		throw new HelmRequestError(409, "cannot pull with uncommitted changes; commit or discard them");
@@ -62,6 +83,10 @@ export function helmPull(cwd: string): HelmSyncResult {
  * and, off trunk, force-updates the branch's own upstream with a lease.
  */
 export function helmPush(cwd: string): HelmSyncResult {
+	return logged(cwd, "push", () => push(cwd));
+}
+
+function push(cwd: string): HelmSyncResult {
 	const { trunk, branch } = syncTarget(cwd, "push");
 	const output = [fetchTrunk(cwd, trunk)];
 	if (runGit(cwd, ["merge-base", "--is-ancestor", `origin/${trunk}`, "HEAD"]).status !== 0)

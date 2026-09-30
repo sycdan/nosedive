@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { createTmp, libUrl, runTool, seededBridge } from "../test-helpers.mjs";
 
-const { branchWorktree, helmPull, helmPush } = await import(libUrl);
+const { branchWorktree, helmLogPath, helmPull, helmPush } = await import(libUrl);
 const tmp = createTmp("helm-sync");
 const io = { log() {} };
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
@@ -21,6 +21,8 @@ function sandbox(name) {
 	const { bridge, origin } = seededBridge(tmp, name, "pilot@nosedive.invalid");
 	return { bridge, origin, branch: branchWorktree(bridge, "sandbox", "main", io) };
 }
+
+const todaysLog = (dir) => readFileSync(helmLogPath(dir, new Date()), "utf8");
 
 function refused(fn, status, pattern, message) {
 	assert.throws(fn, (err) => err.status === status && pattern.test(err.message), message);
@@ -42,6 +44,11 @@ test("pull brings trunk into the branch, and push lands it on trunk and the bran
 	);
 	assert.equal(readFileSync(join(branch, "theirs.txt"), "utf8"), "theirs\n");
 	assert.notEqual(git(["rev-parse", "HEAD"], branch), mine, "the pull rewrote the branch");
+	assert.match(
+		todaysLog(branch),
+		/\[no dive\] nosedive pull\n[\s\S]*?\n\[exit 0\]\n/,
+		"the pull is logged, ending [exit 0]",
+	);
 
 	const out = helmPush(branch);
 	assert.equal(typeof out.output, "string");
@@ -70,6 +77,11 @@ test("push is refused while origin/main has a commit the branch lacks", () => {
 	git(["push", "-q", "origin", "HEAD:main"], bridge);
 
 	refused(() => helmPush(branch), 409, /pull first/, "push asks for a pull first");
+	assert.match(
+		todaysLog(branch),
+		/nosedive push\n\norigin\/main has commits this checkout lacks; pull first, then push\n\[exit 1\]\n/,
+		"the refused push is logged with its message, ending [exit 1]",
+	);
 	assert.equal(git(["rev-parse", "main"], origin), theirs, "origin/main untouched");
 });
 

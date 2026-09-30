@@ -112,7 +112,7 @@ More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 npx -y nosedive@2026.9.18-1789698885570 helm --help
 ```
 ```md
-Usage: nosedive helm
+Usage: nosedive helm [<branch>]
 
 Serve a local admin UI for the bridge: its bridge deck's feats and its decks as a link tree, each deck's repos with hydration and nosedive install state, and kb docs rendered.
 

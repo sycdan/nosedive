@@ -119,11 +119,22 @@ function renderPicker(listing) {
 	};
 }
 
+/** The branch the bridge has checked out, and how far it is from trunk. */
+function renderBranch(branch) {
+	const badge = document.getElementById("branch");
+	const drift = [branch.ahead ? "↑" + branch.ahead : null, branch.behind ? "↓" + branch.behind : null].filter(Boolean).join(" ");
+	badge.textContent = branch.name + (drift ? " " + drift : "");
+	badge.title = branch.ahead == null ? "no origin/" + branch.trunk + " to compare with"
+		: branch.ahead + " ahead of, " + branch.behind + " behind origin/" + branch.trunk;
+	badge.classList.toggle("off", branch.name !== branch.trunk);
+}
+
 /** Reads the picked deck and fills the tree with it. */
 async function loadDecks() {
 	const wanted = ctx.deck || rememberedDeck();
 	const listing = await api("/api/decks" + (wanted ? "?deck=" + wanted : ""));
 	bridge = listing.bridge;
+	renderBranch(bridge.branch);
 	bridgeDeck = listing.bridgeDeck || null;
 	deckIds.clear();
 	deckNames.clear();

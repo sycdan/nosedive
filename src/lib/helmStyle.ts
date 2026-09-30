@@ -20,6 +20,8 @@ body { margin: 0; background: var(--bg); color: var(--text); display: grid;
 	font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10px 16px;
 	display: flex; gap: 12px; align-items: center; }
+#branch { font: 12px var(--mono); padding: 2px 8px; border-radius: 10px; background: var(--hover); color: var(--dim); }
+#branch.off { background: #f2e3c6; color: #7a5410; }
 header h1 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0; }
 #crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
 #crumbs .sep { color: var(--line); }

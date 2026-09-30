@@ -45,6 +45,9 @@ export { mergePatch } from "./lib/mergePatch.js";
 export { helmDecks } from "./lib/helmDeck.js";
 // Exported so what the dive bar can create is tested below the server.
 export { helmCreatableKinds } from "./lib/helmCreate.js";
+// Exported so a branch worktree and its status are tested below the command.
+export { branchWorktree, helmBranchStatus } from "./lib/helmBranch.js";
+export { helmPorts } from "./lib/helmServer.js";
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

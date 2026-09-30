@@ -14,7 +14,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1>helm</h1><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
+<header><h1>helm</h1><span id="branch" class="branch"></span><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>

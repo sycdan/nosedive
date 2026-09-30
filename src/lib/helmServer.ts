@@ -7,6 +7,8 @@ import { dirname } from "node:path";
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { helmContext, helmDeckRepos, helmDoc, helmKindCheck, helmKindDocs } from "./helm.js";
 import { helmPage } from "./helmPage.js";
+import { gitOutput } from "./gitProcess.js";
+import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
 import { helmDecks, helmRepoList } from "./helmDeck.js";
 import { helmDives } from "./helmDives.js";
@@ -53,9 +55,13 @@ const PORT_TRIES = 10;
  * owning -- and so below Windows' own range from 49152.
  */
 export function helmPorts(rc: NosediveRc): number[] {
-	const digest = createHash("sha1")
-		.update(rc.bridge ?? rc.bridgeDir)
-		.digest();
+	// A branch worktree of the bridge shares its id, so its branch tells them apart;
+	// the bridge's own checkout keeps the ports it always had.
+	const id = rc.bridge ?? rc.bridgeDir;
+	const key = isPrimaryWorktree(rc.bridgeDir)
+		? id
+		: `${id}:${gitOutput(rc.bridgeDir, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? rc.bridgeDir}`;
+	const digest = createHash("sha1").update(key).digest();
 	const first = digest.readUInt32BE(0) % PORT_SPAN;
 	return Array.from(
 		{ length: PORT_TRIES },

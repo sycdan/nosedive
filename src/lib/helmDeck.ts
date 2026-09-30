@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 
 import type { HelmDeck, HelmLink } from "./helm.js";
+import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { bridgeView, viewDecks } from "./helmView.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
@@ -20,7 +21,7 @@ export function helmDecks(
 	cwd: string,
 	asked?: string,
 ): {
-	bridge: { id?: string; name: string };
+	bridge: { id?: string; name: string; branch: HelmBranchStatus };
 	bridgeDeck?: HelmDeck;
 	decks: HelmDeck[];
 	deck?: string;
@@ -60,7 +61,11 @@ export function helmDecks(
 			title: doc.h1,
 		}));
 	return {
-		bridge: { id: rc.bridge, name: bridgeDoc?.name ?? basename(rc.bridgeDir) },
+		bridge: {
+			id: rc.bridge,
+			name: bridgeDoc?.name ?? basename(rc.bridgeDir),
+			branch: helmBranchStatus(rc.bridgeDir, bridgeDoc?.repoBaseBranch ?? "main"),
+		},
 		bridgeDeck: rc.backlog ? card(rc.backlog) : undefined,
 		decks: decks.map(card),
 		deck: deckId,

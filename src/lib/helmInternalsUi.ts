@@ -38,14 +38,14 @@ async function showInternals() {
 			el("h3", {}, "Internals"),
 			el("h4", {}, "Config"), el("p", {}, el("code", {}, info.configPath)),
 			el("pre", { class: "output" }, info.config),
-			el("h4", {}, "Poll"), el("p", {}, next, " · ", change),
+			el("h4", {}, "Poll"), el("p", {}, "Bridge checked every " + info.pollEvery / 1000 + " s for a new dive or commit · ", next, " · ", change),
 			el("h4", {}, "Commits"), commits,
 			el("h4", {}, "Log"), el("p", {}, el("code", {}, info.logPath)), log);
 		const tick = () => {
 			if (!root.isConnected) { clearInterval(timer); if (onLogText === append) onLogText = null; return; }
 			const due = lastPoll ? lastPoll.at + lastPoll.every : null;
 			next.textContent = due == null ? "waiting for the first check" : "next check in " + (Math.max(0, due - Date.now()) / 1000).toFixed(1) + " s";
-			change.textContent = info.lastChangeAt == null ? "none since helm started" : "last change seen " + ago(info.lastChangeAt);
+			change.textContent = info.lastChangeAt == null ? "no change since helm started" : "last change seen " + ago(info.lastChangeAt);
 		};
 		// Pinned to the bottom unless the user has scrolled up.
 		const append = (text) => {

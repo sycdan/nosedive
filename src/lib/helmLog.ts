@@ -1,4 +1,15 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { BRIDGE_STATE_DIRNAME } from "./constants.js";
@@ -65,4 +76,48 @@ export function pruneHelmLogs(cwd: string, now: Date): void {
 	} catch {
 		// Pruning is housekeeping; helm starts regardless.
 	}
+}
+
+/** Most of a log helm sends at once: the tail of anything longer. */
+export const LOG_TAIL_BYTES = 64 * 1024;
+
+/** Where a reader of the day's log has got to. */
+export interface LogCursor {
+	path: string;
+	size: number;
+}
+
+function readRange(path: string, start: number, end: number): string {
+	const from = Math.max(start, end - LOG_TAIL_BYTES);
+	const buffer = Buffer.alloc(end - from);
+	const fd = openSync(path, "r");
+	try {
+		readSync(fd, buffer, 0, buffer.length, from);
+	} finally {
+		closeSync(fd);
+	}
+	return buffer.toString("utf8");
+}
+
+/**
+ * The text appended to `path` since `cursor`, capped to its last 64 KB, and
+ * the cursor moved past it; a new path starts from 0. A missing file, or one
+ * that has not grown, gives "". Never throws.
+ */
+export function readLogSince(cursor: LogCursor, path: string): { text: string; cursor: LogCursor } {
+	const start = cursor.path === path ? cursor.size : 0;
+	try {
+		const size = statSync(path).size;
+		// A file that shrank was replaced; read it from the start.
+		const from = size < start ? 0 : start;
+		if (size === from) return { text: "", cursor: { path, size } };
+		return { text: readRange(path, from, size), cursor: { path, size } };
+	} catch {
+		return { text: "", cursor: { path, size: start } };
+	}
+}
+
+/** The last 64 KB of the log at `path`, or "" when there is none. Never throws. */
+export function readLogTail(path: string): string {
+	return readLogSince({ path, size: 0 }, path).text;
 }

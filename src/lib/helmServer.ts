@@ -6,6 +6,7 @@ import { dirname } from "node:path";
 
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { helmContext, helmDeckRepos, helmDoc, helmKindCheck, helmKindDocs } from "./helm.js";
+import { HELM_POLL_MS, helmInternals, helmLogFollower } from "./helmInternals.js";
 import { helmPage } from "./helmPage.js";
 import { gitOutput } from "./gitProcess.js";
 import { isPrimaryWorktree } from "./helmBranch.js";
@@ -137,6 +138,9 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	// change is pushed to them, so a page follows dives and commits made outside it.
 	const streams = new Set<ServerResponse>();
 	let lastState: string | undefined;
+	// When the poll last saw the state change, for the Internals view.
+	let lastChangeAt: number | null = null;
+	const nextLog = helmLogFollower(cwd);
 	const readState = (): string | undefined => {
 		try {
 			return JSON.stringify(helmState(cwd));
@@ -147,10 +151,17 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 	const poll = setInterval(() => {
 		if (!streams.size) return;
 		const state = readState();
-		if (state === undefined || state === lastState) return;
-		lastState = state;
-		for (const stream of streams) stream.write(`event: state\ndata: ${state}\n\n`);
-	}, 2000);
+		const at = Date.now();
+		let events = "";
+		if (state !== undefined && state !== lastState) {
+			lastState = state;
+			lastChangeAt = at;
+			events += `event: state\ndata: ${state}\n\n`;
+		}
+		events += `event: poll\ndata: ${JSON.stringify({ at, every: HELM_POLL_MS })}\n\n`;
+		events += nextLog();
+		for (const stream of streams) stream.write(events);
+	}, HELM_POLL_MS);
 	poll.unref();
 
 	const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -212,6 +223,7 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			if (req.method !== "GET") return sendJson(res, undefined);
 			if (url.pathname === "/api/repos")
 				return sendJson(res, helmRepoList(cwd, url.searchParams.get("deck") || undefined));
+			if (url.pathname === "/api/internals") return sendJson(res, helmInternals(cwd, lastChangeAt));
 			if (url.pathname === "/api/creatable") return sendJson(res, helmCreatableKinds(cwd));
 			if (url.pathname === "/api/decks")
 				return sendJson(res, helmDecks(cwd, url.searchParams.get("deck") || undefined));

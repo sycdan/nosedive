@@ -58,6 +58,8 @@ function events(res) {
 		const end = buffer.indexOf("\n\n");
 		const block = buffer.slice(0, end);
 		buffer = buffer.slice(end + 2);
+		// Poll ticks and log lines come every tick; these tests follow the state.
+		if (/^event: (poll|log)$/m.test(block)) return read();
 		return {
 			event: /^event: (.*)$/m.exec(block)?.[1],
 			data: /^data: (.*)$/m.exec(block)?.[1],

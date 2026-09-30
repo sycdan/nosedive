@@ -23,6 +23,8 @@ header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10p
 #branch { font: 12px var(--mono); padding: 2px 8px; border-radius: 10px; background: var(--hover); color: var(--dim); }
 #branch.off { background: #f2e3c6; color: #7a5410; }
 header h1 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0; }
+#helmbtn { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+#helmbtn:hover { color: var(--text); }
 #crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
 #crumbs .sep { color: var(--line); }
 #crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 4px; cursor: pointer;

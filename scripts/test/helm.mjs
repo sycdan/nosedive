@@ -223,6 +223,32 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
+	// A reload restores a kind page through showKind, and kindRef on a doc under a kind step.
+	const restore =
+		/Promise\.all\(\[loadDecks\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
+			script,
+		)?.[0];
+	assert.ok(restore, "page carries its startup restore");
+	assert.match(
+		restore,
+		/docs\[i\]\.kind === "kind" && path\[i\]\.repo/,
+		"restore spots a kind step",
+	);
+	assert.match(
+		restore,
+		/if \(k === at\) return showKind\(kind, path\)/,
+		"a kind step restores to showKind",
+	);
+	assert.match(
+		restore,
+		/path\[at\]\.kindRef = kind;\s*select\(path\)/,
+		"a doc under a kind step gets its kindRef back",
+	);
+	assert.match(
+		restore,
+		/api\(contextQuery\(ctx\.deck, false\)\)/,
+		"the kind comes from the Repos view's context",
+	);
 	// The home view offers the kb jump on the bridge deck only; other decks point at their feats.
 	const deckForm = /function deckForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(deckForm, "page carries deckForm");

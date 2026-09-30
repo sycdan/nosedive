@@ -303,7 +303,21 @@ Promise.all([loadDecks(), loadDives()]).then(() => {
 				if (link) step.rel = link.rel;
 			});
 			restoreContext();
-			select(path);
+			// A kind page and a doc opened from its list come back as they were
+			// opened: the kind as the Repos view gives it, reach included.
+			const at = path.length - 1;
+			const kindAt = (i) => i >= 0 && docs[i] && docs[i].kind === "kind" && path[i].repo;
+			const k = kindAt(at) ? at : kindAt(at - 1) ? at - 1 : -1;
+			if (k < 0) return select(path);
+			const step = path[k];
+			return api(contextQuery(ctx.deck, false))
+				.then((context) => context.kinds.find((kind) => kind.id === step.id && kind.repoId === step.repo), () => null)
+				.then((found) => {
+					const kind = found || { id: step.id, name: docs[k].name, repoId: step.repo, inCrudContext: false };
+					if (k === at) return showKind(kind, path);
+					path[at].kindRef = kind;
+					select(path);
+				});
 		});
 }).catch(showError);
 </script>

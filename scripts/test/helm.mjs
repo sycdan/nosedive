@@ -223,6 +223,21 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
+	// The home view offers the kb jump on the bridge deck only; other decks point at their feats.
+	const deckForm = /function deckForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+	assert.ok(deckForm, "page carries deckForm");
+	assert.ok(
+		deckForm.includes("ctx.deck && bridgeDeck && ctx.deck !== bridgeDeck.id"),
+		"deckForm guards on the bridge deck",
+	);
+	assert.ok(
+		deckForm.includes("Pick a feat in the tree to plan a dive on it, or dive it free."),
+		"other decks get the feat hint",
+	);
+	assert.ok(
+		deckForm.indexOf("bridgeDeck.id") < deckForm.indexOf("KB_FEAT"),
+		"the guard comes before the kb fetch",
+	);
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
 	const api = new URL("/api/decks", base);

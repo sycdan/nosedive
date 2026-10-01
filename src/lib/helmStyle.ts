@@ -166,6 +166,7 @@ button.act { font: inherit; padding: 5px 12px; border-radius: 6px; border: 0; cu
 button.act.jump { background: #2f6fdb; } button.act.land { background: #1f8a4c; }
 button.act.pack { background: #b7791f; } button.act.bail { background: #c53b3b; }
 button.act.unstage { background: var(--hover); color: var(--text); }
+button.act:disabled { opacity: .4; cursor: not-allowed; }
 body.diving::after { content: ""; position: fixed; inset: 0; border: 3px solid #1f8a4c;
 	pointer-events: none; z-index: 10; }
 body.diving #divebar { background: color-mix(in srgb, #1f8a4c 10%, var(--bg)); }
@@ -209,4 +210,5 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 #branchacts { margin-left: 6px; }
 .branches { display: grid; gap: 10px; }
 .branchcard .doclist { margin: 8px 0; }
+.branchcard .blocker { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--hover); color: var(--text); font-size: 13px; }
 `;

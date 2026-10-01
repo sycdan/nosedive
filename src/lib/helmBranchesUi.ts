@@ -43,10 +43,18 @@ async function drawBranches(root, list) {
 		: [el("p", { class: "empty" }, "no remote branches besides " + trunk)]));
 }
 
+/** Why a branch cannot be merged now, and what to do about it; null when it can. */
+function mergeBlocker(b, trunk) {
+	if (b.ahead === 0) return "Nothing to merge: " + trunk + " already has every commit on this branch.";
+	if (!b.mergeable) return "Can't merge yet: " + trunk + " has " + b.behind + " commit" + (b.behind === 1 ? "" : "s") +
+		" this branch lacks. Pull in its helm (helm " + b.name + "), then reopen Branches.";
+	if (dives.active) return "Can't merge during a dive: land, pack or bail it first.";
+	return null;
+}
+
 function branchCard(b, trunk, root, list) {
-	const why = dives.active ? "Land, pack or bail the active dive first"
-		: !b.mergeable ? (b.ahead === 0 ? "nothing to merge" : "behind " + trunk + "; pull in its helm first") : null;
-	const button = el("button", { class: "act land", disabled: why ? "" : null, title: why || "Fast-forward " + trunk + " to origin/" + b.name,
+	const why = mergeBlocker(b, trunk);
+	const button = why ? el("p", { class: "blocker" }, why) : el("button", { class: "act land", title: "Fast-forward " + trunk + " to origin/" + b.name,
 		onclick: () => confirmDialog({
 			verb: "Merge", cls: "land", target: "origin/" + b.name + " into " + trunk,
 			detail: "Fast-forwards the local " + trunk + " to origin/" + b.name + ". Nothing is pushed; use Push to publish.",
@@ -57,8 +65,7 @@ function branchCard(b, trunk, root, list) {
 		: [el("li", { class: "rel" }, "no commits")]);
 	return el("article", { class: "card branchcard" },
 		el("div", { class: "name" }, b.name, " ", el("code", {}, b.head)),
-		el("div", { class: "facts" }, el("span", { class: "count" }, "↑" + b.ahead + " ↓" + b.behind + " " + trunk),
-			!b.mergeable ? el("span", { class: "rel" }, " " + (b.ahead === 0 ? "nothing to merge" : "behind " + trunk + "; pull in its helm first")) : null),
+		el("div", { class: "facts" }, el("span", { class: "count", title: "ahead of / behind " + trunk }, "↑" + b.ahead + " ↓" + b.behind + " " + trunk)),
 		commits,
 		el("div", { class: "cardacts" }, button));
 }

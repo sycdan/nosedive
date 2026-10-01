@@ -142,8 +142,8 @@ export interface HelmUnpushed {
 	commits: (HelmBranchCommit & { pushed: boolean | null })[];
 	/** On `origin/<trunk>` but not HEAD: what Pull brings in. */
 	incoming: HelmBranchCommit[];
-	/** Off trunk, how many commits on the upstream a push would replace. */
-	replaces: number;
+	/** Off trunk, the upstream's commits HEAD lacks, which a push would overwrite. */
+	replaced: HelmBranchCommit[];
 	/** The shared history, from where HEAD meets `origin/<trunk>`. */
 	history: HelmBranchCommit[];
 	squashable: boolean;
@@ -170,7 +170,7 @@ export function helmUnpushed(cwd: string): HelmUnpushed {
 	const blocker = readActiveDiveId(rc.workspaceDir)
 		? "Can't squash during a dive: land, pack or bail it first."
 		: behind > 0
-			? `Pull first: origin/${trunk} has ${plural(behind, "commit")} this checkout lacks.`
+			? `Squash needs a Pull first: origin/${trunk} has ${plural(behind, "commit")} this checkout lacks.`
 			: ahead < 2
 				? "Nothing to squash."
 				: null;
@@ -188,7 +188,7 @@ export function helmUnpushed(cwd: string): HelmUnpushed {
 			pushed: onUpstream(c.hash),
 		})),
 		incoming: commitLog(cwd, `HEAD..origin/${trunk}`, 50),
-		replaces: upstream && branch !== trunk ? countCommits(cwd, "HEAD..@{u}") : 0,
+		replaced: upstream && branch !== trunk ? commitLog(cwd, "HEAD..@{u}", 50) : [],
 		history: base ? commitLog(cwd, base, 20) : [],
 		squashable: blocker === null,
 		blocker,

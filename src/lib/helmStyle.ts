@@ -217,6 +217,7 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 .synccard .syncacts { display: flex; align-items: center; gap: 6px; }
 .synccard .doclist { margin: 8px 0 0; }
 .synccard .blocker { margin-top: 8px; }
+.synccard .overwritten li { text-decoration: line-through; color: var(--dim); }
 .synccard .poll { font-variant-numeric: tabular-nums; }
 dialog.modal textarea.squashmsg { height: 260px; min-height: 160px; width: 100%; box-sizing: border-box; font: 13px/1.5 var(--mono); }
 `;

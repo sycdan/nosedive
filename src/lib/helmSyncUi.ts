@@ -54,12 +54,15 @@ async function drawBranch(root) {
 	const squash = info.commits.length < 2 ? null : info.blocker ? el("p", { class: "blocker" }, info.blocker)
 		: el("button", { class: "act unstage", title: "Make these commits one", onclick: () => squashDialog(info, squash, root) }, "Squash");
 	const fresh = info.commits.filter((c) => c.pushed !== true).length;
-	const push = syncCard("Push → origin/" + info.branch + " · " + (fresh ? fresh + " new" : off && info.replaces ? "rewritten" : "up to date"),
+	const lost = info.replaced.length;
+	const push = syncCard("Push → origin/" + info.branch + " · " + (fresh ? fresh + " new" : off && lost ? "rewritten" : "up to date"),
 		[squash && squash.tagName === "BUTTON" ? squash : null,
 			el("button", { class: "act unstage", disabled: why ? "" : null, title: why || "Push to origin/" + info.branch, onclick: () => confirmPush(root) }, "Push")],
 		commitList(info.commits, "nothing ahead of origin/" + info.trunk,
 			(c) => c.pushed === false ? el("span", { class: "count", title: "Not on origin/" + info.branch + " yet" }, "unpushed") : null),
-		off && info.replaces ? el("p", { class: "blocker" }, "Pull or Squash rewrote " + info.replaces + " commit" + (info.replaces === 1 ? "" : "s") + " already on origin/" + info.branch + "; Push overwrites the old cop" + (info.replaces === 1 ? "y." : "ies.")) : null,
+		off && lost ? el("div", { class: "overwritten" },
+			el("p", { class: "blocker" }, "Pull or Squash rewrote " + lost + " commit" + (lost === 1 ? "" : "s") + " already on origin/" + info.branch + "; Push overwrites " + (lost === 1 ? "it" : "them") + ":"),
+			commitList(info.replaced, "", (c) => el("span", { class: "count", title: "On origin/" + info.branch + " now; gone from it after Push" }, "overwritten"))) : null,
 		squash && squash.tagName !== "BUTTON" ? squash : null);
 	const history = syncCard("History", [root.poll], commitList(info.history, "no shared history"));
 	const parts = [el("h3", {}, info.branch), pull, push, history];

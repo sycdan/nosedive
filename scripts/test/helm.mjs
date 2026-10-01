@@ -265,7 +265,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		"the guard comes before the kb fetch",
 	);
 	// Pull and Push report in a corner notice and leave the view alone.
-	const runSync = /async function runSync\(action\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+	const runSync = /async function runSync\(action, root\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(runSync, "page carries runSync");
 	assert.ok(!runSync.includes('"view"'), "runSync leaves the view alone");
 	assert.match(runSync, /syncNotice\(/, "runSync creates the notice");

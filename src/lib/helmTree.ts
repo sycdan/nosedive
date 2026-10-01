@@ -150,6 +150,7 @@ function renderBranch(branch) {
 	badge.title = branch.ahead == null ? "no origin/" + branch.trunk + " to compare with"
 		: branch.ahead + " ahead of, " + branch.behind + " behind origin/" + branch.trunk;
 	badge.classList.toggle("off", branch.name !== branch.trunk);
+	badge.onclick = showBranch;
 }
 
 /** Reads the picked deck and fills the tree with it. */
@@ -158,7 +159,6 @@ async function loadDecks() {
 	const listing = await api("/api/decks" + (wanted ? "?deck=" + wanted : ""));
 	bridge = listing.bridge;
 	renderBranch(bridge.branch);
-	renderBranchesButton();
 	bridgeDeck = listing.bridgeDeck || null;
 	deckIds.clear();
 	deckNames.clear();

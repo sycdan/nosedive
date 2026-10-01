@@ -20,7 +20,7 @@ body { margin: 0; background: var(--bg); color: var(--text); display: grid;
 	font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: 10px 16px;
 	display: flex; gap: 12px; align-items: center; }
-#branch { font: 12px var(--mono); padding: 2px 8px; border-radius: 10px; background: var(--hover); color: var(--dim); }
+#branch { font: 12px var(--mono); padding: 2px 8px; border: 0; border-radius: 10px; background: var(--hover); color: var(--dim); cursor: pointer; }
 #branch.off { background: #f2e3c6; color: #7a5410; }
 header h1 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0; }
 #helmbtn { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
@@ -207,8 +207,10 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 #syncnotice pre { margin: 8px 0 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono);
 	background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 #syncnotice pre[hidden] { display: none; }
-#branchacts { margin-left: 6px; }
 .branches { display: grid; gap: 10px; }
 .branchcard .doclist { margin: 8px 0; }
-.branchcard .blocker { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--hover); color: var(--text); font-size: 13px; }
+.branchcard .blocker, .branchview .blocker { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--hover); color: var(--text); font-size: 13px; }
+.branchview .syncacts { display: flex; gap: 6px; margin: 10px 0; }
+.branchview .squash { margin: 8px 0 16px; }
+dialog.modal textarea.squashmsg { height: 260px; min-height: 160px; width: 100%; box-sizing: border-box; font: 13px/1.5 var(--mono); }
 `;

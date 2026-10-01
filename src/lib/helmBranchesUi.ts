@@ -1,31 +1,10 @@
 /**
- * The Branches view, spliced into the page's script: on trunk, origin's other
- * branches with what each has over the local trunk, and a Merge that
- * fast-forwards the local trunk to one. Nothing is pushed.
+ * The Branch view's Branches section, spliced into the page's script: on
+ * trunk, origin's other branches with what each has over the local trunk, and
+ * a Merge that fast-forwards the local trunk to one. Nothing is pushed.
  */
 export const helmBranchesScript = String.raw`
 // --- branches ---------------------------------------------------------------
-
-/** The header's Branches button, shown only on trunk. */
-function renderBranchesButton() {
-	const branch = bridge.branch;
-	const onTrunk = branch && branch.name === branch.trunk;
-	document.getElementById("branchacts").replaceChildren(...(onTrunk
-		? [el("button", { class: "act unstage", title: "Origin's branches, to merge into " + branch.trunk, onclick: showBranches }, "Branches")]
-		: []));
-}
-
-async function showBranches() {
-	reposOpen = false;
-	highlight(null);
-	crumbs([]);
-	document.getElementById("crumbs").append(el("span", { class: "sep" }, "/"), el("button", { title: "Origin's branches" }, "Branches"));
-	history.replaceState(null, "", location.pathname + location.search);
-	const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
-	const root = el("section", { class: "branchview" }, el("h3", {}, "Branches"), list);
-	document.getElementById("view").replaceChildren(root);
-	await drawBranches(root, list);
-}
 
 async function drawBranches(root, list) {
 	let info;
@@ -47,7 +26,7 @@ async function drawBranches(root, list) {
 function mergeBlocker(b, trunk) {
 	if (b.ahead === 0) return "Nothing to merge: " + trunk + " already has every commit on this branch.";
 	if (!b.mergeable) return "Can't merge yet: " + trunk + " has " + b.behind + " commit" + (b.behind === 1 ? "" : "s") +
-		" this branch lacks. Pull in its helm (helm " + b.name + "), then reopen Branches.";
+		" this branch lacks. Pull in its helm (helm " + b.name + "), then reopen the Branch view.";
 	if (dives.active) return "Can't merge during a dive: land, pack or bail it first.";
 	return null;
 }
@@ -82,7 +61,7 @@ async function runMerge(name, button, root, list) {
 		failed = true;
 	}
 	syncNotice(failed ? "Merge refused" : "Merged", text, failed);
-	if (root.isConnected) await drawBranches(root, list);
 	await loadDecks();
+	if (root.isConnected) await drawBranch(root);
 }
 `;

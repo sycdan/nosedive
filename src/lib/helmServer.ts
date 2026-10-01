@@ -16,7 +16,8 @@ import { helmDives } from "./helmDives.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
-import { helmBranches, helmMerge, helmPull, helmPush } from "./helmSync.js";
+import { helmBranches, helmMerge } from "./helmBranches.js";
+import { helmPull, helmPush, helmSquash, helmUnpushed } from "./helmSync.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
@@ -209,6 +210,12 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				return sendJson(res, helmPull(cwd));
 			if (req.method === "POST" && url.pathname === "/api/sync/push")
 				return sendJson(res, helmPush(cwd));
+			if (req.method === "POST" && url.pathname === "/api/sync/squash") {
+				const body = await readJsonBody(req);
+				return sendJson(res, helmSquash(cwd, String(body.message ?? "")));
+			}
+			if (req.method === "GET" && url.pathname === "/api/sync/unpushed")
+				return sendJson(res, helmUnpushed(cwd));
 			if (req.method === "POST" && url.pathname === "/api/branches/merge") {
 				const body = await readJsonBody(req);
 				return sendJson(res, helmMerge(cwd, String(body.branch ?? "")));

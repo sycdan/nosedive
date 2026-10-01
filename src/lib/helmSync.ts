@@ -10,15 +10,16 @@ export interface HelmSyncResult {
 	output: string;
 }
 
-function said(result: GitCommandResult): string {
+/** Git's stdout and stderr, trimmed and joined. */
+export function said(result: GitCommandResult): string {
 	return [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
 }
 
 /**
- * Runs a pull or push and logs it, whatever the outcome, filed under the dive
+ * Runs a sync action and logs it, whatever the outcome, filed under the dive
  * active before it. A refusal or failure is logged, then rethrown unchanged.
  */
-function logged(cwd: string, action: string, run: () => HelmSyncResult): HelmSyncResult {
+export function logged(cwd: string, action: string, run: () => HelmSyncResult): HelmSyncResult {
 	const dive = readActiveDiveId(readNosediveRc(cwd).workspaceDir);
 	try {
 		const result = run();
@@ -31,7 +32,7 @@ function logged(cwd: string, action: string, run: () => HelmSyncResult): HelmSyn
 }
 
 /** The trunk and branch of the checkout helm serves, refused while a dive is active. */
-function syncTarget(cwd: string, action: string): { trunk: string; branch: string } {
+export function syncTarget(cwd: string, action: string): { trunk: string; branch: string } {
 	const rc = readNosediveRc(cwd);
 	if (readActiveDiveId(rc.workspaceDir))
 		throw new HelmRequestError(409, `cannot ${action} while a dive is active`);
@@ -42,7 +43,7 @@ function syncTarget(cwd: string, action: string): { trunk: string; branch: strin
 }
 
 /** Fetches `origin/<trunk>`, returning what git said. */
-function fetchTrunk(cwd: string, trunk: string): string {
+export function fetchTrunk(cwd: string, trunk: string): string {
 	const fetched = runGit(cwd, ["fetch", "origin", trunk]);
 	if (fetched.status !== 0)
 		throw new HelmRequestError(409, `failed to fetch origin ${trunk}:\n${said(fetched)}`);
@@ -113,7 +114,7 @@ function push(cwd: string): HelmSyncResult {
 	return { output: output.filter(Boolean).join("\n") };
 }
 
-/** A commit on a remote branch that the local trunk lacks. */
+/** A commit in a range, such as one a remote branch has over the local trunk. */
 export interface HelmBranchCommit {
 	hash: string;
 	subject: string;
@@ -121,47 +122,9 @@ export interface HelmBranchCommit {
 	at: number;
 }
 
-/** One of origin's branches, against the local trunk's HEAD. */
-export interface HelmRemoteBranch {
-	name: string;
-	head: string;
-	ahead: number;
-	behind: number;
-	mergeable: boolean;
-	commits: HelmBranchCommit[];
-}
-
-export interface HelmBranches {
-	trunk: string;
-	branches: HelmRemoteBranch[];
-}
-
-/** The trunk, refused unless the checkout is on it. */
-function onTrunk(cwd: string, action: string): string {
-	const trunk = bridgeTrunk(readNosediveRc(cwd));
-	if (gitOutput(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]) !== trunk)
-		throw new HelmRequestError(409, `cannot ${action} off ${trunk}; use the helm on ${trunk}`);
-	return trunk;
-}
-
-/** Names of origin's fetched branches besides trunk, newest tip first. */
-function remoteBranchNames(cwd: string, trunk: string): string[] {
-	const refs = gitOutput(cwd, [
-		"for-each-ref",
-		"--sort=-committerdate",
-		"--format=%(refname:lstrip=3)",
-		"refs/remotes/origin/",
-	]);
-	return (refs ?? "").split("\n").filter((name) => name && name !== trunk && name !== "HEAD");
-}
-
-function branchCommits(cwd: string, name: string): HelmBranchCommit[] {
-	const log = gitOutput(cwd, [
-		"log",
-		"-50",
-		"--format=%h%x1f%s%x1f%an%x1f%ct",
-		`HEAD..refs/remotes/origin/${name}`,
-	]);
+/** Up to `max` commits in `range`, newest first. */
+export function commitLog(cwd: string, range: string, max: number): HelmBranchCommit[] {
+	const log = gitOutput(cwd, ["log", `-${max}`, "--format=%h%x1f%s%x1f%an%x1f%ct", range]);
 	if (!log) return [];
 	return log.split("\n").map((line) => {
 		const [hash = "", subject = "", author = "", ct = "0"] = line.split("\x1f");
@@ -169,67 +132,93 @@ function branchCommits(cwd: string, name: string): HelmBranchCommit[] {
 	});
 }
 
-/**
- * Fetches origin, pruned, and lists its branches besides trunk with what each
- * has over the local trunk. Only on trunk.
- */
-export function helmBranches(cwd: string): HelmBranches {
-	const trunk = onTrunk(cwd, "list branches");
-	const fetched = runGit(cwd, ["fetch", "--prune", "origin"]);
-	if (fetched.status !== 0)
-		throw new HelmRequestError(409, `failed to fetch origin:\n${said(fetched)}`);
-	const branches = remoteBranchNames(cwd, trunk).map((name) => {
-		const ref = `refs/remotes/origin/${name}`;
-		const counts = gitOutput(cwd, ["rev-list", "--left-right", "--count", `${ref}...HEAD`]);
-		const [ahead = 0, behind = 0] = counts ? counts.split(/\s+/).map(Number) : [];
-		const ancestor = runGit(cwd, ["merge-base", "--is-ancestor", "HEAD", ref]).status === 0;
-		return {
-			name,
-			head: gitOutput(cwd, ["rev-parse", "--short", ref]) ?? "",
-			ahead,
-			behind,
-			mergeable: ancestor && ahead > 0,
-			commits: branchCommits(cwd, name),
-		};
-	});
-	return { trunk, branches };
+/** The checkout's commits over `origin/<trunk>`, and whether Squash may run. */
+export interface HelmUnpushed {
+	trunk: string;
+	branch: string;
+	ahead: number;
+	behind: number;
+	commits: HelmBranchCommit[];
+	squashable: boolean;
+	blocker: string | null;
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function countCommits(cwd: string, range: string): number {
+	return Number(gitOutput(cwd, ["rev-list", "--count", range]) ?? 0);
 }
 
 /**
- * Fast-forwards the local trunk to `origin/<branch>`, logged. Refused while a
- * dive is active, off trunk, with uncommitted changes, or once trunk has moved
- * on. Never pushes.
+ * Fetches `origin/<trunk>` and lists the commits HEAD has over it, newest
+ * first. An active dive does not refuse the read; it is Squash's blocker.
  */
-export function helmMerge(cwd: string, branch: string): HelmSyncResult {
-	return logged(cwd, `merge ${branch}`, () => merge(cwd, branch));
+export function helmUnpushed(cwd: string): HelmUnpushed {
+	const rc = readNosediveRc(cwd);
+	const trunk = bridgeTrunk(rc);
+	const branch = gitOutput(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
+	fetchTrunk(cwd, trunk);
+	const ahead = countCommits(cwd, `origin/${trunk}..HEAD`);
+	const behind = countCommits(cwd, `HEAD..origin/${trunk}`);
+	const blocker = readActiveDiveId(rc.workspaceDir)
+		? "Can't squash during a dive: land, pack or bail it first."
+		: behind > 0
+			? `Pull first: origin/${trunk} has ${plural(behind, "commit")} this checkout lacks.`
+			: ahead < 2
+				? "Nothing to squash."
+				: null;
+	return {
+		trunk,
+		branch,
+		ahead,
+		behind,
+		commits: commitLog(cwd, `origin/${trunk}..HEAD`, 100),
+		squashable: blocker === null,
+		blocker,
+	};
 }
 
-function merge(cwd: string, branch: string): HelmSyncResult {
-	syncTarget(cwd, "merge");
-	const trunk = onTrunk(cwd, "merge");
+/**
+ * Makes the commits in `origin/<trunk>..HEAD` one commit with `message`,
+ * logged. Refused while a dive is active, with uncommitted changes, while
+ * behind `origin/<trunk>`, or with fewer than two commits. Never pushes.
+ */
+export function helmSquash(cwd: string, message: string): HelmSyncResult {
+	return logged(cwd, "squash", () => squash(cwd, message));
+}
+
+function squash(cwd: string, message: string): HelmSyncResult {
+	const { trunk, branch } = syncTarget(cwd, "squash");
+	if (!message.trim()) throw new HelmRequestError(400, "a squash needs a commit message");
 	if (gitRun(cwd, ["status", "--porcelain", "--untracked-files=no"], "failed to read status"))
 		throw new HelmRequestError(
 			409,
-			"cannot merge with uncommitted changes; commit or discard them",
+			"cannot squash with uncommitted changes; commit or discard them",
 		);
-	// Only a name from the fetched list reaches git.
-	if (!remoteBranchNames(cwd, trunk).includes(branch))
-		throw new HelmRequestError(400, `no fetched origin branch named ${JSON.stringify(branch)}`);
-	const ref = `refs/remotes/origin/${branch}`;
-	if (runGit(cwd, ["merge-base", "--is-ancestor", "HEAD", ref]).status !== 0)
+	fetchTrunk(cwd, trunk);
+	if (runGit(cwd, ["merge-base", "--is-ancestor", `origin/${trunk}`, "HEAD"]).status !== 0)
 		throw new HelmRequestError(
 			409,
-			`${trunk} has commits origin/${branch} lacks; Pull in ${branch}'s helm first, then merge`,
+			`origin/${trunk} has commits this checkout lacks; pull first, then squash`,
 		);
-	const merged = runGit(cwd, ["merge", "--ff-only", `origin/${branch}`]);
-	if (merged.status !== 0)
-		throw new HelmRequestError(409, `merge of origin/${branch} failed:\n${said(merged)}`);
+	const count = countCommits(cwd, `origin/${trunk}..HEAD`);
+	if (count < 2)
+		throw new HelmRequestError(
+			409,
+			`nothing to squash: ${plural(count, "commit")} ahead of origin/${trunk}`,
+		);
+	const head = gitRun(cwd, ["rev-parse", "HEAD"], "failed to read HEAD");
+	gitRun(cwd, ["reset", "--soft", `origin/${trunk}`], "failed to reset");
+	const committed = runGit(cwd, ["commit", "--cleanup=whitespace", "-F", "-"], { input: message });
+	if (committed.status !== 0) {
+		gitRun(cwd, ["reset", "--soft", head], "failed to restore HEAD");
+		throw new HelmRequestError(409, `squash commit failed; nothing changed:\n${said(committed)}`);
+	}
+	const publish =
+		branch === trunk
+			? "nothing was pushed; Push publishes it"
+			: `nothing was pushed; Push publishes it, force-updating origin/${branch}`;
 	return {
-		output: [
-			said(merged),
-			`local ${trunk} moved to origin/${branch}; nothing was pushed, Push publishes it`,
-		]
-			.filter(Boolean)
-			.join("\n"),
+		output: [said(committed), `${count} commits became one; ${publish}`].filter(Boolean).join("\n"),
 	};
 }

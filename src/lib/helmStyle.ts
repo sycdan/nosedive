@@ -206,4 +206,7 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 #syncnotice pre { margin: 8px 0 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono);
 	background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 #syncnotice pre[hidden] { display: none; }
+#branchacts { margin-left: 6px; }
+.branches { display: grid; gap: 10px; }
+.branchcard .doclist { margin: 8px 0; }
 `;

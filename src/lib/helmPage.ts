@@ -1,5 +1,6 @@
 import { helmCreateScript } from "./helmCreateUi.js";
 import { helmSyncScript } from "./helmSyncUi.js";
+import { helmBranchesScript } from "./helmBranchesUi.js";
 import { helmDiveScript } from "./helmDiveUi.js";
 import { helmInternalsScript } from "./helmInternalsUi.js";
 import { helmEditScript } from "./helmEdit.js";
@@ -16,7 +17,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><span id="branch" class="branch"></span><span id="syncacts"></span><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
+<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><span id="branch" class="branch"></span><span id="syncacts"></span><span id="branchacts"></span><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -228,6 +229,7 @@ ${helmEditScript}
 ${helmDiveScript}
 ${helmCreateScript}
 ${helmSyncScript}
+${helmBranchesScript}
 // Links inside a rendered doc: kb docs open here, everything else in a new tab.
 document.getElementById("view").addEventListener("click", (event) => {
 	const a = event.target.closest(".doc a[href]");

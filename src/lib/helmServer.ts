@@ -16,7 +16,7 @@ import { helmDives } from "./helmDives.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
-import { helmPull, helmPush } from "./helmSync.js";
+import { helmBranches, helmMerge, helmPull, helmPush } from "./helmSync.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
@@ -209,6 +209,12 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				return sendJson(res, helmPull(cwd));
 			if (req.method === "POST" && url.pathname === "/api/sync/push")
 				return sendJson(res, helmPush(cwd));
+			if (req.method === "POST" && url.pathname === "/api/branches/merge") {
+				const body = await readJsonBody(req);
+				return sendJson(res, helmMerge(cwd, String(body.branch ?? "")));
+			}
+			if (req.method === "GET" && url.pathname === "/api/branches")
+				return sendJson(res, helmBranches(cwd));
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));
 			if (url.pathname === "/api/dives")
 				return sendJson(

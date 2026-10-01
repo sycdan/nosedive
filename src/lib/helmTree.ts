@@ -158,6 +158,7 @@ async function loadDecks() {
 	const listing = await api("/api/decks" + (wanted ? "?deck=" + wanted : ""));
 	bridge = listing.bridge;
 	renderBranch(bridge.branch);
+	renderBranchesButton();
 	bridgeDeck = listing.bridgeDeck || null;
 	deckIds.clear();
 	deckNames.clear();

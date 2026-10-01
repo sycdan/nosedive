@@ -294,6 +294,7 @@ document.getElementById("headacts").append(noteButton());
 document.getElementById("reposbtn").addEventListener("click", showRepos);
 
 Promise.all([loadDecks(), loadDives()]).then(() => {
+	if (location.hash === "#branch") return showBranch();
 	const path = currentPath();
 	if (!path.length) return reset();
 	// Names, kinds and link types are unknown after a reload: each step fills

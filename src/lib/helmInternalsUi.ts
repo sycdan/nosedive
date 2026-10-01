@@ -1,7 +1,7 @@
 /**
  * The Internals view, spliced into the page's script: the bridge config and
- * today's log, followed live while open. Also the poll line and recent
- * commits the Branch view shows.
+ * today's log, followed live while open. Also the poll line the Branch view
+ * shows.
  */
 export const helmInternalsScript = String.raw`
 // --- internals --------------------------------------------------------------
@@ -20,38 +20,31 @@ function ago(ms) {
 }
 
 /**
- * The poll line and recent commits, live while the view holding them is open;
- * the Branch view shows them. They fill in once their first read lands.
+ * One live line counting down to helm's next check of the bridge, with when
+ * it last saw a change; calls onChange for each change seen while open.
  */
-function liveStatus(isOpen) {
-	const next = el("span", {});
-	const change = el("span", {});
-	const every = el("span", {}, "Bridge checked");
-	const commits = el("ul", { class: "doclist" }, el("li", { class: "rel" }, "reading…"));
+function pollLine(isOpen, onChange) {
+	const line = el("span", { class: "rel poll" });
 	let lastChangeAt = null;
-	const drawCommits = (list) => commits.replaceChildren(...(list.length ? list.map((c) => el("li", {},
-		el("code", {}, c.hash), " ", c.subject, " ", el("span", { class: "rel" }, c.author + " · " + ago(c.at)),
-		c.pushed === false ? el("span", { class: "count", title: "Not on the upstream yet" }, "unpushed") : null)) : [el("li", { class: "rel" }, "no commits")]));
 	const read = () => api("/api/internals").then((info) => {
-		every.textContent = "Bridge checked every " + info.pollEvery / 1000 + " s for a new dive or commit";
+		line.title = "Helm checks the bridge every " + info.pollEvery / 1000 + " s for a new dive or commit";
 		lastChangeAt = info.lastChangeAt;
-		drawCommits(info.commits || []);
 	}, () => {});
 	const tick = () => {
 		if (!isOpen()) return clearInterval(timer);
 		const due = lastPoll ? lastPoll.at + lastPoll.every : null;
-		next.textContent = due == null ? "waiting for the first check" : "next check in " + (Math.max(0, due - Date.now()) / 1000).toFixed(1) + " s";
-		change.textContent = lastChangeAt == null ? "no change since helm started" : "last change seen " + ago(lastChangeAt);
+		line.textContent = (due == null ? "checking soon" : "next check " + (Math.max(0, due - Date.now()) / 1000).toFixed(1) + " s") +
+			" · " + (lastChangeAt == null ? "no change yet" : "changed " + ago(lastChangeAt));
 	};
-	// A state change seen while open moves "last change seen" along and redraws the commits.
 	events.addEventListener("state", function seen() {
 		if (!isOpen()) return events.removeEventListener("state", seen);
 		read();
+		onChange();
 	});
 	const timer = setInterval(tick, 150);
 	read();
 	tick();
-	return [el("h4", {}, "Poll"), el("p", {}, every, " · ", next, " · ", change), el("h4", {}, "Recent commits"), commits];
+	return line;
 }
 
 async function showInternals() {

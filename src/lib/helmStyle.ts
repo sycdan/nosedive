@@ -210,7 +210,13 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 .branches { display: grid; gap: 10px; }
 .branchcard .doclist { margin: 8px 0; }
 .branchcard .blocker, .branchview .blocker { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--hover); color: var(--text); font-size: 13px; }
-.branchview .syncacts { display: flex; gap: 6px; margin: 10px 0; }
-.branchview .squash { margin: 8px 0 16px; }
+.branchview { display: grid; gap: 12px; }
+.branchview h3 { margin: 0; }
+.synccard .cardhead { display: flex; align-items: center; gap: 8px; }
+.synccard .cardhead h4 { margin: 0; flex: 1; }
+.synccard .syncacts { display: flex; align-items: center; gap: 6px; }
+.synccard .doclist { margin: 8px 0 0; }
+.synccard .blocker { margin-top: 8px; }
+.synccard .poll { font-variant-numeric: tabular-nums; }
 dialog.modal textarea.squashmsg { height: 260px; min-height: 160px; width: 100%; box-sizing: border-box; font: 13px/1.5 var(--mono); }
 `;

@@ -138,7 +138,14 @@ export interface HelmUnpushed {
 	branch: string;
 	ahead: number;
 	behind: number;
-	commits: HelmBranchCommit[];
+	/** Ahead of `origin/<trunk>`, each marked whether the upstream has it (null without one). */
+	commits: (HelmBranchCommit & { pushed: boolean | null })[];
+	/** On `origin/<trunk>` but not HEAD: what Pull brings in. */
+	incoming: HelmBranchCommit[];
+	/** Off trunk, how many commits on the upstream a push would replace. */
+	replaces: number;
+	/** The shared history, from where HEAD meets `origin/<trunk>`. */
+	history: HelmBranchCommit[];
 	squashable: boolean;
 	blocker: string | null;
 }
@@ -167,12 +174,22 @@ export function helmUnpushed(cwd: string): HelmUnpushed {
 			: ahead < 2
 				? "Nothing to squash."
 				: null;
+	const upstream = gitOutput(cwd, ["rev-parse", "--abbrev-ref", "@{u}"]);
+	const onUpstream = (hash: string): boolean | null =>
+		upstream ? runGit(cwd, ["merge-base", "--is-ancestor", hash, "@{u}"]).status === 0 : null;
+	const base = gitOutput(cwd, ["merge-base", "HEAD", `origin/${trunk}`]);
 	return {
 		trunk,
 		branch,
 		ahead,
 		behind,
-		commits: commitLog(cwd, `origin/${trunk}..HEAD`, 100),
+		commits: commitLog(cwd, `origin/${trunk}..HEAD`, 100).map((c) => ({
+			...c,
+			pushed: onUpstream(c.hash),
+		})),
+		incoming: commitLog(cwd, `HEAD..origin/${trunk}`, 50),
+		replaces: upstream && branch !== trunk ? countCommits(cwd, "HEAD..@{u}") : 0,
+		history: base ? commitLog(cwd, base, 20) : [],
 		squashable: blocker === null,
 		blocker,
 	};

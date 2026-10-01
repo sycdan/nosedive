@@ -33,6 +33,8 @@ test("squash on a branch makes its commits one and pushes nothing", () => {
 	const { origin, branch } = sandbox("squash-branch");
 	commit(branch, "a.txt", "a\n", "first");
 	commit(branch, "b.txt", "b\n", "second");
+	// The first two are on origin/sandbox already; the third is not.
+	git(["push", "-q", "origin", "HEAD:sandbox"], branch);
 	commit(branch, "c.txt", "c\n", "third");
 	const tree = git(["rev-parse", "HEAD^{tree}"], branch);
 	const main = git(["rev-parse", "main"], origin);
@@ -44,6 +46,14 @@ test("squash on a branch makes its commits one and pushes nothing", () => {
 		["third", "second", "first"],
 		"newest first",
 	);
+	assert.deepEqual(
+		info.commits.map((c) => c.pushed),
+		[false, true, true],
+		"marked by the upstream",
+	);
+	assert.deepEqual(info.incoming, [], "nothing to pull");
+	assert.equal(info.replaces, 0);
+	assert.ok(info.history.length > 0, "shared history listed");
 	assert.equal(info.squashable, true);
 	assert.equal(info.blocker, null);
 
@@ -55,6 +65,7 @@ test("squash on a branch makes its commits one and pushes nothing", () => {
 	assert.equal(git(["rev-parse", "HEAD^{tree}"], branch), tree, "same tree");
 	assert.equal(git(["rev-parse", "main"], origin), main, "origin/main unchanged");
 	assert.equal(git(["rev-parse", "sandbox"], origin), sandboxTip, "origin/sandbox unchanged");
+	assert.equal(helmUnpushed(branch).replaces, 2, "a push now replaces the two pushed commits");
 	assert.match(
 		todaysLog(branch),
 		/nosedive squash\n[\s\S]*?\n\[exit 0\]\n/,
@@ -86,6 +97,11 @@ test("squash refusals leave HEAD as it was", () => {
 	const behind = helmUnpushed(branch);
 	assert.equal(behind.squashable, false);
 	assert.equal(behind.blocker, "Pull first: origin/main has 1 commit this checkout lacks.");
+	assert.deepEqual(
+		behind.incoming.map((c) => c.subject),
+		["trunk work"],
+		"what Pull brings in",
+	);
 });
 
 test("squash waits for an active dive, though the read still answers", () => {

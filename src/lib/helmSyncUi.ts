@@ -16,51 +16,59 @@ function showBranch() {
 	history.replaceState(null, "", location.pathname + location.search);
 	const root = el("section", { class: "branchview" });
 	document.getElementById("view").replaceChildren(root);
-	// Built once, so its timer and listener outlive each redraw.
-	root.live = liveStatus(() => root.isConnected);
+	// Built once, so its timer and listener outlive each redraw; a change it sees redraws the view.
+	root.poll = pollLine(() => root.isConnected, () => drawBranch(root));
 	return drawBranch(root);
+}
+
+function commitList(commits, empty, mark) {
+	return el("ul", { class: "doclist" }, commits.length
+		? commits.map((c) => el("li", {}, el("code", {}, c.hash), " ", c.subject, " ", el("span", { class: "rel" }, c.author + " · " + ago(c.at)), mark ? mark(c) : null))
+		: [el("li", { class: "rel" }, empty)]);
+}
+
+/** A card: a title and its actions on one row, then what it holds. */
+function syncCard(title, actions, ...body) {
+	return el("article", { class: "card synccard" },
+		el("div", { class: "cardhead" }, el("h4", {}, title), el("div", { class: "syncacts" }, ...actions)), ...body);
 }
 
 /** Fills the Branch view from a fresh read; does nothing once the pilot has left it. */
 async function drawBranch(root) {
 	const branch = bridge.branch || { name: "?", trunk: "main" };
-	const head = [el("h3", {}, branch.name),
-		el("p", { class: "rel" }, branch.ahead == null ? "no origin/" + branch.trunk + " to compare with"
-			: "↑" + branch.ahead + " ↓" + branch.behind + " against origin/" + branch.trunk),
-		syncButtons(root)];
-	if (!root.childNodes.length) root.replaceChildren(...head, el("p", { class: "rel" }, "fetching…"), ...root.live);
+	if (!root.childNodes.length) root.replaceChildren(el("h3", {}, branch.name), el("p", { class: "rel" }, "fetching…"));
 	let info;
 	try {
 		info = await api("/api/sync/unpushed");
 		showError(null);
 	} catch (err) {
-		if (root.isConnected) { showError(err); root.replaceChildren(...head, ...root.live); }
+		if (root.isConnected) showError(err);
 		return;
 	}
 	if (!root.isConnected) return;
-	head[1].textContent = "↑" + info.ahead + " ↓" + info.behind + " against origin/" + info.trunk;
-	const commits = el("ul", { class: "doclist" }, info.commits.length
-		? info.commits.map((c) => el("li", {}, el("code", {}, c.hash), " ", c.subject, " ", el("span", { class: "rel" }, c.author + " · " + ago(c.at))))
-		: [el("li", { class: "rel" }, "nothing ahead of origin/" + info.trunk)]);
-	const parts = [...head, el("h4", {}, "Unpushed commits"), commits];
-	if (info.commits.length >= 2) {
-		const squash = info.blocker ? el("p", { class: "blocker" }, info.blocker)
-			: el("button", { class: "act land", title: "Make these commits one", onclick: () => squashDialog(info, squash, root) }, "Squash");
-		parts.push(el("div", { class: "squash" }, squash));
-	}
-	if (info.branch === info.trunk) {
-		const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
-		parts.push(el("h4", {}, "Branches"), list);
-		root.replaceChildren(...parts, ...root.live);
-		await drawBranches(root, list);
-	} else root.replaceChildren(...parts, ...root.live);
-}
-
-function syncButtons(root) {
 	const why = dives.active ? "Land, pack or bail the active dive first" : null;
-	return el("div", { class: "syncacts" },
-		el("button", { class: "act unstage", disabled: why ? "" : null, title: why || "Rebase this checkout onto its trunk", onclick: () => runSync("pull", root) }, "Pull"),
-		el("button", { class: "act unstage", disabled: why ? "" : null, title: why || "Push this checkout to its trunk", onclick: () => confirmPush(root) }, "Push"));
+	const off = info.branch !== info.trunk;
+	const pull = syncCard("Pull · " + info.incoming.length + " from origin/" + info.trunk,
+		[el("button", { class: "act unstage", disabled: why ? "" : null, title: why || "Rebase this checkout onto origin/" + info.trunk, onclick: () => runSync("pull", root) }, "Pull")],
+		commitList(info.incoming, "up to date with origin/" + info.trunk));
+	const squash = info.commits.length < 2 ? null : info.blocker ? el("p", { class: "blocker" }, info.blocker)
+		: el("button", { class: "act unstage", title: "Make these commits one", onclick: () => squashDialog(info, squash, root) }, "Squash");
+	const fresh = info.commits.filter((c) => c.pushed !== true).length;
+	const push = syncCard("Push → origin/" + info.branch + " · " + (fresh ? fresh + " new" : off && info.replaces ? "rewritten" : "up to date"),
+		[squash && squash.tagName === "BUTTON" ? squash : null,
+			el("button", { class: "act unstage", disabled: why ? "" : null, title: why || "Push to origin/" + info.branch, onclick: () => confirmPush(root) }, "Push")],
+		commitList(info.commits, "nothing ahead of origin/" + info.trunk,
+			(c) => c.pushed === false ? el("span", { class: "count", title: "Not on origin/" + info.branch + " yet" }, "unpushed") : null),
+		off && info.replaces ? el("p", { class: "blocker" }, "Pull or Squash rewrote " + info.replaces + " commit" + (info.replaces === 1 ? "" : "s") + " already on origin/" + info.branch + "; Push overwrites the old cop" + (info.replaces === 1 ? "y." : "ies.")) : null,
+		squash && squash.tagName !== "BUTTON" ? squash : null);
+	const history = syncCard("History", [root.poll], commitList(info.history, "no shared history"));
+	const parts = [el("h3", {}, info.branch), pull, push, history];
+	if (!off) {
+		const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
+		parts.push(syncCard("Branches", [], list));
+		root.replaceChildren(...parts);
+		await drawBranches(root, list);
+	} else root.replaceChildren(...parts);
 }
 
 function confirmPush(root) {

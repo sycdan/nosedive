@@ -28,7 +28,7 @@ function refused(fn, status, pattern, message) {
 	assert.throws(fn, (err) => err.status === status && pattern.test(err.message), message);
 }
 
-test("pull brings trunk into the branch, and push lands it on trunk and the branch", () => {
+test("pull brings trunk into the branch, and push lands it on the branch alone", () => {
 	const { bridge, origin, branch } = sandbox("sync-flow");
 	const mine = commit(branch, "mine.txt", "mine\n", "branch work");
 	// Published, so the rebase below takes the branch off origin/sandbox's line.
@@ -53,8 +53,20 @@ test("pull brings trunk into the branch, and push lands it on trunk and the bran
 	const out = helmPush(branch);
 	assert.equal(typeof out.output, "string");
 	const head = git(["rev-parse", "HEAD"], branch);
-	assert.equal(git(["rev-parse", "main"], origin), head, "origin/main fast-forwarded");
 	assert.equal(git(["rev-parse", "sandbox"], origin), head, "origin/sandbox updated under lease");
+	assert.equal(
+		git(["rev-parse", "main"], origin),
+		theirs,
+		"origin/main untouched by a branch push",
+	);
+});
+
+test("push on trunk fast-forwards origin/main", () => {
+	const { bridge, origin } = sandbox("sync-trunk");
+	const mine = commit(bridge, "mine.txt", "mine\n", "trunk work");
+
+	helmPush(bridge);
+	assert.equal(git(["rev-parse", "main"], origin), mine, "origin/main fast-forwarded");
 });
 
 test("a conflicting pull is refused by file and leaves the checkout as it was", () => {
@@ -70,15 +82,16 @@ test("a conflicting pull is refused by file and leaves the checkout as it was", 
 	assert.equal(readFileSync(join(branch, "clash.txt"), "utf8"), "branch\n");
 });
 
-test("push is refused while origin/main has a commit the branch lacks", () => {
+test("push on trunk is refused while origin/main has a commit the checkout lacks", () => {
 	const { bridge, origin, branch } = sandbox("sync-behind");
-	commit(branch, "mine.txt", "mine\n", "branch work");
-	const theirs = commit(bridge, "theirs.txt", "theirs\n", "trunk work");
-	git(["push", "-q", "origin", "HEAD:main"], bridge);
+	// The branch worktree stands in for another clone pushing to trunk.
+	const theirs = commit(branch, "theirs.txt", "theirs\n", "trunk work elsewhere");
+	git(["push", "-q", "origin", "HEAD:main"], branch);
+	commit(bridge, "mine.txt", "mine\n", "trunk work");
 
-	refused(() => helmPush(branch), 409, /pull first/, "push asks for a pull first");
+	refused(() => helmPush(bridge), 409, /pull first/, "push asks for a pull first");
 	assert.match(
-		todaysLog(branch),
+		todaysLog(bridge),
 		/nosedive push\n\norigin\/main has commits this checkout lacks; pull first, then push\n\[exit 1\]\n/,
 		"the refused push is logged with its message, ending [exit 1]",
 	);

@@ -17,9 +17,10 @@ function confirmPush() {
 	const branch = bridge.branch || { name: "?", trunk: "main" };
 	const off = branch.name !== branch.trunk;
 	confirmDialog({
-		verb: "Push", cls: "land", target: branch.name,
-		detail: "Fast-forwards origin/" + branch.trunk + " to this checkout for everyone, and never forces it." +
-			(off ? " Then force-updates origin/" + branch.name + " to match." : ""),
+		verb: "Push", cls: "land", target: "to origin/" + branch.name,
+		detail: off
+			? "Force-updates origin/" + branch.name + " to this checkout. origin/" + branch.trunk + " is never touched; merging into it is up to you."
+			: "Fast-forwards origin/" + branch.trunk + " to this checkout for everyone, and never forces it.",
 		act: () => runSync("push"),
 	});
 }

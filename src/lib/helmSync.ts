@@ -79,8 +79,9 @@ function pull(cwd: string): HelmSyncResult {
 }
 
 /**
- * Fast-forwards `origin/<trunk>` to the checkout's head -- never forced --
- * and, off trunk, force-updates the branch's own upstream with a lease.
+ * On trunk, fast-forwards `origin/<trunk>` to the checkout's head, never
+ * forced. Off trunk, force-updates only `origin/<branch>`, with a lease:
+ * a branch never writes trunk.
  */
 export function helmPush(cwd: string): HelmSyncResult {
 	return logged(cwd, "push", () => push(cwd));
@@ -88,6 +89,17 @@ export function helmPush(cwd: string): HelmSyncResult {
 
 function push(cwd: string): HelmSyncResult {
 	const { trunk, branch } = syncTarget(cwd, "push");
+	if (branch !== trunk) {
+		const branchPush = runGit(cwd, [
+			"push",
+			"--force-with-lease",
+			"origin",
+			`HEAD:refs/heads/${branch}`,
+		]);
+		if (branchPush.status !== 0)
+			throw new HelmRequestError(409, `push to origin/${branch} rejected:\n${said(branchPush)}`);
+		return { output: said(branchPush) };
+	}
 	const output = [fetchTrunk(cwd, trunk)];
 	if (runGit(cwd, ["merge-base", "--is-ancestor", `origin/${trunk}`, "HEAD"]).status !== 0)
 		throw new HelmRequestError(
@@ -98,19 +110,5 @@ function push(cwd: string): HelmSyncResult {
 	if (trunkPush.status !== 0)
 		throw new HelmRequestError(409, `push to origin/${trunk} rejected:\n${said(trunkPush)}`);
 	output.push(said(trunkPush));
-	if (branch !== trunk) {
-		const branchPush = runGit(cwd, [
-			"push",
-			"--force-with-lease",
-			"origin",
-			`HEAD:refs/heads/${branch}`,
-		]);
-		if (branchPush.status !== 0)
-			throw new HelmRequestError(
-				409,
-				`origin/${trunk} was updated, but the push to origin/${branch} was rejected:\n${said(branchPush)}`,
-			);
-		output.push(said(branchPush));
-	}
 	return { output: output.filter(Boolean).join("\n") };
 }

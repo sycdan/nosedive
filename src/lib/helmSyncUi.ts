@@ -16,6 +16,8 @@ function showBranch() {
 	history.replaceState(null, "", location.pathname + location.search);
 	const root = el("section", { class: "branchview" });
 	document.getElementById("view").replaceChildren(root);
+	// Built once, so its timer and listener outlive each redraw.
+	root.live = liveStatus(() => root.isConnected);
 	return drawBranch(root);
 }
 
@@ -26,13 +28,13 @@ async function drawBranch(root) {
 		el("p", { class: "rel" }, branch.ahead == null ? "no origin/" + branch.trunk + " to compare with"
 			: "↑" + branch.ahead + " ↓" + branch.behind + " against origin/" + branch.trunk),
 		syncButtons(root)];
-	if (!root.childNodes.length) root.replaceChildren(...head, el("p", { class: "rel" }, "fetching…"));
+	if (!root.childNodes.length) root.replaceChildren(...head, el("p", { class: "rel" }, "fetching…"), ...root.live);
 	let info;
 	try {
 		info = await api("/api/sync/unpushed");
 		showError(null);
 	} catch (err) {
-		if (root.isConnected) { showError(err); root.replaceChildren(...head); }
+		if (root.isConnected) { showError(err); root.replaceChildren(...head, ...root.live); }
 		return;
 	}
 	if (!root.isConnected) return;
@@ -49,9 +51,9 @@ async function drawBranch(root) {
 	if (info.branch === info.trunk) {
 		const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
 		parts.push(el("h4", {}, "Branches"), list);
-		root.replaceChildren(...parts);
+		root.replaceChildren(...parts, ...root.live);
 		await drawBranches(root, list);
-	} else root.replaceChildren(...parts);
+	} else root.replaceChildren(...parts, ...root.live);
 }
 
 function syncButtons(root) {

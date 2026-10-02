@@ -20,7 +20,7 @@ function createControl() {
 	const byRepo = new Map();
 	creatable.forEach((kind, index) => {
 		if (!byRepo.has(kind.repoName)) byRepo.set(kind.repoName, []);
-		byRepo.get(kind.repoName).push(el("option", { value: String(index), title: kind.gist }, kind.name));
+		byRepo.get(kind.repoName).push(el("option", { value: String(index), title: kind.gist }, kind.shipped ? kind.name + " (shipped)" : kind.name));
 	});
 	const picker = el("select", { class: "kindpick", "aria-label": "Kind to create" },
 		[...byRepo].map(([repo, options]) => el("optgroup", { label: repo }, options)));

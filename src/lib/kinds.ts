@@ -119,16 +119,37 @@ export function selectRepo(sources: KindSource[], ref: string): KindSource[] {
 	return picked;
 }
 
+/** A bridge keeps its nosedive config at its root; no other repo does. */
+export function isBridge(source: KindSource): boolean {
+	return existsSync(join(source.root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME));
+}
+
 /**
  * A dive lives only in a bridge, so a copy of its kind in a repo in play that
  * is not one -- a scoped nosedive checkout -- is not a candidate.
  */
 export function bridgeHomed(kinds: KindDoc[]): KindDoc[] {
-	return kinds.filter(
-		(kind) =>
-			kind.id !== DIVE_KIND_ID ||
-			existsSync(join(kind.source.root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME)),
+	return kinds.filter((kind) => kind.id !== DIVE_KIND_ID || isBridge(kind.source));
+}
+
+/** A kind nosedive ships, as a bridge holds it, that any repo can take; the dive kind stays home. */
+export function isShipped(kind: KindDoc): boolean {
+	return isZerostar(kind.id) && kind.id !== DIVE_KIND_ID && isBridge(kind.source);
+}
+
+/**
+ * The kind `name` means for a doc in `repo`: the repo's own, else -- outside a
+ * bridge -- a shipped one, taken as the repo's so its docs are written and
+ * found there.
+ */
+export function repoKind(kinds: KindDoc[], repo: KindSource, name: string): KindDoc | undefined {
+	const own = resolveKind(
+		bridgeHomed(kinds.filter((kind) => kind.source.root === repo.root)),
+		name,
 	);
+	if (own || isBridge(repo)) return own;
+	const shipped = kinds.find((kind) => isShipped(kind) && kind.name === name);
+	return shipped && { ...shipped, source: repo };
 }
 
 /**
@@ -198,25 +219,18 @@ export function validateMeta(kind: KindDoc, meta: unknown): string[] {
 
 /**
  * Validates a doc's meta against its kind in context, or warns that nothing in
- * context declares it. A bare kind several repos define is taken from the doc's
- * own repo, when `source` says which that is.
+ * context declares it. When `source` says which repo the doc is in, a bare
+ * kind is that repo's own or a shipped one first (`repoKind`).
  */
 export function checkDocMeta(
 	kinds: KindDoc[],
 	doc: { kind: string; meta: unknown },
 	source?: KindSource,
 ): { kind?: KindDoc; errors: string[]; warning?: string } {
-	let kind: KindDoc | undefined;
-	try {
-		kind = resolveKind(kinds, doc.kind);
-	} catch (err) {
-		const parsed = parseQualifiedRef(doc.kind);
-		const own = source
-			? kinds.filter((k) => k.name === parsed.ref && k.source.root === source.root)
-			: [];
-		if (parsed.repo !== undefined || own.length !== 1) throw err;
-		kind = own[0];
-	}
+	const parsed = parseQualifiedRef(doc.kind);
+	const kind =
+		(source && parsed.repo === undefined ? repoKind(kinds, source, parsed.ref) : undefined) ??
+		resolveKind(kinds, doc.kind);
 	if (!kind)
 		return { errors: [], warning: `no kind ${doc.kind} in context; its meta is not validated` };
 	return { kind, errors: validateMeta(kind, doc.meta) };

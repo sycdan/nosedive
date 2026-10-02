@@ -5,7 +5,7 @@ import { Marked } from "marked";
 
 import { inheritedScopes } from "./diveScopes.js";
 import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
-import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
+import { isZerostar, kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
@@ -306,7 +306,10 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 		docs = loadKbDocs(source.kbDir, source.root);
 	}
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const doc = byId.get(id);
+	// A repo that takes a shipped kind reads it from the bridge.
+	const doc =
+		byId.get(id) ??
+		(isZerostar(id) ? bridgeKb.find((d) => d.id === id && d.kind === "kind") : undefined);
 	if (!doc) return undefined;
 	const text = readFileSync(doc.path, "utf8");
 	const block = leadingMarkdownFrontmatter(text);

@@ -4,7 +4,15 @@ import { join, relative, resolve } from "node:path";
 import { formatPath } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { readKbDoc } from "./kbDocs.js";
-import { loadKinds, repoKbDir, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
+import {
+	isBridge,
+	isShipped,
+	loadKinds,
+	repoKbDir,
+	validateMeta,
+	type KindDoc,
+	type KindSource,
+} from "./kinds.js";
 
 export interface InstanceFailure {
 	id: string;
@@ -57,15 +65,27 @@ export function kindChangeRefusal(
 	scopes: Array<{ name: string; root: string; pin: string }>,
 ): string | undefined {
 	const lines: string[] = [];
-	for (const scope of scopes) {
-		const source = { name: scope.name, root: scope.root, kbDir: repoKbDir(scope.root) };
-		for (const kind of changedKinds(source, scope.pin)) {
-			for (const failure of instanceFailures(kind))
-				lines.push(
-					`  ${scope.name}: ${kind.name} ${failure.id} (${formatPath(failure.path)}): ${failure.errors.join("; ")}`,
-				);
+	const sources = scopes.map((scope) => ({
+		name: scope.name,
+		root: scope.root,
+		kbDir: repoKbDir(scope.root),
+	}));
+	scopes.forEach((scope, at) => {
+		for (const kind of changedKinds(sources[at]!, scope.pin)) {
+			// A shipped kind is also every other scoped repo's that takes it rather than define its own.
+			const takers = isShipped(kind)
+				? sources.filter(
+						(other) =>
+							!isBridge(other) && !loadKinds([other]).some((own) => own.name === kind.name),
+					)
+				: [];
+			for (const holder of [kind, ...takers.map((source) => ({ ...kind, source }))])
+				for (const failure of instanceFailures(holder))
+					lines.push(
+						`  ${holder.source.name}: ${kind.name} ${failure.id} (${formatPath(failure.path)}): ${failure.errors.join("; ")}`,
+					);
 		}
-	}
+	});
 	return lines.length > 0 ? lines.join("\n") : undefined;
 }
 

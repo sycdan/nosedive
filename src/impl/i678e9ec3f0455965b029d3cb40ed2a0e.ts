@@ -11,10 +11,12 @@ import { readActiveDiveId } from "../lib/kbDocs.js";
 import {
 	bridgeHomed,
 	DIVE_KIND_ID,
+	isBridge,
 	KIND_KIND_ID,
 	kindSources,
 	loadKinds,
 	parseQualifiedRef,
+	repoKind,
 	resolveKind,
 	selectRepo,
 	STARTER_SCHEMA,
@@ -76,12 +78,12 @@ function crud(args: string[], io: CommandIo): void {
 		);
 	if (args.length === 0) throw new Error("crud needs a kind and a gist, or a quid");
 	const [first, ...rest] = args as [string, ...string[]];
-	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo.
+	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo;
+	// the kinds stay every repo's in play, since a repo can take a shipped one.
 	const qualified = parseQualifiedRef(first);
-	const sources =
-		qualified.repo === undefined
-			? kindSources(process.cwd())
-			: selectRepo(kindSources(process.cwd()), qualified.repo);
+	const inPlay = kindSources(process.cwd());
+	const sources = qualified.repo === undefined ? inPlay : selectRepo(inPlay, qualified.repo);
+	const kinds = loadKinds(inPlay);
 
 	if (uuidLike(qualified.ref)) {
 		if (name !== undefined || feat !== undefined || title !== undefined || root !== undefined)
@@ -96,7 +98,7 @@ function crud(args: string[], io: CommandIo): void {
 		const patch = parseYaml(readStdinText(hint(block))) as unknown;
 		if (!patch || typeof patch !== "object" || Array.isArray(patch))
 			throw new Error(`--${block} reads a YAML or JSON mapping from stdin`);
-		updateBlock(target, loadKinds(sources), block, patch as Record<string, unknown>, replace, io);
+		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io);
 		return;
 	}
 	if (block && (block !== "meta" || replace))
@@ -104,7 +106,23 @@ function crud(args: string[], io: CommandIo): void {
 
 	const gist = rest.join(" ").trim();
 	if (!gist) throw new Error(`crud ${first} requires a gist`);
-	const kind = resolveKind(bridgeHomed(loadKinds(sources)), first);
+	const repo = sources[0]!;
+	const kind =
+		qualified.repo === undefined
+			? resolveKind(bridgeHomed(kinds), first)
+			: repoKind(kinds, repo, qualified.ref);
+	if (!kind && qualified.repo !== undefined && !isBridge(repo)) {
+		// Only shipped kinds cross into another repo; say why one that did not is out.
+		if (kinds.some((k) => k.id === DIVE_KIND_ID && k.name === qualified.ref))
+			throw new Error(
+				`a dive lives only in a bridge: crud ${qualified.ref} --feat <feat> <gist...>`,
+			);
+		if (kinds.some((k) => isBridge(k.source) && k.name === qualified.ref))
+			throw new Error(
+				`kind ${qualified.ref} is the bridge's own, and only kinds nosedive ships go into ${repo.name}; ` +
+					`${repo.name} can define its own: crud ${qualified.repo}:kind --name ${qualified.ref} <gist...>`,
+			);
+	}
 	if (!kind) {
 		const rc = readNosediveRc(process.cwd());
 		throw new Error(

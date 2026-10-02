@@ -5,7 +5,9 @@ import { test } from "node:test";
 
 import { createTmp, libUrl, runTool, seededBridge } from "../test-helpers.mjs";
 
-const { branchWorktree, helmLogPath, helmPull, helmPush } = await import(libUrl);
+const { assertBridgeInStep, branchWorktree, helmLogPath, helmPull, helmPush } = await import(
+	libUrl
+);
 const tmp = createTmp("helm-sync");
 const io = { log() {} };
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
@@ -96,6 +98,45 @@ test("push on trunk is refused while origin/main has a commit the checkout lacks
 		"the refused push is logged with its message, ending [exit 1]",
 	);
 	assert.equal(git(["rev-parse", "main"], origin), theirs, "origin/main untouched");
+});
+
+test("pull on a branch with pushed commits leaves origin/<branch> at HEAD", () => {
+	const { bridge, origin, branch } = sandbox("sync-pull-push");
+	commit(branch, "mine.txt", "mine\n", "branch work");
+	git(["push", "-q", "origin", "sandbox"], branch);
+	commit(bridge, "theirs.txt", "theirs\n", "trunk work");
+	git(["push", "-q", "origin", "HEAD:main"], bridge);
+
+	const out = helmPull(branch);
+	assert.match(out.output, /origin\/sandbox/);
+	assert.equal(git(["rev-parse", "sandbox"], origin), git(["rev-parse", "HEAD"], branch));
+	assert.doesNotThrow(() => assertBridgeInStep(branch), "the dive verbs can run straight away");
+});
+
+test("pull on trunk pushes nothing", () => {
+	const { bridge, origin } = sandbox("sync-pull-trunk");
+	const main = git(["rev-parse", "main"], origin);
+	commit(bridge, "mine.txt", "mine\n", "trunk work");
+
+	helmPull(bridge);
+	assert.equal(git(["rev-parse", "main"], origin), main, "origin/main untouched");
+});
+
+test("assertBridgeInStep refuses only a diverged bridge", () => {
+	const { branch } = sandbox("sync-in-step");
+	commit(branch, "a.txt", "a\n", "pushed");
+	git(["push", "-q", "origin", "sandbox"], branch);
+
+	commit(branch, "b.txt", "b\n", "ahead");
+	assert.doesNotThrow(() => assertBridgeInStep(branch), "ahead is fine");
+	git(["reset", "-q", "--hard", "HEAD~2"], branch);
+	assert.doesNotThrow(() => assertBridgeInStep(branch), "behind is fine");
+
+	commit(branch, "c.txt", "c\n", "elsewhere");
+	assert.throws(
+		() => assertBridgeInStep(branch),
+		/^Error: bridge sandbox has diverged from origin\/sandbox; push it \(helm's Push\) or pull first, then retry$/,
+	);
 });
 
 test("pull and push are refused while a dive is active", () => {

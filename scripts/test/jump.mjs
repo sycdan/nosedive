@@ -287,6 +287,32 @@ test("jump with no available dive explains how to create one", () => {
 	assert.doesNotMatch(result.stderr, /nosedive-error:/);
 });
 
+test("jump refuses a diverged bridge before writing anything", () => {
+	const { bridge, repoId, diveId } = setup("diverged");
+	const worktree = repoWorktree(bridge, "diverged");
+	assertOk(run(["dehydrate-repo.workspace", repoId, "--force"], bridge), "dehydrate failed");
+	runTool("git", ["add", "-A"], bridge);
+	gitCommitEmpty(bridge, "published");
+	runTool("git", ["push"], bridge);
+	// What a helm Pull off trunk leaves until it is pushed: the published
+	// commit rewritten locally.
+	runTool("git", ["reset", "-q", "--hard", "HEAD~1"], bridge);
+	gitCommitEmpty(bridge, "rewritten");
+	const head = runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim();
+	const kbFiles = readdirSync(join(bridge, "kb")).sort();
+	const divePath = join(bridge, "kb", `${diveId}.md`);
+	const diveText = readFileSync(divePath, "utf8");
+
+	const result = run(["jump"], bridge);
+	assert.notEqual(result.status, 0, "jump unexpectedly accepted a diverged bridge");
+	assert.match(result.stderr, /bridge main has diverged from origin\/main; push it/);
+	assert.equal(runTool("git", ["rev-parse", "HEAD"], bridge).stdout.trim(), head, "no commit");
+	assert.deepEqual(readdirSync(join(bridge, "kb")).sort(), kbFiles, "no new dive file");
+	assert.equal(readFileSync(divePath, "utf8"), diveText, "the dive doc is untouched");
+	assert.equal(existsSync(worktree), false, "nothing hydrated");
+	assert.equal(existsSync(join(bridge, "workspace", ".nosedive-ref")), false, "no active dive");
+});
+
 test("jump refuses an unbriefed dive before hydrating its scopes", () => {
 	const { bridge, repoId, diveId } = setup("unbriefed");
 	const worktree = repoWorktree(bridge, "unbriefed");

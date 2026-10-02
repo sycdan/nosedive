@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { assertBridgeInStep } from "../lib/bridgeTrunk.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { LAND_IN_FLIGHT_ENV, NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
@@ -224,15 +225,11 @@ function stashExceptStaged(bridgeDir: string): boolean {
  * is published. The check used to sit inside `commitAndPushLand`, which runs
  * after every work branch is already on its remote: a bridge with no upstream
  * therefore published the work and then refused, leaving the dive open with
- * nothing to retry -- landing again cannot un-push a branch.
+ * nothing to retry -- landing again cannot un-push a branch. A bridge diverged
+ * from its upstream is refused here too, for the same reason.
  */
 function bridgeUpstreamForLand(bridgeDir: string): string {
-	const upstream = gitOutput(bridgeDir, [
-		"rev-parse",
-		"--abbrev-ref",
-		"--symbolic-full-name",
-		"@{upstream}",
-	]);
+	const upstream = assertBridgeInStep(bridgeDir);
 	if (!upstream) throw new Error("bridge has no upstream to push to; configure one before landing");
 	return upstream;
 }

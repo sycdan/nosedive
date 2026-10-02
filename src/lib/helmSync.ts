@@ -52,14 +52,15 @@ export function fetchTrunk(cwd: string, trunk: string): string {
 
 /**
  * Rebases the checkout onto `origin/<trunk>`. A clean tree is required, and a
- * conflicting rebase is aborted, leaving the checkout as it was.
+ * conflicting rebase is aborted, leaving the checkout as it was. Off trunk,
+ * then force-updates `origin/<branch>` if the branch has an upstream.
  */
 export function helmPull(cwd: string): HelmSyncResult {
 	return logged(cwd, "pull", () => pull(cwd));
 }
 
 function pull(cwd: string): HelmSyncResult {
-	const { trunk } = syncTarget(cwd, "pull");
+	const { trunk, branch } = syncTarget(cwd, "pull");
 	if (gitRun(cwd, ["status", "--porcelain", "--untracked-files=no"], "failed to read status"))
 		throw new HelmRequestError(409, "cannot pull with uncommitted changes; commit or discard them");
 	const output = [fetchTrunk(cwd, trunk)];
@@ -76,6 +77,10 @@ function pull(cwd: string): HelmSyncResult {
 		);
 	}
 	output.push(said(rebased));
+	if (branch !== trunk) {
+		const pushed = pushBranchUpstream(cwd, branch, "pull");
+		if (pushed) output.push(pushed);
+	}
 	return { output: output.filter(Boolean).join("\n") };
 }
 
@@ -198,7 +203,8 @@ export function helmUnpushed(cwd: string): HelmUnpushed {
 /**
  * Makes the commits in `origin/<trunk>..HEAD` one commit with `message`,
  * logged. Refused while a dive is active, with uncommitted changes, while
- * behind `origin/<trunk>`, or with fewer than two commits. Never pushes.
+ * behind `origin/<trunk>`, or with fewer than two commits. Off trunk, then
+ * force-updates `origin/<branch>` if the branch has an upstream.
  */
 export function helmSquash(cwd: string, message: string): HelmSyncResult {
 	return logged(cwd, "squash", () => squash(cwd, message));
@@ -231,11 +237,33 @@ function squash(cwd: string, message: string): HelmSyncResult {
 		gitRun(cwd, ["reset", "--soft", head], "failed to restore HEAD");
 		throw new HelmRequestError(409, `squash commit failed; nothing changed:\n${said(committed)}`);
 	}
-	const publish =
-		branch === trunk
-			? "nothing was pushed; Push publishes it"
-			: `nothing was pushed; Push publishes it, force-updating origin/${branch}`;
-	return {
-		output: [said(committed), `${count} commits became one; ${publish}`].filter(Boolean).join("\n"),
-	};
+	if (branch === trunk)
+		return {
+			output: [
+				said(committed),
+				`${count} commits became one; nothing was pushed; Push publishes it`,
+			]
+				.filter(Boolean)
+				.join("\n"),
+		};
+	const output = [said(committed), `${count} commits became one`];
+	const pushed = pushBranchUpstream(cwd, branch, "squash");
+	output.push(pushed ?? `nothing was pushed: ${branch} has no upstream; Push publishes it`);
+	return { output: output.filter(Boolean).join("\n") };
+}
+
+/**
+ * Off trunk, after a rewrite, force-updates `origin/<branch>` with a lease, as
+ * Push does, so the upstream never lags the checkout. Returns null without an
+ * upstream; a rejected push throws, saying the `action` itself succeeded.
+ */
+function pushBranchUpstream(cwd: string, branch: string, action: string): string | null {
+	if (runGit(cwd, ["rev-parse", "--abbrev-ref", "@{u}"]).status !== 0) return null;
+	const pushed = runGit(cwd, ["push", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`]);
+	if (pushed.status !== 0)
+		throw new HelmRequestError(
+			409,
+			`${action} succeeded, but the push to origin/${branch} was rejected:\n${said(pushed)}`,
+		);
+	return [said(pushed), `force-updated origin/${branch} to match`].filter(Boolean).join("\n");
 }

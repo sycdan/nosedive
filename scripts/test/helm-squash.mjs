@@ -29,7 +29,7 @@ function refused(fn, status, pattern, message) {
 	assert.throws(fn, (err) => err.status === status && pattern.test(err.message), message);
 }
 
-test("squash on a branch makes its commits one and pushes nothing", () => {
+test("squash on a branch makes its commits one and updates origin/<branch>", () => {
 	const { origin, branch } = sandbox("squash-branch");
 	commit(branch, "a.txt", "a\n", "first");
 	commit(branch, "b.txt", "b\n", "second");
@@ -38,7 +38,6 @@ test("squash on a branch makes its commits one and pushes nothing", () => {
 	commit(branch, "c.txt", "c\n", "third");
 	const tree = git(["rev-parse", "HEAD^{tree}"], branch);
 	const main = git(["rev-parse", "main"], origin);
-	const sandboxTip = git(["rev-parse", "sandbox"], origin);
 
 	const info = helmUnpushed(branch);
 	assert.deepEqual(
@@ -64,12 +63,9 @@ test("squash on a branch makes its commits one and pushes nothing", () => {
 	assert.equal(git(["log", "-1", "--format=%B"], branch), "one\n\nbody");
 	assert.equal(git(["rev-parse", "HEAD^{tree}"], branch), tree, "same tree");
 	assert.equal(git(["rev-parse", "main"], origin), main, "origin/main unchanged");
-	assert.equal(git(["rev-parse", "sandbox"], origin), sandboxTip, "origin/sandbox unchanged");
-	assert.deepEqual(
-		helmUnpushed(branch).replaced.map((c) => c.subject),
-		["second", "first"],
-		"a push now overwrites the two pushed commits",
-	);
+	const head = git(["rev-parse", "HEAD"], branch);
+	assert.equal(git(["rev-parse", "sandbox"], origin), head, "origin/sandbox follows the squash");
+	assert.deepEqual(helmUnpushed(branch).replaced, [], "the push left nothing to overwrite");
 	assert.match(
 		todaysLog(branch),
 		/nosedive squash\n[\s\S]*?\n\[exit 0\]\n/,
@@ -129,15 +125,18 @@ test("squash waits for an active dive, though the read still answers", () => {
 	assert.match(info.blocker, /dive/);
 });
 
-test("squash on trunk leaves origin/main alone", () => {
+test("squash on trunk pushes nothing", () => {
 	const { bridge, origin } = sandbox("squash-trunk");
 	const main = git(["rev-parse", "main"], origin);
+	const sandboxTip = git(["rev-parse", "sandbox"], origin);
 	commit(bridge, "a.txt", "a\n", "first");
 	commit(bridge, "b.txt", "b\n", "second");
 
 	const out = helmSquash(bridge, "both");
 	assert.doesNotMatch(out.output, /force/);
+	assert.match(out.output, /nothing was pushed/);
 	assert.equal(ahead(bridge).length, 1);
 	assert.equal(git(["log", "-1", "--format=%s"], bridge), "both");
 	assert.equal(git(["rev-parse", "main"], origin), main, "origin/main unchanged");
+	assert.equal(git(["rev-parse", "sandbox"], origin), sandboxTip, "origin/sandbox unchanged");
 });

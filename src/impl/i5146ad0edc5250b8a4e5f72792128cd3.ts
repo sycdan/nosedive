@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { assertBridgeInStep } from "../lib/bridgeTrunk.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import {
@@ -272,6 +273,7 @@ function bail(args: string[], io: CommandIo): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const dive = kbDocs.find((doc) => doc.id === marker.id);
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
+	assertBridgeInStep(rc.bridgeDir);
 
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");
 	const relDivePath = relative(rc.bridgeDir, dive.path);

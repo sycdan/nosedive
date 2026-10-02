@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
 import { CommandIo, createUuid7Minter } from "./bridgeSetupIo.js";
+import { assertBridgeInStep } from "./bridgeTrunk.js";
 import { commitMessage } from "./commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "./constants.js";
 import {
@@ -342,6 +343,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const dive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
 	if (!dive) throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+	assertBridgeInStep(rc.bridgeDir);
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0)

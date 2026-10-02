@@ -6,7 +6,7 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
+import { assertBridgeInStep, bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
 import { followLiveBridge } from "../lib/landBridgeScope.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
@@ -336,6 +336,9 @@ export function jump(args: string[], io: CommandIo): void {
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+	// Before anything is written, the unplanned dive record included: a diverged
+	// bridge would only fail at the push, leaving a half-made dive behind.
+	assertBridgeInStep(rc.bridgeDir);
 
 	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked.ref, io, asked.deck);
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);

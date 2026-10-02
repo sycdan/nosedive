@@ -460,9 +460,15 @@ meta:
 	/**
 	 * The feat never said where this repo lands, so the minted dive names no
 	 * branch either -- and no `mode` key, which decides nothing and is no longer
-	 * written at all. Step 8 is where that costs something.
+	 * written at all. Step 8 is where that costs something. The bridge scope
+	 * every new dive carries is the one entry that names a branch.
 	 */
-	assert.doesNotMatch(mintedDoc, /^      work-branch: /m);
+	assert.equal(
+		(mintedDoc.match(/^      work-branch: /gm) ?? []).length,
+		1,
+		"only the bridge scope names a branch",
+	);
+	assert.match(mintedDoc, /^  - \S+:\n      ref: \S+\n      work-branch: work\/kb\nmeta:/m);
 	assert.doesNotMatch(mintedDoc, /^      mode: /m);
 
 	// 3. Preflight offers it, so a pilot finds the work without being told it exists.

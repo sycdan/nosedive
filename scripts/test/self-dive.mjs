@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, libUrl, run, runTool, seededBridge } from "../test-helpers.mjs";
+import {
+	assertOk,
+	createTmp,
+	implRepo,
+	libUrl,
+	pitchFeat,
+	run,
+	runTool,
+	seededBridge,
+	writeImplRepoDoc,
+} from "../test-helpers.mjs";
 
 const { helmCreatableKinds, helmRoots } = await import(libUrl);
 const tmp = createTmp("self-dive");
@@ -163,6 +173,64 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	assert.match(published, /local only/);
 	assert.match(published, /created memo ideas/);
 	assert.match(published, /dive edit/);
+});
+
+const IMPL_REPO = "01a0fe76-1da6-7642-a463-38849050d728";
+
+/** A seeded bridge holding one other repo, and a feat scoping only that repo. */
+function bridgeWithImplFeat(name) {
+	const seeded = seededBridge(tmp, name, "pilot@nosedive.invalid");
+	writeImplRepoDoc(seeded.bridge, IMPL_REPO, implRepo(tmp, `${name}-impl`));
+	runTool("git", ["add", "--", "kb"], seeded.bridge);
+	runTool("git", ["commit", "-m", "add an impl repo"], seeded.bridge);
+	runTool("git", ["push"], seeded.bridge);
+	const { featId } = pitchFeat(seeded.bridge, "Impl work.", `${name}-feat`, IMPL_REPO);
+	const config = readFileSync(join(seeded.bridge, ".nosedive", "config.yaml"), "utf8");
+	return { ...seeded, featId, bridgeId: /^bridge: (\S+)$/m.exec(config)[1] };
+}
+
+const scopeIds = (text) => [...text.matchAll(/^  - (\S+):$/gm)].map((match) => match[1]);
+
+test("every new dive scopes the bridge, and kb writes on it go to __self", () => {
+	const { bridge, featId, bridgeId } = bridgeWithImplFeat("every-dive");
+	const recorded = run(["crud", "dive", "--feat", featId, "Impl"], bridge, "Do impl work.\n");
+	assertOk(recorded, "crud dive failed");
+	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
+	const text = readFileSync(join(bridge, divePath), "utf8");
+	const scopes = text.slice(text.indexOf("scopes:"), text.indexOf("meta:"));
+	assert.deepEqual(scopeIds(scopes), [IMPL_REPO, bridgeId]);
+	assert.match(
+		scopes,
+		new RegExp(`- ${bridgeId}:\\n      ref: [0-9a-f]{40}\\n      work-branch: work/kb\\n`),
+		"the bridge scope lands where a kb-feat dive's does",
+	);
+
+	assertOk(run(["jump", divePath], bridge), "jump failed");
+	const self = join(bridge, "workspace", "__self");
+	const made = run(["crud", "memo", "--name", "notes", "Notes"], bridge);
+	assertOk(made, "crud memo failed");
+	const memoId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
+	assert.ok(existsSync(join(self, "kb", `${memoId}.md`)), "written in __self");
+	assert.ok(!existsSync(join(bridge, "kb", `${memoId}.md`)), "not in the live bridge");
+});
+
+test("a dive on a feat that already scopes the bridge scopes it once", () => {
+	const { bridge } = seededBridge(tmp, "once", "pilot@nosedive.invalid");
+	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Once"], bridge, "Once.\n");
+	assertOk(recorded, "crud dive failed");
+	const text = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(recorded.stdout)[1]), "utf8");
+	assert.equal(scopeIds(text.slice(0, text.indexOf("meta:"))).length, 1);
+});
+
+test("a bridge naming no bridge repo records dives as before", () => {
+	const { bridge, featId } = bridgeWithImplFeat("no-bridge-key");
+	const configPath = join(bridge, ".nosedive", "config.yaml");
+	writeFileSync(configPath, readFileSync(configPath, "utf8").replace(/^bridge: \S+\n/m, ""));
+	runTool("git", ["commit", "-am", "drop the bridge key"], bridge);
+	const recorded = run(["record.dive", "--feat", featId], bridge);
+	assertOk(recorded, "record.dive failed");
+	const text = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(recorded.stdout)[1]), "utf8");
+	assert.deepEqual(scopeIds(text.slice(0, text.indexOf("meta:"))), [IMPL_REPO]);
 });
 
 test("a second dive on the bridge lands only its own work, after the first landed through a merge", () => {

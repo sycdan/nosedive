@@ -7,6 +7,7 @@ import { CommandIo } from "./bridgeSetupIo.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { readStdinText } from "./stdinText.js";
 import {
+	defaultWorkBranch,
 	formatPath,
 	NosediveRc,
 	parseMarkdownDoc,
@@ -42,6 +43,7 @@ import {
 } from "./repoFeatScopes.js";
 import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
 import { managedDiveName, titleFromSlug } from "./slugs.js";
+import { KB_FEAT_ID } from "./shipZerostars.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 /** What a scope's branch fields become when a feat hands the repo down. */
@@ -53,6 +55,46 @@ function inheritedBranch(
 ): { workBranch?: string; readOnly: boolean } {
 	const workBranch = featWorkBranch(repoId, rc, kbDocs, feat);
 	return { workBranch, readOnly: !workBranch };
+}
+
+/**
+ * Every new dive scopes the bridge, because planning writes to the bridge kb
+ * and a dive whose feat scopes only another repo could not plan otherwise.
+ *
+ * The scope is what a feat scoping the bridge would hand down. A feat that says
+ * nothing about the bridge gets the branch the kb feat's bridge scope names, so
+ * kb changes land exactly as they do on a kb-feat dive; failing that, the
+ * branch seed gives the kb feat. `--clear-scopes` does not drop it -- the bridge
+ * is always in scope -- but an explicit `--unscope` of the bridge does.
+ */
+function withBridgeScope(
+	scopes: ScopeRef[],
+	unscopes: string[],
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	workspaceDir: string,
+	feat: KbDoc,
+): ScopeRef[] {
+	const bridgeId = rc.bridge;
+	const repo = bridgeId
+		? kbDocs.find((doc) => doc.id === bridgeId && doc.kind === "repo")
+		: undefined;
+	if (!repo || scopes.some((scope) => scope.repoId === repo.id)) return scopes;
+	if (unscopes.some((ref) => resolveScopeRepo(rc.bridgeDir, kbDocs, ref).id === repo.id))
+		return scopes;
+	const kbFeat = kbDocs.find((doc) => doc.id === KB_FEAT_ID);
+	const workBranch =
+		inheritedBranch(repo.id, rc, kbDocs, feat).workBranch ??
+		featWorkBranch(repo.id, rc, kbDocs, kbFeat) ??
+		defaultWorkBranch(rc, "kb");
+	return [
+		...scopes,
+		{
+			...pinnedScope(repo, rc.bridgeDir, workspaceDir, workBranch),
+			workBranch,
+			readOnly: false,
+		},
+	];
 }
 
 function featTitle(feat: KbDoc): string {
@@ -288,14 +330,16 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 						...branch,
 					};
 				});
-		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
-		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
-			throw new Error("duplicate repo scope");
+		const edited = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
 		// `--clear-scopes` and `--upscope` both say what the pilot wants; only the
 		// inherited path can come back empty without anyone having asked for it.
-		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
+		// Read before the bridge is added: the feat still scopes nothing.
+		if (!options.clearScopes && options.upscopes.length === 0 && edited.length === 0) {
 			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
 		}
+		const scopes = withBridgeScope(edited, options.unscopes, rc, kbDocs, workspaceDir, feat);
+		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
+			throw new Error("duplicate repo scope");
 		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, root));

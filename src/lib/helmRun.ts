@@ -22,9 +22,9 @@ function field(body: Record<string, unknown>, key: string): string {
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
 		case "jump": {
-			const deck =
-				typeof body.deck === "string" && body.deck.trim() ? ["--deck", body.deck.trim()] : [];
-			return { args: ["jump", field(body, "ref"), ...deck], stdin: "" };
+			const root =
+				typeof body.root === "string" && body.root.trim() ? ["--root", body.root.trim()] : [];
+			return { args: ["jump", field(body, "ref"), ...root], stdin: "" };
 		}
 		case "pack":
 			return { args: ["pack"], stdin: "" };

@@ -25,25 +25,25 @@ function card(dive: KbDoc, byId: Map<string, KbDoc>): HelmDiveCard {
 }
 
 /**
- * The dives a deck reaches that are still dives -- the selection `nosedive
- * find dive` makes from the backlog, made from the deck (the backlog when none
+ * The dives a root reaches that are still dives -- the selection `nosedive
+ * find dive` makes from the backlog, made from the root (the backlog when none
  * is named), or from one feat under it, and narrowed by its term -- and the
  * active one.
  */
 export function helmDives(
 	cwd: string,
 	term?: string,
-	deck?: string,
+	root?: string,
 	feat?: string,
 ): { active: HelmDiveCard | null; dives: HelmDiveCard[] } {
 	const rc = readNosediveRc(cwd);
 	if (!rc.kbDir) throw new Error("helm requires a configured kb directory");
 	const docs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const rootId = feat ?? deck ?? rc.backlog;
-	const root = rootId ? byId.get(rootId) : undefined;
-	const reached = root
-		? findDocs(root, docs, "dive", term || undefined, rc.bridgeDir, {
+	const startId = feat ?? root ?? rc.backlog;
+	const start = startId ? byId.get(startId) : undefined;
+	const reached = start
+		? findDocs(start, docs, "dive", term || undefined, rc.bridgeDir, {
 				scopeIds: new Set(),
 				kinds: ["dive"],
 			})

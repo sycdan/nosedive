@@ -30,7 +30,7 @@ const {
 } = await import(libUrl);
 
 const KIND = "00000000-0000-70a0-90bd-1d49dc6264b9";
-const DECK = "00000000-0000-7d1f-805a-7d0a3bdff309";
+const DIVE_KIND = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
 
 const tmp = createTmp("kinds");
 const minted = run(["mint", "6"], tmp);
@@ -40,7 +40,7 @@ const [BACKLOG_KIND, CARD_A, CARD_B, REPO_A, REPO_B, DIVE] = minted.stdout.trim(
 const packageSource = { name: "nosedive", root, kbDir: join(root, "kb") };
 const packageKinds = loadKinds([packageSource]);
 const kindKind = resolveKind(packageKinds, "kind");
-const deckKind = resolveKind(packageKinds, "deck");
+const diveKind = resolveKind(packageKinds, "dive");
 
 function kindDoc(id, name, meta) {
 	return [
@@ -68,13 +68,14 @@ const CARD_META = [
 	"      minimum: 0",
 ];
 
-test("the kind kind validates itself, and the deck kind against it", () => {
+test("the kind kind validates itself, and the dive kind against it", () => {
 	assert.ok(kindKind, "package ships a kind named kind");
 	assert.equal(kindKind.id, KIND);
 	assert.deepEqual(validateMeta(kindKind, kindKind.meta), []);
-	assert.ok(deckKind, "package ships a kind named deck");
-	assert.equal(deckKind.id, DECK);
-	assert.deepEqual(validateMeta(kindKind, deckKind.meta), []);
+	assert.ok(diveKind, "package ships a kind named dive");
+	assert.equal(diveKind.id, DIVE_KIND);
+	assert.deepEqual(validateMeta(kindKind, diveKind.meta), []);
+	assert.equal(resolveKind(packageKinds, "deck"), undefined, "no deck kind ships");
 });
 
 test("a kind doc with an open schema, a non-schema, or no schema is rejected", () => {
@@ -115,19 +116,20 @@ test("instances are validated against their kind with path-qualified errors", ()
 	assert.match(unknown.warning, /no kind widget/);
 });
 
-test("a deck or dive kind counts only from a bridge; other kinds count anywhere", () => {
+test("a dive kind counts only from a bridge; other kinds count anywhere", () => {
 	const bridge = createBridge(tmp, "homed");
-	write(join(bridge, "kb", `${DECK}.md`), readFileSync(join(root, "kb", `${DECK}.md`), "utf8"));
+	write(
+		join(bridge, "kb", `${DIVE_KIND}.md`),
+		readFileSync(join(root, "kb", `${DIVE_KIND}.md`), "utf8"),
+	);
 	const bridgeSource = { name: "homed", root: bridge, kbDir: join(bridge, "kb") };
 	const homed = bridgeHomed(loadKinds([packageSource, bridgeSource]));
 	assert.deepEqual(
-		homed
-			.filter((kind) => kind.name === "deck" || kind.name === "dive")
-			.map((kind) => kind.source.name),
+		homed.filter((kind) => kind.name === "dive").map((kind) => kind.source.name),
 		["homed"],
-		"nosedive's own deck and dive kinds are not candidates; the bridge's deck is",
+		"nosedive's own dive kind is not a candidate; the bridge's is",
 	);
-	assert.equal(resolveKind(homed, "deck").source.root, bridge);
+	assert.equal(resolveKind(homed, "dive").source.root, bridge);
 	assert.ok(resolveKind(homed, "memo"), "memo is not bridge-only");
 });
 

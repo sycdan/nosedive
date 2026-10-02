@@ -147,18 +147,6 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	const bad = run(["crud", "note", "--name", "sleeves..!", "y"], bridge);
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /nothing to slug/);
-
-	const { bridge: seeded } = seededBridge(tmp, "named-deck", "pilot@nosedive.invalid");
-	// A deck is named like any doc.
-	const deck = run(["crud", "deck", "--name", "mtg", "Magic:", "The", "Gathering"], seeded);
-	assertOk(deck, "crud deck --name failed");
-	const seededConfig = readFileSync(join(seeded, ".nosedive", "config.yaml"), "utf8");
-	const deckId = madeId(deck.stdout);
-	const deckText = readFileSync(join(seeded, "kb", `${deckId}.md`), "utf8");
-	assert.match(deckText, /^name: mtg$/m);
-	assert.match(deckText, /^# Magic: The Gathering$/m);
-	assert.match(seededConfig, new RegExp(`^decks: .*, ${deckId}$`, "m"));
-	assert.equal(subject(seeded), `crud(${deckId}): created deck mtg`);
 });
 
 test("crud refuses an ambiguous match, an unknown kind, and a mint its kind would reject", () => {
@@ -225,30 +213,18 @@ test("a new doc takes its meta whole from stdin, validated; a new kind starts wi
 	);
 });
 
-test("crud deck mints a deck and lists it in decks, in one commit", () => {
+test("crud deck is an unknown kind, and touches nothing", () => {
 	const { bridge } = seededBridge(tmp, "decks", "pilot@nosedive.invalid");
 	const config = () => readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
-	const backlog = /^backlog: (\S+)$/m.exec(config())[1];
+	const configBefore = config();
+	const before = commits(bridge);
 
 	const made = run(["crud", "deck", "Magic:", "The", "Gathering"], bridge);
-	assertOk(made, "crud deck failed");
-	const id = madeId(made.stdout);
-	assert.ok(id, made.stdout);
-	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
-	assert.match(text, /^kind: deck$/m);
-	assert.match(text, new RegExp(`^name: ${id}$`, "m"));
-	assert.match(text, /^# Magic: The Gathering$/m);
-	// With no decks: yet, the backlog is written in first so it stays visible.
-	assert.match(config(), new RegExp(`^decks: ${backlog}, ${id}$`, "m"));
-	assert.equal(subject(bridge), `crud(${id}): created deck ${id}`);
-	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD"], bridge).split(/\r?\n/).sort(),
-		[".nosedive/config.yaml", `kb/${id}.md`],
-	);
-
-	const read = run(["crud", "deck", "magic the gathering"], bridge);
-	assertOk(read, "crud deck read failed");
-	assert.equal(read.stdout, text);
+	assert.equal(made.status, 1, made.stdout);
+	assert.match(made.stderr, /no kind deck in context/);
+	assert.equal(commits(bridge), before);
+	assert.equal(config(), configBefore);
+	assert.equal(git(["status", "--porcelain"], bridge), "");
 });
 
 test("on a dive crud works only in the scoped repos, and commits where the kind lives", () => {
@@ -258,9 +234,12 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 		join(cards.source, "kb", `${CARD_KIND}.md`),
 		kindDoc(CARD_KIND, "card", ["properties: {}"]),
 	);
-	// The repo carries the deck kind too -- as nosedive's own repo does -- but is no bridge.
-	const DECK_FILE = "00000000-0000-7d1f-805a-7d0a3bdff309.md";
-	write(join(cards.source, "kb", DECK_FILE), readFileSync(join(root, "kb", DECK_FILE), "utf8"));
+	// The repo carries the dive kind too -- as nosedive's own repo does -- but is no bridge.
+	const DIVE_KIND_FILE = "00000000-0000-77cb-bcfe-6c9fb07f42ab.md";
+	write(
+		join(cards.source, "kb", DIVE_KIND_FILE),
+		readFileSync(join(root, "kb", DIVE_KIND_FILE), "utf8"),
+	);
 	runTool("git", ["add", "."], cards.source);
 	gitCommit(cards.source, "card kind");
 	runTool("git", ["push", "cloud", "main"], cards.source);
@@ -298,16 +277,16 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	assertOk(read, "crud <quid> on a dive failed");
 	assert.match(read.stdout, /^gist: "Lightning Bolt"$/m);
 
-	// A deck belongs to a bridge: minting one through a scoped repo's deck kind
+	// A dive belongs to a bridge: recording one through a scoped repo's dive kind
 	// must neither write to that repo nor reach past the dive into the bridge.
 	const configBefore = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
 	const worktreeBefore = commits(worktree);
-	const deck = run(["crud", "deck", "Elves"], bridge);
-	assert.equal(deck.status, 1, deck.stdout);
+	const dive = run(["crud", "dive", "--feat", id, "Elves"], bridge, "A brief.\n");
+	assert.equal(dive.status, 1, dive.stdout);
 	assert.match(
-		deck.stderr,
-		/no kind deck in context/,
-		"a deck kind outside a bridge is not in play",
+		dive.stderr,
+		/no kind dive in context/,
+		"a dive kind outside a bridge is not in play",
 	);
 	assert.equal(commits(bridge), bridgeBefore);
 	assert.equal(commits(worktree), worktreeBefore);
@@ -387,7 +366,7 @@ test("a kind two repos in play define is named <repo>:<kind>, and a doc's meta c
 test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {
 	const { bridge } = seededBridge(tmp, "dives", "pilot@nosedive.invalid");
 	const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
-	const deck = /^backlog: (\S+)$/m.exec(
+	const rootId = /^backlog: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
 	)[1];
 	const made = run(
@@ -396,8 +375,8 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 			"dive",
 			"--feat",
 			KB_FEAT,
-			"--deck",
-			deck,
+			"--root",
+			rootId,
 			"--title",
 			"Note button",
 			"Add",
@@ -416,7 +395,7 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	assert.match(doc, /^gist: "Add the note button"$/m);
 	assert.match(doc, new RegExp(`^  feat: ${KB_FEAT}$`, "m"));
 	assert.match(doc, /^  diver: null$/m, "recording claims nothing");
-	assert.match(doc, new RegExp(`^  deck: ${deck}$`, "m"));
+	assert.match(doc, new RegExp(`^  root: ${rootId}$`, "m"));
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
 	assert.match(subject(bridge), /^dive\(\S+\): created$/);
@@ -425,8 +404,8 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	for (const [args, pattern] of [
 		[["dive", "No", "feat"], /crud dive needs --feat/],
 		[["dive", "--feat", KB_FEAT, "--name", "mine", "Named"], /a dive's name is managed/],
-		[["deck", "--feat", KB_FEAT, "Elves"], /--feat, --title and --deck go with crud dive/],
-		[["dive", "--feat", KB_FEAT, "--deck", "nope", "Lost"], /no deck nope/],
+		[["memo", "--feat", KB_FEAT, "Elves"], /--feat, --title and --root go with crud dive/],
+		[["dive", "--feat", KB_FEAT, "--root", "nope", "Lost"], /no root nope/],
 	]) {
 		const refused = run(["crud", ...args], bridge, "brief\n");
 		assert.equal(refused.status, 1, args.join(" "));

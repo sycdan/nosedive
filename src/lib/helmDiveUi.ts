@@ -77,9 +77,9 @@ function noteButton() {
  */
 function noteDialog() {
 	const text = el("textarea", { rows: "4", placeholder: "todo: take over the world", "aria-label": "note" });
-	// The picked deck's repos it is about: nosedive note scopes the note to them and links it from each.
+	// The picked root's repos it is about: nosedive note scopes the note to them and links it from each.
 	const repos = el("fieldset", { class: "repos", hidden: "" }, el("legend", {}, "about"));
-	api("/api/repos" + (ctx.deck ? "?deck=" + ctx.deck : "")).then((list) => {
+	api("/api/repos" + (ctx.root ? "?root=" + ctx.root : "")).then((list) => {
 		repos.append(...list.map((repo) => el("label", { class: "toggle" },
 			el("span", {}, repo.name), el("input", { type: "checkbox", role: "switch", value: repo.id }))));
 		repos.hidden = !list.length;
@@ -184,8 +184,8 @@ async function runVerb(body) {
 	}
 	out.classList.remove("streaming");
 	await loadDives();
-	// A land can add a deck to the bridge, so the tree re-reads them too.
-	await loadDecks();
+	// A land can add a root to the bridge, so the tree re-reads them too.
+	await loadRoots();
 	refreshRepos();
 }
 
@@ -200,7 +200,7 @@ function diveCard(dive) {
 			dive.diver ? fact("warn", "held by", dive.diver) : null));
 }
 
-/** A feat is a feat doc, or any doc a deck links as <type>.feat. */
+/** A feat is a feat doc, or any doc a root links as <type>.feat. */
 function isFeatStep(step) {
 	return step.kind === "feat" || /(^|\.)feat$/.test(step.rel || "");
 }
@@ -225,7 +225,7 @@ function planForm(doc) {
 		el("button", { type: "submit" }, "Plan dive"), out);
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/dive", { feat: doc.id, deck: ctx.deck || undefined, title: title.value || undefined, gist: gist.value, brief: brief.value });
+			const run = await write("/api/crud/dive", { feat: doc.id, root: ctx.root || undefined, title: title.value || undefined, gist: gist.value, brief: brief.value });
 			show(run.stdout);
 			form.reset();
 		} catch (err) {
@@ -236,7 +236,7 @@ function planForm(doc) {
 }
 
 function jumpInto(doc) {
-	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id, deck: ctx.deck || undefined }));
+	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.id, root: ctx.root || undefined }));
 }
 
 /**
@@ -250,7 +250,7 @@ function stageOpened(doc) {
 
 /**
  * With no active dive, the page is for getting onto one: the dives the picked
- * deck reaches, or -- given a feat -- the ones that feat reaches, which, when
+ * root reaches, or -- given a feat -- the ones that feat reaches, which, when
  * it has none, can be jumped straight into.
  */
 function divePicker(feat) {
@@ -258,7 +258,7 @@ function divePicker(feat) {
 	const cards = el("div", { class: "cards" });
 	const fill = async () => {
 		const params = new URLSearchParams({ q: search.value.trim() });
-		if (ctx.deck) params.set("deck", ctx.deck);
+		if (ctx.root) params.set("root", ctx.root);
 		if (feat) params.set("feat", feat.id);
 		const listing = await api("/api/dives?" + params);
 		const none = feat && !search.value.trim()

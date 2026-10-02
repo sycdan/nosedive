@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
 import { parseYamlBlock, readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { parseDecks } from "./decks.js";
+import { parseRoots } from "./roots.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { repoKbDir } from "./kinds.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -50,11 +50,11 @@ function selfCheckout(rc: NosediveRc, docs: KbDoc[]): string | undefined {
 		: undefined;
 }
 
-/** The decks the view's config lists, read by path: a checkout must not resolve to the bridge around it. */
-export function viewDecks(view: BridgeView): string[] {
+/** The roots the view's config lists, read by path: a checkout must not resolve to the bridge around it. */
+export function viewRoots(view: BridgeView): string[] {
 	const path = view.self
 		? join(view.self.root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME)
 		: view.rc.path;
 	const config = parseYamlBlock(readFileSync(path, "utf8"), path);
-	return parseDecks(config.raw.decks, view.rc.backlog);
+	return parseRoots(config.raw.roots, view.rc.backlog);
 }

@@ -81,7 +81,7 @@ function renderNewDive(
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
 	brief: string | undefined,
-	deck: string | undefined,
+	root: string | undefined,
 ): string {
 	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
@@ -93,7 +93,7 @@ function renderNewDive(
 		...renderScopes(scopes),
 		"meta:",
 		`  feat: ${feat.id}`,
-		...(deck ? [`  deck: ${deck}`] : []),
+		...(root ? [`  root: ${root}`] : []),
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -225,12 +225,12 @@ export interface RecordDiveExtras {
 	 * and workspace. Such a dive is recorded, never claimed.
 	 */
 	target?: DiveTarget;
-	/** The deck a new dive was planned or jumped from, kept as `meta.deck`. */
-	deck?: string;
+	/** The root a new dive was planned or jumped from, kept as `meta.root`. */
+	root?: string;
 }
 
 export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtras = {}): void {
-	const { newId, target, deck } = extras;
+	const { newId, target, root } = extras;
 	let brief = extras.brief;
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
@@ -261,8 +261,8 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
-		if (deck !== undefined && !kbDocs.some((doc) => doc.id === deck))
-			throw new Error(`no deck ${deck} in ${formatPath(kbDir)}`);
+		if (root !== undefined && !kbDocs.some((doc) => doc.id === root))
+			throw new Error(`no root ${root} in ${formatPath(kbDir)}`);
 		/**
 		 * A new dive inherits its feat's repos, and inherits where they land only
 		 * where the feat has said. A feat that has not said hands down a pinned but
@@ -298,7 +298,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		}
 		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, deck));
+		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, root));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);

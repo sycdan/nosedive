@@ -1,33 +1,33 @@
 /**
- * The page's left tree and deck picker, spliced into its script. The picked
- * deck heads the tree, then the feats it links and theirs -- dives are cards
+ * The page's left tree and root picker, spliced into its script. The picked
+ * root heads the tree, then the feats it links and theirs -- dives are cards
  * in the main view, never rows; repos and kinds have a view of their own.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
 
-/** The backlog memo, the bridge deck: the deck picked when nothing else is. */
-let bridgeDeck = null;
-const deckNames = new Map();
-const DECK_KEY = "helm-deck";
-/** The picked deck's feats, as its links name them: what Add as feat offers to nest under. */
-let deckFeats = [];
+/** The backlog memo: the root picked when nothing else is. */
+let backlogRoot = null;
+const rootNames = new Map();
+const ROOT_KEY = "helm-root";
+/** The picked root's feats, as its links name them: what Add as feat offers to nest under. */
+let rootFeats = [];
 
-function rememberedDeck() {
-	try { return localStorage.getItem(DECK_KEY); } catch { return null; }
+function rememberedRoot() {
+	try { return localStorage.getItem(ROOT_KEY); } catch { return null; }
 }
 
-function rememberDeck(id) {
-	try { localStorage.setItem(DECK_KEY, id); } catch { /* a private window keeps nothing */ }
+function rememberRoot(id) {
+	try { localStorage.setItem(ROOT_KEY, id); } catch { /* a private window keeps nothing */ }
 }
 
-function deckStep(id) {
-	return { id, name: deckNames.get(id) || id, kind: "deck" };
+function rootStep(id) {
+	return { id, name: rootNames.get(id) || id, kind: "root" };
 }
 
-/** A doc's name in the tree and the breadcrumbs; the backlog is always the bridge deck. */
+/** A doc's name in the tree and the breadcrumbs. */
 function label(doc) {
-	return bridgeDeck && doc.id === bridgeDeck.id ? "Bridge deck" : display(doc);
+	return display(doc);
 }
 
 /** Dives are cards in the main view, so the tree leaves them out. */
@@ -117,7 +117,7 @@ function node(item, ancestors, hideRel) {
 	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;
 }
 
-/** A heading in the tree; the bridge deck's opens that deck. */
+/** A heading in the tree; the root's opens that root. */
 function section(title, onPick) {
 	const heading = el("button", { class: "label", disabled: onPick ? null : "" }, el("span", { class: "text" }, title));
 	if (onPick) heading.addEventListener("click", () => onPick(row));
@@ -125,19 +125,19 @@ function section(title, onPick) {
 	return el("li", { class: "section" }, row);
 }
 
-/** The picker in the header: the bridge deck and the other decks; locked on a dive. */
+/** The picker in the header: the backlog and the other roots; locked on a dive. */
 function renderPicker(listing) {
-	const picker = document.getElementById("deckpick");
-	const options = [bridgeDeck, ...listing.decks].filter(Boolean)
-		.map((deck) => el("option", { value: deck.id }, deckNames.get(deck.id)));
+	const picker = document.getElementById("rootpick");
+	const options = [backlogRoot, ...listing.roots].filter(Boolean)
+		.map((root) => el("option", { value: root.id }, rootNames.get(root.id)));
 	picker.replaceChildren(...options);
-	picker.value = ctx.deck || "";
+	picker.value = ctx.root || "";
 	picker.disabled = listing.locked;
-	picker.title = listing.locked ? "On a dive, the deck is the dive's" : "Pick a deck";
+	picker.title = listing.locked ? "On a dive, the root is the dive's" : "Pick a root";
 	picker.onchange = async () => {
-		rememberDeck(picker.value);
-		Object.assign(ctx, { deck: picker.value, feat: null, repo: null, kind: null });
-		await loadDecks();
+		rememberRoot(picker.value);
+		Object.assign(ctx, { root: picker.value, feat: null, repo: null, kind: null });
+		await loadRoots();
 		reset();
 	};
 }
@@ -153,25 +153,25 @@ function renderBranch(branch) {
 	badge.onclick = showBranch;
 }
 
-/** Reads the picked deck and fills the tree with it. */
-async function loadDecks() {
-	const wanted = ctx.deck || rememberedDeck();
-	const listing = await api("/api/decks" + (wanted ? "?deck=" + wanted : ""));
+/** Reads the picked root and fills the tree with it. */
+async function loadRoots() {
+	const wanted = ctx.root || rememberedRoot();
+	const listing = await api("/api/roots" + (wanted ? "?root=" + wanted : ""));
 	bridge = listing.bridge;
 	renderBranch(bridge.branch);
-	bridgeDeck = listing.bridgeDeck || null;
-	deckIds.clear();
-	deckNames.clear();
-	if (bridgeDeck) { deckIds.add(bridgeDeck.id); deckNames.set(bridgeDeck.id, "Bridge deck"); }
-	for (const deck of listing.decks) { deckIds.add(deck.id); deckNames.set(deck.id, display(deck)); }
-	if (ctx.deck !== listing.deck) Object.assign(ctx, { feat: null, repo: null, kind: null });
-	ctx.deck = listing.deck || null;
+	backlogRoot = listing.backlog || null;
+	rootIds.clear();
+	rootNames.clear();
+	if (backlogRoot) { rootIds.add(backlogRoot.id); rootNames.set(backlogRoot.id, display(backlogRoot)); }
+	for (const root of listing.roots) { rootIds.add(root.id); rootNames.set(root.id, display(root)); }
+	if (ctx.root !== listing.root) Object.assign(ctx, { feat: null, repo: null, kind: null });
+	ctx.root = listing.root || null;
 	renderPicker(listing);
-	deckFeats = listing.feats;
-	const home = ctx.deck ? [deckStep(ctx.deck)] : [];
+	rootFeats = listing.feats;
+	const home = ctx.root ? [rootStep(ctx.root)] : [];
 	const items = [];
-	if (ctx.deck)
-		items.push(section(deckNames.get(ctx.deck), (row) => { highlight(row); reset(); }),
+	if (ctx.root)
+		items.push(section(rootNames.get(ctx.root), (row) => { highlight(row); reset(); }),
 			...groupedRows(listing.feats, (feat, hideRel) => node(feat, home, hideRel)));
 	document.getElementById("tree").replaceChildren(...items);
 }

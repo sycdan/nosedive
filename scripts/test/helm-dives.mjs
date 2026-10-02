@@ -145,14 +145,14 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	assert.deepEqual(dive.repos, ["cards"]);
 	assert.equal((await get("/api/dives?q=elves")).dives.length, 1, "search by term");
 	assert.equal((await get("/api/dives?q=goblins")).dives.length, 0);
-	assert.equal((await get(`/api/dives?deck=${BACKLOG}&feat=${FEAT}`)).dives.length, 1, "by feat");
+	assert.equal((await get(`/api/dives?root=${BACKLOG}&feat=${FEAT}`)).dives.length, 1, "by feat");
 	assert.equal(
-		(await get(`/api/dives?deck=${BACKLOG}&feat=${REPO}`)).dives.length,
+		(await get(`/api/dives?root=${BACKLOG}&feat=${REPO}`)).dives.length,
 		0,
 		"a doc reaching no dive lists none",
 	);
 
-	const staged = await get(`/api/context?deck=${BACKLOG}&dive=${dive.id}`);
+	const staged = await get(`/api/context?root=${BACKLOG}&dive=${dive.id}`);
 	assert.deepEqual(
 		staged.repos.map((repo) => repo.id),
 		[REPO],
@@ -208,13 +208,13 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const dehydrated = await runVerb({ verb: "dehydrate", repo: REPO });
 	assert.equal(dehydrated.exit, 0, dehydrated.text);
 	assert.equal(existsSync(worktree), false);
-	const cardAfter = (await get(`/api/context?deck=${BACKLOG}`)).repos[0];
+	const cardAfter = (await get(`/api/context?root=${BACKLOG}`)).repos[0];
 	assert.equal(cardAfter.hydrated, null);
 
 	const hydrated = await runVerb({ verb: "hydrate", repo: REPO, at: "main" });
 	assert.equal(hydrated.exit, 0, hydrated.text);
 	assert.ok(existsSync(worktree));
-	const card = (await get(`/api/context?deck=${BACKLOG}`)).repos[0];
+	const card = (await get(`/api/context?root=${BACKLOG}`)).repos[0];
 	assert.match(card.hydrated.commit, /^[0-9a-f]{40}$/);
 
 	const nope = await runVerb({ verb: "nuke" });

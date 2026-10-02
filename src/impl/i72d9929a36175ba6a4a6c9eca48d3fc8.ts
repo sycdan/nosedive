@@ -340,7 +340,7 @@ export function jump(args: string[], io: CommandIo): void {
 	// bridge would only fail at the push, leaving a half-made dive behind.
 	assertBridgeInStep(rc.bridgeDir);
 
-	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked.ref, io, asked.deck);
+	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked.ref, io, asked.root);
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	// A refusal here is already on stderr with the exit code set: what it has to
 	// say is a list of the dives that could be jumped instead, which reads far

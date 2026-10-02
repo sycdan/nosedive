@@ -61,7 +61,7 @@ async function runMerge(name, button, root, list) {
 		failed = true;
 	}
 	syncNotice(failed ? "Merge refused" : "Merged", text, failed);
-	await loadDecks();
+	await loadRoots();
 	if (root.isConnected) await drawBranch(root);
 }
 `;

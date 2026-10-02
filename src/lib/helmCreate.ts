@@ -14,7 +14,7 @@ export interface HelmCreatableKind {
 /**
  * What the dive bar can make: every kind in the repos the active dive scopes,
  * by repo then name, with its schema for the form. None with no dive, since
- * helm writes only on one. A deck or dive kind counts only from a bridge, and
+ * helm writes only on one. The dive kind counts only from a bridge, and
  * dives are left out: one is planned on its feat, where the feat is known.
  */
 export function helmCreatableKinds(cwd: string): HelmCreatableKind[] {

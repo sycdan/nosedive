@@ -5,22 +5,22 @@ import { test } from "node:test";
 
 import { assertOk, createTmp, libUrl, run, runTool, seededBridge } from "../test-helpers.mjs";
 
-const { helmCreatableKinds, helmDecks } = await import(libUrl);
+const { helmCreatableKinds, helmRoots } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 
-test("a deck made on a dive that scopes the bridge goes to its __self checkout, and the live bridge is untouched", () => {
+test("a root made on a dive that scopes the bridge goes to its __self checkout, and the live bridge is untouched", () => {
 	const { bridge, origin } = seededBridge(tmp, "self", "pilot@nosedive.invalid");
 	const configPath = join(bridge, ".nosedive", "config.yaml");
 	const liveConfig = readFileSync(configPath, "utf8");
 
 	// The kb feat scopes the bridge itself, so jumping a dive on it hydrates __self.
 	const recorded = run(
-		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "deck"],
+		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "root"],
 		bridge,
-		"Make a deck.\n",
+		"Make a root.\n",
 	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
@@ -30,27 +30,36 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	// The dive bar offers what the dive can make: the bridge's kinds, but no dive kind.
 	assert.deepEqual(
 		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:deck", "self:kind", "self:memo"],
+		["self:kind", "self:memo"],
 	);
 	assert.ok(helmCreatableKinds(bridge)[1].schema, "each kind carries its schema for the form");
 
-	const made = run(["crud", "deck", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
-	assertOk(made, "crud deck failed");
-	const deckId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
-	assert.match(made.stdout, /Listed \S+ in workspace[\\/]__self[\\/]\.nosedive[\\/]config\.yaml/);
+	const made = run(["crud", "memo", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
+	assertOk(made, "crud memo failed");
+	const rootId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
+	assert.equal(
+		git(["log", "-1", "--format=%s"], self),
+		`crud(${rootId}): created memo magic-cards`,
+	);
+	// Listed as a root in the checkout's own config, as a pilot would.
+	const selfConfig = join(self, ".nosedive", "config.yaml");
+	writeFileSync(selfConfig, `${readFileSync(selfConfig, "utf8")}roots: ${rootId}\n`);
+	runTool("git", ["add", ".nosedive/config.yaml"], self);
+	runTool("git", ["commit", "-m", "list a root"], self);
 
-	// Helm shows the bridge as the dive has it: the new deck already, the kb feat first at the root.
-	const view = helmDecks(bridge);
+	// Helm shows the bridge as the dive has it: the new root already, the kb feat first.
+	const view = helmRoots(bridge);
 	assert.equal(view.diving, true);
 	assert.deepEqual(
-		view.decks.map((deck) => deck.id),
-		[deckId],
+		view.roots.map((root) => root.id),
+		[rootId],
 	);
 	assert.equal(view.feats[0].id, KB_FEAT);
 	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
-	assert.equal(view.locked, true, "on a dive the deck is the dive's");
-	assert.equal(view.deck, backlog, "a dive naming no deck is on the bridge deck");
-	assert.equal(helmDecks(bridge, deckId).deck, backlog, "a pick cannot move a locked deck");
+	assert.equal(view.backlog.id, backlog);
+	assert.equal(view.locked, true, "on a dive the root is the dive's");
+	assert.equal(view.root, backlog, "a dive naming no root is on the backlog");
+	assert.equal(helmRoots(bridge, rootId).root, backlog, "a pick cannot move a locked root");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -81,13 +90,8 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 
 	assert.match(
 		readFileSync(join(self, ".nosedive", "config.yaml"), "utf8"),
-		new RegExp(`^decks: .*${deckId}$`, "m"),
+		new RegExp(`^roots: ${rootId}$`, "m"),
 		"listed in the checkout's own config",
-	);
-	assert.deepEqual(
-		git(["show", "--name-only", "--format=", "HEAD~1"], self).split(/\r?\n/).sort(),
-		[".nosedive/config.yaml", `kb/${deckId}.md`],
-		"the deck and its listing are one commit in __self",
 	);
 	assert.equal(
 		readFileSync(configPath, "utf8"),
@@ -100,34 +104,34 @@ test("a deck made on a dive that scopes the bridge goes to its __self checkout, 
 	const landed = run(["land"], bridge);
 	assertOk(landed, "land failed");
 	assert.match(landed.stderr, /brought the bridge's own scope into the bridge/);
-	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), new RegExp(deckId));
-	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(deckId));
-	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^decks: .*${deckId}$`, "m"));
-	assert.match(readFileSync(join(bridge, "kb", `${deckId}.md`), "utf8"), /^name: magic-cards$/m);
+	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), new RegExp(rootId));
+	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(rootId));
+	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^roots: ${rootId}$`, "m"));
+	assert.match(readFileSync(join(bridge, "kb", `${rootId}.md`), "utf8"), /^name: magic-cards$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 
 	assert.deepEqual(helmCreatableKinds(bridge), [], "with no dive helm makes nothing");
 
-	// With no dive the pilot picks: the deck is theirs, and its feats are its own.
-	const picked = helmDecks(bridge, deckId);
+	// With no dive the pilot picks: the root is theirs, and its feats are its own.
+	const picked = helmRoots(bridge, rootId);
 	assert.equal(picked.locked, false);
-	assert.equal(picked.deck, deckId);
-	assert.deepEqual(picked.feats, [], "the new deck links no feats yet");
-	assert.equal(helmDecks(bridge, "not-a-deck").deck, backlog, "an unknown pick falls back");
+	assert.equal(picked.root, rootId);
+	assert.deepEqual(picked.feats, [], "the new root links no feats yet");
+	assert.equal(helmRoots(bridge, "not-a-root").root, backlog, "an unknown pick falls back");
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {
 	const { bridge, origin } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
 	const recorded = run(
-		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "deck"],
+		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "memo"],
 		bridge,
-		"Make a deck.\n",
+		"Make a memo.\n",
 	);
 	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1]], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
-	assertOk(run(["crud", "deck", "--name", "ideas", "Ideas"], bridge), "crud deck failed");
+	assertOk(run(["crud", "memo", "--name", "ideas", "Ideas"], bridge), "crud memo failed");
 
 	// A local-only bridge commit adding the same file the dive adds conflicts.
 	writeFileSync(join(bridge, "shared.md"), "the live bridge says one thing\n");
@@ -157,7 +161,7 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	assertOk(landed, "land failed");
 	const published = git(["log", "--format=%s", "main"], origin);
 	assert.match(published, /local only/);
-	assert.match(published, /created deck ideas/);
+	assert.match(published, /created memo ideas/);
 	assert.match(published, /dive edit/);
 });
 
@@ -165,7 +169,7 @@ test("a second dive on the bridge lands only its own work, after the first lande
 	const { bridge, origin } = seededBridge(tmp, "self-twice", "pilot@nosedive.invalid");
 	const dive = (name) => {
 		assertOk(run(["jump", KB_FEAT], bridge), "jump failed");
-		assertOk(run(["crud", "deck", "--name", name, name], bridge), "crud deck failed");
+		assertOk(run(["crud", "memo", "--name", name, name], bridge), "crud memo failed");
 		// Edit the dived feat too: the first dive's bookkeeping touched it, and so did jump's.
 		assertOk(
 			run(["crud", KB_FEAT, "--meta", "-"], bridge, `note: ${name}\n`),
@@ -177,7 +181,7 @@ test("a second dive on the bridge lands only its own work, after the first lande
 	dive("first");
 	dive("second");
 	const published = git(["log", "--format=%s", "main"], origin);
-	assert.equal(published.match(/created deck first/g)?.length, 1, "the first deck lands once");
-	assert.equal(published.match(/created deck second/g)?.length, 1);
+	assert.equal(published.match(/created memo first/g)?.length, 1, "the first memo lands once");
+	assert.equal(published.match(/created memo second/g)?.length, 1);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 });

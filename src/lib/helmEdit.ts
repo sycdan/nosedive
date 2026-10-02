@@ -100,12 +100,12 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	return form;
 }
 
-/** With no dive, the empty page's way onto one: the bridge's own standing feat, on the bridge deck only. */
-function deckForm() {
+/** With no dive, the empty page's way onto one: the bridge's own standing feat, on the backlog root only. */
+function rootForm() {
 	if (dives.active) return [];
-	if (ctx.deck && bridgeDeck && ctx.deck !== bridgeDeck.id)
+	if (ctx.root && backlogRoot && ctx.root !== backlogRoot.id)
 		return [el("p", { class: "empty" }, "Pick a feat in the tree to plan a dive on it, or dive it free.")];
-	const hint = el("p", { class: "empty" }, "Jump a dive to make a deck.");
+	const hint = el("p", { class: "empty" }, "Jump a dive to make a root.");
 	api("/api/doc?id=" + KB_FEAT).then((feat) => hint.replaceWith(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
 	return [hint];
 }

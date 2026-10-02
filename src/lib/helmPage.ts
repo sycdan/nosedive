@@ -17,17 +17,17 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="deckpick" aria-label="Deck"></select><span id="headacts"></span></header>
+<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="rootpick" aria-label="Root"></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
 <script>
 const token = new URLSearchParams(location.search).get("token");
-const deckIds = new Set();
+const rootIds = new Set();
 let bridge = { name: "" };
 let selectedRow = null;
-/** What is picked and selected: the deck, a feat under it, and the repo and kind the subtrees show. */
-const ctx = { deck: null, feat: null, repo: null, kind: null };
+/** What is picked and selected: the root, a feat under it, and the repo and kind the subtrees show. */
+const ctx = { root: null, feat: null, repo: null, kind: null };
 const OUT_OF_REACH = "crud cannot write here now: jump a dive that scopes it to edit";
 
 async function api(path) {
@@ -60,10 +60,10 @@ function display(doc) {
 	return /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(doc.name) ? doc.title || doc.gist || doc.name : doc.name;
 }
 
-function contextQuery(deckId, withRepo) {
-	const params = new URLSearchParams({ deck: deckId });
-	if (ctx.feat && ctx.deck === deckId) params.set("feat", ctx.feat);
-	if (withRepo && ctx.repo && ctx.deck === deckId) params.set("repo", ctx.repo);
+function contextQuery(rootId, withRepo) {
+	const params = new URLSearchParams({ root: rootId });
+	if (ctx.feat && ctx.root === rootId) params.set("feat", ctx.feat);
+	if (withRepo && ctx.repo && ctx.root === rootId) params.set("repo", ctx.repo);
 	const dive = diveInContext();
 	if (dive) params.set("dive", dive);
 	return "/api/context?" + params;
@@ -123,18 +123,18 @@ function reset() {
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
 		...(dives.active ? [] : [divePicker()]),
-		el("div", { class: "start" }, ...deckForm()));
+		el("div", { class: "start" }, ...rootForm()));
 }
 
 function docBody(doc, withFrontmatter) {
-	const body = el("div", { class: "doc" + (withFrontmatter ? "" : " deck-body") });
+	const body = el("div", { class: "doc" + (withFrontmatter ? "" : " root-body") });
 	body.innerHTML = doc.html;
 	return withFrontmatter
 		? [el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), body]
 		: [body];
 }
 
-/** Selects the last doc on a path of steps from a deck down. */
+/** Selects the last doc on a path of steps from a root down. */
 async function select(path, row, message) {
 	reposOpen = false;
 	highlight(row);
@@ -151,7 +151,7 @@ async function select(path, row, message) {
 		showError(null);
 		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
-		if (deckIds.has(last.id)) {
+		if (rootIds.has(last.id)) {
 			view.replaceChildren(...(dives.active ? [] : [divePicker()]), ...docBody(doc, false));
 			return;
 		}
@@ -173,18 +173,18 @@ function refreshRepos() {
 }
 
 /**
- * The picked deck's repos, each card with the kinds its kb declares and how
+ * The picked root's repos, each card with the kinds its kb declares and how
  * many docs of each it holds; a kind opens its page. A repo whose kb cannot
  * be read -- not hydrated -- says so.
  */
 async function showRepos() {
 	reposOpen = true;
 	highlight(null);
-	const path = [deckStep(ctx.deck), { id: "#repos", name: "Repos" }];
+	const path = [rootStep(ctx.root), { id: "#repos", name: "Repos" }];
 	crumbs(path);
 	const view = document.getElementById("view");
 	try {
-		const context = await api(contextQuery(ctx.deck, false));
+		const context = await api(contextQuery(ctx.root, false));
 		showError(null);
 		if (!reposOpen) return;
 		const unreadable = new Set(context.unreadable);
@@ -198,7 +198,7 @@ async function showRepos() {
 					: el("p", { class: "empty" }, unreadable.has(repo.name) ? "Not hydrated, so its kb cannot be read." : "Declares no kinds.");
 				return el("section", { class: "repo" }, repoCard(repo), list);
 			}))
-			: el("p", { class: "empty" }, "This deck scopes no repos."));
+			: el("p", { class: "empty" }, "This root scopes no repos."));
 	} catch (err) { showError(err); }
 }
 
@@ -279,7 +279,7 @@ events.addEventListener("state", async (event) => {
 	if (document.querySelector("#view .output.streaming")) return;
 	try {
 		await loadDives();
-		await loadDecks();
+		await loadRoots();
 		refreshRepos();
 		// A verb run here changes the dive too, often just after its output
 		// ends; going home then would wipe that output.
@@ -293,7 +293,7 @@ ${helmInternalsScript}
 document.getElementById("headacts").append(noteButton());
 document.getElementById("reposbtn").addEventListener("click", showRepos);
 
-Promise.all([loadDecks(), loadDives()]).then(() => {
+Promise.all([loadRoots(), loadDives()]).then(() => {
 	if (location.hash === "#branch") return showBranch();
 	const path = currentPath();
 	if (!path.length) return reset();
@@ -315,7 +315,7 @@ Promise.all([loadDecks(), loadDives()]).then(() => {
 			const k = kindAt(at) ? at : kindAt(at - 1) ? at - 1 : -1;
 			if (k < 0) return select(path);
 			const step = path[k];
-			return api(contextQuery(ctx.deck, false))
+			return api(contextQuery(ctx.root, false))
 				.then((context) => context.kinds.find((kind) => kind.id === step.id && kind.repoId === step.repo), () => null)
 				.then((found) => {
 					const kind = found || { id: step.id, name: docs[k].name, repoId: step.repo, inCrudContext: false };

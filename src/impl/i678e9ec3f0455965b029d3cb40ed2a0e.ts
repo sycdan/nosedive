@@ -7,11 +7,9 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
 import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
-import { listDeck } from "../lib/decks.js";
 import { readActiveDiveId } from "../lib/kbDocs.js";
 import {
 	bridgeHomed,
-	DECK_KIND_ID,
 	DIVE_KIND_ID,
 	KIND_KIND_ID,
 	kindSources,
@@ -71,7 +69,7 @@ function crud(args: string[], io: CommandIo): void {
 	const name = takeFlag(args, "--name");
 	const feat = takeFlag(args, "--feat");
 	const title = takeFlag(args, "--title");
-	const deck = takeFlag(args, "--deck");
+	const root = takeFlag(args, "--root");
 	if (args.includes("--repo"))
 		throw new Error(
 			"crud takes no --repo; name the repo on the ref: crud <repo>:<kind> or <repo>:<quid>",
@@ -86,8 +84,8 @@ function crud(args: string[], io: CommandIo): void {
 			: selectRepo(kindSources(process.cwd()), qualified.repo);
 
 	if (uuidLike(qualified.ref)) {
-		if (name !== undefined || feat !== undefined || title !== undefined || deck !== undefined)
-			throw new Error("crud <quid> takes no --name, --feat, --title or --deck");
+		if (name !== undefined || feat !== undefined || title !== undefined || root !== undefined)
+			throw new Error("crud <quid> takes no --name, --feat, --title or --root");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, qualified.ref);
 		if (!target) throw new Error(`no doc ${first} in context`);
@@ -134,15 +132,15 @@ function crud(args: string[], io: CommandIo): void {
 		recordDive(
 			["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : []), "--brief", "-"],
 			io,
-			{ target: { root: kind.source.root, kbDir: kind.source.kbDir }, deck },
+			{ target: { root: kind.source.root, kbDir: kind.source.kbDir }, root },
 		);
 		return;
 	}
-	if (feat !== undefined || title !== undefined || deck !== undefined)
-		throw new Error(`--feat, --title and --deck go with crud dive, not crud ${kind.name}`);
+	if (feat !== undefined || title !== undefined || root !== undefined)
+		throw new Error(`--feat, --title and --root go with crud dive, not crud ${kind.name}`);
 
-	// A name is the doc's identity when given: two docs may share a gist (helm's
-	// default deck gist does, within a minute), so only the name is checked, by the mint.
+	// A name is the doc's identity when given: two docs may share a gist, so
+	// only the name is checked, by the mint.
 	const matches = name === undefined ? matchDocs(kind, gist) : [];
 	if (matches.length === 1) {
 		if (block)
@@ -158,14 +156,7 @@ function crud(args: string[], io: CommandIo): void {
 				matches.map((match) => `${match.id} (${match.name})`).join(", "),
 		);
 
-	mintDoc(
-		kind,
-		gist,
-		io,
-		name,
-		kind.id === DECK_KIND_ID ? (doc) => listDeck(kind.source.root, doc.id, io) : undefined,
-		meta,
-	);
+	mintDoc(kind, gist, io, name, meta);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

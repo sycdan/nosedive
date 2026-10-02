@@ -62,7 +62,7 @@ export function followLiveBridge(
  * bridge -- before any scope is pushed, so a refusal strands nothing on the
  * work branch -- cherry-picked from the checkout onto the branch the live
  * bridge has checked out, so the bridge push land makes carries them out.
- * Otherwise a deck or feat made on the dive never reaches the bridge.
+ * Otherwise a root or feat made on the dive never reaches the bridge.
  *
  * Into the live bridge rather than pushed to its remote from the checkout: the
  * live bridge may hold commits of its own that land publishes (a `record.gate`

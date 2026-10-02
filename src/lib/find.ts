@@ -11,7 +11,7 @@ const ROLES = new Set(["dive", "feat", "gate", "repo", "note"]);
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
 const UNITS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
 
-/** Keep the traversal aligned with list-dives: only feat edges expand the deck. */
+/** Keep the traversal aligned with list-dives: only feat edges expand the root. */
 function isBacklogFeatRel(rel: string | undefined): boolean {
 	return Boolean(
 		rel && (BACKLOG_FEAT_RELS.has(rel) || rel.endsWith("-effort") || rel.endsWith(".feat")),

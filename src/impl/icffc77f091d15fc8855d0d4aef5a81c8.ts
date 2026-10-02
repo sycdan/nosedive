@@ -168,7 +168,7 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): Minte
 			"---",
 			"kind: memo",
 			`id: ${id}`,
-			// The bridge deck: the deck helm roots its tree in, whose feats a pilot sees first.
+			// The bridge deck: the root helm picks first, whose feats a pilot sees first.
 			"name: bridge-deck",
 			`gist: ${quoteYamlString(`The bridge deck of ${name}: the feats every pilot starts from.`)}`,
 			"---",

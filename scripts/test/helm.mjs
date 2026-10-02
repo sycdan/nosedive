@@ -39,7 +39,7 @@ const [
 	NOTE_1,
 	DIVE,
 ] = minted.stdout.trim().split(/\r?\n/);
-const { parseDecks } = await import(libUrl);
+const { helmRoots, parseRoots } = await import(libUrl);
 
 function fixture() {
 	const bridge = createBridge(tmp, "bridge", { backlog: BACKLOG, bridge: BRIDGE_REPO });
@@ -138,10 +138,10 @@ function fixture() {
 		`---\nkind: note\nid: ${NOTE_1}\nname: ${NOTE_1}\ngist: "A note"\n---\n`,
 	);
 	const config = join(bridge, ".nosedive", "config.yaml");
-	write(config, `${readFileSync(config, "utf8")}decks: ${BACKLOG}, ${IDEAS}\n`);
+	write(config, `${readFileSync(config, "utf8")}roots: ${IDEAS}\n`);
 	write(
 		join(bridge, "kb", `${IDEAS}.md`),
-		`---\nkind: deck\nid: ${IDEAS}\nname: ideas\ngist: "Ideas"\n---\n\n# Ideas\n`,
+		`---\nkind: memo\nid: ${IDEAS}\nname: ideas\ngist: "Ideas"\n---\n\n# Ideas\n`,
 	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
@@ -195,15 +195,16 @@ function startHelm(cwd) {
 	return { url, stop };
 }
 
-test("helm decks: config forms, missing means the backlog", () => {
-	assert.deepEqual(parseDecks(`${FEAT}, ${IDEAS},${BACKLOG}`, BACKLOG), [FEAT, IDEAS, BACKLOG]);
-	assert.deepEqual(parseDecks([FEAT, IDEAS], BACKLOG), [FEAT, IDEAS]);
-	assert.deepEqual(parseDecks(undefined, BACKLOG), [BACKLOG]);
-	assert.deepEqual(parseDecks(undefined, undefined), []);
-	assert.throws(() => parseDecks("ideas", BACKLOG), /decks lists doc ids/);
+test("helm roots: config forms, the backlog always first unless listed", () => {
+	assert.deepEqual(parseRoots(`${FEAT}, ${IDEAS},${BACKLOG}`, BACKLOG), [FEAT, IDEAS, BACKLOG]);
+	assert.deepEqual(parseRoots([FEAT, IDEAS], BACKLOG), [BACKLOG, FEAT, IDEAS]);
+	assert.deepEqual(parseRoots([FEAT, BACKLOG, FEAT], BACKLOG), [FEAT, BACKLOG], "each once");
+	assert.deepEqual(parseRoots(undefined, BACKLOG), [BACKLOG]);
+	assert.deepEqual(parseRoots(undefined, undefined), []);
+	assert.throws(() => parseRoots("ideas", BACKLOG), /roots lists doc ids/);
 });
 
-test("helm serves decks as a link tree over a token-guarded API", async (t) => {
+test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 	const bridge = fixture();
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
@@ -225,7 +226,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.doesNotThrow(() => new Script(script), "page script parses");
 	// A reload restores a kind page through showKind, and kindRef on a doc under a kind step.
 	const restore =
-		/Promise\.all\(\[loadDecks\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
+		/Promise\.all\(\[loadRoots\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
 			script,
 		)?.[0];
 	assert.ok(restore, "page carries its startup restore");
@@ -246,24 +247,25 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	);
 	assert.match(
 		restore,
-		/api\(contextQuery\(ctx\.deck, false\)\)/,
+		/api\(contextQuery\(ctx\.root, false\)\)/,
 		"the kind comes from the Repos view's context",
 	);
-	// The home view offers the kb jump on the bridge deck only; other decks point at their feats.
-	const deckForm = /function deckForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
-	assert.ok(deckForm, "page carries deckForm");
+	// The home view offers the kb jump on the backlog only; other roots point at their feats.
+	const rootForm = /function rootForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+	assert.ok(rootForm, "page carries rootForm");
 	assert.ok(
-		deckForm.includes("ctx.deck && bridgeDeck && ctx.deck !== bridgeDeck.id"),
-		"deckForm guards on the bridge deck",
+		rootForm.includes("ctx.root && backlogRoot && ctx.root !== backlogRoot.id"),
+		"rootForm guards on the backlog",
 	);
 	assert.ok(
-		deckForm.includes("Pick a feat in the tree to plan a dive on it, or dive it free."),
-		"other decks get the feat hint",
+		rootForm.includes("Pick a feat in the tree to plan a dive on it, or dive it free."),
+		"other roots get the feat hint",
 	);
 	assert.ok(
-		deckForm.indexOf("bridgeDeck.id") < deckForm.indexOf("KB_FEAT"),
+		rootForm.indexOf("backlogRoot.id") < rootForm.indexOf("KB_FEAT"),
 		"the guard comes before the kb fetch",
 	);
+	assert.doesNotMatch(script, /deck/i, "the page says root, never deck");
 	// Pull and Push report in a corner notice and leave the view alone.
 	const runSync = /async function runSync\(action, root\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(runSync, "page carries runSync");
@@ -307,7 +309,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.match(
 		script,
 		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel\)\)/,
-		"loadDecks groups the deck's feats",
+		"loadRoots groups the root's feats",
 	);
 	assert.match(
 		script,
@@ -326,7 +328,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	);
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
-	const api = new URL("/api/decks", base);
+	const api = new URL("/api/roots", base);
 	assert.equal((await fetch(api)).status, 403, "api without token");
 	assert.equal(
 		(await fetch(api, { headers: { "x-helm-token": "0".repeat(token.length) } })).status,
@@ -334,30 +336,36 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 		"api with wrong token",
 	);
 
-	// The backlog is the bridge deck at the root, with its feats; the other decks follow.
-	const { bridge: bridgeInfo, bridgeDeck, feats, decks, diving } = await get("/api/decks");
+	// The backlog is the first root, with its feats; the other roots follow.
+	const {
+		bridge: bridgeInfo,
+		backlog: backlogRoot,
+		feats,
+		roots,
+		diving,
+	} = await get("/api/roots");
 	assert.deepEqual(
 		{ id: bridgeInfo.id, name: bridgeInfo.name },
 		{ id: BRIDGE_REPO, name: "bridge" },
 	);
 	assert.equal(bridgeInfo.branch.name, "main", "the header's branch is the bridge's checkout");
 	assert.equal(bridgeInfo.branch.trunk, "main");
-	assert.equal(bridgeDeck.id, BACKLOG);
+	assert.equal(backlogRoot.id, BACKLOG);
 	assert.deepEqual(
 		feats.map((feat) => [feat.id, feat.rel]),
 		[[FEAT, "current.feat"]],
 	);
 	assert.deepEqual(
-		decks.map((deck) => [deck.id, deck.name]),
+		roots.map((root) => [root.id, root.name]),
 		[[IDEAS, "ideas"]],
 	);
 	assert.equal(diving, false);
 
-	const repos = await get(`/api/deck-repos?id=${BACKLOG}`);
+	const repos = await get(`/api/root-repos?id=${BACKLOG}`);
 	assert.deepEqual(
 		repos.map((repo) => repo.id),
 		[BRIDGE_REPO, HYDRATED, INSTALLED],
-		"the deck's scoped repos in scope order; a repo it only links is not shown",
+		"the root's scoped repos in scope order; a repo it only links is not shown",
 	);
 	const [bridgeCard, hydratedCard, installedCard] = repos;
 	assert.equal(bridgeCard.isBridge, true);
@@ -370,7 +378,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.equal(hydratedCard.nosedive, null, "no config file means not installed");
 	assert.equal(installedCard.hydrated, null);
 	assert.deepEqual(installedCard.nosedive, { level: 1 }, "read from trunk without hydrating");
-	assert.deepEqual(await get(`/api/deck-repos?id=${IDEAS}`), []);
+	assert.deepEqual(await get(`/api/root-repos?id=${IDEAS}`), []);
 
 	const backlog = await get(`/api/doc?id=${BACKLOG}`);
 	assert.deepEqual(
@@ -404,7 +412,7 @@ test("helm serves decks as a link tree over a token-guarded API", async (t) => {
 	assert.equal(missing.status, 404);
 });
 
-test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, narrowed by a repo", async (t) => {
+test("helm's context: a root's repos, narrowed by a feat; kinds with counts, narrowed by a repo", async (t) => {
 	const bridge = join(tmp, "bridge");
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
@@ -416,9 +424,9 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 		return res.json();
 	};
 
-	const deck = await get(`/api/context?deck=${BACKLOG}`);
+	const root = await get(`/api/context?root=${BACKLOG}`);
 	assert.deepEqual(
-		deck.repos.map((repo) => [repo.id, repo.inCrudContext]),
+		root.repos.map((repo) => [repo.id, repo.inCrudContext]),
 		[
 			[BRIDGE_REPO, false],
 			[HYDRATED, false],
@@ -427,27 +435,27 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 		"no dive: helm writes nowhere",
 	);
 	assert.deepEqual(
-		deck.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.count, kind.inCrudContext]),
+		root.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.count, kind.inCrudContext]),
 		[
 			[NOTE_KIND, "note", BRIDGE_REPO, 1, false],
 			[CARD_KIND, "card", HYDRATED, 2, false],
 		],
 	);
-	assert.deepEqual(deck.unreadable, ["installed"], "a repo not hydrated has no kb to read");
+	assert.deepEqual(root.unreadable, ["installed"], "a repo not hydrated has no kb to read");
 
-	const feat = await get(`/api/context?deck=${BACKLOG}&feat=${FEAT}`);
+	const feat = await get(`/api/context?root=${BACKLOG}&feat=${FEAT}`);
 	assert.deepEqual(
 		feat.repos.map((repo) => repo.id),
 		[HYDRATED],
 	);
-	const child = await get(`/api/context?deck=${BACKLOG}&feat=${CHILD}`);
+	const child = await get(`/api/context?root=${BACKLOG}&feat=${CHILD}`);
 	assert.deepEqual(
 		child.repos.map((repo) => repo.id),
 		[HYDRATED],
 		"a feat with no scopes inherits its parent's",
 	);
 
-	const bridgeOnly = await get(`/api/context?deck=${BACKLOG}&repo=${BRIDGE_REPO}`);
+	const bridgeOnly = await get(`/api/context?root=${BACKLOG}&repo=${BRIDGE_REPO}`);
 	assert.deepEqual(
 		bridgeOnly.kinds.map((kind) => kind.name),
 		["note"],
@@ -489,7 +497,7 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	write(marker, `id: ${DIVE}\n`);
 	t.after(() => rmSync(marker, { force: true }));
-	const diving = await get(`/api/context?deck=${BACKLOG}`);
+	const diving = await get(`/api/context?root=${BACKLOG}`);
 	assert.deepEqual(
 		diving.repos.map((repo) => [repo.id, repo.inCrudContext]),
 		[
@@ -498,6 +506,27 @@ test("helm's context: a deck's repos, narrowed by a feat; kinds with counts, nar
 			[INSTALLED, false],
 		],
 	);
+});
+
+test("on a dive helm's root is its meta.root, or an older dive's meta.deck", (t) => {
+	const bridge = join(tmp, "bridge");
+	const diveDoc = join(bridge, "kb", `${DIVE}.md`);
+	const before = readFileSync(diveDoc, "utf8");
+	const marker = join(bridge, "workspace", ".nosedive-ref");
+	write(marker, `id: ${DIVE}\n`);
+	t.after(() => {
+		rmSync(marker, { force: true });
+		write(diveDoc, before);
+	});
+	const dive = (meta) =>
+		write(
+			diveDoc,
+			`---\nkind: dive\nid: ${DIVE}\nname: a-dive\ngist: "A dive"\nmeta:\n${meta}---\n`,
+		);
+	dive(`  deck: ${IDEAS}\n`);
+	assert.equal(helmRoots(bridge).root, IDEAS, "an older dive's deck is its root");
+	dive(`  root: ${BACKLOG}\n  deck: ${IDEAS}\n`);
+	assert.equal(helmRoots(bridge).root, BACKLOG, "root wins over deck");
 });
 
 test("helm writes only by running crud, and only on an active dive; a note needs none", async (t) => {
@@ -527,7 +556,6 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	for (const [path, body] of [
 		["/api/crud/mint", { repo: BRIDGE_REPO, kind: "note", gist: "Buy sleeves" }],
 		["/api/crud/meta", { id: NOTE_1, patch: { topic: "x" } }],
-		["/api/crud/deck", { name: "Magic Cards" }],
 		["/api/crud/links", { id: NOTE_1, patch: { [NOTE_1]: { rel: "idea.feat" } } }],
 	]) {
 		const refused = await post(path, body);
@@ -619,8 +647,9 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
 	assert.equal(count(bridge), before + 1, "only the note reached the bridge");
 
-	const nameless = await post("/api/crud/deck", { gist: "No name" });
-	assert.equal(nameless.status, 400, nameless.text);
+	const gone = await post("/api/crud/deck", { name: "Magic Cards", gist: "Cards" });
+	assert.equal(gone.status, 404, "there is no deck to create");
+	assert.equal(count(bridge), before + 1);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {
@@ -634,7 +663,7 @@ test("helm refuses a request whose Host is not the address it bound", async (t) 
 			{
 				host: base.hostname,
 				port: base.port,
-				path: `/api/decks`,
+				path: `/api/roots`,
 				headers: { host: "evil.example", "x-helm-token": base.searchParams.get("token") },
 			},
 			(res) => resolveStatus(res.statusCode),

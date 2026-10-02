@@ -101,7 +101,7 @@ async function runSync(action, root) {
 		failed = true;
 	}
 	syncNotice(failed ? verb + " refused" : verb + "ed", text, failed);
-	await loadDecks();
+	await loadRoots();
 	if (root.isConnected) await drawBranch(root);
 }
 
@@ -144,7 +144,7 @@ async function runSquash(message, button, root) {
 		failed = true;
 	}
 	syncNotice(failed ? "Squash refused" : "Squashed", text, failed);
-	await loadDecks();
+	await loadRoots();
 	if (root.isConnected) await drawBranch(root);
 }
 

@@ -33,7 +33,7 @@ export interface HelmRepoCard {
 	nosedive: { level: number } | null | "unknown";
 }
 
-export interface HelmDeck {
+export interface HelmRoot {
 	id: string;
 	name: string;
 	kind: string;
@@ -130,13 +130,13 @@ function bridgeDocs(cwd: string): BridgeView {
 	return bridgeView(cwd);
 }
 
-/** The repos a deck scopes, in its scope order; links are not followed. */
-export function helmDeckRepos(cwd: string, id: string): HelmRepoCard[] | undefined {
+/** The repos a root scopes, in its scope order; links are not followed. */
+export function helmRootRepos(cwd: string, id: string): HelmRepoCard[] | undefined {
 	const { rc, docs } = bridgeDocs(cwd);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const deck = byId.get(id);
-	if (!deck) return undefined;
-	return deck.scopes
+	const root = byId.get(id);
+	if (!root) return undefined;
+	return root.scopes
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo")
 		.map((doc) => repoCard(doc, rc.bridgeDir, doc.id === rc.bridge));
@@ -209,14 +209,14 @@ export interface HelmContext {
 }
 
 /**
- * What is in view under a deck: its scoped repos -- a feat's instead, when one
+ * What is in view under a root: its scoped repos -- a feat's instead, when one
  * is selected, inherited from its nearest scoped ancestor -- and the kinds
  * their kbs declare, narrowed to one repo when one is selected. Each says
  * whether crud can reach it, because helm writes only through crud.
  */
 export function helmContext(
 	cwd: string,
-	deckId: string,
+	rootId: string,
 	featId?: string,
 	repoId?: string,
 	diveId?: string,
@@ -224,13 +224,13 @@ export function helmContext(
 	const view = bridgeDocs(cwd);
 	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const deck = byId.get(deckId);
-	if (!deck) return undefined;
+	const root = byId.get(rootId);
+	if (!root) return undefined;
 	const feat = featId ? byId.get(featId) : undefined;
 	if (featId && !feat) return undefined;
 	// A staged or active dive narrows furthest: its scopes are what it will work on.
 	const dive = diveId ? byId.get(diveId) : undefined;
-	const scopes = dive ? dive.scopes : feat ? inheritedScopes(feat, docs).scopes : deck.scopes;
+	const scopes = dive ? dive.scopes : feat ? inheritedScopes(feat, docs).scopes : root.scopes;
 	const inView = scopes
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");

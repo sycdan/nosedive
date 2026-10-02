@@ -6,7 +6,7 @@ import { crudReach } from "./helm.js";
 import { readNosediveRc } from "./coreParsing.js";
 import { appendHelmLog } from "./helmLog.js";
 import { readActiveDiveId } from "./kbDocs.js";
-import { nosedivePackageVersion, packageRoot } from "./packageBacklog.js";
+import { packageRoot } from "./packageBacklog.js";
 
 /** A request helm refuses on its merits, answered with its own status. */
 export class HelmRequestError extends Error {
@@ -151,7 +151,7 @@ export async function helmWrite(
 	}
 	if (path === "/api/crud/dive") {
 		const title = text(body, "title", false);
-		const deck = text(body, "deck", false);
+		const root = text(body, "root", false);
 		return succeeded(
 			await runCrud(
 				cwd,
@@ -159,19 +159,13 @@ export async function helmWrite(
 					"dive",
 					"--feat",
 					text(body, "feat")!,
-					...(deck ? ["--deck", deck] : []),
+					...(root ? ["--root", root] : []),
 					...(title ? ["--title", title] : []),
 					text(body, "gist")!,
 				],
 				text(body, "brief")!,
 			),
 		);
-	}
-	if (path === "/api/crud/deck") {
-		const gist =
-			text(body, "gist", false) ||
-			`Created by Nosedive Helm v${nosedivePackageVersion()} at ${new Date().toISOString().slice(0, 16)}Z`;
-		return succeeded(await runCrud(cwd, ["deck", "--name", text(body, "name")!, gist]));
 	}
 	return undefined;
 }

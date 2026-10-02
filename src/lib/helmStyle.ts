@@ -47,7 +47,7 @@ button { font: inherit; color: inherit; }
 .label { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; border: 0; background: none;
 	padding: 3px 4px; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-decoration: none; }
 .label .text { overflow: hidden; text-overflow: ellipsis; }
-.deck > .row .label { font-weight: 600; }
+.root > .row .label { font-weight: 600; }
 .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); flex: none; }
 .rel { font-size: 11px; color: var(--dim); flex: none; }
 .url .text { color: var(--accent); }
@@ -85,8 +85,8 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 	padding: 10px 12px; overflow: auto; }
 .doc code { font-family: var(--mono); font-size: 12.5px; }
 .doc table { border-collapse: collapse; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 8px; }
-.deck-body { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--line); }
-.deck-body:empty { display: none; }
+.root-body { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--line); }
+.root-body:empty { display: none; }
 .group > .row .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .out { opacity: .55; }
 .picked > .row { box-shadow: inset 2px 0 0 var(--ok); }
@@ -129,7 +129,7 @@ pre.output.failed { border-left-color: #d64545; }
 .repos section.repo { display: grid; gap: 8px; }
 .repos section.repo .doclist { margin: 0 0 0 12px; }
 #reposbtn { margin-right: 4px; }
-#deckpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+#rootpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
 	background: var(--panel); color: var(--text); max-width: 16em; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
 	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }

@@ -18,11 +18,11 @@ export function diveToJump(
 	kbDocs: KbDoc[],
 	ref: string | undefined,
 	io: CommandIo,
-	deck?: string,
+	root?: string,
 ): string | undefined {
-	// Only a dive jump records carries the deck it came from.
+	// Only a dive jump records carries the root it came from.
 	const unrecorded = (given: string | undefined) => {
-		if (deck !== undefined) throw new Error("jump --deck goes with a feat, not a dive");
+		if (root !== undefined) throw new Error("jump --root goes with a feat, not a dive");
 		return given;
 	};
 	if (!ref) return unrecorded(ref);
@@ -55,7 +55,7 @@ export function diveToJump(
 		["--feat", feat.id, "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
 		quiet,
 		// jump reads every dive's brief; this one says there was no plan.
-		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id, deck },
+		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id, root },
 	);
 	return id;
 }

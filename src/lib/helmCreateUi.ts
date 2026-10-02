@@ -1,5 +1,3 @@
-import { DECK_KIND_ID } from "./kinds.js";
-
 /**
  * The dive bar's create control, spliced into the page's script: a kinds
  * dropdown grouped by repo and an Add button opening a modal whose form is
@@ -8,7 +6,6 @@ import { DECK_KIND_ID } from "./kinds.js";
 export const helmCreateScript = String.raw`
 // --- create -----------------------------------------------------------------
 
-const DECK_KIND = "${DECK_KIND_ID}";
 /** The kinds the active dive can make, by repo then name; none with no dive. */
 let creatable = [];
 /** The kind last picked, by repo and id, so redrawing the bar keeps it. */
@@ -54,13 +51,11 @@ function newMeta(inputs, required) {
  * refusal keeps every field; a create offers to open the new doc.
  */
 function createDialog(kind) {
-	const isDeck = kind.id === DECK_KIND;
 	const schema = kind.schema || {};
 	const properties = schema.properties || {};
 	const required = schema.required || [];
-	// A deck is known by its name; helm stamps a gist left empty.
-	const gist = el("input", { type: "text", placeholder: isDeck ? "What's the deck for?" : "Gist", required: isDeck ? null : "", "aria-label": "gist" });
-	const name = el("input", { type: "text", placeholder: isDeck ? "Name" : "name (optional)", required: isDeck ? "" : null, "aria-label": "name" });
+	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
+	const name = el("input", { type: "text", placeholder: "name (optional)", "aria-label": "name" });
 	// A property built from other schemas (a kind's own schema, say) is no simple field.
 	const composite = (spec) => !spec.type && !Array.isArray(spec.enum) && !!(spec.allOf || spec.anyOf || spec.oneOf || spec.$ref || spec.properties);
 	const inputs = Object.entries(properties).filter(([, spec]) => !composite(spec || {}))
@@ -75,7 +70,7 @@ function createDialog(kind) {
 	const form = el("form", {},
 		el("h3", {}, "New " + kind.name + " in " + kind.repoName),
 		el("p", { class: "detail" }, kind.gist),
-		...(isDeck ? [name, gist] : [gist, name]),
+		gist, name,
 		rows.length ? el("fieldset", { class: "meta" }, el("legend", {}, "meta"), rows) : null,
 		out, actions);
 	const dialog = el("dialog", { class: "modal wide" }, form);
@@ -85,17 +80,14 @@ function createDialog(kind) {
 		create.disabled = true;
 		try {
 			const meta = newMeta(inputs, required);
-			const run = isDeck
-				? await write("/api/crud/deck", { name: name.value, gist: gist.value || undefined })
-				: await write("/api/crud/mint", {
-					repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
-					meta: Object.keys(meta).length ? meta : undefined,
-				});
+			const run = await write("/api/crud/mint", {
+				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
+				meta: Object.keys(meta).length ? meta : undefined,
+			});
 			out.textContent = run.stdout;
 			out.classList.remove("failed");
 			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
 			refreshRepos();
-			if (isDeck) await loadDecks();
 			// A new kind can be made at once; the dropdown and its schemas are read again.
 			await loadCreatable();
 			renderBar();
@@ -107,7 +99,7 @@ function createDialog(kind) {
 						dialog.close();
 						// The kind rides along, so the new doc opens with its meta form.
 						const kindRef = { id: kind.id, repoId: kind.repoId, name: kind.name, inCrudContext: true };
-						select([deckStep(ctx.deck), { id: id[1], name: title, kind: kind.name, repo: kind.repoId, kindRef }]);
+						select([rootStep(ctx.root), { id: id[1], name: title, kind: kind.name, repo: kind.repoId, kindRef }]);
 					} }, "View"));
 			}
 		} catch (err) {
@@ -119,35 +111,35 @@ function createDialog(kind) {
 	});
 	document.body.append(dialog);
 	dialog.showModal();
-	(isDeck ? name : gist).focus();
+	gist.focus();
 }
 
 /**
- * On a dive, a doc that is not yet a feat of the picked deck can become one:
- * linked from the deck as <type>.feat, or from one of its feats as
- * child.feat, through crud <deck-or-feat> --links -.
+ * On a dive, a doc that is not yet a feat of the picked root can become one:
+ * linked from the root as <type>.feat, or from one of its feats as
+ * child.feat, through crud <root-or-feat> --links -.
  */
 function featLinker(doc, step) {
-	if (!dives.active || !ctx.deck || doc.kind === "dive" || doc.kind === "deck" || doc.id === ctx.deck) return null;
-	if (isFeatStep(step) || deckFeats.some((feat) => feat.id === doc.id)) return null;
+	if (!dives.active || !ctx.root || doc.kind === "dive" || doc.id === ctx.root) return null;
+	if (isFeatStep(step) || rootFeats.some((feat) => feat.id === doc.id)) return null;
 	return el("div", { class: "cardacts" },
 		el("button", { class: "act unstage", onclick: () => featDialog(doc) }, "Add as feat"));
 }
 
 function featDialog(doc) {
-	const types = [...new Set(deckFeats.map((feat) => (feat.rel || "").replace(/\.feat$/, "")).filter((t) => t && t !== "zerostar"))];
-	const onDeck = el("input", { type: "radio", name: "place", value: "deck", checked: "" });
-	const underFeat = el("input", { type: "radio", name: "place", value: "feat", disabled: deckFeats.length ? null : "" });
+	const types = [...new Set(rootFeats.map((feat) => (feat.rel || "").replace(/\.feat$/, "")).filter((t) => t && t !== "zerostar"))];
+	const onRoot = el("input", { type: "radio", name: "place", value: "root", checked: "" });
+	const underFeat = el("input", { type: "radio", name: "place", value: "feat", disabled: rootFeats.length ? null : "" });
 	const type = el("input", { type: "text", placeholder: "type, e.g. " + (types[0] || "current"), list: "feat-types",
 		pattern: "[a-z0-9]+(-[a-z0-9]+)*", "aria-label": "type" });
 	const parent = el("select", { "aria-label": "parent feat" },
-		deckFeats.map((feat) => el("option", { value: feat.id }, label(feat))));
+		rootFeats.map((feat) => el("option", { value: feat.id }, label(feat))));
 	const out = el("pre", { class: "output", hidden: "" });
 	const add = el("button", { type: "submit", class: "act jump" }, "Add");
 	const form = el("form", {},
 		el("h3", {}, "Add " + label(doc) + " as a feat"),
 		el("datalist", { id: "feat-types" }, types.map((t) => el("option", { value: t }))),
-		el("label", { class: "field" }, el("span", {}, onDeck, " on " + deckNames.get(ctx.deck)), type),
+		el("label", { class: "field" }, el("span", {}, onRoot, " on " + rootNames.get(ctx.root)), type),
 		el("label", { class: "field" }, el("span", {}, underFeat, " under a feat"), parent),
 		out,
 		el("div", { class: "modalacts" },
@@ -161,10 +153,10 @@ function featDialog(doc) {
 		add.disabled = true;
 		try {
 			const rel = nested ? "child.feat" : type.value.trim() + ".feat";
-			const run = await write("/api/crud/links", { id: nested ? parent.value : ctx.deck, patch: { [doc.id]: { rel } } });
+			const run = await write("/api/crud/links", { id: nested ? parent.value : ctx.root, patch: { [doc.id]: { rel } } });
 			dialog.close();
-			await loadDecks();
-			select([deckStep(ctx.deck), { id: doc.id, name: label(doc), kind: doc.kind, rel }], null, outputBox(run.stdout));
+			await loadRoots();
+			select([rootStep(ctx.root), { id: doc.id, name: label(doc), kind: doc.kind, rel }], null, outputBox(run.stdout));
 		} catch (err) {
 			out.textContent = String(err.message || err);
 			out.classList.add("failed");

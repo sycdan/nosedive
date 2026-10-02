@@ -1,30 +1,30 @@
 import { basename } from "node:path";
 
-import type { HelmDeck, HelmLink } from "./helm.js";
+import type { HelmLink, HelmRoot } from "./helm.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
-import { bridgeView, viewDecks } from "./helmView.js";
+import { bridgeView, viewRoots } from "./helmView.js";
+import { diveRoot } from "./roots.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
 
 const FEAT_ROLE = /(^|\.)(feat|effort)$/;
 
 /**
- * The deck helm has picked and what hangs off it: the bridge, its bridge deck
- * -- the backlog memo -- and the other decks, for the picker; the picked deck
- * and the feats it links (the kb feat first). With no dive the pilot picks,
- * the bridge deck by default; on one the deck is the dive's `meta.deck`, or
- * the bridge deck when it names none, and cannot be changed. All read
- * through the view, so a dive that scopes the bridge shows what it has
- * written.
+ * The root helm has picked and what hangs off it: the bridge, its backlog
+ * memo and the other roots, for the picker; the picked root and the feats it
+ * links (the kb feat first). With no dive the pilot picks, the backlog by
+ * default; on one the root is the dive's `meta.root`, or the backlog when it
+ * names none, and cannot be changed. All read through the view, so a dive
+ * that scopes the bridge shows what it has written.
  */
-export function helmDecks(
+export function helmRoots(
 	cwd: string,
 	asked?: string,
 ): {
 	bridge: { id?: string; name: string; branch: HelmBranchStatus };
-	bridgeDeck?: HelmDeck;
-	decks: HelmDeck[];
-	deck?: string;
+	backlog?: HelmRoot;
+	roots: HelmRoot[];
+	root?: string;
 	locked: boolean;
 	feats: HelmLink[];
 	diving: boolean;
@@ -33,19 +33,19 @@ export function helmDecks(
 	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
-	const card = (id: string): HelmDeck => {
+	const card = (id: string): HelmRoot => {
 		const doc = byId.get(id);
 		if (!doc) return { id, name: id, kind: "missing", gist: `no kb doc ${id}` };
 		return { id, name: doc.name, kind: doc.kind, gist: doc.gist, title: doc.h1 };
 	};
-	const decks = viewDecks(view).filter((id) => id !== rc.backlog);
-	const pickable = new Set([rc.backlog, ...decks].filter(Boolean));
+	const roots = viewRoots(view).filter((id) => id !== rc.backlog);
+	const pickable = new Set([rc.backlog, ...roots].filter(Boolean));
 	const activeId = readActiveDiveId(rc.workspaceDir);
-	const diveDeck = activeId ? byId.get(activeId)?.metaScalars.deck : undefined;
-	const wanted = activeId ? diveDeck : asked;
-	const deckId = wanted && pickable.has(wanted) ? wanted : rc.backlog;
-	const deck = deckId ? byId.get(deckId) : undefined;
-	const feats = (deck?.links ?? [])
+	const activeDive = activeId ? byId.get(activeId) : undefined;
+	const wanted = activeId ? (activeDive ? diveRoot(activeDive) : undefined) : asked;
+	const rootId = wanted && pickable.has(wanted) ? wanted : rc.backlog;
+	const root = rootId ? byId.get(rootId) : undefined;
+	const feats = (root?.links ?? [])
 		.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
 		.map((link) => ({ link, doc: byId.get(link.id) }))
 		.filter((entry): entry is { link: KbDoc["links"][number]; doc: KbDoc } => !!entry.doc)
@@ -66,22 +66,22 @@ export function helmDecks(
 			name: bridgeDoc?.name ?? basename(rc.bridgeDir),
 			branch: helmBranchStatus(rc.bridgeDir, bridgeDoc?.repoBaseBranch ?? "main"),
 		},
-		bridgeDeck: rc.backlog ? card(rc.backlog) : undefined,
-		decks: decks.map(card),
-		deck: deckId,
+		backlog: rc.backlog ? card(rc.backlog) : undefined,
+		roots: roots.map(card),
+		root: rootId,
 		locked: Boolean(activeId),
 		feats,
 		diving: Boolean(activeId),
 	};
 }
 
-/** The repos a deck scopes -- the bridge deck when none is named -- by name: what a note can be about. */
-export function helmRepoList(cwd: string, deckId?: string): { id: string; name: string }[] {
+/** The repos a root scopes -- the backlog when none is named -- by name: what a note can be about. */
+export function helmRepoList(cwd: string, rootId?: string): { id: string; name: string }[] {
 	const { rc, docs } = bridgeView(cwd);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const wanted = deckId ?? rc.backlog;
-	const deck = wanted ? byId.get(wanted) : undefined;
-	return (deck?.scopes ?? [])
+	const wanted = rootId ?? rc.backlog;
+	const root = wanted ? byId.get(wanted) : undefined;
+	return (root?.scopes ?? [])
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo")
 		.map((doc) => ({ id: doc.id, name: doc.name }))

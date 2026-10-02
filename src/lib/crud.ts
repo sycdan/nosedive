@@ -64,17 +64,12 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * The new doc's meta -- `meta`, or none -- is validated first, so a kind that
  * requires meta refuses a mint without it rather than committing a doc it
  * would reject.
- *
- * `afterWrite` is what nosedive does for the kind once the doc is on disk; the
- * files it returns join the doc's commit, and if it throws, the doc is removed
- * and nothing is committed.
  */
 export function mintDoc(
 	kind: KindDoc,
 	gist: string,
 	io: { log(message: string): void },
 	name?: string,
-	afterWrite?: (doc: MintedDoc) => string[],
 	meta: Record<string, unknown> = {},
 ): string {
 	gistSlug(gist); // refuses a gist with nothing in it
@@ -115,19 +110,7 @@ export function mintDoc(
 		].join("\n"),
 	);
 	io.log(`Minted ${formatPath(path)}`);
-	let touched: string[] = [];
-	try {
-		touched = afterWrite?.({ id, name: name ?? id, path }) ?? [];
-	} catch (err) {
-		rmSync(path, { force: true });
-		throw err;
-	}
-	commitBridgeDocs(
-		kind.source.root,
-		`crud(${id}): created ${kind.name} ${name ?? id}`,
-		[path, ...touched],
-		io,
-	);
+	commitBridgeDocs(kind.source.root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path], io);
 	return id;
 }
 
@@ -269,12 +252,6 @@ export function updateBlock(
 		[target.path],
 		io,
 	);
-}
-
-export interface MintedDoc {
-	id: string;
-	name: string;
-	path: string;
 }
 
 /** A doc crud found, and the repo in context it was found in. */

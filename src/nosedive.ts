@@ -37,12 +37,12 @@ export { readKbDocById } from "./lib/kbDocs.js";
 // Exported so the preservation contract can be tested at the YAML edit itself,
 // rather than only through whichever command happened to call it.
 export { reconcileDocLink } from "./lib/repoFeatScopes.js";
-// Exported so every accepted spelling of `decks:` is tested without a bridge per form.
-export { parseDecks } from "./lib/decks.js";
+// Exported so every accepted spelling of `roots:` is tested without a bridge per form.
+export { parseRoots } from "./lib/roots.js";
 // Exported so the merge is tested against RFC 7386's own examples.
 export { mergePatch } from "./lib/mergePatch.js";
 // Exported so helm's view of a dive's __self checkout is tested below the server.
-export { helmDecks } from "./lib/helmDeck.js";
+export { helmRoots } from "./lib/helmRoot.js";
 // Exported so what the dive bar can create is tested below the server.
 export { helmCreatableKinds } from "./lib/helmCreate.js";
 // Exported so a branch worktree and its status are tested below the command.

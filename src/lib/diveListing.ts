@@ -8,7 +8,7 @@ import { gitOutput } from "./gitProcess.js";
 import { titleFromSlug } from "./slugs.js";
 
 export interface ListDivesOptions {
-	/** A feat or a deck to constrain the listing to. Absent means the whole kb. */
+	/** A feat or a root to constrain the listing to. Absent means the whole kb. */
 	ref?: string;
 	help: boolean;
 	includeHistorical: boolean;
@@ -166,7 +166,7 @@ export function listedDive(
 			.map((scope) => formatScopeRef(scope)),
 		tags,
 		source: doc.relPath,
-		// Only a feat owns a dive. A deck links dives directly too, and that is
+		// Only a feat owns a dive. A root links dives directly too, and that is
 		// the one case a listing must not dress up as ownership.
 		feat: owner?.kind === "feat" ? { name: owner.name, source: owner.relPath } : undefined,
 		lastLog: doc.lastLog,
@@ -212,18 +212,18 @@ function isBacklogFeatRel(rel: string | undefined): boolean {
 }
 
 /**
- * Every dive a deck reaches, walking feat links out from it. A deck is any doc
+ * Every dive a root reaches, walking feat links out from it. A root is any doc
  * that roots a backlog tree -- the configured backlog memo is one -- so the walk
- * is the same whether it starts at the bridge's deck or at one named on the
+ * is the same whether it starts at the backlog or at a root named on the
  * command line. First link to a dive wins: the same dive reached twice is one
  * dive, and the shallower edge is the one the reader was looking for.
  */
-export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
+export function walkRootDives(root: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 	const docsById = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const dives: DiveLink[] = [];
 	const seenDocs = new Set<string>();
 	const seenDives = new Set<string>();
-	const queue = [deck];
+	const queue = [root];
 
 	while (queue.length > 0) {
 		const current = queue.shift()!;
@@ -317,16 +317,16 @@ export function collectKbDives(
 	return listDivesResult("kb", links, localOnlyIds, includeHistorical);
 }
 
-/** Every dive the given deck reaches, however deep in its feat tree it sits. */
-export function collectDeckDives(
-	deck: KbDoc,
+/** Every dive the given root reaches, however deep in its feat tree it sits. */
+export function collectRootDives(
+	root: KbDoc,
 	kbDocs: KbDoc[],
 	localOnlyIds: ReadonlySet<string>,
 	includeHistorical: boolean,
 ): ListDivesResult {
 	return listDivesResult(
-		`deck ${deck.name}`,
-		walkDeckDives(deck, kbDocs),
+		`root ${root.name}`,
+		walkRootDives(root, kbDocs),
 		localOnlyIds,
 		includeHistorical,
 	);

@@ -6,7 +6,7 @@ import {
 	diveRole,
 	diveTags,
 	listedDive,
-	walkDeckDives,
+	walkRootDives,
 } from "./diveListing.js";
 import { KbDoc } from "./kbDocs.js";
 import { readGitAuthorIdentity } from "./gitProcess.js";
@@ -43,12 +43,12 @@ function pilotEmail(rc: NosediveRc): string | undefined {
 	return email || undefined;
 }
 
-function selectable(link: DiveLink, deckId: string): boolean {
-	// A free dive is linked directly from the backlog deck, so it is not a feat
+function selectable(link: DiveLink, rootId: string): boolean {
+	// A free dive is linked directly from the backlog, so it is not a feat
 	// walk result and should stay awkward to pick up until it pays for a real
 	// owner. The backlog tree is carried by rel semantics, not doc kind, so a
 	// non-feat doc may still own the dive when it sits in the feat walk.
-	if (!link.owner || link.owner.id === deckId) return false;
+	if (!link.owner || link.owner.id === rootId) return false;
 	const role = diveRole(link.rel);
 	return !role || !FINISHED_DIVE_ROLES.has(role);
 }
@@ -74,16 +74,16 @@ export function selectPilotDives(
 		};
 	}
 
-	const deck = kbDocs.find((doc) => doc.id === backlogId);
-	if (!deck) {
+	const backlog = kbDocs.find((doc) => doc.id === backlogId);
+	if (!backlog) {
 		return { eligible: [], held: [], warnings: [`bridge backlog memo not found: ${backlogId}`] };
 	}
 
 	const pilot = pilotEmail(rc);
 	const eligible: ListedDive[] = [];
 	const held: ListedDive[] = [];
-	for (const link of walkDeckDives(deck, kbDocs)) {
-		if (!selectable(link, deck.id)) continue;
+	for (const link of walkRootDives(backlog, kbDocs)) {
+		if (!selectable(link, backlog.id)) continue;
 		const { dive, rel, owner } = link;
 		const diver = diveDiver(dive);
 		const bucket = !diver || (pilot !== undefined && diver === pilot) ? eligible : held;

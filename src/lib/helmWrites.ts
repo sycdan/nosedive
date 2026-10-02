@@ -32,7 +32,7 @@ const OUT_OF_REACH = "crud cannot write to that repo now: jump a dive that scope
  * doc itself: every write is the command a pilot would type, so a refusal is
  * the command's own and there is one implementation to trust.
  */
-function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
+export function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
 	const activeDive = () => readActiveDiveId(readNosediveRc(cwd).workspaceDir);
 	const diveBefore = activeDive();
 	return new Promise((resolveRun, reject) => {

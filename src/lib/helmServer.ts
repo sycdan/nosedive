@@ -13,6 +13,7 @@ import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
 import { helmRepoList, helmRoots } from "./helmRoot.js";
 import { helmDives } from "./helmDives.js";
+import { helmAddRoot, helmMemos, helmRemoveRoot } from "./helmRootEdits.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
@@ -220,6 +221,14 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				const body = await readJsonBody(req);
 				return sendJson(res, helmMerge(cwd, String(body.branch ?? "")));
 			}
+			if (req.method === "POST" && url.pathname === "/api/roots/add")
+				return sendJson(res, await helmAddRoot(cwd, await readJsonBody(req)));
+			if (req.method === "POST" && url.pathname === "/api/roots/remove") {
+				const body = await readJsonBody(req);
+				return sendJson(res, await helmRemoveRoot(cwd, String(body.id ?? "")));
+			}
+			if (req.method === "GET" && url.pathname === "/api/memos")
+				return sendJson(res, helmMemos(cwd));
 			if (req.method === "GET" && url.pathname === "/api/branches")
 				return sendJson(res, helmBranches(cwd));
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));

@@ -49,6 +49,7 @@ export { helmCreatableKinds } from "./lib/helmCreate.js";
 export { branchWorktree, helmBranchStatus } from "./lib/helmBranch.js";
 export { helmBranches, helmMerge } from "./lib/helmBranches.js";
 export { helmPull, helmPush, helmSquash, helmUnpushed } from "./lib/helmSync.js";
+export { helmAddRoot, helmMemos, helmRemoveRoot } from "./lib/helmRootEdits.js";
 export { assertBridgeInStep } from "./lib/bridgeTrunk.js";
 export { helmLogPath, pruneHelmLogs } from "./lib/helmLog.js";
 export { helmPorts } from "./lib/helmServer.js";

@@ -140,6 +140,88 @@ function renderPicker(listing) {
 		await loadRoots();
 		reset();
 	};
+	const add = document.getElementById("rootadd");
+	add.disabled = listing.diving;
+	add.title = listing.diving ? "Not during a dive: land, pack or bail it first" : "Add a root";
+	add.onclick = rootDialog;
+	const unlist = document.getElementById("rootunlist");
+	unlist.hidden = listing.diving || !ctx.root || (backlogRoot && ctx.root === backlogRoot.id);
+	unlist.onclick = () => confirmDialog({
+		verb: "Unlist", cls: "bail", target: rootNames.get(ctx.root) || ctx.root,
+		detail: "Takes it out of roots: in the bridge config and commits that; the memo itself stays. Nothing is pushed.",
+		act: () => changeRoots("/api/roots/remove", { id: ctx.root }, "Unlisted", "Unlist refused", backlogRoot && backlogRoot.id),
+	});
+}
+
+/** Runs a roots change, shows what it said, and picks the root it leaves picked. */
+async function changeRoots(path, body, done, refused, pick) {
+	try {
+		const run = await write(path, body);
+		syncNotice(done, run.output, false);
+		const next = pick || run.id;
+		if (next) { rememberRoot(next); Object.assign(ctx, { root: next, feat: null, repo: null, kind: null }); }
+		await loadRoots();
+		reset();
+		return true;
+	} catch (err) {
+		syncNotice(refused, String(err.message || err), true);
+		return false;
+	}
+}
+
+/** Lists a memo as a root: one the bridge has, filtered by name or gist, or a new one. */
+async function rootDialog() {
+	let memos = [];
+	try { memos = (await api("/api/memos")).filter((memo) => !rootIds.has(memo.id)); } catch (err) { return showError(err); }
+	const existing = el("input", { type: "radio", name: "rootfrom", value: "existing", checked: "" });
+	const fresh = el("input", { type: "radio", name: "rootfrom", value: "new" });
+	const filter = el("input", { type: "text", placeholder: "Filter memos", "aria-label": "filter memos" });
+	const list = el("select", { size: "8", "aria-label": "memo" });
+	const fill = () => {
+		const q = filter.value.trim().toLowerCase();
+		list.replaceChildren(...memos
+			.filter((memo) => !q || (memo.name + " " + memo.gist).toLowerCase().includes(q))
+			.map((memo) => el("option", { value: memo.id, title: memo.gist }, memo.name + " -- " + memo.gist)));
+		if (list.options.length) list.selectedIndex = 0;
+	};
+	filter.addEventListener("input", fill);
+	fill();
+	const name = el("input", { type: "text", placeholder: "name (optional)", "aria-label": "name" });
+	const gist = el("input", { type: "text", placeholder: "Gist", "aria-label": "gist" });
+	const sync = () => {
+		filter.disabled = list.disabled = !existing.checked;
+		name.disabled = gist.disabled = existing.checked;
+	};
+	existing.addEventListener("change", sync);
+	fresh.addEventListener("change", sync);
+	sync();
+	const confirm = el("button", { type: "submit", class: "act jump" }, "Add root");
+	const form = el("form", {},
+		el("h3", {}, "Add a root"),
+		el("p", { class: "detail" }, "Lists a memo in roots: in the bridge config and commits that. Nothing is pushed."),
+		el("label", { class: "field" }, el("span", {}, existing, " Existing memo"), filter), list,
+		el("label", { class: "field" }, el("span", {}, fresh, " New memo"), name), gist,
+		el("div", { class: "modalacts" },
+			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Cancel"), confirm));
+	const dialog = el("dialog", { class: "modal wide" }, form);
+	dialog.addEventListener("close", () => dialog.remove());
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		let body;
+		if (existing.checked) {
+			if (!list.value) return filter.focus();
+			body = { id: list.value };
+		} else {
+			if (!gist.value.trim()) return gist.focus();
+			body = { name: name.value.trim() || undefined, gist: gist.value.trim() };
+		}
+		confirm.disabled = true;
+		dialog.close();
+		await changeRoots("/api/roots/add", body, "Root added", "Add root refused", null);
+	});
+	document.body.append(dialog);
+	dialog.showModal();
+	filter.focus();
 }
 
 /** The branch the bridge has checked out, and how far it is from trunk. */

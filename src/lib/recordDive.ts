@@ -136,7 +136,6 @@ function renderNewDive(
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
 	brief: string | undefined,
-	root: string | undefined,
 ): string {
 	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
@@ -148,7 +147,6 @@ function renderNewDive(
 		...renderScopes(scopes),
 		"meta:",
 		`  feat: ${featRefOf(feat)}`,
-		...(root ? [`  root: ${root}`] : []),
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -280,12 +278,10 @@ export interface RecordDiveExtras {
 	 * and workspace. Such a dive is recorded, never claimed.
 	 */
 	target?: DiveTarget;
-	/** The root a new dive was planned or jumped from, kept as `meta.root`. */
-	root?: string;
 }
 
 export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtras = {}): void {
-	const { newId, target, root } = extras;
+	const { newId, target } = extras;
 	let brief = extras.brief;
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
@@ -319,8 +315,6 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
 		const feat = writableFeat(resolveFeatDoc(kbDocs, rc, options.feat!));
-		if (root !== undefined && !kbDocs.some((doc) => doc.id === root))
-			throw new Error(`no root ${root} in ${formatPath(kbDir)}`);
 		/**
 		 * A new dive inherits its feat's repos, and inherits where they land only
 		 * where the feat has said. A feat that has not said hands down a pinned but
@@ -358,7 +352,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 			throw new Error("duplicate repo scope");
 		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, root));
+		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		linkFeatBack(feat, id, "planned.dive", scoping, io);
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))

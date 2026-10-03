@@ -339,7 +339,7 @@ export function repinScopes(
 }
 
 /** `parent`, plus the role-suffixed spellings a root's tree uses (`parent.feat`, say). */
-function isParentRel(rel: string | undefined): boolean {
+export function isParentRel(rel: string | undefined): boolean {
 	return rel === "parent" || (rel?.startsWith("parent.") ?? false);
 }
 

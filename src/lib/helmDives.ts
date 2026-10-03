@@ -46,7 +46,7 @@ export function helmDives(
 	const docs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const startId = feat ?? root ?? rc.backlog;
-	const start = startId ? byId.get(startId) : undefined;
+	const start = startId ? (byId.get(startId) ?? helmRepoDoc({ rc, docs }, startId)) : undefined;
 	const reached = start
 		? findDocs(start, docs, "dive", term || undefined, rc.bridgeDir, {
 				scopeIds: new Set(),

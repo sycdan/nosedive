@@ -73,6 +73,8 @@ export interface NosediveRc {
 	/** `bridge`: id of the bridge's own `kind: repo` doc. */
 	bridge?: string;
 	workBranchPrefix?: string;
+	/** `picker-level`: how many `.feat` links below the backlog helm's picker lists, 0 for none. */
+	pickerLevel: number;
 	pilotName?: string;
 	pilotEmail?: string;
 	/** `<command>-prompt`: id of the `kind: idea` doc a command builds its prompt from. */
@@ -323,6 +325,14 @@ export function configCompatibilityLevel(config: SimpleYaml, label: string): num
 	return level;
 }
 
+function configPickerLevel(config: SimpleYaml, label: string): number {
+	const raw = config.scalars["picker-level"];
+	if (raw === undefined) return 0;
+	if (!/^[012]$/.test(raw))
+		throw new Error(`${formatPath(label)}: picker-level is 0, 1 or 2, not ${JSON.stringify(raw)}`);
+	return Number(raw);
+}
+
 export function readNosediveRc(start: string): NosediveRc {
 	const resolved = findBridgeConfig(start);
 	if (!resolved) throw noBridgeConfigError();
@@ -335,9 +345,10 @@ export function readNosediveRc(start: string): NosediveRc {
 	const workspace = rc.scalars.workspace;
 	const backlog = rc.scalars.backlog;
 	const kb = rc.scalars.kb;
+	const path = resolved.shape === "split" ? resolved.basePath : resolved.legacyPath;
 
 	return {
-		path: resolved.shape === "split" ? resolved.basePath : resolved.legacyPath,
+		path,
 		bridgeDir,
 		compatibilityLevel:
 			resolved.shape === "split" ? configCompatibilityLevel(rc, resolved.basePath) : 0,
@@ -346,6 +357,7 @@ export function readNosediveRc(start: string): NosediveRc {
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		bridge: rc.scalars.bridge,
 		workBranchPrefix: rc.scalars["work-branch-prefix"],
+		pickerLevel: configPickerLevel(rc, path),
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
 		prompts: parseCommandPrompts(rc.scalars),

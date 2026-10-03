@@ -5,15 +5,14 @@ import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { helmContext, helmDoc, helmKindCheck, helmKindDocs, helmRootRepos } from "./helm.js";
+import { helmContext, helmDoc, helmKindCheck, helmKindDocs } from "./helm.js";
 import { HELM_POLL_MS, helmInternals, helmLogFollower } from "./helmInternals.js";
 import { helmPage } from "./helmPage.js";
 import { gitOutput } from "./gitProcess.js";
 import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
-import { helmRepoList, helmRoots } from "./helmRoot.js";
+import { helmFeats, helmPicker, helmRepoList } from "./helmPicker.js";
 import { helmDives } from "./helmDives.js";
-import { helmAddRoot, helmMemos, helmRemoveRoot } from "./helmRootEdits.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
@@ -81,7 +80,7 @@ function helmUrl(port: number, token: string): string {
 
 async function answersAsHelm(port: number, token: string): Promise<boolean> {
 	try {
-		const res = await fetch(`http://127.0.0.1:${port}/api/roots`, {
+		const res = await fetch(`http://127.0.0.1:${port}/api/picker`, {
 			headers: { "x-helm-token": token },
 			signal: AbortSignal.timeout(2000),
 		});
@@ -221,14 +220,6 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				const body = await readJsonBody(req);
 				return sendJson(res, helmMerge(cwd, String(body.branch ?? "")));
 			}
-			if (req.method === "POST" && url.pathname === "/api/roots/add")
-				return sendJson(res, await helmAddRoot(cwd, await readJsonBody(req)));
-			if (req.method === "POST" && url.pathname === "/api/roots/remove") {
-				const body = await readJsonBody(req);
-				return sendJson(res, await helmRemoveRoot(cwd, String(body.id ?? "")));
-			}
-			if (req.method === "GET" && url.pathname === "/api/memos")
-				return sendJson(res, helmMemos(cwd));
 			if (req.method === "GET" && url.pathname === "/api/branches")
 				return sendJson(res, helmBranches(cwd));
 			if (req.method === "POST") return sendJson(res, await helmWrite(cwd, url.pathname, req));
@@ -247,9 +238,10 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				return sendJson(res, helmRepoList(cwd, url.searchParams.get("root") || undefined));
 			if (url.pathname === "/api/internals") return sendJson(res, helmInternals(cwd, lastChangeAt));
 			if (url.pathname === "/api/creatable") return sendJson(res, helmCreatableKinds(cwd));
-			if (url.pathname === "/api/roots")
-				return sendJson(res, helmRoots(cwd, url.searchParams.get("root") || undefined));
-			if (url.pathname === "/api/root-repos") return sendJson(res, helmRootRepos(cwd, id));
+			if (url.pathname === "/api/picker")
+				return sendJson(res, helmPicker(cwd, url.searchParams.get("pick") || undefined));
+			if (url.pathname === "/api/feats")
+				return sendJson(res, helmFeats(cwd, url.searchParams.get("ref") ?? ""));
 			if (url.pathname === "/api/doc")
 				return sendJson(res, helmDoc(cwd, id, url.searchParams.get("repo") || undefined));
 			if (url.pathname === "/api/context")

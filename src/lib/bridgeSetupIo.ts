@@ -23,7 +23,6 @@ import {
 import { nosediveInvocation, packageMigrationDocs, packageRoot } from "./packageBacklog.js";
 import { levelMigration, levelsInGap } from "./packageLevels.js";
 import { readGitAuthorIdentity } from "./gitProcess.js";
-import { listedRoots } from "./roots.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
 	const options: SeedOptions = { help: false, headless: false, noPush: false, files: [] };
@@ -60,35 +59,16 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		? parseYamlBlock(readFileSync(basePath, "utf8"), formatPath(basePath))
 		: emptyYaml();
 
-	const backlog = base.scalars.backlog ?? DEFAULT_RC.backlog;
 	return {
 		workspace: base.scalars.workspace ?? DEFAULT_RC.workspace,
-		backlog,
+		backlog: base.scalars.backlog ?? DEFAULT_RC.backlog,
 		kb: base.scalars.kb ?? DEFAULT_RC.kb,
 		bridge: base.scalars.bridge ?? "",
 		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
 		pilotName: "",
 		pilotEmail: "",
-		extra: renameDecksKey(unownedConfigScalars(base.scalars), base.raw, backlog),
+		extra: unownedConfigScalars(base.scalars),
 	};
-}
-
-/**
- * `decks:` became `roots:`, which never lists the backlog: it is always a
- * root. The list is carried as a comma string, whichever form it was read in;
- * with nothing left the key goes.
- */
-function renameDecksKey(
-	extra: Record<string, string>,
-	raw: Record<string, unknown>,
-	backlog: string,
-): Record<string, string> {
-	if (raw.decks === undefined) return extra;
-	const { decks: _decks, roots: _roots, ...rest } = extra;
-	const roots = [
-		...new Set([...listedRoots(raw.roots), ...listedRoots(raw.decks, "decks")]),
-	].filter((id) => id !== backlog);
-	return roots.length > 0 ? { ...rest, roots: roots.join(", ") } : rest;
 }
 
 /** Config keys seed writes itself; everything else is the pilot's and is preserved. */

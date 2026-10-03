@@ -17,7 +17,7 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmDoc, helmRoots } = await import(libUrl);
+const { helmDoc, helmFeats, helmPicker } = await import(libUrl);
 const tmp = createTmp("cross-repo-links");
 const B_REPO = "01a0ff4a-e058-7744-b150-cdc7928f345d";
 const C_REPO = "01a0ff4a-e059-7323-a55b-3a5064d11e8e";
@@ -117,8 +117,8 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 	);
 	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "B is not hydrated");
 
-	// Helm's tree lists the feat under the root, and expands it into B's feat.
-	assert.ok(helmRoots(bridge).feats.some((feat) => feat.id === FEAT));
+	// Helm's tree lists the feat under the backlog, and expands it into B's feat.
+	assert.ok(helmPicker(bridge).feats.some((feat) => feat.id === FEAT));
 	const cached = helmDoc(bridge, FEAT).links.find((link) => link.id === B_FEAT);
 	assert.deepEqual(
 		{ type: cached.type, repo: cached.repo, rel: cached.rel, gist: cached.gist },
@@ -126,6 +126,12 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 	);
 	const opened = helmDoc(bridge, B_FEAT, B_REPO);
 	assert.equal(opened.ref, B_FEAT_LINK);
+	// Picked, the feat's tree row for B's feat is named the way crud names it.
+	const [bFeat] = helmFeats(bridge, FEAT);
+	assert.deepEqual(
+		{ id: bFeat.id, repo: bFeat.repo, ref: bFeat.ref, hasFeats: bFeat.hasFeats },
+		{ id: B_FEAT, repo: B_REPO, ref: B_FEAT_LINK, hasFeats: false },
+	);
 	assert.match(opened.html, /Work in B/);
 
 	assertOk(run(["hydrate-repo.workspace", B_REPO], bridge), "hydrating B failed");

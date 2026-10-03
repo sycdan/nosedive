@@ -366,24 +366,8 @@ test("a kind two repos in play define is named <repo>:<kind>, and a doc's meta c
 test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {
 	const { bridge } = seededBridge(tmp, "dives", "pilot@nosedive.invalid");
 	const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
-	const rootId = /^backlog: (\S+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
 	const made = run(
-		[
-			"crud",
-			"dive",
-			"--feat",
-			KB_FEAT,
-			"--root",
-			rootId,
-			"--title",
-			"Note button",
-			"Add",
-			"the",
-			"note",
-			"button",
-		],
+		["crud", "dive", "--feat", KB_FEAT, "--title", "Note button", "Add", "the", "note", "button"],
 		bridge,
 		"Put a Note button in the dive bar.\n\nIt takes free text.\n",
 	);
@@ -395,7 +379,7 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	assert.match(doc, /^gist: "Add the note button"$/m);
 	assert.match(doc, new RegExp(`^  feat: ${KB_FEAT}$`, "m"));
 	assert.match(doc, /^  diver: null$/m, "recording claims nothing");
-	assert.match(doc, new RegExp(`^  root: ${rootId}$`, "m"));
+	assert.doesNotMatch(doc, /^ {2}(root|deck):/m, "a dive keeps no root");
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
 	assert.match(subject(bridge), /^dive\(\S+\): created$/);
@@ -404,8 +388,8 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	for (const [args, pattern] of [
 		[["dive", "No", "feat"], /crud dive needs --feat/],
 		[["dive", "--feat", KB_FEAT, "--name", "mine", "Named"], /a dive's name is managed/],
-		[["memo", "--feat", KB_FEAT, "Elves"], /--feat, --title and --root go with crud dive/],
-		[["dive", "--feat", KB_FEAT, "--root", "nope", "Lost"], /no root nope/],
+		[["memo", "--feat", KB_FEAT, "Elves"], /--feat and --title go with crud dive/],
+		[["dive", "--feat", KB_FEAT, "--root", "nope", "Lost"], /crud takes no --root/],
 	]) {
 		const refused = run(["crud", ...args], bridge, "brief\n");
 		assert.equal(refused.status, 1, args.join(" "));

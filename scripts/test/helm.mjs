@@ -39,7 +39,7 @@ const [
 	NOTE_1,
 	DIVE,
 ] = minted.stdout.trim().split(/\r?\n/);
-const { helmRoots, parseRoots } = await import(libUrl);
+const { helmPicker } = await import(libUrl);
 
 function fixture() {
 	const bridge = createBridge(tmp, "bridge", { backlog: BACKLOG, bridge: BRIDGE_REPO });
@@ -137,8 +137,6 @@ function fixture() {
 		join(bridge, "kb", `${NOTE_1}.md`),
 		`---\nkind: note\nid: ${NOTE_1}\nname: ${NOTE_1}\ngist: "A note"\n---\n`,
 	);
-	const config = join(bridge, ".nosedive", "config.yaml");
-	write(config, `${readFileSync(config, "utf8")}roots: ${IDEAS}\n`);
 	write(
 		join(bridge, "kb", `${IDEAS}.md`),
 		`---\nkind: memo\nid: ${IDEAS}\nname: ideas\ngist: "Ideas"\n---\n\n# Ideas\n`,
@@ -195,16 +193,7 @@ function startHelm(cwd) {
 	return { url, stop };
 }
 
-test("helm roots: config forms, the backlog always first unless listed", () => {
-	assert.deepEqual(parseRoots(`${FEAT}, ${IDEAS},${BACKLOG}`, BACKLOG), [FEAT, IDEAS, BACKLOG]);
-	assert.deepEqual(parseRoots([FEAT, IDEAS], BACKLOG), [BACKLOG, FEAT, IDEAS]);
-	assert.deepEqual(parseRoots([FEAT, BACKLOG, FEAT], BACKLOG), [FEAT, BACKLOG], "each once");
-	assert.deepEqual(parseRoots(undefined, BACKLOG), [BACKLOG]);
-	assert.deepEqual(parseRoots(undefined, undefined), []);
-	assert.throws(() => parseRoots("ideas", BACKLOG), /roots lists doc ids/);
-});
-
-test("helm serves roots as a link tree over a token-guarded API", async (t) => {
+test("helm serves the backlog as a link tree over a token-guarded API", async (t) => {
 	const bridge = fixture();
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
@@ -308,7 +297,7 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 	assert.match(script, /function groupedRows\(items, render\)/, "page carries groupedRows");
 	assert.match(
 		script,
-		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel\)\)/,
+		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel, Boolean\(listing\.pick\)\)\)/,
 		"loadRoots groups the root's feats",
 	);
 	assert.match(
@@ -328,7 +317,7 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 	);
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
-	const api = new URL("/api/roots", base);
+	const api = new URL("/api/picker", base);
 	assert.equal((await fetch(api)).status, 403, "api without token");
 	assert.equal(
 		(await fetch(api, { headers: { "x-helm-token": "0".repeat(token.length) } })).status,
@@ -336,14 +325,16 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 		"api with wrong token",
 	);
 
-	// The backlog is the first root, with its feats; the other roots follow.
+	// At picker-level 0, the default, nothing is offered: the tree is the whole backlog.
 	const {
 		bridge: bridgeInfo,
 		backlog: backlogRoot,
 		feats,
-		roots,
-		diving,
-	} = await get("/api/roots");
+		level,
+		choices,
+		pick,
+		locked,
+	} = await get("/api/picker");
 	assert.deepEqual(
 		{ id: bridgeInfo.id, name: bridgeInfo.name },
 		{ id: BRIDGE_REPO, name: "bridge" },
@@ -355,13 +346,12 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 		feats.map((feat) => [feat.id, feat.rel]),
 		[[FEAT, "current.feat"]],
 	);
-	assert.deepEqual(
-		roots.map((root) => [root.id, root.name]),
-		[[IDEAS, "ideas"]],
-	);
-	assert.equal(diving, false);
+	assert.equal(level, 0);
+	assert.deepEqual(choices, []);
+	assert.equal(pick, undefined);
+	assert.equal(locked, false);
 
-	const repos = await get(`/api/root-repos?id=${BACKLOG}`);
+	const { repos } = await get(`/api/context?root=${BACKLOG}`);
 	assert.deepEqual(
 		repos.map((repo) => repo.id),
 		[BRIDGE_REPO, HYDRATED, INSTALLED],
@@ -378,7 +368,7 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 	assert.equal(hydratedCard.nosedive, null, "no config file means not installed");
 	assert.equal(installedCard.hydrated, null);
 	assert.deepEqual(installedCard.nosedive, { level: 1 }, "read from trunk without hydrating");
-	assert.deepEqual(await get(`/api/root-repos?id=${IDEAS}`), []);
+	assert.deepEqual((await get(`/api/context?root=${IDEAS}`)).repos, []);
 
 	const backlog = await get(`/api/doc?id=${BACKLOG}`);
 	assert.deepEqual(
@@ -508,7 +498,7 @@ test("helm's context: a root's repos, narrowed by a feat; kinds with counts, nar
 	);
 });
 
-test("on a dive helm's root is its meta.root, or an older dive's meta.deck", (t) => {
+test("on a dive at level 0 helm shows the whole backlog; meta.root and meta.deck are ignored", (t) => {
 	const bridge = join(tmp, "bridge");
 	const diveDoc = join(bridge, "kb", `${DIVE}.md`);
 	const before = readFileSync(diveDoc, "utf8");
@@ -523,10 +513,15 @@ test("on a dive helm's root is its meta.root, or an older dive's meta.deck", (t)
 			diveDoc,
 			`---\nkind: dive\nid: ${DIVE}\nname: a-dive\ngist: "A dive"\nmeta:\n${meta}---\n`,
 		);
-	dive(`  deck: ${IDEAS}\n`);
-	assert.equal(helmRoots(bridge).root, IDEAS, "an older dive's deck is its root");
-	dive(`  root: ${BACKLOG}\n  deck: ${IDEAS}\n`);
-	assert.equal(helmRoots(bridge).root, BACKLOG, "root wins over deck");
+	dive(`  root: ${IDEAS}\n  deck: ${IDEAS}\n`);
+	const picker = helmPicker(bridge);
+	assert.equal(picker.locked, true);
+	assert.equal(picker.pick, undefined, "nothing picked: the whole backlog");
+	assert.equal(picker.backlog.id, BACKLOG);
+	assert.deepEqual(
+		picker.feats.map((feat) => feat.id),
+		[FEAT],
+	);
 });
 
 test("helm writes only by running crud, and only on an active dive; a note needs none", async (t) => {
@@ -663,7 +658,7 @@ test("helm refuses a request whose Host is not the address it bound", async (t) 
 			{
 				host: base.hostname,
 				port: base.port,
-				path: `/api/roots`,
+				path: `/api/picker`,
 				headers: { host: "evil.example", "x-helm-token": base.searchParams.get("token") },
 			},
 			(res) => resolveStatus(res.statusCode),

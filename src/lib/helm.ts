@@ -35,14 +35,6 @@ export interface HelmRepoCard {
 	nosedive: { level: number } | null | "unknown";
 }
 
-export interface HelmRoot {
-	id: string;
-	name: string;
-	kind: string;
-	gist: string;
-	title?: string;
-}
-
 export type { HelmLink };
 
 export interface HelmDoc {
@@ -122,18 +114,6 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 
 function bridgeDocs(cwd: string): BridgeView {
 	return bridgeView(cwd);
-}
-
-/** The repos a root scopes, in its scope order; links are not followed. */
-export function helmRootRepos(cwd: string, id: string): HelmRepoCard[] | undefined {
-	const { rc, docs } = bridgeDocs(cwd);
-	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const root = byId.get(id);
-	if (!root) return undefined;
-	return root.scopes
-		.map((scope) => byId.get(scope.repoId))
-		.filter((doc): doc is KbDoc => doc?.kind === "repo")
-		.map((doc) => repoCard(doc, rc.bridgeDir, doc.id === rc.bridge));
 }
 
 function escapeHtml(text: string): string {
@@ -218,13 +198,13 @@ export function helmContext(
 	const view = bridgeDocs(cwd);
 	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
-	const root = byId.get(rootId);
+	const root = byId.get(rootId) ?? helmRepoDoc(view, rootId);
 	if (!root) return undefined;
 	const feat = featId ? (byId.get(featId) ?? helmRepoDoc(view, featId)) : undefined;
 	if (featId && !feat) return undefined;
 	// A staged or active dive narrows furthest: its scopes are what it will work on.
 	const dive = diveId ? byId.get(diveId) : undefined;
-	const scopes = dive ? dive.scopes : feat ? inheritedScopes(feat, docs).scopes : root.scopes;
+	const scopes = dive ? dive.scopes : inheritedScopes(feat ?? root, docs).scopes;
 	const inView = scopes
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");

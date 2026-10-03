@@ -21,23 +21,17 @@ export function diveToJump(
 	kbDocs: KbDoc[],
 	ref: string | undefined,
 	io: CommandIo,
-	root?: string,
 ): string | undefined {
-	// Only a dive jump records carries the root it came from.
-	const unrecorded = (given: string | undefined) => {
-		if (root !== undefined) throw new Error("jump --root goes with a feat, not a dive");
-		return given;
-	};
-	if (!ref) return unrecorded(ref);
+	if (!ref) return ref;
 	// A feat in another repo is named `<repo-quid>:<path>`, and is always a feat jump.
 	let feat: KbDoc | undefined = resolveRepoRef(kbDocs, rc, ref);
 	try {
 		feat ??= resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref);
 	} catch {
-		return unrecorded(ref);
+		return ref;
 	}
 	// A dive jumps as itself; a repo is not work, so jump refuses it as it always has.
-	if (feat.kind === "dive" || feat.kind === "repo") return unrecorded(ref);
+	if (feat.kind === "dive" || feat.kind === "repo") return ref;
 	// What makes a doc a feat is the root reaching it through `.feat` links, not its kind.
 	assertJumpable(rc, kbDocs, feat);
 	const active = readActiveDiveId(rc.workspaceDir);
@@ -61,7 +55,7 @@ export function diveToJump(
 		["--feat", featRefOf(feat), "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
 		quiet,
 		// jump reads every dive's brief; this one says there was no plan.
-		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id, root },
+		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id },
 	);
 	return id;
 }

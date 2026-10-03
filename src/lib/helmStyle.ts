@@ -129,8 +129,6 @@ pre.output.failed { border-left-color: #d64545; }
 .repos section.repo { display: grid; gap: 8px; }
 .repos section.repo .doclist { margin: 0 0 0 12px; }
 #reposbtn { margin-right: 4px; }
-#rootadd, #rootunlist { margin-left: 4px; }
-#rootadd:disabled { opacity: .5; cursor: not-allowed; }
 #rootpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
 	background: var(--panel); color: var(--text); max-width: 16em; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);

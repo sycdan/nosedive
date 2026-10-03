@@ -112,34 +112,16 @@ test("seed stops on a conflict with markers left in the doc, and refuses a shipp
 	assert.equal(readFileSync(memo, "utf8"), text, "a refused seed touches nothing");
 });
 
-test("seed renames decks: to roots: and drops the backlog from it", () => {
+test("seed keeps picker-level, and an old roots: or decks: key as it is", () => {
 	const { bridge } = seededBridge(tmp, "roots", "pilot@nosedive.invalid");
 	const backlog = configKey(bridge, "backlog");
-	const minted = run(["mint", "2"], bridge);
-	assertOk(minted, "mint failed");
-	const [ROOT_A, ROOT_B] = minted.stdout.trim().split(/\r?\n/);
 	const configPath = join(bridge, ".nosedive", "config.yaml");
-	const seed = () => assertOk(run(["seed", "--headless", "--no-push"], bridge, ""), "seed failed");
-
-	write(configPath, `${config(bridge)}decks: ${backlog}, ${ROOT_A}\n`);
-	commitAll(bridge, "a comma list of decks");
-	seed();
-	assert.doesNotMatch(config(bridge), /^decks:/m);
-	assert.equal(configKey(bridge, "roots"), ROOT_A);
-
-	write(
-		configPath,
-		`${config(bridge).replace(/^roots:.*\n/m, "")}decks:\n  - ${ROOT_B}\n  - ${backlog}\n`,
-	);
-	commitAll(bridge, "a YAML list of decks");
-	seed();
-	assert.doesNotMatch(config(bridge), /^decks:/m);
-	assert.equal(configKey(bridge, "roots"), ROOT_B);
-
-	write(configPath, `${config(bridge).replace(/^roots:.*\n/m, "")}decks: ${backlog}\n`);
-	commitAll(bridge, "only the backlog");
-	seed();
-	assert.doesNotMatch(config(bridge), /^(decks|roots):/m, "an empty list drops the key");
+	write(configPath, `${config(bridge)}picker-level: 2\nroots: ${backlog}\ndecks: ${backlog}\n`);
+	commitAll(bridge, "pilot keys");
+	assertOk(run(["seed", "--headless", "--no-push"], bridge, ""), "seed failed");
+	assert.equal(configKey(bridge, "picker-level"), "2");
+	assert.equal(configKey(bridge, "roots"), backlog, "nothing reads roots:, and nothing renames it");
+	assert.equal(configKey(bridge, "decks"), backlog);
 	assert.equal(git(["status", "--porcelain"], bridge), "");
 });
 

@@ -225,7 +225,7 @@ function planForm(doc) {
 		el("button", { type: "submit" }, "Plan dive"), out);
 	onSubmit(form, async () => {
 		try {
-			const run = await write("/api/crud/dive", { feat: doc.ref, root: ctx.root || undefined, title: title.value || undefined, gist: gist.value, brief: brief.value });
+			const run = await write("/api/crud/dive", { feat: doc.ref, title: title.value || undefined, gist: gist.value, brief: brief.value });
 			show(run.stdout);
 			form.reset();
 		} catch (err) {
@@ -236,7 +236,7 @@ function planForm(doc) {
 }
 
 function jumpInto(doc) {
-	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.ref, root: ctx.root || undefined }));
+	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.ref }));
 }
 
 /**

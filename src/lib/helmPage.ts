@@ -17,7 +17,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="rootpick" aria-label="Root"></select><button id="rootadd" class="act unstage" type="button" title="Add a root" aria-label="Add a root">+</button><button id="rootunlist" class="act unstage" type="button" title="Unlist this root" hidden>Unlist root</button><span id="headacts"></span></header>
+<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="rootpick" aria-label="Pick" hidden></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -200,7 +200,7 @@ async function showRepos() {
 					: el("p", { class: "empty" }, unreadable.has(repo.name) ? "Not hydrated, so its kb cannot be read." : "Declares no kinds.");
 				return el("section", { class: "repo" }, repoCard(repo), list);
 			}))
-			: el("p", { class: "empty" }, "This root scopes no repos."));
+			: el("p", { class: "empty" }, "The picked doc scopes no repos."));
 	} catch (err) { showError(err); }
 }
 

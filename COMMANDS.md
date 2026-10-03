@@ -60,7 +60,7 @@ More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 npx -y nosedive@2026.9.18-1789698885570 crud --help
 ```
 ```md
-Usage: nosedive crud [<repo>:]<kind> [--name <name>] [--meta -] <gist...> | nosedive crud dive --feat <feat> [--deck <deck>] [--title <title>] <gist...> | nosedive crud [<repo>:]<quid> [--meta - | --scopes - | --links -] [--replace]
+Usage: nosedive crud [<repo>:]<kind> [--name <name>] [--meta -] <gist...> | nosedive crud dive --feat <feat> [--title <title>] <gist...> | nosedive crud [<repo>:]<quid> [--meta - | --scopes - | --links -] [--replace]
 
 Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
 
@@ -114,7 +114,7 @@ npx -y nosedive@2026.9.18-1789698885570 helm --help
 ```md
 Usage: nosedive helm [<branch>]
 
-Serve a local admin UI for the bridge: its bridge deck's feats and its decks as a link tree, each deck's repos with hydration and nosedive install state, and kb docs rendered.
+Serve a local admin UI for the bridge: its backlog's feats as a link tree, the repos in view with hydration and nosedive install state, and kb docs rendered.
 
 More: nosedive render 6a704279-69c1-5dcb-a2c0-b0b5dc93d56e
 ```
@@ -138,7 +138,7 @@ More: nosedive render c4e93002-2925-58bd-9b70-d917017a9fc7
 npx -y nosedive@2026.9.18-1789698885570 jump --help
 ```
 ```md
-Usage: nosedive jump [<dive-ref> | <feat-ref> [--deck <deck>]]
+Usage: nosedive jump [<dive-ref> | <feat-ref>]
 
 Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top.
 
@@ -164,7 +164,7 @@ More: nosedive render 587d3f73-2534-5179-b111-ce6c83d6814d
 npx -y nosedive@2026.9.18-1789698885570 list-dives --help
 ```
 ```md
-Usage: nosedive list-dives [<feat-or-deck>] [--include-historical] [--json]
+Usage: nosedive list-dives [<feat-or-root>] [--include-historical] [--json]
 
 Print all outstanding dives and what they still need.
 

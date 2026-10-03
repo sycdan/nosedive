@@ -15,22 +15,22 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmCreatableKinds, helmRoots } = await import(libUrl);
+const { helmCreatableKinds, helmPicker } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 
-test("a root made on a dive that scopes the bridge goes to its __self checkout, and the live bridge is untouched", () => {
+test("a memo made on a dive that scopes the bridge goes to its __self checkout, and the live bridge is untouched", () => {
 	const { bridge, origin } = seededBridge(tmp, "self", "pilot@nosedive.invalid");
 	const configPath = join(bridge, ".nosedive", "config.yaml");
 	const liveConfig = readFileSync(configPath, "utf8");
 
 	// The kb feat scopes the bridge itself, so jumping a dive on it hydrates __self.
 	const recorded = run(
-		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "root"],
+		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "memo"],
 		bridge,
-		"Make a root.\n",
+		"Make a memo.\n",
 	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
@@ -46,30 +46,27 @@ test("a root made on a dive that scopes the bridge goes to its __self checkout, 
 
 	const made = run(["crud", "memo", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
 	assertOk(made, "crud memo failed");
-	const rootId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
+	const memoId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
 	assert.equal(
 		git(["log", "-1", "--format=%s"], self),
-		`crud(${rootId}): created memo magic-cards`,
+		`crud(${memoId}): created memo magic-cards`,
 	);
-	// Listed as a root in the checkout's own config, as a pilot would.
+	// A config change made in the checkout, as a pilot would.
 	const selfConfig = join(self, ".nosedive", "config.yaml");
-	writeFileSync(selfConfig, `${readFileSync(selfConfig, "utf8")}roots: ${rootId}\n`);
+	writeFileSync(selfConfig, `${readFileSync(selfConfig, "utf8")}picker-level: 1\n`);
 	runTool("git", ["add", ".nosedive/config.yaml"], self);
-	runTool("git", ["commit", "-m", "list a root"], self);
+	runTool("git", ["commit", "-m", "a picker"], self);
 
-	// Helm shows the bridge as the dive has it: the new root already, the kb feat first.
-	const view = helmRoots(bridge);
-	assert.equal(view.diving, true);
-	assert.deepEqual(
-		view.roots.map((root) => root.id),
-		[rootId],
-	);
+	// Helm shows the bridge as the dive has it, the kb feat first; the live config sets its level.
+	const view = helmPicker(bridge);
+	assert.equal(view.level, 0);
+	assert.deepEqual(view.choices, []);
 	assert.equal(view.feats[0].id, KB_FEAT);
 	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
 	assert.equal(view.backlog.id, backlog);
-	assert.equal(view.locked, true, "on a dive the root is the dive's");
-	assert.equal(view.root, backlog, "a dive naming no root is on the backlog");
-	assert.equal(helmRoots(bridge, rootId).root, backlog, "a pick cannot move a locked root");
+	assert.equal(view.locked, true, "on a dive the pick is locked");
+	assert.equal(view.pick, undefined, "at level 0 a dive shows the whole backlog");
+	assert.equal(helmPicker(bridge, KB_FEAT).pick, undefined, "a pick cannot move a locked one");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -100,8 +97,8 @@ test("a root made on a dive that scopes the bridge goes to its __self checkout, 
 
 	assert.match(
 		readFileSync(join(self, ".nosedive", "config.yaml"), "utf8"),
-		new RegExp(`^roots: ${rootId}$`, "m"),
-		"listed in the checkout's own config",
+		/^picker-level: 1$/m,
+		"set in the checkout's own config",
 	);
 	assert.equal(
 		readFileSync(configPath, "utf8"),
@@ -114,21 +111,21 @@ test("a root made on a dive that scopes the bridge goes to its __self checkout, 
 	const landed = run(["land"], bridge);
 	assertOk(landed, "land failed");
 	assert.match(landed.stderr, /brought the bridge's own scope into the bridge/);
-	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), new RegExp(rootId));
-	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), new RegExp(rootId));
-	assert.match(readFileSync(configPath, "utf8"), new RegExp(`^roots: ${rootId}$`, "m"));
-	assert.match(readFileSync(join(bridge, "kb", `${rootId}.md`), "utf8"), /^name: magic-cards$/m);
+	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), /^picker-level: 1$/m);
+	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), /^picker-level: 1$/m);
+	assert.match(readFileSync(configPath, "utf8"), /^picker-level: 1$/m);
+	assert.match(readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8"), /^name: magic-cards$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 
 	assert.deepEqual(helmCreatableKinds(bridge), [], "with no dive helm makes nothing");
 
-	// With no dive the pilot picks: the root is theirs, and its feats are its own.
-	const picked = helmRoots(bridge, rootId);
+	// With no dive the pilot picks among what the backlog's feat links reach.
+	const picked = helmPicker(bridge, KB_FEAT);
 	assert.equal(picked.locked, false);
-	assert.equal(picked.root, rootId);
-	assert.deepEqual(picked.feats, [], "the new root links no feats yet");
-	assert.equal(helmRoots(bridge, "not-a-root").root, backlog, "an unknown pick falls back");
+	assert.ok(picked.choices.some((choice) => choice.id === KB_FEAT));
+	assert.equal(picked.pick, KB_FEAT);
+	assert.equal(helmPicker(bridge, "not-a-pick").pick, undefined, "an unknown pick is no pick");
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {

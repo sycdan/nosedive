@@ -71,11 +71,12 @@ function crud(args: string[], io: CommandIo): void {
 	const name = takeFlag(args, "--name");
 	const feat = takeFlag(args, "--feat");
 	const title = takeFlag(args, "--title");
-	const root = takeFlag(args, "--root");
 	if (args.includes("--repo"))
 		throw new Error(
 			"crud takes no --repo; name the repo on the ref: crud <repo>:<kind> or <repo>:<quid>",
 		);
+	const unknown = args.find((arg) => arg.startsWith("--"));
+	if (unknown !== undefined) throw new Error(`crud takes no ${unknown}`);
 	if (args.length === 0) throw new Error("crud needs a kind and a gist, or a quid");
 	const [first, ...rest] = args as [string, ...string[]];
 	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo;
@@ -86,8 +87,8 @@ function crud(args: string[], io: CommandIo): void {
 	const kinds = loadKinds(inPlay);
 
 	if (uuidLike(qualified.ref)) {
-		if (name !== undefined || feat !== undefined || title !== undefined || root !== undefined)
-			throw new Error("crud <quid> takes no --name, --feat, --title or --root");
+		if (name !== undefined || feat !== undefined || title !== undefined)
+			throw new Error("crud <quid> takes no --name, --feat or --title");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, qualified.ref);
 		if (!target) throw new Error(`no doc ${first} in context`);
@@ -150,12 +151,12 @@ function crud(args: string[], io: CommandIo): void {
 		recordDive(
 			["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : []), "--brief", "-"],
 			io,
-			{ target: { root: kind.source.root, kbDir: kind.source.kbDir }, root },
+			{ target: { root: kind.source.root, kbDir: kind.source.kbDir } },
 		);
 		return;
 	}
-	if (feat !== undefined || title !== undefined || root !== undefined)
-		throw new Error(`--feat, --title and --root go with crud dive, not crud ${kind.name}`);
+	if (feat !== undefined || title !== undefined)
+		throw new Error(`--feat and --title go with crud dive, not crud ${kind.name}`);
 
 	// A name is the doc's identity when given: two docs may share a gist, so
 	// only the name is checked, by the mint.

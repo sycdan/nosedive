@@ -21,11 +21,8 @@ function field(body: Record<string, unknown>, key: string): string {
 /** The verbs the page may run -- the dive lifecycle, a note, and the workspace pair -- and the argv and stdin each becomes. */
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
-		case "jump": {
-			const root =
-				typeof body.root === "string" && body.root.trim() ? ["--root", body.root.trim()] : [];
-			return { args: ["jump", field(body, "ref"), ...root], stdin: "" };
-		}
+		case "jump":
+			return { args: ["jump", field(body, "ref")], stdin: "" };
 		case "pack":
 			return { args: ["pack"], stdin: "" };
 		case "land":

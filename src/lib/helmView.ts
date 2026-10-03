@@ -1,9 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
-import { parseYamlBlock, readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { parseRoots } from "./roots.js";
+import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { repoKbDir } from "./kinds.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -48,13 +47,4 @@ function selfCheckout(rc: NosediveRc, docs: KbDoc[]): string | undefined {
 	return root && existsSync(join(root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME))
 		? root
 		: undefined;
-}
-
-/** The roots the view's config lists, read by path: a checkout must not resolve to the bridge around it. */
-export function viewRoots(view: BridgeView): string[] {
-	const path = view.self
-		? join(view.self.root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME)
-		: view.rc.path;
-	const config = parseYamlBlock(readFileSync(path, "utf8"), path);
-	return parseRoots(config.raw.roots, view.rc.backlog);
 }

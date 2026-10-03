@@ -115,10 +115,16 @@ test("seed refuses a bridge with no origin remote", () => {
 
 test("seed skips minting when a matching bridge repo doc already exists", () => {
 	const bridgeDir = newBridge("existing-repo-doc");
-	// nose: this seems wrong... shared id for backlog memo and repo doc?
-	writeConfig(bridgeDir, "019f52b7-75a0-7965-93a8-e6b08500eb21");
+	const backlogId = "01a101ea-25b0-71f5-92d1-079897a6072f";
+	writeConfig(bridgeDir, backlogId);
 	const origin = bareRepo(tmp, "existing-repo-doc.git");
 	runTool("git", ["remote", "add", "origin", origin], bridgeDir);
+	write(
+		join(bridgeDir, "kb", `${backlogId}.md`),
+		["---", "kind: memo", `id: ${backlogId}`, "name: bridge", 'gist: "Backlog."', "---", ""].join(
+			"\n",
+		),
+	);
 	write(
 		join(bridgeDir, "kb", "existing-repo.md"),
 		[
@@ -145,6 +151,6 @@ test("seed skips minting when a matching bridge repo doc already exists", () => 
 		readdirSync(join(bridgeDir, "kb"))
 			.filter((file) => !file.startsWith("00000000-0000-"))
 			.sort(),
-		["existing-repo.md"],
+		[`${backlogId}.md`, "existing-repo.md"],
 	);
 });

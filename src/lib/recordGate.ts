@@ -237,6 +237,7 @@ function featForGate(kbDocs: KbDoc[], rc: NosediveRc, featRef: string): KbDoc {
 	// gate, so declaring one anywhere else leaves that failure with nowhere to go.
 	if (feat.kind !== "feat")
 		throw new Error(`--feat does not resolve to a kind: feat doc: ${featRef}`);
+	if (feat.home) throw new Error(`--feat must be a feat in this bridge: ${featRef}`);
 	return feat;
 }
 

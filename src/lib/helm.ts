@@ -16,6 +16,7 @@ import {
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
+import { helmDocText, helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
@@ -41,21 +42,12 @@ export interface HelmRoot {
 	title?: string;
 }
 
-export type HelmLink =
-	| {
-			type: "doc";
-			target: string;
-			rel?: string;
-			id: string;
-			name: string;
-			kind: string;
-			gist: string;
-			title?: string;
-	  }
-	| { type: "url" | "file"; target: string; rel?: string };
+export type { HelmLink };
 
 export interface HelmDoc {
 	id: string;
+	/** What crud and jump take: the id, or `<repo-quid>:<path>` for a doc in another repo. */
+	ref: string;
 	kind: string;
 	name: string;
 	gist: string;
@@ -67,7 +59,6 @@ export interface HelmDoc {
 }
 
 const CONFIG_PATHS = [`${BRIDGE_STATE_DIRNAME}/${BASE_CONFIG_FILENAME}`, LEGACY_CONFIG_FILENAME];
-const URL_TARGET = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 function levelFromConfig(text: string, label: string): { level: number } | null {
 	try {
@@ -226,7 +217,7 @@ export function helmContext(
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const root = byId.get(rootId);
 	if (!root) return undefined;
-	const feat = featId ? byId.get(featId) : undefined;
+	const feat = featId ? (byId.get(featId) ?? helmRepoDoc(view, featId)) : undefined;
 	if (featId && !feat) return undefined;
 	// A staged or active dive narrows furthest: its scopes are what it will work on.
 	const dive = diveId ? byId.get(diveId) : undefined;
@@ -294,7 +285,10 @@ export function helmKindDocs(
 		.map((doc) => ({ id: doc.id, name: doc.name, gist: doc.gist }));
 }
 
-/** A doc from the bridge kb, or from a repo in view's kb when `repoId` names one. */
+/**
+ * A doc from the bridge kb, or from another repo's when `repoId` names one: its
+ * checkout's kb while hydrated, else the doc alone from the managed cache.
+ */
 export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | undefined {
 	const view = bridgeDocs(cwd);
 	const { rc, docs: bridgeKb } = view;
@@ -302,8 +296,9 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 	if (repoId && repoId !== rc.bridge) {
 		const repo = bridgeKb.find((doc) => doc.id === repoId && doc.kind === "repo");
 		const source = repo ? readableSource(view, repo) : undefined;
-		if (!source) return undefined;
-		docs = loadKbDocs(source.kbDir, source.root);
+		const cached = repo && !source ? helmRepoDoc(view, `${repoId}:kb/${id}.md`) : undefined;
+		if (!source && !cached) return undefined;
+		docs = source ? loadKbDocs(source.kbDir, source.root) : [cached!];
 	}
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	// A repo that takes a shipped kind reads it from the bridge.
@@ -311,29 +306,13 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 		byId.get(id) ??
 		(isZerostar(id) ? bridgeKb.find((d) => d.id === id && d.kind === "kind") : undefined);
 	if (!doc) return undefined;
-	const text = readFileSync(doc.path, "utf8");
+	const text = helmDocText(view, doc);
 	const block = leadingMarkdownFrontmatter(text);
-	const links = doc.links.map((link): HelmLink => {
-		const target = byId.get(link.id);
-		if (target)
-			return {
-				type: "doc",
-				target: link.target,
-				rel: link.rel,
-				id: target.id,
-				name: target.name,
-				kind: target.kind,
-				gist: target.gist,
-				title: target.h1,
-			};
-		return {
-			type: URL_TARGET.test(link.target) ? "url" : "file",
-			target: link.target,
-			rel: link.rel,
-		};
-	});
+	const home = repoId ?? rc.bridge;
+	const links = doc.links.map((link) => helmLink(view, doc, home, byId, link));
 	return {
 		id: doc.id,
+		ref: home === rc.bridge || doc.kind === "kind" ? doc.id : `${home}:${doc.relPath}`,
 		kind: doc.kind,
 		name: doc.name,
 		gist: doc.gist,

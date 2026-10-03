@@ -289,9 +289,11 @@ function commitAndPushPack(
 ): void {
 	// Pack records its phase on the feat's reciprocal link. Stage that edit
 	// with the dive so it cannot linger as bridge WIP for the next pack to capture.
-	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(feat ? [feat.path] : [])].map(
-		(path) => toPosixPath(relative(bridgeDir, path)),
-	);
+	const pathsToStage = [
+		divePath,
+		...newArtifactAbsPaths,
+		...(feat && !feat.home ? [feat.path] : []),
+	].map((path) => toPosixPath(relative(bridgeDir, path)));
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage packed dive artifacts");
 
 	const stashed = stashExceptStaged(bridgeDir);

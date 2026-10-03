@@ -42,7 +42,7 @@ import { gitOutput } from "../lib/gitProcess.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
 const refusalPrefix = "land refused because ";
@@ -530,7 +530,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, feat?.path);
+	const featPath = bridgeFeatPath(feat);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, featPath);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

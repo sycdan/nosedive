@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type { HelmLink, HelmRoot } from "./helm.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
+import { helmLink } from "./helmLinks.js";
 import { bridgeView, viewRoots } from "./helmView.js";
 import { diveRoot } from "./roots.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
@@ -45,21 +46,15 @@ export function helmRoots(
 	const wanted = activeId ? (activeDive ? diveRoot(activeDive) : undefined) : asked;
 	const rootId = wanted && pickable.has(wanted) ? wanted : rc.backlog;
 	const root = rootId ? byId.get(rootId) : undefined;
-	const feats = (root?.links ?? [])
-		.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
-		.map((link) => ({ link, doc: byId.get(link.id) }))
-		.filter((entry): entry is { link: KbDoc["links"][number]; doc: KbDoc } => !!entry.doc)
-		.sort((a, b) => Number(b.doc.id === KB_FEAT_ID) - Number(a.doc.id === KB_FEAT_ID))
-		.map(({ link, doc }): HelmLink => ({
-			type: "doc",
-			target: `kb/${doc.id}.md`,
-			rel: link.rel,
-			id: doc.id,
-			name: doc.name,
-			kind: doc.kind,
-			gist: doc.gist,
-			title: doc.h1,
-		}));
+	// A feat in another repo is listed too, unresolved when it cannot be read.
+	const isKbFeat = (link: HelmLink) => link.type === "doc" && link.id === KB_FEAT_ID;
+	const feats = root
+		? root.links
+				.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
+				.map((link) => helmLink(view, root, rc.bridge, byId, link))
+				.filter((link) => link.type === "doc" || link.type === "unresolved")
+				.sort((a, b) => Number(isKbFeat(b)) - Number(isKbFeat(a)))
+		: [];
 	return {
 		bridge: {
 			id: rc.bridge,

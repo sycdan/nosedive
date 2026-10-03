@@ -15,7 +15,7 @@ import {
 	stringifyYaml,
 	uuidLike,
 } from "./coreParsing.js";
-import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
+import { KbDoc, ScopeRef, loadKbDocs, readActiveDiveId, readKbDoc } from "./kbDocs.js";
 import {
 	cachedScope,
 	editScopes,
@@ -36,7 +36,10 @@ import { parseRecordDiveArgs, type RecordDiveOptions } from "./recordDiveArgs.js
 import { printNextSteps } from "./nextSteps.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
+	bridgeFeatPath,
 	ensureReleasable,
+	featRefOf,
+	linkFeatBack,
 	reconcileDiveFeatLinks,
 	releaseDiverInFrontmatter,
 	resolveFeatDoc,
@@ -97,6 +100,16 @@ function withBridgeScope(
 	];
 }
 
+/** A feat in another repo takes a link back, so it has to be read from a checkout. */
+function writableFeat(feat: KbDoc): KbDoc {
+	if (feat.home && !feat.home.checkout)
+		throw new Error(
+			`feat ${feat.name} lives in a repo that is not hydrated, so it cannot take a link back; ` +
+				`hydrate it first: nosedive hydrate-repo.workspace ${feat.home.repoId}`,
+		);
+	return feat;
+}
+
 function featTitle(feat: KbDoc): string {
 	const body = readFileSync(feat.path, "utf8");
 	return /^#\s+(.+)$/m.exec(body)?.[1]?.trim() || titleFromSlug(feat.name.split(".")[0]!);
@@ -134,7 +147,7 @@ function renderNewDive(
 		`gist: ${quoteYamlString(gist)}`,
 		...renderScopes(scopes),
 		"meta:",
-		`  feat: ${feat.id}`,
+		`  feat: ${featRefOf(feat)}`,
 		...(root ? [`  root: ${root}`] : []),
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
@@ -289,6 +302,9 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 	const active = target ? undefined : activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
+	// The dive in flight, whose checkout of a feat's repo commits the feat's link back.
+	const activeId = readActiveDiveId(workspaceDir);
+	const scoping = kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeId);
 
 	// After the active-dive read, not before it: a free dive claims the workspace
 	// like any other, so one already in flight is what refuses this one.
@@ -302,7 +318,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		// dive nobody claims never touches the workspace marker. Claiming is the
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
-		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
+		const feat = writableFeat(resolveFeatDoc(kbDocs, rc, options.feat!));
 		if (root !== undefined && !kbDocs.some((doc) => doc.id === root))
 			throw new Error(`no root ${root} in ${formatPath(kbDir)}`);
 		/**
@@ -344,13 +360,14 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		const path = join(kbDir, `${id}.md`);
 		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief, root));
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
+		linkFeatBack(feat, id, "planned.dive", scoping, io);
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
 		commitBridgeDocs(
 			docRoot,
 			`dive(${readKbDoc(path, docRoot).name}): created`,
-			[path, feat.path],
+			[path, bridgeFeatPath(feat)],
 			io,
 			feat.id,
 		);
@@ -377,11 +394,11 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);
 	const previousFeat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
-	const feat = options.feat ? resolveFeatDoc(kbDocs, rc, options.feat) : previousFeat;
+	const feat = options.feat ? writableFeat(resolveFeatDoc(kbDocs, rc, options.feat)) : previousFeat;
 	if (options.feat) {
 		if (!feat) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
 		doc.set("name", managedName(feat, dive.id));
-		doc.setIn(["meta", "feat"], feat.id);
+		doc.setIn(["meta", "feat"], featRefOf(feat));
 		// Not a migration -- the one case where leaving the old key would make the
 		// document name two different feats, with the parser silently preferring
 		// one of them.
@@ -461,6 +478,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		// removes the old feat's reciprocal link.
 		const existingRel = previousFeat?.links.find((link) => link.id === dive.id)?.rel;
 		reconcileDiveFeatLinks(previousFeat, feat, dive.id, existingRel ?? "planned.dive");
+		linkFeatBack(feat, dive.id, existingRel ?? "planned.dive", scoping, io);
 	}
 	if (ensureActivation(dive, claimed, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
@@ -469,7 +487,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 	commitBridgeDocs(
 		rc.bridgeDir,
 		`dive(${dive.name}): updated`,
-		[dive.path, feat?.path, previousFeat?.path],
+		[dive.path, bridgeFeatPath(feat), bridgeFeatPath(previousFeat)],
 		io,
 		feat?.id,
 	);

@@ -92,6 +92,19 @@ export interface KbDoc {
 	hasScopes: boolean;
 	scopes: ScopeRef[];
 	links: LinkRef[];
+	/** Set on a doc read out of another repo through a `<repo-quid>:<path>` ref. */
+	home?: DocHome;
+}
+
+/**
+ * The repo a doc was read from, and the bridge it was read for -- a link back
+ * names it. `checkout` is where the doc can be written, absent when it was
+ * read from the managed cache.
+ */
+export interface DocHome {
+	repoId: string;
+	bridgeId: string;
+	checkout?: string;
 }
 
 export interface TargetDoc {
@@ -177,9 +190,13 @@ function kbMetaPath(path: string | undefined): string | undefined {
 	return path === undefined ? undefined : toPosixPath(path);
 }
 
-export function readKbDoc(path: string, bridgeDir: string): KbDoc {
+/** `text` stands in for the file, for a doc read out of git rather than off disk. */
+export function readKbDoc(
+	path: string,
+	bridgeDir: string,
+	text = readFileSync(path, "utf8"),
+): KbDoc {
 	const label = formatPath(path);
-	const text = readFileSync(path, "utf8");
 	const fm = parseMarkdownFrontmatter(text, label);
 	const raw = fm.raw;
 	return {

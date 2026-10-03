@@ -3,6 +3,8 @@ import { uuidLike, type NosediveRc } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { recordDive } from "./recordDive.js";
+import { featRefOf } from "./repoFeatScopes.js";
+import { resolveRepoRef } from "./repoLinks.js";
 import { managedDiveName, titleFromSlug } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
@@ -26,9 +28,10 @@ export function diveToJump(
 		return given;
 	};
 	if (!ref) return unrecorded(ref);
-	let feat: KbDoc;
+	// A feat in another repo is named `<repo-quid>:<path>`, and is always a feat jump.
+	let feat: KbDoc | undefined = resolveRepoRef(kbDocs, rc, ref);
 	try {
-		feat = resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref);
+		feat ??= resolveBridgeDocRef(rc.bridgeDir, kbDocs, ref);
 	} catch {
 		return unrecorded(ref);
 	}
@@ -52,7 +55,7 @@ export function diveToJump(
 		},
 	});
 	recordDive(
-		["--feat", feat.id, "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
+		["--feat", featRefOf(feat), "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
 		quiet,
 		// jump reads every dive's brief; this one says there was no plan.
 		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id, root },

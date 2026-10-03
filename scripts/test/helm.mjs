@@ -323,7 +323,7 @@ test("helm serves roots as a link tree over a token-guarded API", async (t) => {
 	);
 	assert.match(
 		script,
-		/const step = \{ id: item\.id, name: label\(item\), kind: item\.kind, rel: item\.rel \}/,
+		/const step = \{ id: item\.id, name: label\(item\), kind: item\.kind, rel: item\.rel, repo: item\.repo \}/,
 		"the path step keeps the full rel",
 	);
 

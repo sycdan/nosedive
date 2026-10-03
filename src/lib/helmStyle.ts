@@ -51,7 +51,7 @@ button { font: inherit; color: inherit; }
 .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); flex: none; }
 .rel { font-size: 11px; color: var(--dim); flex: none; }
 .url .text { color: var(--accent); }
-.file .text, .cycle .text { color: var(--dim); }
+.file .text, .cycle .text, .unresolved .text { color: var(--dim); }
 
 /* main */
 .empty { color: var(--dim); padding: 48px 0; text-align: center; }

@@ -44,6 +44,8 @@ export interface ScopeRef {
 export interface LinkRef {
 	id: string;
 	target: string;
+	/** The repo a `<repo-quid>:<path>` target names; absent for a bare ref. */
+	repo?: string;
 	rel?: string;
 	anchor?: string;
 	/** Every scalar key written on the link, `rel`/`anchor` included. Open set: the reading command validates what it needs. */
@@ -175,6 +177,25 @@ export function optionalLinkString(
 	return scalar;
 }
 
+/**
+ * `<repo-quid>:<path>` names a file in that repo, the path relative to its
+ * root. Anything else -- a bare quid, a kb path, a URL -- is not one.
+ */
+export function splitRepoRef(target: string): { repo: string; path: string } | undefined {
+	const at = target.indexOf(":");
+	const repo = target.slice(0, at);
+	const path = target.slice(at + 1);
+	if (at <= 0 || !path || !uuidLike(repo)) return undefined;
+	return { repo: repo.toLowerCase(), path };
+}
+
+/** A link's id and target, and its repo when the target names one. */
+function linkBase(target: string): Pick<LinkRef, "id" | "target" | "repo"> {
+	const qualified = splitRepoRef(target);
+	if (!qualified) return { id: linkDocId(target), target };
+	return { id: linkDocId(qualified.path), target, repo: qualified.repo };
+}
+
 function linkDocId(target: string): string {
 	const kbDocMatch =
 		/^kb\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i.exec(target);
@@ -193,9 +214,9 @@ export function parseLinkRef(link: unknown, path: string, index: number): LinkRe
 			if (!targetPath || !anchor) {
 				throw new Error(`invalid link entry in ${label}: target and anchor must be non-empty`);
 			}
-			return { id: linkDocId(targetPath), target: targetPath, anchor, attrs: { anchor } };
+			return { ...linkBase(targetPath), anchor, attrs: { anchor } };
 		}
-		return { id: linkDocId(target), target, attrs: {} };
+		return { ...linkBase(target), attrs: {} };
 	}
 	if (!link || typeof link !== "object" || Array.isArray(link)) {
 		throw new Error(
@@ -212,8 +233,7 @@ export function parseLinkRef(link: unknown, path: string, index: number): LinkRe
 	if (!target) throw new Error(`invalid link entry in ${label}: target key must be non-empty`);
 
 	const rawValue = (link as Record<string, unknown>)[keys[0]!];
-	if (rawValue === null || rawValue === undefined)
-		return { id: linkDocId(target), target, attrs: {} };
+	if (rawValue === null || rawValue === undefined) return { ...linkBase(target), attrs: {} };
 	if (typeof rawValue !== "object" || Array.isArray(rawValue)) {
 		throw new Error(`invalid link entry in ${label}: value for '${target}' must be a YAML object`);
 	}
@@ -236,7 +256,7 @@ export function parseLinkRef(link: unknown, path: string, index: number): LinkRe
 		}
 		attrs[key] = scalar;
 	}
-	return { id: linkDocId(target), target, rel, anchor, attrs };
+	return { ...linkBase(target), rel, anchor, attrs };
 }
 
 export function parseLinkRefs(value: unknown, path: string): LinkRef[] {

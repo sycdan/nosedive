@@ -98,7 +98,7 @@ function crud(args: string[], io: CommandIo): void {
 		const patch = parseYaml(readStdinText(hint(block))) as unknown;
 		if (!patch || typeof patch !== "object" || Array.isArray(patch))
 			throw new Error(`--${block} reads a YAML or JSON mapping from stdin`);
-		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io);
+		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io, inPlay);
 		return;
 	}
 	if (block && (block !== "meta" || replace))

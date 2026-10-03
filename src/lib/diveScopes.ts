@@ -5,7 +5,8 @@ import { CommandIo } from "./bridgeSetupIo.js";
 import { defaultWorkBranch, formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { hydratedScopedRepoPath } from "./gitState.js";
-import { KbDoc, ScopeRef } from "./kbDocs.js";
+import { KbDoc, loadKbDocs, ScopeRef } from "./kbDocs.js";
+import { repoKbDir } from "./kinds.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
@@ -475,12 +476,17 @@ export function editScopes(
  * and a dive with no scope can be jumped with no repo attached and landed
  * without pushing anything. The nearest scoped ancestor is the one the pitcher
  * meant, so the walk stops there instead of unioning the whole chain.
+ *
+ * A feat read from another repo's checkout walks that repo's kb first, then
+ * the bridge's: a bare link names the nearest copy.
  */
 export function inheritedScopes(
 	feat: KbDoc,
 	kbDocs: KbDoc[],
 ): { scopes: ScopeRef[]; source?: KbDoc } {
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const checkout = feat.home?.checkout;
+	const own = checkout ? loadKbDocs(repoKbDir(checkout), checkout) : [];
+	const byId = new Map([...kbDocs, ...own].map((doc) => [doc.id, doc]));
 	const seen = new Set<string>();
 	let current: KbDoc | undefined = feat;
 	while (current && !seen.has(current.id)) {

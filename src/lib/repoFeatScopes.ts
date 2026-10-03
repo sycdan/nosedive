@@ -11,16 +11,24 @@ import {
 	stringifyYaml,
 	toPosixPath,
 } from "./coreParsing.js";
+import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { diveDiver } from "./diveListing.js";
 import { KbDoc, readActiveDiveId } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { writeFileAtomic } from "./renderPlan.js";
+import { resolveRepoRef } from "./repoLinks.js";
 
 export function featDocs(kbDocs: KbDoc[]): KbDoc[] {
 	return kbDocs.filter((doc) => doc.kind === "feat");
 }
 
+/**
+ * A feat by quid, kb path or name, or by `<repo-quid>:<path>` when it lives in
+ * another repo -- the form a dive's `meta.feat` keeps for one.
+ */
 export function resolveFeatDoc(kbDocs: KbDoc[], rc: NosediveRc, featRef: string): KbDoc {
+	const elsewhere = resolveRepoRef(kbDocs, rc, featRef);
+	if (elsewhere) return elsewhere;
 	const byId = kbDocs.filter((doc) => doc.id === featRef);
 	if (byId.length === 1) return byId[0];
 
@@ -150,6 +158,16 @@ export function reconcileDocLink(
 	 */
 	attrs: Record<string, string | number | boolean | null> = {},
 ): void {
+	reconcileLinkTarget(path, `kb/${targetId}.md`, rel, attrs);
+}
+
+/** `reconcileDocLink` for a target written out in full, such as `<repo-quid>:<path>`. */
+export function reconcileLinkTarget(
+	path: string,
+	target: string,
+	rel: string | undefined,
+	attrs: Record<string, string | number | boolean | null> = {},
+): void {
 	const text = readFileSync(path, "utf8");
 	const label = formatPath(path);
 	const frontmatter = splitMarkdownFrontmatter(text, label);
@@ -160,7 +178,6 @@ export function reconcileDocLink(
 		);
 	}
 
-	const target = `kb/${targetId}.md`;
 	const links = doc.get("links", true);
 	if (links !== undefined && links !== null && !isSeq(links)) {
 		throw new Error(`invalid links in ${label}: expected a YAML list`);
@@ -207,9 +224,48 @@ export function reconcileDiveFeatLinks(
 	diveId: string,
 	rel: string,
 ): void {
-	if (previousFeat && previousFeat.id !== feat.id)
+	// A feat in another repo is linked back by `linkFeatBack`, where a caller asks for it.
+	if (previousFeat && previousFeat.id !== feat.id && !previousFeat.home)
 		reconcileDocLink(previousFeat.path, diveId, undefined);
-	reconcileDocLink(feat.path, diveId, rel);
+	if (!feat.home) reconcileDocLink(feat.path, diveId, rel);
+}
+
+/** How a dive's `meta.feat` names its feat: by quid, or as `<repo-quid>:<path>` from another repo. */
+export function featRefOf(feat: KbDoc): string {
+	return feat.home ? `${feat.home.repoId}:${feat.relPath}` : feat.id;
+}
+
+/** A feat's path for a bridge commit: none for a feat that lives in another repo. */
+export function bridgeFeatPath(feat: KbDoc | undefined): string | undefined {
+	return feat && !feat.home ? feat.path : undefined;
+}
+
+/**
+ * A dive's phase link on a feat in another repo, as `<bridge-quid>:kb/<dive>.md`,
+ * written into that repo's checkout. It is committed there when `scoping` -- the
+ * dive whose checkout it is -- scopes the repo, so it lands with that dive;
+ * otherwise it is left for one that does. A feat read from the managed cache
+ * has no checkout to write to.
+ */
+export function linkFeatBack(
+	feat: KbDoc,
+	diveId: string,
+	rel: string,
+	scoping: KbDoc | undefined,
+	io: { log(message: string): void; err(message: string): void },
+): void {
+	const home = feat.home;
+	if (!home) return;
+	if (!home.checkout) {
+		io.err(
+			`feat ${feat.name} is not hydrated, so its ${rel} link to dive ${diveId} is not written`,
+		);
+		return;
+	}
+	reconcileLinkTarget(feat.path, `${home.bridgeId}:kb/${diveId}.md`, rel);
+	if (scoping?.scopes.some((scope) => scope.repoId === home.repoId))
+		commitBridgeDocs(home.checkout, `dive(${diveId}): ${rel}`, [feat.path], io, feat.id);
+	else io.err(`wrote ${rel} into ${formatPath(feat.path)}; no dive scopes its repo to commit it`);
 }
 
 /**

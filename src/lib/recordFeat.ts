@@ -139,13 +139,21 @@ export function renderRecordedFeat(options: {
 	return lines.join("\n");
 }
 
+/** A parent takes a link to its child, which only a feat in this bridge can. */
+function bridgeParent(parent: KbDoc): KbDoc {
+	if (parent.home) throw new Error(`--parent must be a feat in this bridge: ${parent.name}`);
+	return parent;
+}
+
 function backlogMemoPath(rc: NosediveRc): string | undefined {
 	return rc.backlog && rc.kbDir ? join(rc.kbDir, `${rc.backlog}.md`) : undefined;
 }
 
 function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, io: CommandIo) {
 	const gist = options.gist!;
-	const parent = options.parent ? resolveFeatDoc(kbDocs, rc, options.parent) : undefined;
+	const parent = options.parent
+		? bridgeParent(resolveFeatDoc(kbDocs, rc, options.parent))
+		: undefined;
 	const repos = repoDocs(kbDocs);
 	if (parent && options.scopes.length > 0) {
 		throw new Error("a parented feat inherits its parent's scopes; do not pass --scope");
@@ -286,7 +294,7 @@ function editFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, i
 		feat.links.some((link) => link.rel === "parent.feat" && link.id === doc.id),
 	);
 	const parent = options.parent
-		? resolveFeatDoc(kbDocs, rc, options.parent)
+		? bridgeParent(resolveFeatDoc(kbDocs, rc, options.parent))
 		: options.unparent
 			? undefined
 			: previousParent;

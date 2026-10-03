@@ -140,8 +140,10 @@ async function select(path, row, message) {
 	highlight(row);
 	const last = path[path.length - 1];
 	const feat = [...path].reverse().find(isFeatStep);
-	const narrowed = ctx.feat !== (feat ? feat.id : null);
-	ctx.feat = feat ? feat.id : null;
+	// A feat in another repo is named the way crud names it.
+	const featRef = feat ? (feat.repo ? feat.repo + ":kb/" + feat.id + ".md" : feat.id) : null;
+	const narrowed = ctx.feat !== featRef;
+	ctx.feat = featRef;
 	if (narrowed) refreshRepos();
 	writeHash(path);
 	crumbs(path);

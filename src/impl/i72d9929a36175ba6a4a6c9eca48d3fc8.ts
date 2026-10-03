@@ -29,7 +29,7 @@ import { printWorkDirective } from "../lib/jumpHandoff.js";
 import { diveToJump } from "../lib/jumpFeat.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
-import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { linkFeatBack, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
@@ -474,6 +474,9 @@ export function jump(args: string[], io: CommandIo): void {
 			"Jumped",
 		);
 		reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
+		// Read again now its repo may be hydrated: the dive's checkout is where the link goes.
+		if (feat.home)
+			linkFeatBack(resolveFeatDoc(kbDocs, rc, featRef), dive.id, "jumped.dive", dive, io);
 
 		// The feat's reciprocal link records that this command jumped the dive, so
 		// it is part of the same bookkeeping -- left unstaged it lingers as bridge
@@ -481,7 +484,7 @@ export function jump(args: string[], io: CommandIo): void {
 		commitAndPushJump(
 			rc.bridgeDir,
 			dive.path,
-			[...appliedFileAbsPaths, feat.path],
+			[...appliedFileAbsPaths, ...(feat.home ? [] : [feat.path])],
 			`jump(${dive.name}): ${subject}`,
 			feat.id,
 		);

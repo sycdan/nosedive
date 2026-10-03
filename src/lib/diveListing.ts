@@ -3,6 +3,8 @@ import { basename, relative } from "node:path";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { NosediveRc, toPosixPath, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
+import { splitRepoRef } from "./kbRefs.js";
+import { linkedDoc } from "./repoLinks.js";
 import { printCommandHelp } from "./packageBacklog.js";
 import { gitOutput } from "./gitProcess.js";
 import { titleFromSlug } from "./slugs.js";
@@ -217,8 +219,10 @@ function isBacklogFeatRel(rel: string | undefined): boolean {
  * is the same whether it starts at the backlog or at a root named on the
  * command line. First link to a dive wins: the same dive reached twice is one
  * dive, and the shallower edge is the one the reader was looking for.
+ *
+ * Given `rc`, the walk crosses into feats that live in other repos.
  */
-export function walkRootDives(root: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
+export function walkRootDives(root: KbDoc, kbDocs: KbDoc[], rc?: NosediveRc): DiveLink[] {
 	const docsById = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const dives: DiveLink[] = [];
 	const seenDocs = new Set<string>();
@@ -231,7 +235,10 @@ export function walkRootDives(root: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 		seenDocs.add(current.id);
 
 		for (const link of current.links) {
-			const target = docsById.get(link.id);
+			// Another repo is read only for a feat edge: nothing else there is walked.
+			const crossing = rc && link.repo && link.repo !== rc.bridge;
+			if (crossing && !isBacklogFeatRel(link.rel)) continue;
+			const target = rc ? linkedDoc(rc, current, link, docsById) : docsById.get(link.id);
 			if (!target) continue;
 			if (target.kind === "dive") {
 				if (seenDives.has(target.id)) continue;
@@ -249,10 +256,14 @@ export function walkRootDives(root: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 /**
  * A dive names its feat in `meta.feat`, which may be the feat's quid, a
  * bridge-root kb path such as `kb/<id>.md`, or its exact `name`. All three
- * have to agree with the feat doc being listed.
+ * have to agree with the feat doc being listed. A feat in another repo is
+ * named `<repo-quid>:<path>`, and only that repo's copy answers to it.
  */
 export function sameFeatRef(featRef: string | undefined, feat: KbDoc): boolean {
 	if (!featRef) return false;
+	const qualified = splitRepoRef(featRef);
+	if (qualified)
+		return feat.home?.repoId === qualified.repo && toPosixPath(qualified.path) === feat.relPath;
 	if (featRef === feat.id || featRef === feat.name) return true;
 	return toPosixPath(featRef) === feat.relPath;
 }

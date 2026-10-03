@@ -82,7 +82,7 @@ export function selectPilotDives(
 	const pilot = pilotEmail(rc);
 	const eligible: ListedDive[] = [];
 	const held: ListedDive[] = [];
-	for (const link of walkRootDives(backlog, kbDocs)) {
+	for (const link of walkRootDives(backlog, kbDocs, rc)) {
 		if (!selectable(link, backlog.id)) continue;
 		const { dive, rel, owner } = link;
 		const diver = diveDiver(dive);

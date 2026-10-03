@@ -90,19 +90,22 @@ function groupedRows(items, render) {
 	return [...rows, ...rest.map((item) => render(item, false))];
 }
 
-/** One doc in the tree; it expands into its links, never into an ancestor. hideRel leaves off the rel its group heading already says. */
+/**
+ * One doc in the tree; it expands into its links, never into an ancestor. hideRel leaves off the rel its group heading already says.
+ * A doc in another repo carries that repo, which reading it needs; a link helm cannot read is unresolved.
+ */
 function node(item, ancestors, hideRel) {
 	if (item.type !== "doc") {
 		const parts = [el("span", { class: "text" }, item.target), item.rel && !hideRel ? el("span", { class: "rel" }, item.rel) : null];
 		const li = el("li", { class: item.type });
 		const link = item.type === "url"
 			? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
-			: el("button", { class: "label", title: item.target, disabled: "" }, parts);
+			: el("button", { class: "label", title: (item.type === "unresolved" ? "Unresolved: " : "") + item.target, disabled: "" }, parts);
 		li.append(el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), link));
 		return li;
 	}
 	const cycle = ancestors.some((a) => a.id === item.id);
-	const step = { id: item.id, name: label(item), kind: item.kind, rel: item.rel };
+	const step = { id: item.id, name: label(item), kind: item.kind, rel: item.rel, repo: item.repo };
 	const path = [...ancestors, step];
 	const parts = [
 		el("span", { class: "kind" }, item.kind),
@@ -111,7 +114,7 @@ function node(item, ancestors, hideRel) {
 		cycle ? el("span", { class: "rel" }, "↺") : null,
 	];
 	const load = cycle ? null : async () => {
-		const doc = await api("/api/doc?id=" + item.id);
+		const doc = await api("/api/doc?id=" + item.id + (item.repo ? "&repo=" + item.repo : ""));
 		return groupedRows(doc.links.filter(notADive), (link, hideRel) => node(link, path, hideRel));
 	};
 	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;

@@ -1,5 +1,6 @@
-import { readNosediveRc, uuidLike } from "./coreParsing.js";
+import { readNosediveRc, uuidLike, type NosediveRc } from "./coreParsing.js";
 import { findDocs } from "./find.js";
+import { helmRepoDoc } from "./helmLinks.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 
 export interface HelmDiveCard {
@@ -11,8 +12,12 @@ export interface HelmDiveCard {
 	diver?: string;
 }
 
-function card(dive: KbDoc, byId: Map<string, KbDoc>): HelmDiveCard {
-	const feat = dive.featRef ? byId.get(dive.featRef) : undefined;
+function card(dive: KbDoc, byId: Map<string, KbDoc>, rc: NosediveRc): HelmDiveCard {
+	// A feat in another repo is named `<repo-quid>:<path>`.
+	const ref = dive.featRef;
+	const feat = ref
+		? (byId.get(ref) ?? helmRepoDoc({ rc, docs: [...byId.values()] }, ref))
+		: undefined;
 	return {
 		id: dive.id,
 		title: dive.h1 ?? dive.name,
@@ -51,7 +56,7 @@ export function helmDives(
 	const activeId = readActiveDiveId(rc.workspaceDir);
 	const active = activeId ? byId.get(activeId) : undefined;
 	return {
-		active: active ? card(active, byId) : null,
-		dives: reached.map((dive) => card(dive, byId)),
+		active: active ? card(active, byId, rc) : null,
+		dives: reached.map((dive) => card(dive, byId, rc)),
 	};
 }

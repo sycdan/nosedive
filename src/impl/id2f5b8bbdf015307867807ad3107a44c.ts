@@ -423,11 +423,18 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	 * neither of which is a link, so all three are seeded as roots. Order is
 	 * closest-first, which is what first-seen-wins depends on.
 	 */
+	/**
+	 * A repo's own gates run only when the dive changed that repo: on an
+	 * untouched repo they would judge trunk, not this dive, and a breakage
+	 * already there would block unrelated work. Dirty scopes were refused
+	 * above, so a change is a commit past the pin.
+	 */
 	const gateRoots = [
 		dive,
 		...(feat ? [feat] : []),
-		...scopes
-			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
+		...hydratedWorktrees
+			.filter(({ scope, path }) => commitsAheadOfPin(path, scope.ref!, scope.repoId).length > 0)
+			.map(({ scope }) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
 	const gates = collectFeatGates("land", gateRoots, kbDocs, rc.bridgeDir);

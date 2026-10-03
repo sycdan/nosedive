@@ -1,6 +1,7 @@
 import type { CommandIo } from "./bridgeSetupIo.js";
 import { uuidLike, type NosediveRc } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
+import { assertJumpable } from "./jumpable.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { recordDive } from "./recordDive.js";
 import { featRefOf } from "./repoFeatScopes.js";
@@ -37,6 +38,8 @@ export function diveToJump(
 	}
 	// A dive jumps as itself; a repo is not work, so jump refuses it as it always has.
 	if (feat.kind === "dive" || feat.kind === "repo") return unrecorded(ref);
+	// What makes a doc a feat is the root reaching it through `.feat` links, not its kind.
+	assertJumpable(rc, kbDocs, feat);
 	const active = readActiveDiveId(rc.workspaceDir);
 	if (active)
 		throw new Error(

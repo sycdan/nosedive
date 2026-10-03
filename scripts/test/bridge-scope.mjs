@@ -18,13 +18,15 @@ import {
 const tmp = createTmp("bridge-scope");
 const IMPL = "01a0fe62-950b-73c8-a998-4d0402f3e9ae";
 const FEAT = "01a0fe62-950c-7d56-b26a-4d18730f1793";
+const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 /** A seeded bridge registering one other repo, and a feat scoping `featScopes`. */
 function setup(name, featScopes) {
-	const { bridge } = seededBridge(tmp, name, "pilot@nosedive.invalid");
+	const { bridge, origin } = seededBridge(tmp, name, "pilot@nosedive.invalid");
 	const configPath = join(bridge, ".nosedive", "config.yaml");
 	const bridgeId = /^bridge: (\S+)$/m.exec(readFileSync(configPath, "utf8"))[1];
-	writeImplRepoDoc(bridge, IMPL, implRepo(tmp, `${name}-impl`));
+	const impl = implRepo(tmp, `${name}-impl`);
+	writeImplRepoDoc(bridge, IMPL, impl);
 	const scopes = featScopes({ bridgeId })
 		.map(([id, branch]) => `  - ${id}:\n      work-branch: ${branch}\n`)
 		.join("");
@@ -34,7 +36,7 @@ function setup(name, featScopes) {
 	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
-	return { bridge, bridgeId };
+	return { bridge, bridgeId, origin, impl };
 }
 
 const implOnly = () => [[IMPL, "work/impl"]];
@@ -83,4 +85,38 @@ test("a feat scoping nothing is still warned about, though the dive scopes the b
 	const recorded = recordDive(bridge, []);
 	assert.match(recorded.stderr, /scope no repos/);
 	assert.deepEqual(scopesOf(recorded.text), [[bridgeId, "work/kb"]]);
+});
+
+test("land skips a scope with nothing past its pin, the bridge's own included", () => {
+	const { bridge, bridgeId, origin, impl } = setup("untouched", implOnly);
+	const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
+	// The feat hangs from the kb feat, which the backlog links, so jump reaches its dive.
+	assertOk(
+		run(["crud", KB_FEAT, "--links", "-"], bridge, `${FEAT}: {rel: injected.feat}\n`),
+		"linking the feat from the kb feat failed",
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "hang the feat");
+	runTool("git", ["push"], bridge);
+	const recorded = run(["crud", "dive", "--feat", FEAT, "Change", "impl"], bridge, "Work.\n");
+	assertOk(recorded, "crud dive failed");
+	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
+	assertOk(run(["jump", divePath], bridge), "jump failed");
+
+	// Only the impl repo changes; the dive's `__self` checkout of the bridge does not.
+	const worktree = join(bridge, "workspace", impl.name);
+	write(join(worktree, "CHANGE.md"), "changed\n");
+	runTool("git", ["add", "CHANGE.md"], worktree);
+	gitCommit(worktree, "change impl");
+
+	const landed = run(["land"], bridge);
+	assertOk(landed, "land failed");
+	assert.match(landed.stderr, new RegExp(`land: pushed scope ${IMPL} -> work/impl`));
+	assert.match(landed.stderr, new RegExp(`land: scope ${bridgeId} unchanged; not pushed`));
+	assert.doesNotMatch(landed.stderr, /bringing the bridge's own scope/);
+	assert.equal(git(["branch", "--list", "work/kb"], origin), "", "the bridge is not pushed");
+	assert.notEqual(git(["branch", "--list", "work/impl"], impl.cloud), "", "the change is");
+	const memo = readFileSync(join(bridge, divePath), "utf8");
+	assert.match(memo, new RegExp(`^- ${IMPL} -> work/impl$`, "m"));
+	assert.match(memo, new RegExp(`^- ${bridgeId} unchanged; not pushed$`, "m"));
 });

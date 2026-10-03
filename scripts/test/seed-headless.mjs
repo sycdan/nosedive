@@ -266,8 +266,8 @@ test("seed-headless", () => {
 	);
 	const freshMemo = readFileSync(join(headlessFreshBridge, "kb", `${freshMemoId}.md`), "utf8");
 	assert.match(freshMemo, /^kind: memo$/m);
-	assert.match(freshMemo, /^name: bridge-deck$/m);
-	assert.match(freshMemo, /^# Bridge deck$/m);
+	assert.match(freshMemo, /^name: bridge$/m);
+	assert.match(freshMemo, /^# Bridge$/m);
 	assert.equal(existsSync(join(headlessFreshBridge, ".nosedive.local.yaml")), false);
 	assert.equal(
 		readFileSync(join(headlessFreshBridge, ".nosedive", ".gitignore"), "utf8"),

@@ -61,3 +61,47 @@ test("jump <feat> records an unplanned dive on the feat and jumps it", () => {
 		"a refused jump records nothing",
 	);
 });
+
+test("jump takes a doc the backlog reaches through .feat links, of any kind, and refuses the backlog and the rest", () => {
+	const { bridge } = seededBridge(tmp, "jumpable", "pilot@nosedive.invalid");
+	const memo = (gist) => {
+		const made = run(["crud", "memo", gist], bridge);
+		assertOk(made, "crud memo failed");
+		return /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)[1];
+	};
+	const reached = memo("Reached");
+	const stray = memo("Stray");
+	// The backlog reaches the kb feat as `zerostar.feat`, and through it these.
+	// A non-feat rel does not make a feat: only `.feat` edges are walked.
+	assertOk(
+		run(
+			["crud", KB_FEAT, "--links", "-"],
+			bridge,
+			`${reached}: {rel: ideas.feat}\n${stray}: {rel: see.note}\n`,
+		),
+		"linking from the kb feat failed",
+	);
+
+	const backlog = /^backlog: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const notAFeat = run(["jump", backlog], bridge);
+	assert.equal(notAFeat.status, 1, "the backlog jumped");
+	assert.match(notAFeat.stderr, /is the backlog, not a feat; jump one of its feats/);
+
+	const refused = run(["jump", stray], bridge);
+	assert.equal(refused.status, 1, "an unreachable doc jumped");
+	assert.match(
+		refused.stderr,
+		/is not a feat: nothing reaches it from the root through a \.feat link; link it from a feat first/,
+	);
+
+	const jumped = run(["jump", reached], bridge);
+	assertOk(jumped, "a memo the root reaches through a .feat link is jumpable");
+	assertOk(run(["bail", "--reason", "only checking it jumps"], bridge), "bail failed");
+
+	assertOk(
+		run(["jump", KB_FEAT], bridge),
+		"the kb feat, which the backlog links as zerostar.feat, is jumpable",
+	);
+});

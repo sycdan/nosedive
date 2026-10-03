@@ -27,7 +27,12 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
-import { bringBridgeScopeIn } from "../lib/landBridgeScope.js";
+import {
+	bringBridgeScopeIn,
+	commitsAheadOfPin,
+	headIsStrictlyBehindPin,
+	scopeUnchanged,
+} from "../lib/landBridgeScope.js";
 import { strandedInstancesOnLand } from "../lib/kindInstances.js";
 import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
@@ -57,21 +62,6 @@ interface LandLease {
 
 function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
 	return feat?.name ?? dive.name;
-}
-
-function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
-	const commits = gitRun(
-		worktreePath,
-		["rev-list", "--abbrev-commit", `${scopeRef}..HEAD`],
-		`failed to list commits ahead of pin for repo ${repoId}`,
-	);
-	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
-}
-
-function headIsStrictlyBehindPin(worktreePath: string, scopeRef: string): boolean {
-	const head = gitOutput(worktreePath, ["rev-parse", "HEAD"]);
-	if (!head || head === scopeRef) return false;
-	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", "HEAD", scopeRef]) !== undefined;
 }
 
 function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
@@ -351,9 +341,9 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 			throw new Error(`${refusalPrefix}scoped repo ${scope.repoId} has no pinned ref`);
 	}
 
-	const pushed: string[] = [];
+	const scopeOutcomes: string[] = [];
 	const hydratedWorktrees: { scope: (typeof scopes)[number]; path: string }[] = [];
-	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
+	let writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
 		if (!rc.workspaceDir) throw new Error("no workspace is configured; run nosedive seed");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
@@ -406,6 +396,11 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 			`${refusalPrefix}scoped worktree(s) are dirty; commit, pack, or stash changes before landing.\n${detail}`,
 		);
 	}
+
+	// A writable scope with nothing of the dive's past its pin has nothing to
+	// publish, so it is not pushed: every dive scopes the bridge, and most never touch it.
+	const unchanged = writableScopes.filter(({ scope, path }) => scopeUnchanged(scope, path, rc));
+	writableScopes = writableScopes.filter((entry) => !unchanged.includes(entry));
 
 	assertScopesCanPublish(writableScopes, hard, dive, cli);
 
@@ -512,7 +507,11 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		io.err(`land: pushing scope ${scope.repoId} -> ${branch}`);
 		landRepoScope(path, branch, lease);
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
-		pushed.push(`${scope.repoId} -> ${branch}`);
+		scopeOutcomes.push(`${scope.repoId} -> ${branch}`);
+	}
+	for (const { scope } of unchanged) {
+		io.err(`land: scope ${scope.repoId} unchanged; not pushed`);
+		scopeOutcomes.push(`${scope.repoId} unchanged; not pushed`);
 	}
 
 	const text = readFileSync(dive.path, "utf8");
@@ -523,8 +522,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	doc.set("kind", "memo");
 
 	const outcome =
-		pushed.length > 0
-			? pushed.map((line) => `- ${line}`).join("\n")
+		scopeOutcomes.length > 0
+			? scopeOutcomes.map((line) => `- ${line}`).join("\n")
 			: "- (no scoped repos to push)";
 	const body = `${parsed.body.trimEnd()}\n\n## Outcome\n\n${dive.gist}\n\n${outcome}\n`;
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));

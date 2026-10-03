@@ -2,6 +2,26 @@ import { formatPath, type NosediveRc } from "./coreParsing.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { gitRun } from "./repoWorkspaceCore.js";
 
+/** The commits a scope's worktree holds past the ref its dive pinned. */
+export function commitsAheadOfPin(
+	worktreePath: string,
+	scopeRef: string,
+	repoId: string,
+): string[] {
+	const commits = gitRun(
+		worktreePath,
+		["rev-list", "--abbrev-commit", `${scopeRef}..HEAD`],
+		`failed to list commits ahead of pin for repo ${repoId}`,
+	);
+	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
+}
+
+export function headIsStrictlyBehindPin(worktreePath: string, scopeRef: string): boolean {
+	const head = gitOutput(worktreePath, ["rev-parse", "HEAD"]);
+	if (!head || head === scopeRef) return false;
+	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", "HEAD", scopeRef]) !== undefined;
+}
+
 /**
  * The dive's own work in its checkout of the bridge (`__self`), oldest first:
  * what `tip` holds beyond the dive's pin that the live bridge (`base`) does
@@ -77,12 +97,7 @@ export function bringBridgeScopeIn(
 ): void {
 	const self = scopes.find(({ scope }) => scope.repoId === rc.bridge);
 	if (!self?.scope.ref || !self.scope.workBranch) return;
-	gitRun(
-		rc.bridgeDir,
-		["fetch", "--quiet", self.path, "HEAD"],
-		`failed to fetch ${formatPath(self.path)} into the bridge`,
-	);
-	const commits = ownCommits(rc.bridgeDir, "HEAD", "FETCH_HEAD", self.scope.ref);
+	const commits = selfOwnCommits(self.path, self.scope.ref, rc);
 	if (commits.length === 0) return;
 	io.err(`land: bringing the bridge's own scope into the bridge`);
 	const picked = runGit(rc.bridgeDir, ["cherry-pick", "--keep-redundant-commits", ...commits]);
@@ -96,4 +111,29 @@ export function bringBridgeScopeIn(
 		);
 	}
 	io.err(`land: brought the bridge's own scope into the bridge`);
+}
+
+/** The dive's own commits in its `__self` checkout, as `ownCommits` reads them against the live bridge. */
+function selfOwnCommits(path: string, pin: string, rc: NosediveRc): string[] {
+	gitRun(
+		rc.bridgeDir,
+		["fetch", "--quiet", path, "HEAD"],
+		`failed to fetch ${formatPath(path)} into the bridge`,
+	);
+	return ownCommits(rc.bridgeDir, "HEAD", "FETCH_HEAD", pin);
+}
+
+/**
+ * Whether a writable scope has nothing of the dive's to publish. For the
+ * bridge's own `__self` that is its own commits, because jump commits its
+ * bookkeeping there and the live bridge already holds it; for any other repo
+ * it is any commit past the pin.
+ */
+export function scopeUnchanged(
+	scope: { repoId: string; ref?: string },
+	path: string,
+	rc: NosediveRc,
+): boolean {
+	if (scope.repoId === rc.bridge) return selfOwnCommits(path, scope.ref!, rc).length === 0;
+	return commitsAheadOfPin(path, scope.ref!, scope.repoId).length === 0;
 }

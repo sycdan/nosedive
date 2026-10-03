@@ -251,7 +251,7 @@ function stageOpened(doc) {
 /**
  * With no active dive, the page is for getting onto one: the dives the picked
  * root reaches, or -- given a feat -- the ones that feat reaches, which, when
- * it has none, can be jumped straight into.
+ * it has none, can be jumped straight into if jump would take it.
  */
 function divePicker(feat) {
 	const search = el("input", { type: "search", placeholder: "Find a dive" });
@@ -262,7 +262,10 @@ function divePicker(feat) {
 		if (feat) params.set("feat", feat.id);
 		const listing = await api("/api/dives?" + params);
 		const none = feat && !search.value.trim()
-			? [el("div", { class: "nodives" }, el("p", { class: "empty" }, "No dives planned on this feat."), el("div", { class: "cardacts" }, jumpInto(feat)))]
+			? [el("div", { class: "nodives" }, el("p", { class: "empty" }, "No dives planned on this feat."),
+				feat.jumpable
+					? el("div", { class: "cardacts" }, jumpInto(feat))
+					: el("p", { class: "empty" }, "Nothing reaches it from the root through a .feat link; link it from a feat to jump it."))]
 			: [el("p", { class: "empty" }, "No dives found.")];
 		cards.replaceChildren(...(listing.dives.length ? listing.dives.map(diveCard) : none));
 	};

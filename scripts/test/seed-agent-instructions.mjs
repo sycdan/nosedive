@@ -192,7 +192,7 @@ test("seed-agent-instructions", () => {
 		.filter((entry) => entry.endsWith(".md") && !entry.startsWith("00000000-0000-"))
 		.filter((entry) => /^kind: memo$/m.test(readFileSync(join(bareBridge, "kb", entry), "utf8")));
 	assert.equal(backlogMemos.length, 1, "fresh seed should mint exactly one backlog memo");
-	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Bridge deck$/m);
+	assert.match(readFileSync(join(bareBridge, "kb", backlogMemos[0]), "utf8"), /^# Bridge$/m);
 	assert.equal(existsSync(join(bareBridge, "CLAUDE.md")), false);
 	assert.equal(existsSync(join(bareBridge, "GEMINI.md")), false);
 	assert.equal(existsSync(join(bareBridge, ".github", "copilot-instructions.md")), false);

@@ -580,7 +580,7 @@ meta:
 	}
 	assert.doesNotMatch(chosenScope, new RegExp(`^  - ${workLoopThirdRepoId}:`, "m"));
 
-	// 12. The accepted branch lands both upscoped implementation repos together.
+	// 12. The accepted branch lands the repo the dive changed; the other upscoped one is untouched.
 	assertOk(run(["land"], bridge), "land failed");
 	assert.match(readFileSync(mintedPath, "utf8"), /^kind: memo$/m);
 	assertFeatDiveRel(featPath, mintedId, "landed\\.dive");
@@ -590,12 +590,18 @@ meta:
 		repo.cloud,
 	).stdout.trim();
 	assert.match(published, /^[0-9a-f]{40}$/, "land must publish the work branch");
-	const secondPublished = runTool(
-		"git",
+	// The second repo was upscoped but never changed: nothing past its pin, so
+	// nothing to publish, and the outcome says so rather than pushing trunk.
+	const secondPublished = runGit(
 		["show-ref", "--verify", "--hash", "refs/heads/feature/work-loop"],
 		secondRepo.cloud,
-	).stdout.trim();
-	assert.match(secondPublished, /^[0-9a-f]{40}$/, "land must publish the second repo");
+		{ expectOk: false },
+	);
+	assert.notEqual(secondPublished.status, 0, "land must not push an untouched repo");
+	assert.match(
+		readFileSync(mintedPath, "utf8"),
+		new RegExp(`^- ${workLoopSecondRepoId} unchanged; not pushed$`, "m"),
+	);
 
 	/**
 	 * Landing is not merging. Until the published branch reaches trunk, the pin a

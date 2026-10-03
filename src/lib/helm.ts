@@ -15,6 +15,7 @@ import {
 	type NosediveRc,
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
+import { isJumpable } from "./jumpable.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { helmDocText, helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
@@ -56,6 +57,8 @@ export interface HelmDoc {
 	frontmatter: string;
 	html: string;
 	links: HelmLink[];
+	/** Whether `jump` takes it as a feat: reached from the backlog memo through `.feat` links. */
+	jumpable: boolean;
 }
 
 const CONFIG_PATHS = [`${BRIDGE_STATE_DIRNAME}/${BASE_CONFIG_FILENAME}`, LEGACY_CONFIG_FILENAME];
@@ -285,6 +288,17 @@ export function helmKindDocs(
 		.map((doc) => ({ id: doc.id, name: doc.name, gist: doc.gist }));
 }
 
+/** Whether helm offers Jump on a doc: what `jump <doc>` would accept. A bridge with no backlog memo offers none. */
+function jumpableInHelm(rc: NosediveRc, kb: KbDoc[], doc: KbDoc, repoId?: string): boolean {
+	if (doc.kind === "dive" || doc.kind === "repo") return false;
+	if (!repoId && doc.id === rc.backlog) return false;
+	try {
+		return isJumpable(rc, kb, doc, repoId);
+	} catch {
+		return false;
+	}
+}
+
 /**
  * A doc from the bridge kb, or from another repo's when `repoId` names one: its
  * checkout's kb while hydrated, else the doc alone from the managed cache.
@@ -321,5 +335,6 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 		frontmatter: block?.yaml ?? "",
 		html: markdown.parse(block?.body ?? text, { async: false }),
 		links,
+		jumpable: jumpableInHelm(rc, bridgeKb, doc, home === rc.bridge ? undefined : home),
 	};
 }

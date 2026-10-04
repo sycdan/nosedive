@@ -58,4 +58,77 @@ async function refreshSections() {
 		}
 	} catch (err) { showError(err); }
 }
+
+// --- scope edits ------------------------------------------------------------
+
+/** What a card's scope edit changes: the dive in context, else the picked feat, else the root (the backlog at level 0). */
+function scopeTarget() {
+	const dive = diveInContext();
+	if (dive) return { dive };
+	const doc = ctx.feat || ctx.root;
+	return doc ? { doc } : null;
+}
+
+/** Runs one scope edit, says how it went in the corner -- a refusal in nosedive's words -- and redraws both sections. */
+async function runScopeEdit(title, body) {
+	let text = "";
+	try {
+		const res = await fetch("/api/run", {
+			method: "POST",
+			headers: { "x-helm-token": token, "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		text = res.ok ? await res.text() : (await res.json()).error;
+	} catch (err) {
+		text = String(err.message || err);
+	}
+	const failed = !/\[exit 0\]\s*$/.test(text);
+	syncNotice(title + (failed ? " refused" : ""), text.replace(/\[exit \d+\]\s*$/, "").trim(), failed);
+	// A refusal is shown open: the why is the point.
+	if (failed) document.querySelector("#syncnotice .linkish").click();
+	await loadDives();
+	refreshSections();
+}
+
+/** A button that turns the card's action row into a one-field form. */
+function inlineForm(box, label, input, submit) {
+	const open = el("button", { class: "act jump" }, label);
+	open.addEventListener("click", () => {
+		const form = el("form", { class: "make" }, input, el("button", { type: "submit" }, label));
+		form.addEventListener("submit", (event) => { event.preventDefault(); submit(input.value.trim()); });
+		box.replaceChildren(form);
+		input.select();
+	});
+	return open;
+}
+
+/**
+ * A card's scope edits. On a dive: repin (at its work branch's tip unless
+ * another ref is typed), drop, or add. With none, on the picked feat or the
+ * backlog: add, drop, or set the work branch -- a feat scope has no pin.
+ */
+function scopeActions(repo) {
+	const target = scopeTarget();
+	if (!target) return null;
+	const box = el("div", { class: "cardacts" });
+	const field = (label, value, placeholder) => {
+		const input = el("input", { type: "text", "aria-label": label, placeholder });
+		input.value = value || "";
+		return input;
+	};
+	const run = (label, body) => runScopeEdit(label + " " + repo.name, Object.assign({ repo: repo.id }, target, body));
+	if (!repo.scope) {
+		box.append(inlineForm(box, "Add scope",
+			field("work branch", "", target.dive ? "work branch (else the feat's)" : "work branch (none)"),
+			(branch) => run("Add scope", { verb: target.dive ? "upscope" : "feat-scope", branch })));
+		return box;
+	}
+	box.append(target.dive
+		? inlineForm(box, "Repin", field("ref to repin at", repo.scope.workBranch || repo.trunk),
+			(ref) => run("Repin", { verb: "repin", ref }))
+		: inlineForm(box, "Work branch", field("work branch", repo.scope.workBranch, "none"),
+			(branch) => run("Work branch", { verb: "feat-scope", branch })),
+		confirmButton("Drop scope", "pack", () => run("Drop scope", target.dive ? { verb: "unscope" } : { verb: "feat-scope", drop: true })));
+	return box;
+}
 `;

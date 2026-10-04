@@ -168,7 +168,14 @@ export function crudReach(cwd: string): Set<string | undefined> {
 }
 
 export interface HelmContext {
-	repos: Array<HelmRepoCard & { inScope: boolean; inCrudContext: boolean }>;
+	repos: Array<
+		HelmRepoCard & {
+			inScope: boolean;
+			inCrudContext: boolean;
+			/** The edited doc's own entry for this repo -- the dive's, else the picked feat's -- or null. */
+			scope: { workBranch: string | null } | null;
+		}
+	>;
 	kinds: Array<{
 		id: string;
 		name: string;
@@ -209,6 +216,8 @@ export function helmContext(
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");
 	const reach = crudReach(cwd);
 	const inScope = new Set(inView.map((doc) => doc.id));
+	// What the cards edit: the dive's own scopes, else the picked doc's, not what it inherits.
+	const own = new Map((dive ?? feat ?? root).scopes.map((scope) => [scope.repoId, scope]));
 	const outOfScope = docs
 		.filter((doc) => doc.kind === "repo" && !inScope.has(doc.id))
 		.sort((a, b) => a.name.localeCompare(b.name));
@@ -216,6 +225,7 @@ export function helmContext(
 		...repoCard(doc, rc.bridgeDir, doc.id === rc.bridge),
 		inScope: inScope.has(doc.id),
 		inCrudContext: reach.has(doc.id),
+		scope: own.has(doc.id) ? { workBranch: own.get(doc.id)!.workBranch ?? null } : null,
 	}));
 	const sources: KindSource[] = [];
 	const unreadable: string[] = [];

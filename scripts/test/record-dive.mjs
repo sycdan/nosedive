@@ -1555,3 +1555,27 @@ test("record.dive --upscope pins a newly scoped repo at its branch on origin", (
 		),
 	);
 });
+
+/** `crud <dive> --repin` is the same repin, so helm and agents need not reach for record.dive. */
+test("crud <dive> --repin forwards to record.dive --ref <dive> --repin", () => {
+	const { bridge, repo, repoCommit } = setup("crud-repin");
+	const { path, id } = recordDive(bridge);
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	assertOk(run(["crud", id, "--repin"], bridge), "crud --repin failed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${featHead}$`, "m"));
+	const back = run(["crud", id, "--repin", "main", "--scope", "repo"], bridge);
+	assertOk(back, "crud --repin <ref> --scope failed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	assert.match(back.stdout, new RegExp(`repo: ${featHead} -> ${repoCommit} \\(ref main\\)`));
+
+	for (const [args, refusal] of [
+		[[id, "--repin", "main"], /--repin <ref> requires --scope/],
+		[["--repin", id], /--repin repins a dive: crud <dive-quid> --repin/],
+		[[id, "--scope", "repo"], /crud takes no --scope/],
+		[[id, "--repin", "--meta", "-"], /crud --repin takes no --meta/],
+	]) {
+		const refused = run(["crud", ...args], bridge);
+		assert.notEqual(refused.status, 0, args.join(" "));
+		assert.match(refused.stderr, refusal);
+	}
+});

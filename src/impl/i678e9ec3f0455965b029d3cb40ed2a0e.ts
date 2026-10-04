@@ -59,10 +59,54 @@ function takeFlag(args: string[], flag: string): string | undefined {
 	return value;
 }
 
+/** Removes `--repin [<ref>]` from args; the ref is the next word unless it is a flag, as record.dive reads it. */
+function takeRepin(args: string[]): { ref?: string } | undefined {
+	const at = args.findIndex((arg) => arg === "--repin" || arg.startsWith("--repin="));
+	if (at === -1) return undefined;
+	const arg = args[at]!;
+	if (arg !== "--repin") {
+		args.splice(at, 1);
+		return { ref: arg.slice("--repin=".length) };
+	}
+	const next = args[at + 1];
+	const ref = next !== undefined && !next.startsWith("--") ? next : undefined;
+	args.splice(at, ref === undefined ? 1 : 2);
+	return { ref };
+}
+
+/** `crud <dive> --repin [<ref>] [--scope <repo>]`: record.dive's repin, on a dive named by its quid. */
+function repinDive(
+	args: string[],
+	repin: { ref?: string },
+	scope: string | undefined,
+	io: CommandIo,
+) {
+	const usage = "crud <dive-quid> --repin [<ref>] [--scope <repo>]";
+	if (args.length !== 1 || !uuidLike(args[0]!)) throw new Error(`--repin repins a dive: ${usage}`);
+	recordDive(
+		[
+			"--ref",
+			args[0]!,
+			repin.ref === undefined ? "--repin" : `--repin=${repin.ref}`,
+			...(scope === undefined ? [] : ["--scope", scope]),
+		],
+		io,
+	);
+}
+
 function crud(args: string[], io: CommandIo): void {
 	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
 		printCommandHelp("crud", io);
 		if (args.length === 0) io.setExitCode(1);
+		return;
+	}
+	const repin = takeRepin(args);
+	if (repin) {
+		// Only with --repin: --scope names the one scope a ref moves.
+		const scope = takeFlag(args, "--scope");
+		const unknown = args.find((arg) => arg.startsWith("--"));
+		if (unknown !== undefined) throw new Error(`crud --repin takes no ${unknown}`);
+		repinDive(args, repin, scope, io);
 		return;
 	}
 	const block = takeBlock(args);

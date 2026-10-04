@@ -91,7 +91,7 @@ function repoCard(repo) {
 			h ? fact(h.atTrunk ? "ok" : "warn", (h.atTrunk ? "at " : "off ") + repo.trunk, h.commit.slice(0, 8))
 				: fact("", "not hydrated"),
 			n === "unknown" ? fact("", "nosedive ?") : n ? fact("ok", "nosedive", "L" + n.level) : fact("", "no nosedive")),
-		cardActions(repo));
+		cardActions(repo), scopeActions(repo));
 }
 
 function crumbs(path) {

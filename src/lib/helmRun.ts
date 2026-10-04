@@ -18,7 +18,7 @@ function field(body: Record<string, unknown>, key: string): string {
 	throw new HelmRequestError(400, `${key} is required`);
 }
 
-/** The verbs the page may run -- the dive lifecycle, a note, and the workspace pair -- and the argv and stdin each becomes. */
+/** The verbs the page may run -- the dive lifecycle, a note, the workspace pair and scope edits -- and the argv and stdin each becomes. */
 function command(body: Record<string, unknown>): { args: string[]; stdin: string } {
 	switch (body.verb) {
 		case "jump":
@@ -52,6 +52,48 @@ function command(body: Record<string, unknown>): { args: string[]; stdin: string
 		}
 		case "dehydrate":
 			return { args: ["dehydrate-repo.workspace", field(body, "repo")], stdin: "" };
+		// A dive's scopes, by the dive's own edits.
+		case "repin":
+			return {
+				args: [
+					"crud",
+					field(body, "dive"),
+					"--repin",
+					field(body, "ref"),
+					"--scope",
+					field(body, "repo"),
+				],
+				stdin: "",
+			};
+		case "upscope": {
+			const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+			return {
+				args: [
+					"record.dive",
+					"--ref",
+					field(body, "dive"),
+					"--upscope",
+					field(body, "repo"),
+					...(branch ? ["--work-branch", branch] : []),
+				],
+				stdin: "",
+			};
+		}
+		case "unscope":
+			return {
+				args: ["record.dive", "--ref", field(body, "dive"), "--unscope", field(body, "repo")],
+				stdin: "",
+			};
+		// A feat's or the backlog's scopes, by crud's merge patch: null drops one,
+		// a branch or none sets it. `<repo>:kb/<id>.md` is crud's `<repo>:<id>`.
+		case "feat-scope": {
+			const repo = field(body, "repo");
+			const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+			const doc = field(body, "doc").replace(/^([^:]+):kb\/([^/]+)\.md$/, "$1:$2");
+			const patch =
+				body.drop === true ? { [repo]: null } : { [repo]: { "work-branch": branch || null } };
+			return { args: ["crud", doc, "--scopes", "-"], stdin: JSON.stringify(patch) };
+		}
 		default:
 			throw new HelmRequestError(400, `helm does not run ${String(body.verb)}`);
 	}

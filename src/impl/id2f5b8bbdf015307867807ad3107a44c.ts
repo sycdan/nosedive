@@ -398,7 +398,7 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	}
 
 	// A writable scope with nothing of the dive's past its pin has nothing to
-	// publish, so it is not pushed: every dive scopes the bridge, and most never touch it.
+	// publish, so it is not pushed: every dive takes the backlog's scopes, and most never touch them.
 	const unchanged = writableScopes.filter(({ scope, path }) => scopeUnchanged(scope, path, rc));
 	writableScopes = writableScopes.filter((entry) => !unchanged.includes(entry));
 

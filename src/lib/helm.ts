@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import { Marked } from "marked";
 
-import { inheritedScopes } from "./diveScopes.js";
 import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
 import { isZerostar, kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
@@ -15,7 +14,7 @@ import {
 	type NosediveRc,
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
-import { isJumpable } from "./jumpable.js";
+import { isJumpable, rootedScopes } from "./jumpable.js";
 import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { helmDocText, helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
@@ -184,7 +183,7 @@ export interface HelmContext {
 
 /**
  * What is in view under a root: its scoped repos -- a feat's instead, when one
- * is selected, inherited from its nearest scoped ancestor -- and the kinds
+ * is selected, scoped the way a dive under it would be -- and the kinds
  * their kbs declare, narrowed to one repo when one is selected. Each says
  * whether crud can reach it, because helm writes only through crud.
  */
@@ -204,7 +203,7 @@ export function helmContext(
 	if (featId && !feat) return undefined;
 	// A staged or active dive narrows furthest: its scopes are what it will work on.
 	const dive = diveId ? byId.get(diveId) : undefined;
-	const scopes = dive ? dive.scopes : inheritedScopes(feat ?? root, docs).scopes;
+	const scopes = dive ? dive.scopes : rootedScopes(rc, docs, feat ?? root).all;
 	const inView = scopes
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");

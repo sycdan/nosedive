@@ -157,7 +157,16 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 	return writes;
 }
 
-function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
+/**
+ * The backlog scopes the bridge on the kb feat's branch: its scopes are what
+ * every dive starts with, so a fresh bridge's dives can plan.
+ */
+function mintBacklogMemo(
+	bridgeDir: string,
+	kbDir: string,
+	bridgeScope: { id: string; workBranch: string },
+	io: CommandIo,
+): MintedDoc {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
@@ -171,6 +180,9 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): Minte
 			// The bridge: the root helm picks first, whose feats a pilot sees first.
 			"name: bridge",
 			`gist: ${quoteYamlString(`The bridge of ${name}: the feats every pilot starts from.`)}`,
+			"scopes:",
+			`  - ${bridgeScope.id}:`,
+			`      work-branch: ${bridgeScope.workBranch}`,
 			"---",
 			"",
 			"# Bridge",
@@ -384,14 +396,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	// own workspace is not worth half-creating.
 	assertWorkspaceInsideBridge(bridgeDir, settings.workspace);
 
-	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
-	// L0 already carries the memo its migration minted; a fresh one does not,
-	// and without this update-backlog and dump-backlog have nothing to read.
-	const mintedBacklogMemo = !uuidLike(settings.backlog)
-		? mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io)
-		: undefined;
-	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
-
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
 	// test the L1 migration's `ensureBridgeRepoDoc` applies. This sweep also
@@ -415,6 +419,19 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	const mintedBridgeRepoDoc = selfDoc ? undefined : mintBridgeRepoDoc(bridgeDir, kbDir, io);
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
+
+	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
+	// L0 already carries the memo its migration minted; a fresh one does not,
+	// and without this update-backlog and dump-backlog have nothing to read.
+	const mintedBacklogMemo = !uuidLike(settings.backlog)
+		? mintBacklogMemo(
+				bridgeDir,
+				kbDir,
+				{ id: settings.bridge, workBranch: defaultWorkBranch(settings, "kb") },
+				io,
+			)
+		: undefined;
+	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
 
 	const shippedPaths = shipZerostars(
 		bridgeDir,

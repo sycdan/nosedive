@@ -174,21 +174,25 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 
 const IMPL_REPO = "01a0fe76-1da6-7642-a463-38849050d728";
 
-/** A seeded bridge holding one other repo, and a feat scoping only that repo. */
+/**
+ * A seeded bridge holding one other repo, and a feat scoping only that repo.
+ * The seeded backlog scopes the bridge on `work/kb`.
+ */
 function bridgeWithImplFeat(name) {
 	const seeded = seededBridge(tmp, name, "pilot@nosedive.invalid");
+	const config = readFileSync(join(seeded.bridge, ".nosedive", "config.yaml"), "utf8");
+	const bridgeId = /^bridge: (\S+)$/m.exec(config)[1];
 	writeImplRepoDoc(seeded.bridge, IMPL_REPO, implRepo(tmp, `${name}-impl`));
 	runTool("git", ["add", "--", "kb"], seeded.bridge);
 	runTool("git", ["commit", "-m", "add an impl repo"], seeded.bridge);
 	runTool("git", ["push"], seeded.bridge);
 	const { featId } = pitchFeat(seeded.bridge, "Impl work.", `${name}-feat`, IMPL_REPO);
-	const config = readFileSync(join(seeded.bridge, ".nosedive", "config.yaml"), "utf8");
-	return { ...seeded, featId, bridgeId: /^bridge: (\S+)$/m.exec(config)[1] };
+	return { ...seeded, featId, bridgeId };
 }
 
 const scopeIds = (text) => [...text.matchAll(/^  - (\S+):$/gm)].map((match) => match[1]);
 
-test("every new dive scopes the bridge, and kb writes on it go to __self", () => {
+test("a backlog scoping the bridge gives every dive it, and kb writes on it go to __self", () => {
 	const { bridge, featId, bridgeId } = bridgeWithImplFeat("every-dive");
 	const recorded = run(["crud", "dive", "--feat", featId, "Impl"], bridge, "Do impl work.\n");
 	assertOk(recorded, "crud dive failed");
@@ -199,7 +203,7 @@ test("every new dive scopes the bridge, and kb writes on it go to __self", () =>
 	assert.match(
 		scopes,
 		new RegExp(`- ${bridgeId}:\\n      ref: [0-9a-f]{40}\\n      work-branch: work/kb\\n`),
-		"the bridge scope lands where a kb-feat dive's does",
+		"the bridge scope lands where the backlog's entry says",
 	);
 
 	assertOk(run(["jump", divePath], bridge), "jump failed");
@@ -217,17 +221,6 @@ test("a dive on a feat that already scopes the bridge scopes it once", () => {
 	assertOk(recorded, "crud dive failed");
 	const text = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(recorded.stdout)[1]), "utf8");
 	assert.equal(scopeIds(text.slice(0, text.indexOf("meta:"))).length, 1);
-});
-
-test("a bridge naming no bridge repo records dives as before", () => {
-	const { bridge, featId } = bridgeWithImplFeat("no-bridge-key");
-	const configPath = join(bridge, ".nosedive", "config.yaml");
-	writeFileSync(configPath, readFileSync(configPath, "utf8").replace(/^bridge: \S+\n/m, ""));
-	runTool("git", ["commit", "-am", "drop the bridge key"], bridge);
-	const recorded = run(["record.dive", "--feat", featId], bridge);
-	assertOk(recorded, "record.dive failed");
-	const text = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(recorded.stdout)[1]), "utf8");
-	assert.deepEqual(scopeIds(text.slice(0, text.indexOf("meta:"))), [IMPL_REPO]);
 });
 
 test("a second dive on the bridge lands only its own work, after the first landed through a merge", () => {

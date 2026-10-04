@@ -762,7 +762,7 @@ test("record.dive warns when no ancestor scopes a repo", () => {
 	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: parentEffortId });
 	const result = run(["record.dive", "--effort", childEffortId], bridge);
 	assertOk(result, "record.dive create failed");
-	assert.match(result.stderr, /and its ancestors scope no repos/);
+	assert.match(result.stderr, /its ancestors and the backlog scope no repos/);
 	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
 });
 

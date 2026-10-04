@@ -460,8 +460,8 @@ meta:
 	/**
 	 * The feat never said where this repo lands, so the minted dive names no
 	 * branch either -- and no `mode` key, which decides nothing and is no longer
-	 * written at all. Step 8 is where that costs something. The bridge scope
-	 * every new dive carries is the one entry that names a branch.
+	 * written at all. Step 8 is where that costs something. The bridge scope the
+	 * seeded backlog hands down is the one entry that names a branch.
 	 */
 	assert.equal(
 		(mintedDoc.match(/^      work-branch: /gm) ?? []).length,

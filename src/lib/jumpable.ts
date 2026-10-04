@@ -1,6 +1,6 @@
 import type { NosediveRc } from "./coreParsing.js";
-import { isParentRel } from "./diveScopes.js";
-import type { KbDoc } from "./kbDocs.js";
+import { inheritedScopes, isParentRel } from "./diveScopes.js";
+import type { KbDoc, ScopeRef } from "./kbDocs.js";
 import { linkedDoc } from "./repoLinks.js";
 
 /** A doc's identity across repos: the same id may sit in two kbs. */
@@ -78,6 +78,27 @@ export function isJumpable(
 	return featReach(rc, kbDocs, backlogRoot(rc, kbDocs), anyFeatRel).has(
 		`${repoId ?? ""}:${doc.id}`,
 	);
+}
+
+/**
+ * The scopes a dive under `feat` starts from: its nearest scoped ancestor's,
+ * plus the backlog's when the backlog reaches it through `.feat` links. `all`
+ * names each repo once, the ancestor's entry winning; `root` is the backlog's
+ * whole list, which `--clear-scopes` keeps.
+ */
+export function rootedScopes(
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	feat: KbDoc,
+): { nearest: ScopeRef[]; root: ScopeRef[]; backlog?: KbDoc; all: ScopeRef[] } {
+	const nearest = inheritedScopes(feat, kbDocs).scopes;
+	const backlog = rc.backlog ? kbDocs.find((doc) => doc.id === rc.backlog) : undefined;
+	const reached =
+		backlog && (backlog === feat || featReach(rc, kbDocs, backlog, anyFeatRel).has(docKey(feat)));
+	const root = reached ? backlog.scopes : [];
+	const named = new Set(nearest.map((scope) => scope.repoId));
+	const all = [...nearest, ...root.filter((scope) => !named.has(scope.repoId))];
+	return { nearest, root, backlog, all };
 }
 
 export function assertJumpable(rc: NosediveRc, kbDocs: KbDoc[], doc: KbDoc): void {

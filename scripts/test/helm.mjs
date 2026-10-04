@@ -436,13 +436,14 @@ test("helm's context: a root's repos, narrowed by a feat; kinds with counts, nar
 	const feat = await get(`/api/context?root=${BACKLOG}&feat=${FEAT}`);
 	assert.deepEqual(
 		feat.repos.map((repo) => repo.id),
-		[HYDRATED],
+		[HYDRATED, BRIDGE_REPO, INSTALLED],
+		"a feat the backlog reaches takes its own scopes, then the backlog's",
 	);
 	const child = await get(`/api/context?root=${BACKLOG}&feat=${CHILD}`);
 	assert.deepEqual(
 		child.repos.map((repo) => repo.id),
 		[HYDRATED],
-		"a feat with no scopes inherits its parent's",
+		"a feat with no scopes inherits its parent's, and no .feat link reaches it from the backlog",
 	);
 
 	const bridgeOnly = await get(`/api/context?root=${BACKLOG}&repo=${BRIDGE_REPO}`);

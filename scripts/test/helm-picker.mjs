@@ -171,9 +171,9 @@ test("a picked doc heads its .feat children, which expand only into theirs; its 
 		"the parent link back to the backlog is not a child",
 	);
 	const repos = (ref) => helmRepoList(bridge, ref).map((repo) => repo.id);
-	assert.deepEqual(repos(A), [R_A], "its own scopes");
+	assert.deepEqual(repos(A), [R_A, R_BACKLOG], "its own scopes and the backlog's");
 	assert.deepEqual(repos(B), [R_BACKLOG], "none of its own: its parent's");
-	assert.deepEqual(repos(D), [R_A]);
+	assert.deepEqual(repos(D), [R_A, R_BACKLOG]);
 });
 
 test("on a dive the pick locks to the offered doc its feat is or is reached from, the first of several", (t) => {

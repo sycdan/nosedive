@@ -1,7 +1,6 @@
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { isSeq, parseDocument } from "yaml";
 
 import { CommandIo } from "./bridgeSetupIo.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
@@ -9,10 +8,7 @@ import {
 	formatPath,
 	gitRelPath,
 	isInsideDir,
-	parseMarkdownDoc,
 	readNosediveRc,
-	splitMarkdownFrontmatter,
-	stringifyYaml,
 	toPosixPath,
 	type NosediveRc,
 } from "./coreParsing.js";
@@ -20,7 +16,6 @@ import { resolveBridgeDocRef } from "./diveScopes.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { editKbDoc } from "./kbDocEdit.js";
 import { loadKbDocs, repoDocs, retitleGeneratedHeading, type KbDoc } from "./kbDocs.js";
-import { parseScopeRefs } from "./kbRefs.js";
 import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import { remoteLooksLikeUrl, resolveRemoteForGit } from "./repoWorkspaceCore.js";
@@ -60,8 +55,6 @@ export interface RecordRepoPlan {
 	bridgeDir: string;
 	repoPath: string;
 	repoContent: string;
-	backlogPath: string;
-	backlogContent: string;
 }
 
 function optionValue(args: string[], index: number, flag: string): string {
@@ -246,40 +239,6 @@ export function renderRepoDoc(options: {
 	].join("\n");
 }
 
-export function renderBacklogRepoScope(text: string, path: string, repoId: string): string {
-	const label = formatPath(path);
-	const frontmatter = splitMarkdownFrontmatter(text, label);
-	const parsed = parseMarkdownDoc(text, label);
-	if (parsed.fm.scalars.kind !== "memo") {
-		throw new Error(`configured backlog is not kind: memo: ${label}`);
-	}
-	if (parseScopeRefs(parsed.fm.raw.scopes, path).some((scope) => scope.repoId === repoId)) {
-		return text;
-	}
-
-	const doc = parseDocument(frontmatter.yaml);
-	if (doc.errors.length > 0) {
-		throw new Error(
-			`invalid YAML in frontmatter in ${label}: ${doc.errors[0]?.message ?? "unknown error"}`,
-		);
-	}
-	const scopes = doc.get("scopes", true);
-	if (scopes === undefined || scopes === null) doc.set("scopes", [repoId]);
-	else if (isSeq(scopes)) scopes.add(repoId);
-	else throw new Error(`invalid scopes in ${label}: expected a YAML list`);
-	return ["---", stringifyYaml(doc).trimEnd(), "---", frontmatter.body].join("\n");
-}
-
-function configuredBacklogPath(rc: NosediveRc): string {
-	if (!rc.kbDir) throw new Error("record.repo requires a configured kb directory");
-	if (!rc.backlog) throw new Error("record.repo requires a configured backlog memo id");
-	const path = join(rc.kbDir, `${rc.backlog}.md`);
-	if (!existsSync(path) || !statSync(path).isFile()) {
-		throw new Error(`bridge backlog memo not found: ${rc.backlog}`);
-	}
-	return path;
-}
-
 export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()): RecordRepoPlan {
 	const rc = readNosediveRc(cwd);
 	if (!rc.kbDir) throw new Error("record.repo requires a configured kb directory");
@@ -334,8 +293,6 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 	const id = uuid7AtMs(Date.now());
 	const repoPath = join(rc.kbDir, `${id}.md`);
 	const workspacePath = toPosixPath(relative(rc.bridgeDir, join(rc.workspaceDir, name)));
-	const backlogPath = configuredBacklogPath(rc);
-	const backlogBefore = readFileSync(backlogPath, "utf8");
 	return {
 		id,
 		name,
@@ -350,8 +307,6 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 			cloud,
 			local,
 		}),
-		backlogPath,
-		backlogContent: renderBacklogRepoScope(backlogBefore, backlogPath, id),
 	};
 }
 /**
@@ -362,20 +317,8 @@ export function planRecordRepo(options: RecordRepoOptions, cwd = process.cwd()):
 function createRepo(options: RecordRepoOptions, io: CommandIo): void {
 	const plan = planRecordRepo(options);
 	writeFileAtomic(plan.repoPath, plan.repoContent);
-	try {
-		writeFileAtomic(plan.backlogPath, plan.backlogContent);
-	} catch (error) {
-		if (existsSync(plan.repoPath)) unlinkSync(plan.repoPath);
-		throw error;
-	}
 	io.log(`Recorded ${formatPath(plan.repoPath)}`);
-	io.log(`Added ${plan.name} to backlog scopes in ${formatPath(plan.backlogPath)}`);
-	commitBridgeDocs(
-		plan.bridgeDir,
-		`repo(${plan.name}): created`,
-		[plan.repoPath, plan.backlogPath],
-		io,
-	);
+	commitBridgeDocs(plan.bridgeDir, `repo(${plan.name}): created`, [plan.repoPath], io);
 }
 
 /**

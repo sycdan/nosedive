@@ -64,7 +64,7 @@ test("record.repo help is available without a bridge", () => {
 	);
 });
 
-test("record.repo registers a local repository in backlog scopes", () => {
+test("record.repo registers a local repository and leaves the backlog's scopes alone", () => {
 	const bridge = seededBridge("record-local");
 	const source = sourceRepo("Alpha_Service");
 	runTool(
@@ -73,9 +73,9 @@ test("record.repo registers a local repository in backlog scopes", () => {
 		source,
 	);
 
+	const backlogBefore = readFileSync(backlogPath(bridge), "utf8");
 	const recorded = run(["record.repo", source], bridge);
 	assertOk(recorded, "record.repo local path failed");
-	assert.match(recorded.stdout, /Added alpha-service to backlog scopes/);
 	assert.equal(repoFiles(bridge).length, 2);
 
 	const repoPath = repoDocPath(bridge, "alpha-service");
@@ -87,7 +87,11 @@ test("record.repo registers a local repository in backlog scopes", () => {
 	assert.match(repo, /^  trunk: "main"$/m);
 	assert.match(repo, /^    cloud: "https:\/\/example\.invalid\/team\/Alpha_Service\.git"$/m);
 	assert.match(repo, /^    local: /m);
-	assert.match(readFileSync(backlogPath(bridge), "utf8"), new RegExp(`^  - ${repoId}$`, "m"));
+	assert.equal(
+		readFileSync(backlogPath(bridge), "utf8"),
+		backlogBefore,
+		"the backlog is the pilot's",
+	);
 
 	const backlogBeforeDuplicate = readFileSync(backlogPath(bridge), "utf8");
 	const duplicate = run(["record.repo", source], bridge);
@@ -136,7 +140,7 @@ test("record.repo refuses invalid input before writing either document", () => {
 	assert.equal(readFileSync(backlogPath(bridge), "utf8"), backlogBefore);
 });
 
-test("record.repo commits the repo doc and the backlog it scoped", () => {
+test("record.repo commits the repo doc alone", () => {
 	const bridge = seededBridge("record-commit");
 	const source = sourceRepo("Gamma_Service");
 	const recorded = run(["record.repo", source], bridge);
@@ -148,7 +152,7 @@ test("record.repo commits the repo doc and the backlog it scoped", () => {
 		.split("\n")
 		.map((line) => line.trim())
 		.filter(Boolean);
-	assert.equal(files.length, 2, `the repo doc and the backlog memo: ${committed.stdout}`);
+	assert.equal(files.length, 1, `the repo doc: ${committed.stdout}`);
 });
 
 test("a bare record.repo publishes a repo doc somebody edited by hand", () => {
@@ -184,7 +188,6 @@ test("--remote takes the clone source and --url writes meta.url", () => {
 		bridge,
 	);
 	assertOk(recorded, "record.repo --remote --url failed");
-	assert.match(recorded.stdout, /Added epsilon-service to backlog scopes/);
 
 	const repo = readFileSync(repoDocPath(bridge, "epsilon-service"), "utf8");
 	assert.match(repo, /^  url: "https:\/\/example\.invalid\/team\/epsilon"$/m);

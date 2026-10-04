@@ -1,11 +1,10 @@
 import { basename } from "node:path";
 
-import { inheritedScopes } from "./diveScopes.js";
 import { sameFeatRef } from "./diveListing.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
 import { helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
-import { docKey, featChildren, featReach, isFeatEdge } from "./jumpable.js";
+import { docKey, featChildren, featReach, isFeatEdge, rootedScopes } from "./jumpable.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { linkedDoc } from "./repoLinks.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
@@ -174,7 +173,7 @@ export function helmRepoList(cwd: string, ref?: string): { id: string; name: str
 	const byId = new Map(view.docs.map((doc) => [doc.id, doc]));
 	const wanted = ref ?? view.rc.backlog;
 	const doc = wanted ? pickedDoc(view, wanted) : undefined;
-	return (doc ? inheritedScopes(doc, view.docs).scopes : [])
+	return (doc ? rootedScopes(view.rc, view.docs, doc).all : [])
 		.map((scope) => byId.get(scope.repoId))
 		.filter((repo): repo is KbDoc => repo?.kind === "repo")
 		.map((repo) => ({ id: repo.id, name: repo.name }))

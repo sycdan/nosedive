@@ -27,7 +27,7 @@ const madeId = (stdout) => /^Minted (?:\S*[\\/])?kb[\\/]([0-9a-f-]{36})\.md$/m.e
 
 /**
  * A seeded bridge with a bridge-only `note` kind, and a dive jumped on a feat
- * scoping a repo whose kb is empty; the dive scopes the bridge too.
+ * scoping a repo whose kb is empty; the backlog scopes the bridge too.
  */
 function onDive(name) {
 	const { bridge } = seededBridge(tmp, name, "pilot@nosedive.invalid");

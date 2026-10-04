@@ -18,21 +18,39 @@ import {
 const tmp = createTmp("bridge-scope");
 const IMPL = "01a0fe62-950b-73c8-a998-4d0402f3e9ae";
 const FEAT = "01a0fe62-950c-7d56-b26a-4d18730f1793";
-const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
-/** A seeded bridge registering one other repo, and a feat scoping `featScopes`. */
-function setup(name, featScopes) {
+/** `[repo, branch]` pairs as a `scopes:` block; an undefined branch names none. */
+const scopesYaml = (pairs) =>
+	pairs
+		.map(([id, branch]) => (branch ? `  - ${id}:\n      work-branch: ${branch}\n` : `  - ${id}\n`))
+		.join("");
+
+/**
+ * A seeded bridge registering one other repo, a feat scoping `featScopes`, and a
+ * backlog scoping `backlogScopes` -- the bridge on `work/kb` unless told -- that
+ * links the feat unless `linked` is false.
+ */
+function setup(name, featScopes, { backlogScopes, linked = true } = {}) {
 	const { bridge, origin } = seededBridge(tmp, name, "pilot@nosedive.invalid");
-	const configPath = join(bridge, ".nosedive", "config.yaml");
-	const bridgeId = /^bridge: (\S+)$/m.exec(readFileSync(configPath, "utf8"))[1];
+	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	const bridgeId = /^bridge: (\S+)$/m.exec(config)[1];
+	const backlogPath = join(bridge, "kb", `${/^backlog: (\S+)$/m.exec(config)[1]}.md`);
 	const impl = implRepo(tmp, `${name}-impl`);
 	writeImplRepoDoc(bridge, IMPL, impl);
-	const scopes = featScopes({ bridgeId })
-		.map(([id, branch]) => `  - ${id}:\n      work-branch: ${branch}\n`)
-		.join("");
 	write(
 		join(bridge, "kb", `${FEAT}.md`),
-		`---\nkind: feat\nid: ${FEAT}\nname: impl-work\ngist: "Impl work"\nscopes:\n${scopes}---\n\n# Impl work\n`,
+		`---\nkind: feat\nid: ${FEAT}\nname: impl-work\ngist: "Impl work"\nscopes:\n${scopesYaml(featScopes({ bridgeId }))}---\n\n# Impl work\n`,
+	);
+	const rootScopes = (backlogScopes ?? (() => [[bridgeId, "work/kb"]]))({ bridgeId });
+	const link = linked ? `  - kb/${FEAT}.md:\n      rel: current.feat\n` : "";
+	write(
+		backlogPath,
+		readFileSync(backlogPath, "utf8")
+			.replace(
+				/^scopes:\n(?: .*\n)*/m,
+				`scopes:${rootScopes.length ? "\n" : " []\n"}${scopesYaml(rootScopes)}`,
+			)
+			.replace(/^links:\n/m, `links:\n${link}`),
 	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
@@ -56,7 +74,7 @@ function scopesOf(text) {
 	].map(([, repo, branch]) => [repo, branch]);
 }
 
-test("a feat already scoping the bridge hands down its own branch, once", () => {
+test("a dive takes the backlog's scopes plus its feat's, the feat's entry winning", () => {
 	const both = ({ bridgeId }) => [
 		[IMPL, "work/impl"],
 		[bridgeId, "work/mine"],
@@ -66,37 +84,54 @@ test("a feat already scoping the bridge hands down its own branch, once", () => 
 		[IMPL, "work/impl"],
 		[bridgeId, "work/mine"],
 	]);
-	// With the inherited scopes cleared, the feat's branch for the bridge still answers.
-	assert.deepEqual(scopesOf(recordDive(bridge, ["--clear-scopes"]).text), [
-		[bridgeId, "work/mine"],
-	]);
+	// With the feat's scopes cleared, the backlog's entry for the bridge answers.
+	assert.deepEqual(scopesOf(recordDive(bridge, ["--clear-scopes"]).text), [[bridgeId, "work/kb"]]);
 });
 
-test("--clear-scopes keeps the bridge scope, and only an explicit --unscope drops it", () => {
+test("--clear-scopes keeps the backlog's scopes, and --unscope drops either", () => {
 	const { bridge, bridgeId } = setup("clear", implOnly);
+	assert.deepEqual(scopesOf(recordDive(bridge, []).text), [
+		[IMPL, "work/impl"],
+		[bridgeId, "work/kb"],
+	]);
 	assert.deepEqual(scopesOf(recordDive(bridge, ["--clear-scopes"]).text), [[bridgeId, "work/kb"]]);
 	assert.deepEqual(scopesOf(recordDive(bridge, ["--unscope", bridgeId]).text), [
 		[IMPL, "work/impl"],
 	]);
+	assert.deepEqual(scopesOf(recordDive(bridge, ["--unscope", IMPL]).text), [[bridgeId, "work/kb"]]);
 });
 
-test("a feat scoping nothing is still warned about, though the dive scopes the bridge", () => {
+test("a repo only the backlog names takes the backlog's branch, or none", () => {
+	const { bridge, bridgeId } = setup("ro", implOnly, {
+		backlogScopes: ({ bridgeId }) => [[bridgeId, undefined]],
+	});
+	assert.deepEqual(scopesOf(recordDive(bridge, []).text), [
+		[IMPL, "work/impl"],
+		[bridgeId, undefined],
+	]);
+});
+
+test("a backlog scoping nothing, or not reaching the feat, gives only the feat's scopes", () => {
+	const none = setup("bare-root", implOnly, { backlogScopes: () => [] });
+	assert.deepEqual(scopesOf(recordDive(none.bridge, []).text), [[IMPL, "work/impl"]]);
+	const unreached = setup("unreached", implOnly, { linked: false });
+	assert.deepEqual(scopesOf(recordDive(unreached.bridge, []).text), [[IMPL, "work/impl"]]);
+});
+
+test("the no-scopes warning fires only when the dive ends up with none", () => {
 	const { bridge, bridgeId } = setup("unscoped", () => []);
 	const recorded = recordDive(bridge, []);
-	assert.match(recorded.stderr, /scope no repos/);
+	assert.doesNotMatch(recorded.stderr, /scope no repos/);
 	assert.deepEqual(scopesOf(recorded.text), [[bridgeId, "work/kb"]]);
+	const bare = setup("all-unscoped", () => [], { backlogScopes: () => [] });
+	const empty = recordDive(bare.bridge, []);
+	assert.match(empty.stderr, /scope no repos/);
+	assert.deepEqual(scopesOf(empty.text), []);
 });
 
 test("land skips a scope with nothing past its pin, the bridge's own included", () => {
 	const { bridge, bridgeId, origin, impl } = setup("untouched", implOnly);
 	const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
-	// The feat hangs from the kb feat, which the backlog links, so jump reaches its dive.
-	assertOk(
-		run(["crud", KB_FEAT, "--links", "-"], bridge, `${FEAT}: {rel: injected.feat}\n`),
-		"linking the feat from the kb feat failed",
-	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "hang the feat");
 	runTool("git", ["push"], bridge);
 	const recorded = run(["crud", "dive", "--feat", FEAT, "Change", "impl"], bridge, "Work.\n");
 	assertOk(recorded, "crud dive failed");

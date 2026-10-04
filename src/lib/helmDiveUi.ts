@@ -110,7 +110,7 @@ function noteDialog() {
 		const ok = /\[exit 0\]\s*$/.test(out.textContent);
 		out.hidden = false;
 		out.classList.toggle("failed", !ok);
-		if (ok) { text.value = ""; refreshRepos(); }
+		if (ok) { text.value = ""; refreshSections(); }
 		save.disabled = false;
 	});
 	document.body.append(dialog);
@@ -153,13 +153,11 @@ function confirmDialog({ verb, cls, target, detail, reason, act }) {
 function stage(dive) {
 	dives.staged = dive;
 	renderBar();
-	refreshRepos();
+	refreshSections();
 }
 
 /** Runs a dive verb and shows its output as it streams in. */
 async function runVerb(body) {
-	// The output takes the main pane; the Repos view must not redraw over it.
-	reposOpen = false;
 	const out = el("pre", { class: "output streaming" }, "");
 	document.getElementById("view").replaceChildren(el("h3", {}, "nosedive " + body.verb), out);
 	try {
@@ -186,7 +184,7 @@ async function runVerb(body) {
 	await loadDives();
 	// A land can add a root to the bridge, so the tree re-reads them too.
 	await loadRoots();
-	refreshRepos();
+	refreshSections();
 }
 
 /** Clicking a dive's card opens its doc, which stages it. */

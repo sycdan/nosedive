@@ -154,7 +154,7 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 
 	const staged = await get(`/api/context?root=${BACKLOG}&dive=${dive.id}`);
 	assert.deepEqual(
-		staged.repos.map((repo) => repo.id),
+		staged.repos.filter((repo) => repo.inScope).map((repo) => repo.id),
 		[REPO],
 		"a staged dive narrows the repos to its scopes",
 	);

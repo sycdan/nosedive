@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { helmContext, helmDoc, helmKindCheck, helmKindDocs } from "./helm.js";
+import { helmContext, helmDoc, helmKindCheck, helmKindCounts, helmKindDocs } from "./helm.js";
 import { HELM_POLL_MS, helmInternals, helmLogFollower } from "./helmInternals.js";
 import { helmPage } from "./helmPage.js";
 import { gitOutput } from "./gitProcess.js";
@@ -254,6 +254,11 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 						url.searchParams.get("repo") || undefined,
 						url.searchParams.get("dive") || undefined,
 					),
+				);
+			if (url.pathname === "/api/kind-counts")
+				return sendJson(
+					res,
+					helmKindCounts(cwd, (url.searchParams.get("repos") ?? "").split(",").filter(Boolean)),
 				);
 			if (url.pathname === "/api/kind-docs")
 				return sendJson(

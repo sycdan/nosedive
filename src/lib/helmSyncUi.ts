@@ -9,7 +9,6 @@ export const helmSyncScript = String.raw`
 // --- branch view ------------------------------------------------------------
 
 function showBranch() {
-	reposOpen = false;
 	highlight(null);
 	crumbs([]);
 	document.getElementById("crumbs").append(el("span", { class: "sep" }, "/"), el("button", { title: "The checked-out branch" }, "Branch"));

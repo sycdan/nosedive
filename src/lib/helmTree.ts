@@ -1,8 +1,8 @@
 /**
  * The page's left tree and picker, spliced into its script. The picked doc --
  * the backlog when nothing is -- heads the tree, then the feats it links and
- * theirs -- dives are cards in the main view, never rows; repos and kinds have
- * a view of their own.
+ * theirs -- dives are cards in the main view, never rows; repos and kinds sit
+ * atop the main view.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------

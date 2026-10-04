@@ -126,9 +126,11 @@ pre.output.failed { border-left-color: #d64545; }
 #divebar .gap, header .gap { flex: 1; }
 .cards .nodives { grid-column: 1 / -1; }
 .repos { display: grid; gap: 18px; }
-.repos section.repo { display: grid; gap: 8px; }
-.repos section.repo .doclist { margin: 0 0 0 12px; }
-#reposbtn { margin-right: 4px; }
+#top { display: grid; gap: 10px; margin: 0 0 18px; }
+details.top summary { cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+	color: var(--dim); padding: 2px 0 8px; }
+details.top .doclist { margin: 0; }
+.card.inscope { border-color: var(--accent); }
 #rootpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
 	background: var(--panel); color: var(--text); max-width: 16em; }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);

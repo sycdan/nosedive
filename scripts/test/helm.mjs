@@ -237,8 +237,58 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.match(
 		restore,
 		/api\(contextQuery\(ctx\.root, false\)\)/,
-		"the kind comes from the Repos view's context",
+		"the kind comes from the Kinds section's context",
 	);
+	// Repos and Kinds sit atop the main view; there is no Repos view any more.
+	assert.doesNotMatch(
+		html,
+		/reposbtn|showRepos|#repos/,
+		"the Repos button, view and crumb are gone",
+	);
+	assert.match(
+		html,
+		/<div id="top"><\/div><div id="view"><\/div>/,
+		"the sections sit above the view",
+	);
+	assert.match(
+		/function reset\(\) \{[\s\S]*?\n\}/.exec(script)?.[0] ?? "",
+		/refreshSections\(\)/,
+		"going home, the picker among the ways there, redraws the sections",
+	);
+	assert.match(
+		/async function runVerb\(body\) \{[\s\S]*?\n\}/.exec(script)?.[0] ?? "",
+		/refreshSections\(\)/,
+		"a jump or land redraws the sections",
+	);
+	// Collapse state is per viewer, and a browser that keeps nothing still works.
+	const openSource = [
+		/function sectionOpen\(name\) \{[\s\S]*?\n\}/.exec(script)?.[0],
+		/function rememberOpen\(name, open\) \{[\s\S]*?\n\}/.exec(script)?.[0],
+	];
+	assert.ok(openSource.every(Boolean), "page carries the collapse helpers");
+	const kept = new Map();
+	const run = (localStorage) =>
+		new Script(
+			`const OPEN_KEY = "helm-open-"; ${openSource.join("\n")} ({ sectionOpen, rememberOpen })`,
+		).runInNewContext({ localStorage });
+	const remembering = run({
+		getItem: (k) => kept.get(k) ?? null,
+		setItem: (k, v) => kept.set(k, v),
+	});
+	assert.equal(remembering.sectionOpen("kinds"), true, "open until collapsed");
+	remembering.rememberOpen("kinds", false);
+	assert.equal(remembering.sectionOpen("kinds"), false, "a collapse is remembered");
+	assert.equal(remembering.sectionOpen("repos"), true, "per section");
+	const throwing = run({
+		getItem() {
+			throw new Error("denied");
+		},
+		setItem() {
+			throw new Error("denied");
+		},
+	});
+	assert.equal(throwing.sectionOpen("repos"), true);
+	assert.doesNotThrow(() => throwing.rememberOpen("repos", false));
 	// The home view offers the kb jump on the backlog only; other roots point at their feats.
 	const rootForm = /function rootForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(rootForm, "page carries rootForm");
@@ -353,9 +403,14 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 
 	const { repos } = await get(`/api/context?root=${BACKLOG}`);
 	assert.deepEqual(
-		repos.map((repo) => repo.id),
-		[BRIDGE_REPO, HYDRATED, INSTALLED],
-		"the root's scoped repos in scope order; a repo it only links is not shown",
+		repos.map((repo) => [repo.id, repo.inScope]),
+		[
+			[BRIDGE_REPO, true],
+			[HYDRATED, true],
+			[INSTALLED, true],
+			[UNLISTED, false],
+		],
+		"every repo: the root's scoped ones first in scope order, then the rest",
 	);
 	const [bridgeCard, hydratedCard, installedCard] = repos;
 	assert.equal(bridgeCard.isBridge, true);
@@ -368,7 +423,10 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.equal(hydratedCard.nosedive, null, "no config file means not installed");
 	assert.equal(installedCard.hydrated, null);
 	assert.deepEqual(installedCard.nosedive, { level: 1 }, "read from trunk without hydrating");
-	assert.deepEqual((await get(`/api/context?root=${IDEAS}`)).repos, []);
+	assert.deepEqual(
+		(await get(`/api/context?root=${IDEAS}`)).repos.filter((repo) => repo.inScope),
+		[],
+	);
 
 	const backlog = await get(`/api/doc?id=${BACKLOG}`);
 	assert.deepEqual(
@@ -402,7 +460,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.equal(missing.status, 404);
 });
 
-test("helm's context: a root's repos, narrowed by a feat; kinds with counts, narrowed by a repo", async (t) => {
+test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a repo, counted apart", async (t) => {
 	const bridge = join(tmp, "bridge");
 	const { url, stop } = startHelm(bridge);
 	t.after(stop);
@@ -421,27 +479,33 @@ test("helm's context: a root's repos, narrowed by a feat; kinds with counts, nar
 			[BRIDGE_REPO, false],
 			[HYDRATED, false],
 			[INSTALLED, false],
+			[UNLISTED, false],
 		],
 		"no dive: helm writes nowhere",
 	);
 	assert.deepEqual(
-		root.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.count, kind.inCrudContext]),
+		root.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.inCrudContext]),
 		[
-			[NOTE_KIND, "note", BRIDGE_REPO, 1, false],
-			[CARD_KIND, "card", HYDRATED, 2, false],
+			[NOTE_KIND, "note", BRIDGE_REPO, false],
+			[CARD_KIND, "card", HYDRATED, false],
 		],
+		"only the in-scope repos' kinds, and no counts: those are a request of their own",
 	);
 	assert.deepEqual(root.unreadable, ["installed"], "a repo not hydrated has no kb to read");
+	const counts = await get(`/api/kind-counts?repos=${BRIDGE_REPO},${HYDRATED},${INSTALLED}`);
+	assert.equal(counts[BRIDGE_REPO].note, 1);
+	assert.equal(counts[HYDRATED].card, 2);
+	assert.equal(counts[INSTALLED], undefined, "a kb that cannot be read is not counted");
 
 	const feat = await get(`/api/context?root=${BACKLOG}&feat=${FEAT}`);
 	assert.deepEqual(
-		feat.repos.map((repo) => repo.id),
+		feat.repos.filter((repo) => repo.inScope).map((repo) => repo.id),
 		[HYDRATED, BRIDGE_REPO, INSTALLED],
 		"a feat the backlog reaches takes its own scopes, then the backlog's",
 	);
 	const child = await get(`/api/context?root=${BACKLOG}&feat=${CHILD}`);
 	assert.deepEqual(
-		child.repos.map((repo) => repo.id),
+		child.repos.filter((repo) => repo.inScope).map((repo) => repo.id),
 		[HYDRATED],
 		"a feat with no scopes inherits its parent's, and no .feat link reaches it from the backlog",
 	);
@@ -488,14 +552,16 @@ test("helm's context: a root's repos, narrowed by a feat; kinds with counts, nar
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	write(marker, `id: ${DIVE}\n`);
 	t.after(() => rmSync(marker, { force: true }));
-	const diving = await get(`/api/context?root=${BACKLOG}`);
+	const diving = await get(`/api/context?root=${BACKLOG}&dive=${DIVE}`);
 	assert.deepEqual(
-		diving.repos.map((repo) => [repo.id, repo.inCrudContext]),
+		diving.repos.map((repo) => [repo.id, repo.inScope, repo.inCrudContext]),
 		[
-			[BRIDGE_REPO, false],
-			[HYDRATED, true],
-			[INSTALLED, false],
+			[HYDRATED, true, true],
+			[BRIDGE_REPO, false, false],
+			[INSTALLED, false, false],
+			[UNLISTED, false, false],
 		],
+		"on a dive, its scopes are in scope",
 	);
 });
 

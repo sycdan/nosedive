@@ -91,7 +91,7 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 		if (!Object.keys(patch).length) return rerender(outputBox("Nothing changed."));
 		try {
 			const run = await write("/api/crud/meta", { id: doc.id, repo: repoId, patch });
-			refreshRepos();
+			refreshSections();
 			rerender(outputBox(run.stdout));
 		} catch (err) {
 			rerender(outputBox(String(err.message || err), true));
@@ -110,7 +110,7 @@ function rootForm() {
 	return [hint];
 }
 
-/** Hydrate (a ref, prefilled with trunk) or dehydrate (confirmed once) a repo from its card. */
+/** Hydrate (a ref, prefilled with trunk) or dehydrate (confirmed once) a repo from its card; out of scope, only dehydrate. */
 function cardActions(repo) {
 	if (repo.isBridge) return null;
 	if (repo.hydrated)
@@ -120,6 +120,7 @@ function cardActions(repo) {
 				detail: "Removes " + repo.name + "'s checkout from the workspace.",
 				act: () => runVerb({ verb: "dehydrate", repo: repo.id }),
 			}) }, "Dehydrate"));
+	if (!repo.inScope) return null;
 	const box = el("div", { class: "cardacts" });
 	const open = el("button", { class: "act jump" }, "Hydrate");
 	open.addEventListener("click", () => {
@@ -217,7 +218,7 @@ function schemaEditor(kind, kindDoc, path, rerender) {
 		try {
 			const meta = Object.assign({}, kindDoc.meta, { schema: build() });
 			const run = await write("/api/crud/meta", { id: kind.id, repo: kind.repoId, patch: meta, replace: true });
-			refreshRepos();
+			refreshSections();
 			// The dive bar's forms are built from schemas, so it reads them again.
 			await loadCreatable();
 			renderBar();

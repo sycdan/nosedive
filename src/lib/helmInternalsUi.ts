@@ -48,7 +48,6 @@ function pollLine(isOpen, onChange) {
 }
 
 async function showInternals() {
-	reposOpen = false;
 	highlight(null);
 	crumbs([]);
 	document.getElementById("crumbs").append(el("span", { class: "sep" }, "/"), el("button", { title: "Helm internals" }, "Internals"));

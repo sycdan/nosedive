@@ -4,6 +4,7 @@ import { helmBranchesScript } from "./helmBranchesUi.js";
 import { helmDiveScript } from "./helmDiveUi.js";
 import { helmInternalsScript } from "./helmInternalsUi.js";
 import { helmEditScript } from "./helmEdit.js";
+import { helmSectionsScript } from "./helmSectionsUi.js";
 import { helmStyle } from "./helmStyle.js";
 import { helmTreeScript } from "./helmTree.js";
 
@@ -17,10 +18,10 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><button id="reposbtn" class="act unstage">Repos</button><select id="rootpick" aria-label="Pick" hidden></select><span id="headacts"></span></header>
+<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><select id="rootpick" aria-label="Pick" hidden></select><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
-<main><div id="error" hidden></div><div id="view"></div></main>
+<main><div id="error" hidden></div><div id="top"></div><div id="view"></div></main>
 <script>
 const token = new URLSearchParams(location.search).get("token");
 const rootIds = new Set();
@@ -81,9 +82,10 @@ function fact(dotClass, label, value) {
 function repoCard(repo) {
 	const h = repo.hydrated;
 	const n = repo.nosedive;
-	return el("article", { class: "card" + (repo.inCrudContext === false ? " out" : ""), title: repo.inCrudContext === false ? OUT_OF_REACH : null },
+	return el("article", { class: "card" + (repo.inScope ? " inscope" : "") + (repo.inCrudContext === false ? " out" : ""), title: repo.inCrudContext === false ? OUT_OF_REACH : null },
 		el("div", { class: "name" }, el("span", { class: "icon" }, repo.icon || "▢"), repo.name,
-			repo.isBridge ? el("span", { class: "tag" }, "bridge") : null),
+			repo.isBridge ? el("span", { class: "tag" }, "bridge") : null,
+			repo.inScope ? el("span", { class: "tag" }, "in scope") : null),
 		el("div", { class: "gist" }, repo.gist),
 		el("div", { class: "facts" },
 			h ? fact(h.atTrunk ? "ok" : "warn", (h.atTrunk ? "at " : "off ") + repo.trunk, h.commit.slice(0, 8))
@@ -95,7 +97,7 @@ function repoCard(repo) {
 function crumbs(path) {
 	const parts = [el("button", { title: "Nothing selected", onclick: reset }, bridge.name)];
 	path.forEach((step, index) => parts.push(el("span", { class: "sep" }, "/"),
-		el("button", { title: step.name, onclick: () => step.id === "#repos" ? showRepos() : select(path.slice(0, index + 1)) }, step.name)));
+		el("button", { title: step.name, onclick: () => select(path.slice(0, index + 1)) }, step.name)));
 	document.getElementById("crumbs").replaceChildren(...parts);
 }
 
@@ -117,9 +119,7 @@ function reset() {
 	highlight(null);
 	Object.assign(ctx, { feat: null, repo: null, kind: null });
 	history.replaceState(null, "", location.pathname + location.search);
-	// On a dive, home is the Repos view: where making things starts.
-	if (dives.active) return showRepos();
-	reposOpen = false;
+	refreshSections();
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
 		...(dives.active ? [] : [divePicker()]),
@@ -136,7 +136,6 @@ function docBody(doc, withFrontmatter) {
 
 /** Selects the last doc on a path of steps from a root down. */
 async function select(path, row, message) {
-	reposOpen = false;
 	highlight(row);
 	const last = path[path.length - 1];
 	const feat = [...path].reverse().find(isFeatStep);
@@ -144,7 +143,7 @@ async function select(path, row, message) {
 	const featRef = feat ? (feat.repo ? feat.repo + ":kb/" + feat.id + ".md" : feat.id) : null;
 	const narrowed = ctx.feat !== featRef;
 	ctx.feat = featRef;
-	if (narrowed) refreshRepos();
+	if (narrowed) refreshSections();
 	writeHash(path);
 	crumbs(path);
 	const view = document.getElementById("view");
@@ -167,46 +166,8 @@ async function select(path, row, message) {
 	} catch (err) { showError(err); }
 }
 
-/** Whether the main pane shows the Repos view, so a write can redraw its counts. */
-let reposOpen = false;
-
-function refreshRepos() {
-	if (reposOpen) showRepos();
-}
-
-/**
- * The picked root's repos, each card with the kinds its kb declares and how
- * many docs of each it holds; a kind opens its page. A repo whose kb cannot
- * be read -- not hydrated -- says so.
- */
-async function showRepos() {
-	reposOpen = true;
-	highlight(null);
-	const path = [rootStep(ctx.root), { id: "#repos", name: "Repos" }];
-	crumbs(path);
-	const view = document.getElementById("view");
-	try {
-		const context = await api(contextQuery(ctx.root, false));
-		showError(null);
-		if (!reposOpen) return;
-		const unreadable = new Set(context.unreadable);
-		view.replaceChildren(context.repos.length
-			? el("div", { class: "repos" }, context.repos.map((repo) => {
-				const kinds = context.kinds.filter((kind) => kind.repoId === repo.id);
-				const list = kinds.length
-					? el("ul", { class: "doclist" }, kinds.map((kind) => el("li", { class: kind.inCrudContext ? "" : "out", title: kind.inCrudContext ? null : OUT_OF_REACH },
-						el("button", { class: "linkish", onclick: () => showKind(kind, [...path, { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }]) }, kind.name),
-						" ", el("span", { class: "count" }, String(kind.count)), " — ", kind.gist)))
-					: el("p", { class: "empty" }, unreadable.has(repo.name) ? "Not hydrated, so its kb cannot be read." : "Declares no kinds.");
-				return el("section", { class: "repo" }, repoCard(repo), list);
-			}))
-			: el("p", { class: "empty" }, "The picked doc scopes no repos."));
-	} catch (err) { showError(err); }
-}
-
 /** A kind: the docs of it listed above the kind doc's own body. */
 async function showKind(kind, path, row, message) {
-	reposOpen = false;
 	highlight(row);
 	writeHash(path);
 	crumbs(path);
@@ -228,6 +189,7 @@ async function showKind(kind, path, row, message) {
 }
 
 ${helmEditScript}
+${helmSectionsScript}
 ${helmDiveScript}
 ${helmCreateScript}
 ${helmSyncScript}
@@ -282,7 +244,7 @@ events.addEventListener("state", async (event) => {
 	try {
 		await loadDives();
 		await loadRoots();
-		refreshRepos();
+		refreshSections();
 		// A verb run here changes the dive too, often just after its output
 		// ends; going home then would wipe that output.
 		if (last.dive !== next.dive && !document.querySelector("#view > .output")) reset();
@@ -293,12 +255,12 @@ events.addEventListener("state", async (event) => {
 
 ${helmInternalsScript}
 document.getElementById("headacts").append(noteButton());
-document.getElementById("reposbtn").addEventListener("click", showRepos);
 
 Promise.all([loadRoots(), loadDives()]).then(() => {
-	if (location.hash === "#branch") return showBranch();
 	const path = currentPath();
 	if (!path.length) return reset();
+	refreshSections();
+	if (location.hash === "#branch") return showBranch();
 	// Names, kinds and link types are unknown after a reload: each step fills
 	// in its own, and takes its rel -- what makes a feat a feat -- from the
 	// step before it.
@@ -311,7 +273,7 @@ Promise.all([loadRoots(), loadDives()]).then(() => {
 			});
 			restoreContext();
 			// A kind page and a doc opened from its list come back as they were
-			// opened: the kind as the Repos view gives it, reach included.
+			// opened: the kind as the Kinds section gives it, reach included.
 			const at = path.length - 1;
 			const kindAt = (i) => i >= 0 && docs[i] && docs[i].kind === "kind" && path[i].repo;
 			const k = kindAt(at) ? at : kindAt(at - 1) ? at - 1 : -1;

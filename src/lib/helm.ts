@@ -168,24 +168,24 @@ export function crudReach(cwd: string): Set<string | undefined> {
 }
 
 export interface HelmContext {
-	repos: Array<HelmRepoCard & { inCrudContext: boolean }>;
+	repos: Array<HelmRepoCard & { inScope: boolean; inCrudContext: boolean }>;
 	kinds: Array<{
 		id: string;
 		name: string;
 		gist: string;
 		repoId?: string;
 		repoName: string;
-		count: number;
 		inCrudContext: boolean;
 	}>;
 	unreadable: string[];
 }
 
 /**
- * What is in view under a root: its scoped repos -- a feat's instead, when one
- * is selected, scoped the way a dive under it would be -- and the kinds
- * their kbs declare, narrowed to one repo when one is selected. Each says
- * whether crud can reach it, because helm writes only through crud.
+ * Every repo the bridge knows, those in scope under a root first -- its
+ * scoped repos, a feat's instead when one is selected, scoped the way a dive
+ * under it would be -- and the kinds the in-scope kbs declare, narrowed to one
+ * repo when one is selected. Each says whether crud can reach it, because
+ * helm writes only through crud. Counts are helmKindCounts', apart.
  */
 export function helmContext(
 	cwd: string,
@@ -208,8 +208,13 @@ export function helmContext(
 		.map((scope) => byId.get(scope.repoId))
 		.filter((doc): doc is KbDoc => doc?.kind === "repo");
 	const reach = crudReach(cwd);
-	const repos = inView.map((doc) => ({
+	const inScope = new Set(inView.map((doc) => doc.id));
+	const outOfScope = docs
+		.filter((doc) => doc.kind === "repo" && !inScope.has(doc.id))
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const repos = [...inView, ...outOfScope].map((doc) => ({
 		...repoCard(doc, rc.bridgeDir, doc.id === rc.bridge),
+		inScope: inScope.has(doc.id),
 		inCrudContext: reach.has(doc.id),
 	}));
 	const sources: KindSource[] = [];
@@ -219,17 +224,33 @@ export function helmContext(
 		if (source) sources.push(source);
 		else unreadable.push(doc.name);
 	}
-	const counts = new Map(sources.map((source) => [source.id, kindCounts(source.kbDir)]));
 	const kinds = loadKinds(sources).map((kind) => ({
 		id: kind.id,
 		name: kind.name,
 		gist: kind.gist,
 		repoId: kind.source.id,
 		repoName: kind.source.name,
-		count: counts.get(kind.source.id)?.get(kind.name) ?? 0,
 		inCrudContext: reach.has(kind.source.id),
 	}));
 	return { repos, kinds, unreadable };
+}
+
+/**
+ * How many docs of each kind the named repos' kbs hold, by repo id; a repo
+ * whose kb cannot be read is left out. Apart from helmContext because it reads
+ * every doc, which a big kb makes slow.
+ */
+export function helmKindCounts(
+	cwd: string,
+	repoIds: string[],
+): Record<string, Record<string, number>> {
+	const view = bridgeDocs(cwd);
+	const counts: Record<string, Record<string, number>> = {};
+	for (const repo of view.docs.filter((doc) => doc.kind === "repo" && repoIds.includes(doc.id))) {
+		const source = readableSource(view, repo);
+		if (source) counts[repo.id] = Object.fromEntries(kindCounts(source.kbDir));
+	}
+	return counts;
 }
 
 /**

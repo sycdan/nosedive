@@ -117,8 +117,9 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 	);
 	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "B is not hydrated");
 
-	// Helm's tree lists the feat under the backlog, and expands it into B's feat.
-	assert.ok(helmPicker(bridge).feats.some((feat) => feat.id === FEAT));
+	// Helm's picker offers the feat, and its tree expands into B's feat.
+	assert.ok(helmPicker(bridge).choices.some((feat) => feat.id === FEAT));
+	assert.ok(helmPicker(bridge, FEAT).feats.some((feat) => feat.id === B_FEAT));
 	const cached = helmDoc(bridge, FEAT).links.find((link) => link.id === B_FEAT);
 	assert.deepEqual(
 		{ type: cached.type, repo: cached.repo, rel: cached.rel, gist: cached.gist },

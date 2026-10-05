@@ -48,6 +48,7 @@ test("repo-workspace", () => {
 	const hydrateBridge = join(tmp, "hydrate-bridge");
 	const hydrateRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd98";
 	const fallbackRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd99";
+	const defaultPathRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cda5";
 	const unsafeRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9a";
 	const unresolvedRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9b";
 	const otherRepoId = "019f8584-453f-79ea-9d53-5f1b20b4cd9c";
@@ -155,6 +156,19 @@ name: fallback
 gist: "Legacy path fallback fixture"
 meta:
   worktree-path: workspace/fallback-target
+  remotes:
+    local: repos/source
+---
+`,
+	);
+	write(
+		join(hydrateBridge, "kb", "repo-default-path.md"),
+		`---
+kind: repo
+id: ${defaultPathRepoId}
+name: default-target
+gist: "Default path fixture"
+meta:
   remotes:
     local: repos/source
 ---
@@ -640,6 +654,9 @@ meta:
 	const fallbackCreate = run(["hydrate-repo.workspace", fallbackRepoId], hydrateBridge);
 	assertOk(fallbackCreate, "hydrate-repo.workspace fallback path failed");
 	assert.equal(existsSync(join(hydrateBridge, "workspace", "fallback-target", ".git")), true);
+	const defaultPathCreate = run(["hydrate-repo.workspace", defaultPathRepoId], hydrateBridge);
+	assertOk(defaultPathCreate, "hydrate-repo.workspace default path failed");
+	assert.equal(existsSync(join(hydrateBridge, "workspace", "default-target", ".git")), true);
 	const fallbackCache = join(hydrateBridge, ".nosedive", "cache", fallbackRepoId);
 	assert.equal(
 		gitCommonDir(join(hydrateBridge, "workspace", "fallback-target")),

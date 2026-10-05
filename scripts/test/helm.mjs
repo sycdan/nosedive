@@ -359,7 +359,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.match(script, /function groupedRows\(items, render\)/, "page carries groupedRows");
 	assert.match(
 		script,
-		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel, Boolean\(listing\.pick\)\)\)/,
+		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel, true\)\)/,
 		"loadRoots groups the root's feats",
 	);
 	assert.match(
@@ -387,7 +387,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		"api with wrong token",
 	);
 
-	// At picker-level 0, the default, nothing is offered: the tree is the whole backlog.
+	// At the default picker-level 1, the first feat is offered and selected.
 	const {
 		bridge: bridgeInfo,
 		backlog: backlogRoot,
@@ -404,13 +404,13 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.equal(bridgeInfo.branch.name, "main", "the header's branch is the bridge's checkout");
 	assert.equal(bridgeInfo.branch.trunk, "main");
 	assert.equal(backlogRoot.id, BACKLOG);
+	assert.deepEqual(feats, []);
+	assert.equal(level, 1);
 	assert.deepEqual(
-		feats.map((feat) => [feat.id, feat.rel]),
-		[[FEAT, "current.feat"]],
+		choices.map((choice) => choice.id),
+		[FEAT],
 	);
-	assert.equal(level, 0);
-	assert.deepEqual(choices, []);
-	assert.equal(pick, undefined);
+	assert.equal(pick, FEAT);
 	assert.equal(locked, false);
 
 	const { repos } = await get(`/api/context?root=${BACKLOG}`);
@@ -564,6 +564,16 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	const marker = join(bridge, "workspace", ".nosedive-ref");
 	write(marker, `id: ${DIVE}\n`);
 	t.after(() => rmSync(marker, { force: true }));
+	const newCard = "01a103d0-dbee-7000-8000-000000000001";
+	write(
+		join(bridge, "workspace", "hydrated", "kb", `${newCard}.md`),
+		`---\nkind: card\nid: ${newCard}\nname: new-card\ngist: "Made on the dive"\n---\n`,
+	);
+	assert.equal((await get(`/api/kind-counts?repos=${HYDRATED}`))[HYDRATED].card, 3);
+	assert.ok(
+		(await get(`/api/kind-docs?repo=${HYDRATED}&kind=card`)).some((doc) => doc.id === newCard),
+		"the kind list reads the scoped repo's checkout",
+	);
 	const diving = await get(`/api/context?root=${BACKLOG}&dive=${DIVE}`);
 	assert.deepEqual(
 		diving.repos.map((repo) => [repo.id, repo.inScope, repo.inCrudContext]),
@@ -577,7 +587,7 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	);
 });
 
-test("on a dive at level 0 helm shows the whole backlog; meta.root and meta.deck are ignored", (t) => {
+test("on a dive helm picks the first feat when it cannot find an ancestor; meta.root and meta.deck are ignored", (t) => {
 	const bridge = join(tmp, "bridge");
 	const diveDoc = join(bridge, "kb", `${DIVE}.md`);
 	const before = readFileSync(diveDoc, "utf8");
@@ -595,12 +605,9 @@ test("on a dive at level 0 helm shows the whole backlog; meta.root and meta.deck
 	dive(`  root: ${IDEAS}\n  deck: ${IDEAS}\n`);
 	const picker = helmPicker(bridge);
 	assert.equal(picker.locked, true);
-	assert.equal(picker.pick, undefined, "nothing picked: the whole backlog");
+	assert.equal(picker.pick, FEAT, "the first offered feat is picked");
 	assert.equal(picker.backlog.id, BACKLOG);
-	assert.deepEqual(
-		picker.feats.map((feat) => feat.id),
-		[FEAT],
-	);
+	assert.deepEqual(picker.feats, []);
 });
 
 test("helm writes only by running crud, and only on an active dive; a note needs none", async (t) => {

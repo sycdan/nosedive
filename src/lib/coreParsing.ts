@@ -73,7 +73,7 @@ export interface NosediveRc {
 	/** `bridge`: id of the bridge's own `kind: repo` doc. */
 	bridge?: string;
 	workBranchPrefix?: string;
-	/** `picker-level`: how many `.feat` links below the backlog helm's picker lists, 0 for none. */
+	/** `picker-level`: how many `.feat` links below the backlog helm's picker lists. */
 	pickerLevel: number;
 	pilotName?: string;
 	pilotEmail?: string;
@@ -327,9 +327,9 @@ export function configCompatibilityLevel(config: SimpleYaml, label: string): num
 
 function configPickerLevel(config: SimpleYaml, label: string): number {
 	const raw = config.scalars["picker-level"];
-	if (raw === undefined) return 0;
-	if (!/^[012]$/.test(raw))
-		throw new Error(`${formatPath(label)}: picker-level is 0, 1 or 2, not ${JSON.stringify(raw)}`);
+	if (raw === undefined) return 1;
+	if (!/^[12]$/.test(raw))
+		throw new Error(`${formatPath(label)}: picker-level is 1 or 2, not ${JSON.stringify(raw)}`);
 	return Number(raw);
 }
 

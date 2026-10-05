@@ -15,7 +15,7 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmCreatableKinds, helmPicker } = await import(libUrl);
+const { helmCreatableKinds, helmKindCounts, helmKindDocs, helmPicker } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
@@ -47,6 +47,13 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	const made = run(["crud", "memo", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
 	assertOk(made, "crud memo failed");
 	const memoId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
+	const bridgeId = /^bridge: (\S+)$/m.exec(liveConfig)[1];
+	const memoDocs = helmKindDocs(bridge, bridgeId, "memo");
+	assert.ok(
+		memoDocs.some((doc) => doc.id === memoId),
+		"the kind list reads __self",
+	);
+	assert.equal(helmKindCounts(bridge, [bridgeId])[bridgeId].memo, memoDocs.length);
 	assert.equal(
 		git(["log", "-1", "--format=%s"], self),
 		`crud(${memoId}): created memo magic-cards`,
@@ -57,16 +64,15 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	runTool("git", ["add", ".nosedive/config.yaml"], self);
 	runTool("git", ["commit", "-m", "a picker"], self);
 
-	// Helm shows the bridge as the dive has it, the kb feat first; the live config sets its level.
+	// Helm shows the bridge as the dive has it; the live config sets its level.
 	const view = helmPicker(bridge);
-	assert.equal(view.level, 0);
-	assert.deepEqual(view.choices, []);
-	assert.equal(view.feats[0].id, KB_FEAT);
+	assert.equal(view.level, 1);
+	assert.equal(view.choices[0].id, KB_FEAT);
 	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
 	assert.equal(view.backlog.id, backlog);
 	assert.equal(view.locked, true, "on a dive the pick is locked");
-	assert.equal(view.pick, undefined, "at level 0 a dive shows the whole backlog");
-	assert.equal(helmPicker(bridge, KB_FEAT).pick, undefined, "a pick cannot move a locked one");
+	assert.equal(view.pick, KB_FEAT);
+	assert.equal(helmPicker(bridge, KB_FEAT).pick, KB_FEAT, "a pick cannot move a locked one");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -129,7 +135,11 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.equal(picked.locked, false);
 	assert.ok(picked.choices.some((choice) => choice.id === KB_FEAT));
 	assert.equal(picked.pick, KB_FEAT);
-	assert.equal(helmPicker(bridge, "not-a-pick").pick, undefined, "an unknown pick is no pick");
+	assert.equal(
+		helmPicker(bridge, "not-a-pick").pick,
+		KB_FEAT,
+		"an unknown pick falls back to first",
+	);
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {

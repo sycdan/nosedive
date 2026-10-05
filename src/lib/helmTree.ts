@@ -1,13 +1,13 @@
 /**
  * The page's left tree and picker, spliced into its script. The picked doc --
- * the backlog when nothing is -- heads the tree, then the feats it links and
+ * the first offered feat by default -- heads the tree, then the feats it links and
  * theirs -- dives are cards in the main view, never rows; repos and kinds sit
  * atop the main view.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
 
-/** The backlog memo: the tree's head when nothing is picked. */
+/** The backlog memo, used for actions that target it explicitly. */
 let backlogRoot = null;
 /** The backlog and the docs the picker offers, by the ref the server names them with. */
 const rootNames = new Map();
@@ -134,11 +134,11 @@ function section(title, onPick) {
 	return el("li", { class: "section" }, row);
 }
 
-/** The picker in the header: the whole backlog, then the docs picker-level offers; locked on a dive, hidden at level 0. */
+/** The picker in the header: only the docs picker-level offers; locked on a dive. */
 function renderPicker(listing) {
 	const picker = document.getElementById("rootpick");
-	picker.hidden = !listing.level;
-	const options = [backlogRoot, ...listing.choices].filter(Boolean)
+	picker.hidden = false;
+	const options = listing.choices
 		.map((pick) => el("option", { value: pick.ref }, rootNames.get(pick.ref)));
 	picker.replaceChildren(...options);
 	picker.value = ctx.root || "";
@@ -163,7 +163,7 @@ function renderBranch(branch) {
 	badge.onclick = showBranch;
 }
 
-/** Reads the pick and fills the tree with it: the picked doc and its .feat children, or the whole backlog. */
+/** Reads the pick and fills the tree with its .feat children. */
 async function loadRoots() {
 	const wanted = ctx.root || rememberedPick();
 	const listing = await api("/api/picker" + (wanted ? "?pick=" + encodeURIComponent(wanted) : ""));
@@ -173,12 +173,12 @@ async function loadRoots() {
 	rootIds.clear();
 	rootNames.clear();
 	rootCards.clear();
-	for (const pick of [backlogRoot, ...listing.choices].filter(Boolean)) {
+	for (const pick of listing.choices) {
 		rootIds.add(pick.id);
 		rootNames.set(pick.ref, display(pick));
 		rootCards.set(pick.ref, pick);
 	}
-	const root = listing.pick || (backlogRoot && backlogRoot.ref) || null;
+	const root = listing.pick || null;
 	if (ctx.root !== root) Object.assign(ctx, { feat: null, repo: null, kind: null });
 	ctx.root = root;
 	renderPicker(listing);
@@ -187,7 +187,7 @@ async function loadRoots() {
 	const items = [];
 	if (ctx.root)
 		items.push(section(rootNames.get(ctx.root), (row) => { highlight(row); reset(); }),
-			...groupedRows(listing.feats, (feat, hideRel) => node(feat, home, hideRel, Boolean(listing.pick))));
+			...groupedRows(listing.feats, (feat, hideRel) => node(feat, home, hideRel, true)));
 	document.getElementById("tree").replaceChildren(...items);
 }
 `;

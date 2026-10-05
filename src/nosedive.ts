@@ -42,7 +42,7 @@ export { mergePatch } from "./lib/mergePatch.js";
 // Exported so helm's picker and its view of a dive's __self checkout are tested below the server.
 export { helmFeats, helmPicker, helmRepoList } from "./lib/helmPicker.js";
 // Exported so a doc's links, those into other repos among them, are tested below the server.
-export { helmDoc } from "./lib/helm.js";
+export { helmDoc, helmKindCounts, helmKindDocs } from "./lib/helm.js";
 // Exported so what the dive bar can create is tested below the server.
 export { helmCreatableKinds } from "./lib/helmCreate.js";
 // Exported so a branch worktree and its status are tested below the command.

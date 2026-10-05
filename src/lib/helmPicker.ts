@@ -2,14 +2,12 @@ import { basename } from "node:path";
 
 import { sameFeatRef } from "./diveListing.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
-import { helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
+import { helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
 import { docKey, featChildren, featReach, isFeatEdge, rootedScopes } from "./jumpable.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { linkedDoc } from "./repoLinks.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
-
-const FEAT_ROLE = /(^|\.)(feat|effort)$/;
 
 /** A doc the picker offers. `ref` names it back: its id, or `<repo-quid>:<path>` in another repo. */
 export interface HelmPick {
@@ -72,15 +70,6 @@ const kbFeatFirst = (a: HelmLink, b: HelmLink) => {
 	return Number(isKbFeat(b)) - Number(isKbFeat(a));
 };
 
-/** The backlog's feats, as the whole-backlog tree shows them. */
-function backlogFeats(view: BridgeView, backlog: KbDoc, byId: Map<string, KbDoc>): HelmLink[] {
-	return backlog.links
-		.filter((link) => FEAT_ROLE.test(link.rel ?? ""))
-		.map((link) => helmLink(view, backlog, view.rc.bridge, byId, link))
-		.filter((link) => link.type === "doc" || link.type === "unresolved")
-		.sort(kbFeatFirst);
-}
-
 function featItems(view: BridgeView, from: KbDoc, byId: Map<string, KbDoc>): HelmFeat[] {
 	return from.links
 		.filter((link) => isFeatEdge(link.rel))
@@ -99,11 +88,10 @@ function featItems(view: BridgeView, from: KbDoc, byId: Map<string, KbDoc>): Hel
 }
 
 /**
- * What helm's picker offers and what the tree shows. `picker-level` 0 offers
- * nothing; 1 the docs the backlog's `.feat` links reach; 2 the docs theirs
- * reach. With no dive the pilot picks; on one the pick is locked to the
- * offered doc the dive's feat is or is reached from, the first of several.
- * Nothing picked, the tree is the whole backlog.
+ * What helm's picker offers and what the tree shows. Level 1 offers the
+ * backlog's `.feat` children; level 2 offers theirs. The first is picked by
+ * default. On a dive the pick locks to the offered ancestor of its feat, or
+ * the first choice if none reaches it.
  */
 export function helmPicker(
 	cwd: string,
@@ -122,13 +110,13 @@ export function helmPicker(
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
 	const backlog = rc.backlog ? byId.get(rc.backlog) : undefined;
-	const offered =
-		backlog && rc.pickerLevel > 0 ? levelDocs(view, backlog, byId, rc.pickerLevel) : [];
+	const offered = backlog ? levelDocs(view, backlog, byId, rc.pickerLevel) : [];
 	const activeId = readActiveDiveId(rc.workspaceDir);
 	const dive = activeId ? byId.get(activeId) : undefined;
-	const picked = activeId
-		? dive && diveAncestor(view, offered, dive)
-		: offered.find((doc) => refOf(doc) === asked);
+	const picked =
+		(activeId
+			? dive && diveAncestor(view, offered, dive)
+			: offered.find((doc) => refOf(doc) === asked)) ?? offered[0];
 	const missing = rc.backlog
 		? {
 				ref: rc.backlog,
@@ -149,11 +137,7 @@ export function helmPicker(
 		choices: offered.map(pickOf),
 		pick: picked ? refOf(picked) : undefined,
 		locked: Boolean(activeId),
-		feats: picked
-			? featItems(view, picked, byId)
-			: backlog
-				? backlogFeats(view, backlog, byId)
-				: [],
+		feats: picked ? featItems(view, picked, byId) : [],
 	};
 }
 

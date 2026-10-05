@@ -111,16 +111,17 @@ function onDive(feat, body) {
 	}
 }
 
-test("picker-level 0, the default, offers nothing: the tree is the whole backlog", (t) => {
+test("picker-level 1 is the default and picks the first offered feat", (t) => {
 	t.after(() => level());
-	for (const n of [undefined, 0]) {
+	for (const n of [undefined, 1]) {
 		level(n);
 		const picker = helmPicker(bridge, A);
-		assert.equal(picker.level, 0);
-		assert.deepEqual(picker.choices, []);
-		assert.equal(picker.pick, undefined, "a pick is ignored");
+		assert.equal(picker.level, 1);
+		assert.deepEqual(ids(picker.choices), [A, B]);
+		assert.equal(picker.pick, A);
 		assert.equal(picker.backlog.id, BACKLOG);
-		assert.deepEqual(ids(picker.feats), [A, B]);
+		assert.deepEqual(ids(picker.feats), [C, D]);
+		assert.equal(helmPicker(bridge).pick, A, "the first feat is picked without a request");
 		assert.deepEqual(
 			helmRepoList(bridge).map((repo) => repo.id),
 			[R_BACKLOG],
@@ -147,9 +148,13 @@ test("picker-level 1 lists what the backlog's .feat links reach; 2 what theirs r
 		gist: `feat ${C.slice(-4)}`,
 		title: undefined,
 	});
-	assert.equal(picker.pick, undefined, "nothing picked: the whole backlog");
-	assert.deepEqual(ids(picker.feats), [A, B]);
-	assert.equal(helmPicker(bridge, A).pick, undefined, "a doc not offered at this level is no pick");
+	assert.equal(picker.pick, C, "the first level-2 feat is picked");
+	assert.deepEqual(ids(picker.feats), [F]);
+	assert.equal(
+		helmPicker(bridge, A).pick,
+		C,
+		"a doc not offered at this level falls back to first",
+	);
 });
 
 test("a picked doc heads its .feat children, which expand only into theirs; its repos are inherited", (t) => {
@@ -189,15 +194,14 @@ test("on a dive the pick locks to the offered doc its feat is or is reached from
 	assert.equal(lock(2, F), C);
 	assert.equal(lock(2, D), D, "the feat itself, at the level");
 	assert.equal(lock(1, D), A, "reached from A and B: the first");
-	assert.equal(lock(2, A), undefined, "above the level: the whole backlog");
-	assert.equal(lock(1, OTHER), undefined, "out of the tree: the whole backlog");
-	assert.equal(lock(0, F), undefined, "level 0 has no picker");
+	assert.equal(lock(2, A), C, "above the level: the first offered feat");
+	assert.equal(lock(1, OTHER), A, "out of the tree: the first offered feat");
 });
 
-test("any picker-level but 0, 1 or 2 is a config error", (t) => {
+test("any picker-level but 1 or 2 is a config error", (t) => {
 	t.after(() => level());
-	for (const bad of ["3", "-1", "one", "true"]) {
+	for (const bad of ["0", "3", "-1", "one", "true"]) {
 		write(configPath, `${baseConfig}picker-level: ${bad}\n`);
-		assert.throws(() => helmPicker(bridge), /picker-level is 0, 1 or 2/, bad);
+		assert.throws(() => helmPicker(bridge), /picker-level is 1 or 2/, bad);
 	}
 });

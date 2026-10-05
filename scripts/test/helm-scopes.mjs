@@ -133,7 +133,7 @@ test("helm's repo cards add, drop and repin scopes on a dive, a feat and the bac
 		"crud commits each edit",
 	);
 
-	// A dive: add, repin, drop, through record.dive and crud --repin.
+	// A dive: add, repin, drop, all through crud.
 	const recorded = run(["record.dive", "--feat", FEAT], bridge);
 	assertOk(recorded, "record.dive failed");
 	const dive = /^id: (\S+)$/m.exec(
@@ -158,8 +158,10 @@ test("helm's repo cards add, drop and repin scopes on a dive, a feat and the bac
 	ok(await verb({ verb: "unscope", dive, repo: CARDS }));
 	assert.equal((await cards(`root=${BACKLOG}&dive=${dive}`))[CARDS], null);
 
-	// Read-only: upscoped, then its branch cleared by crud on the bridge's copy; the pin stays.
+	// Read-only: pinned with no branch, in one commit.
+	const unscoped = commits();
 	ok(await verb({ verb: "upscope", dive, repo: CARDS, readOnly: true, branch: "ignored" }));
+	assert.equal(commits(), unscoped + 1);
 	assert.match(doc(dive), new RegExp(`^ {2}- ${CARDS}:\\n {6}ref: [0-9a-f]{40}\\n(?! {6})`, "m"));
 	assert.deepEqual((await cards(`root=${BACKLOG}&dive=${dive}`))[CARDS], { workBranch: null });
 	assert.match(

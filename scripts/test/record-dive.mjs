@@ -1557,12 +1557,16 @@ test("record.dive --upscope pins a newly scoped repo at its branch on origin", (
 });
 
 /** `crud <dive> --repin` is the same repin, so helm and agents need not reach for record.dive. */
-test("crud <dive> --repin forwards to record.dive --ref <dive> --repin", () => {
+test("crud <dive> --repin makes record.dive's repin, committed as crud's", () => {
 	const { bridge, repo, repoCommit } = setup("crud-repin");
 	const { path, id } = recordDive(bridge);
 	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
 	assertOk(run(["crud", id, "--repin"], bridge), "crud --repin failed");
 	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${featHead}$`, "m"));
+	assert.equal(
+		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim(),
+		`crud(${id}): updated dive ${/^name: (.+)$/m.exec(readFileSync(path, "utf8"))[1]}`,
+	);
 	const back = run(["crud", id, "--repin", "main", "--scope", "repo"], bridge);
 	assertOk(back, "crud --repin <ref> --scope failed");
 	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
@@ -1578,4 +1582,42 @@ test("crud <dive> --repin forwards to record.dive --ref <dive> --repin", () => {
 		assert.notEqual(refused.status, 0, args.join(" "));
 		assert.match(refused.stderr, refusal);
 	}
+});
+
+/** `crud <dive> --scopes -` makes record.dive's scope edits, so no scope is written unpinned. */
+test("crud <dive> --scopes pins what it adds, drops on null, and leaves the pin to --repin", () => {
+	const { bridge, repoCommit } = setup("crud-scopes");
+	const otherCommit = createRepo(join(bridge, "workspace", "other"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const { path, id } = recordDive(bridge);
+	const patch = (input, ...args) =>
+		assertOk(run(["crud", id, "--scopes", "-", ...args], bridge, input), input);
+	const other = (tail) =>
+		assert.match(
+			readFileSync(path, "utf8"),
+			new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}${tail}`, "m"),
+		);
+
+	patch("other: {}\n");
+	other("\n      work-branch: work/record-dive.nosedive\n");
+	patch("other: {work-branch: null}\n");
+	other("\n(?!      )");
+	patch("other: null\n");
+	assert.doesNotMatch(readFileSync(path, "utf8"), new RegExp(unrelatedRepoId));
+	patch("other: {work-branch: null}\n");
+	other("\n(?!      )");
+	patch("repo: {}\n", "--replace");
+	assert.doesNotMatch(readFileSync(path, "utf8"), new RegExp(unrelatedRepoId));
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+
+	const before = readFileSync(path, "utf8");
+	for (const input of [`repo: {ref: ${otherCommit}}\n`, "repo: {work-branch: ''}\n"]) {
+		const refused = run(["crud", id, "--scopes", "-"], bridge, input);
+		assert.equal(refused.status, 1, input);
+	}
+	assert.match(
+		run(["crud", id, "--scopes", "-"], bridge, "repo: {ref: x}\n").stderr,
+		new RegExp(`pin moves with crud ${id} --repin`),
+	);
+	assert.equal(readFileSync(path, "utf8"), before, "a refused patch writes nothing");
 });

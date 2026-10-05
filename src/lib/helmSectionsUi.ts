@@ -172,21 +172,14 @@ function scopeActions(repo) {
 				onclick: () => run("Add read-only", { verb: "upscope", readOnly: true }) }, "Add read-only")] : []));
 		return box;
 	}
+	// Dropping the bridge off the backlog is crud's to refuse, in the notice.
 	const drop = () => run("Drop scope", target.dive ? { verb: "unscope" } : { verb: "feat-scope", drop: true });
-	// Off the backlog, the bridge leaves every new dive's scopes.
-	const bridgeOffBacklog = repo.isBridge && !target.dive && backlogRoot && target.doc === backlogRoot.ref;
 	box.append(target.dive
 		? inlineForm(box, "Repin", field("ref to repin at", repo.scope.workBranch || repo.trunk),
 			(ref) => run("Repin", { verb: "repin", ref }))
 		: inlineForm(box, "Work branch", field("work branch", repo.scope.workBranch, "none"),
 			(branch) => run("Work branch", { verb: "feat-scope", branch })),
-		bridgeOffBacklog
-			? el("button", { class: "act pack", onclick: () => confirmDialog({
-				verb: "Drop", cls: "pack", target: repo.name + " from the backlog",
-				detail: "New dives then cannot write the bridge kb, unless their feat scopes the bridge.",
-				act: drop,
-			}) }, "Drop scope")
-			: confirmButton("Drop scope", "pack", drop));
+		confirmButton("Drop scope", "pack", drop));
 	return box;
 }
 `;

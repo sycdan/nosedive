@@ -9,6 +9,7 @@ import {
 	isShipped,
 	loadKinds,
 	repoKbDir,
+	staysHome,
 	validateMeta,
 	type KindDoc,
 	type KindSource,
@@ -60,9 +61,12 @@ export function changedKinds(source: KindSource, since: string): KindDoc[] {
  * the dive changed that fails the kind's new schema. Adding an optional field
  * strands nothing; removing one, or tightening a constraint, strands every
  * instance that relied on it, and publishing that is publishing broken docs.
+ * A repo's doc of a shipped kind that stays in the bridge is reported instead:
+ * it was written before only the kind kind crossed.
  */
 export function kindChangeRefusal(
 	scopes: Array<{ name: string; root: string; pin: string }>,
+	report: (line: string) => void = () => {},
 ): string | undefined {
 	const lines: string[] = [];
 	const sources = scopes.map((scope) => ({
@@ -73,17 +77,19 @@ export function kindChangeRefusal(
 	scopes.forEach((scope, at) => {
 		for (const kind of changedKinds(sources[at]!, scope.pin)) {
 			// A shipped kind is also every other scoped repo's that takes it rather than define its own.
-			const takers = isShipped(kind)
-				? sources.filter(
-						(other) =>
-							!isBridge(other) && !loadKinds([other]).some((own) => own.name === kind.name),
-					)
-				: [];
+			const takers =
+				isShipped(kind) || staysHome(kind)
+					? sources.filter(
+							(other) =>
+								!isBridge(other) && !loadKinds([other]).some((own) => own.name === kind.name),
+						)
+					: [];
 			for (const holder of [kind, ...takers.map((source) => ({ ...kind, source }))])
-				for (const failure of instanceFailures(holder))
-					lines.push(
-						`  ${holder.source.name}: ${kind.name} ${failure.id} (${formatPath(failure.path)}): ${failure.errors.join("; ")}`,
-					);
+				for (const failure of instanceFailures(holder)) {
+					const line = `  ${holder.source.name}: ${kind.name} ${failure.id} (${formatPath(failure.path)}): ${failure.errors.join("; ")}`;
+					if (holder !== kind && staysHome(kind)) report(line);
+					else lines.push(line);
+				}
 		}
 	});
 	return lines.length > 0 ? lines.join("\n") : undefined;
@@ -93,6 +99,7 @@ export function kindChangeRefusal(
 export function strandedInstancesOnLand(
 	scopes: Array<{ scope: { repoId: string; ref?: string }; path: string }>,
 	kbDocs: Array<{ id: string; name: string }>,
+	io: { err(message: string): void },
 ): string | undefined {
 	const refusal = kindChangeRefusal(
 		scopes
@@ -102,6 +109,8 @@ export function strandedInstancesOnLand(
 				root: path,
 				pin: scope.ref!,
 			})),
+		(line) =>
+			io.err(`land: a doc of a kind that stays in the bridge fails its new schema:\n${line}`),
 	);
 	return refusal
 		? `instances of a kind this dive changed fail its new schema; fix them, or the schema:\n${refusal}`

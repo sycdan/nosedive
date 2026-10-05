@@ -258,6 +258,41 @@ test("crud patches an active dive's scopes in the live bridge, where jump and la
 	);
 	assert.equal(existsSync(selfCopy) ? readFileSync(selfCopy, "utf8") : null, selfBefore);
 	assert.match(git(["log", "-1", "--format=%s"], bridge), new RegExp(`^crud\\(${diveId}\\)`));
+
+	// Any other dive is a doc like any other: recorded and patched in __self.
+	const other = run(["crud", "dive", "--feat", KB_FEAT, "Later"], bridge, "Later.\n");
+	assertOk(other, "crud dive on a dive failed");
+	const otherPath = /^Recorded (\S+)$/m.exec(other.stdout)?.[1];
+	const otherId = /^id: (\S+)$/m.exec(readFileSync(join(bridge, otherPath), "utf8"))[1];
+	assertOk(
+		run(["crud", otherId, "--scopes", "-"], bridge, patch),
+		"crud --scopes in __self failed",
+	);
+	assert.match(
+		readFileSync(join(bridge, "workspace", "__self", "kb", `${otherId}.md`), "utf8"),
+		new RegExp(`- ${bridgeId}:\\n {6}ref: [0-9a-f]{40}\\n(?! {6})`),
+	);
+	assertOk(run(["crud", otherId, "--repin"], bridge), "crud --repin in __self failed");
+	assert.ok(!existsSync(join(bridge, "kb", `${otherId}.md`)), "the live bridge never had it");
+});
+
+test("crud refuses to drop the bridge from the backlog's scopes, by null or by --replace", () => {
+	const { bridge } = seededBridge(tmp, "keep-bridge", "pilot@nosedive.invalid");
+	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	const [bridgeId, backlogId] = ["bridge", "backlog"].map(
+		(key) => new RegExp(`^${key}: (\\S+)$`, "m").exec(config)[1],
+	);
+	const backlog = join(bridge, "kb", `${backlogId}.md`);
+	const before = readFileSync(backlog, "utf8");
+	for (const [input, args] of [
+		[JSON.stringify({ [bridgeId]: null }), []],
+		["{}", ["--replace"]],
+	]) {
+		const refused = run(["crud", backlogId, "--scopes", "-", ...args], bridge, input);
+		assert.equal(refused.status, 1, `${input} ${args}`);
+		assert.match(refused.stderr, /the backlog keeps the bridge in its scopes/);
+	}
+	assert.equal(readFileSync(backlog, "utf8"), before);
 });
 
 test("a second dive on the bridge lands only its own work, after the first landed through a merge", () => {

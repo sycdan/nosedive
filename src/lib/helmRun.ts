@@ -46,16 +46,6 @@ function inheritedPatch(
 	);
 }
 
-/** The commands one verb runs, in order: a read-only add upscopes, then clears the branch it was given. */
-function steps(cwd: string, body: Record<string, unknown>): Step[] {
-	if (body.verb !== "upscope" || body.readOnly !== true) return [command(cwd, body)];
-	const patch = { [field(body, "repo")]: { "work-branch": null } };
-	return [
-		command(cwd, { ...body, branch: "" }),
-		{ args: ["crud", field(body, "dive"), "--scopes", "-"], stdin: JSON.stringify(patch) },
-	];
-}
-
 /** The verbs the page may run -- the dive lifecycle, a note, the workspace pair and scope edits -- and the argv and stdin each becomes. */
 function command(cwd: string, body: Record<string, unknown>): Step {
 	switch (body.verb) {
@@ -90,7 +80,7 @@ function command(cwd: string, body: Record<string, unknown>): Step {
 		}
 		case "dehydrate":
 			return { args: ["dehydrate-repo.workspace", field(body, "repo")], stdin: "" };
-		// A dive's scopes, by the dive's own edits.
+		// A dive's scopes, by crud, which edits them as record.dive does.
 		case "repin":
 			return {
 				args: [
@@ -103,24 +93,20 @@ function command(cwd: string, body: Record<string, unknown>): Step {
 				],
 				stdin: "",
 			};
+		// Read-only is no branch; writable is the one typed, else the feat's.
 		case "upscope": {
 			const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+			const entry =
+				body.readOnly === true ? { "work-branch": null } : branch ? { "work-branch": branch } : {};
 			return {
-				args: [
-					"record.dive",
-					"--ref",
-					field(body, "dive"),
-					"--upscope",
-					field(body, "repo"),
-					...(branch ? ["--work-branch", branch] : []),
-				],
-				stdin: "",
+				args: ["crud", field(body, "dive"), "--scopes", "-"],
+				stdin: JSON.stringify({ [field(body, "repo")]: entry }),
 			};
 		}
 		case "unscope":
 			return {
-				args: ["record.dive", "--ref", field(body, "dive"), "--unscope", field(body, "repo")],
-				stdin: "",
+				args: ["crud", field(body, "dive"), "--scopes", "-"],
+				stdin: JSON.stringify({ [field(body, "repo")]: null }),
 			};
 		// A feat's or the backlog's scopes, by crud's merge patch: null drops one,
 		// a branch or none sets it. `<repo>:kb/<id>.md` is crud's `<repo>:<id>`.
@@ -148,7 +134,7 @@ function command(cwd: string, body: Record<string, unknown>): Step {
  * takes long enough that the pilot should watch it happen.
  */
 export function streamVerb(cwd: string, body: Record<string, unknown>, res: ServerResponse): void {
-	const queue = steps(cwd, body);
+	const { args, stdin } = command(cwd, body);
 	res.writeHead(200, {
 		"content-type": "text/plain; charset=utf-8",
 		"cache-control": "no-store",
@@ -157,39 +143,28 @@ export function streamVerb(cwd: string, body: Record<string, unknown>, res: Serv
 	// Read before the run: a land or a bail ends the dive its entry belongs to.
 	const activeDive = () => readActiveDiveId(readNosediveRc(cwd).workspaceDir);
 	const diveBefore = activeDive();
-	const run = ({ args, stdin }: Step) => {
-		let transcript = "";
-		const out = (text: string) => {
-			transcript += text;
-			res.write(text);
-		};
-		const end = (code: number) => {
-			transcript += `\n[exit ${code}]\n`;
-			// Logged before the response ends, so what the page shows is already on disk.
-			// A jump starts a dive, so its dive is known only once it has run.
-			appendHelmLog(cwd, diveBefore ?? activeDive(), args, transcript);
-			// A later step runs only after this one succeeds; the page sees one exit.
-			const next = code === 0 ? queue.shift() : undefined;
-			if (next) {
-				res.write("\n");
-				run(next);
-			} else res.end(`\n[exit ${code}]\n`);
-		};
-		const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {
-			cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-		// Decoded as text so an escape split across chunks is never half-stripped mid-character.
-		child.stdout.setEncoding("utf8");
-		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
-		child.stderr.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
-		child.on("error", (err) => {
-			out(`\n${err.message}`);
-			end(1);
-		});
-		child.on("close", (code) => end(code ?? 1));
-		child.stdin.end(stdin);
+	let transcript = "";
+	const out = (text: string) => {
+		transcript += text;
+		res.write(text);
 	};
-	run(queue.shift()!);
+	const end = (text: string) => {
+		transcript += text;
+		// Logged before the response ends, so what the page shows is already on disk.
+		// A jump starts a dive, so its dive is known only once it has run.
+		appendHelmLog(cwd, diveBefore ?? activeDive(), args, transcript);
+		res.end(text);
+	};
+	const child = spawn(process.execPath, [join(packageRoot(), "dist", "cli.js"), ...args], {
+		cwd,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+	// Decoded as text so an escape split across chunks is never half-stripped mid-character.
+	child.stdout.setEncoding("utf8");
+	child.stderr.setEncoding("utf8");
+	child.stdout.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
+	child.stderr.on("data", (chunk: string) => out(chunk.replace(ANSI, "")));
+	child.on("error", (err) => end(`\n${err.message}\n[exit 1]\n`));
+	child.on("close", (code) => end(`\n[exit ${code ?? 1}]\n`));
+	child.stdin.end(stdin);
 }

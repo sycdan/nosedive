@@ -405,7 +405,7 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	assertScopesCanPublish(writableScopes, hard, dive, cli);
 
 	// A schema change that strands its own instances would publish broken docs.
-	const stranded = strandedInstancesOnLand(writableScopes, kbDocs);
+	const stranded = strandedInstancesOnLand(writableScopes, kbDocs, io);
 	if (stranded) throw new Error(`${refusalPrefix}${stranded}`);
 
 	/**

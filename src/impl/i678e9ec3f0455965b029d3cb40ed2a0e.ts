@@ -8,7 +8,8 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
 import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
-import { readActiveDiveId, readKbDocById } from "../lib/kbDocs.js";
+import { diveRepinPatch, diveScopesPatch } from "../lib/diveScopePatch.js";
+import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
 import {
 	bridgeHomed,
 	DIVE_KIND_ID,
@@ -77,7 +78,10 @@ function takeRepin(args: string[]): { ref?: string } | undefined {
 	return { ref };
 }
 
-/** `crud <dive> --repin [<ref>] [--scope <repo>]`: record.dive's repin, on a dive named by its quid. */
+/**
+ * `crud <dive> --repin [<ref>] [--scope <repo>]`: record.dive's repin, on a
+ * dive named by its quid, written where crud finds the dive.
+ */
 function repinDive(
 	args: string[],
 	repin: { ref?: string },
@@ -86,25 +90,27 @@ function repinDive(
 ) {
 	const usage = "crud <dive-quid> --repin [<ref>] [--scope <repo>]";
 	if (args.length !== 1 || !uuidLike(args[0]!)) throw new Error(`--repin repins a dive: ${usage}`);
-	recordDive(
-		[
-			"--ref",
-			args[0]!,
-			repin.ref === undefined ? "--repin" : `--repin=${repin.ref}`,
-			...(scope === undefined ? [] : ["--scope", scope]),
-		],
-		io,
-	);
+	// Paired as record.dive pairs them: a ref names one repo.
+	if (repin.ref === "") throw new Error("--repin requires a value when one is given");
+	if (repin.ref !== undefined && scope === undefined)
+		throw new Error("--repin <ref> requires --scope <repo-ref>: a ref names one repo");
+	if (scope !== undefined && repin.ref === undefined)
+		throw new Error("--scope requires --repin <ref>: it names the scope that ref moves");
+	const inPlay = liveDive(args[0]!) || kindSources(process.cwd());
+	const target = findDocByQuid(inPlay, args[0]!);
+	if (!target) throw new Error(`no doc ${args[0]} in context`);
+	const scopes = diveRepinPatch(target, { ref: repin.ref, scope }, io);
+	updateBlock(target, loadKinds(inPlay), "scopes", scopes, true, io, inPlay);
 }
 
 /**
- * A dive is jump's and land's record, so crud reads and patches the live
- * bridge's copy, never a `__self` one -- and needs no scoped repo hydrated.
+ * The active dive is jump's and land's record, so crud reads and patches the
+ * live bridge's copy, never a `__self` one -- and needs no scoped repo
+ * hydrated. Any other dive resolves like any other doc.
  */
 function liveDive(ref: string): KindSource[] | undefined {
-	if (!uuidLike(ref)) return undefined;
 	const rc = readNosediveRc(process.cwd());
-	if (!rc.kbDir || readKbDocById(rc.kbDir, rc.bridgeDir, ref.toLowerCase())?.kind !== "dive")
+	if (!rc.kbDir || !uuidLike(ref) || readActiveDiveId(rc.workspaceDir) !== ref.toLowerCase())
 		return undefined;
 	return [{ id: rc.bridge, name: basename(rc.bridgeDir), root: rc.bridgeDir, kbDir: rc.kbDir }];
 }
@@ -159,6 +165,12 @@ function crud(args: string[], io: CommandIo): void {
 		const patch = parseYaml(readStdinText(hint(block))) as unknown;
 		if (!patch || typeof patch !== "object" || Array.isArray(patch))
 			throw new Error(`--${block} reads a YAML or JSON mapping from stdin`);
+		// A dive's scopes take record.dive's rules, then are written whole.
+		if (block === "scopes" && readKbDoc(target.path, target.source.root).kind === "dive") {
+			const scopes = diveScopesPatch(target, patch as Record<string, unknown>, replace);
+			updateBlock(target, kinds, block, scopes, true, io, inPlay);
+			return;
+		}
 		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io, inPlay);
 		return;
 	}
@@ -173,7 +185,7 @@ function crud(args: string[], io: CommandIo): void {
 			? resolveKind(bridgeHomed(kinds), first)
 			: repoKind(kinds, repo, qualified.ref);
 	if (!kind && qualified.repo !== undefined && !isBridge(repo)) {
-		// Only shipped kinds cross into another repo; say why one that did not is out.
+		// Only the kind kind crosses into another repo; say why one that did not is out.
 		if (kinds.some((k) => k.id === DIVE_KIND_ID && k.name === qualified.ref))
 			throw new Error(
 				`a dive lives only in a bridge: crud ${qualified.ref} --feat <feat> <gist...>`,
@@ -182,7 +194,7 @@ function crud(args: string[], io: CommandIo): void {
 			throw new Error(`a repo doc lives only in a bridge: crud ${qualified.ref} <gist...>`);
 		if (kinds.some((k) => isBridge(k.source) && k.name === qualified.ref))
 			throw new Error(
-				`kind ${qualified.ref} is the bridge's own, and only kinds nosedive ships go into ${repo.name}; ` +
+				`kind ${qualified.ref} is the bridge's own, and only the kind kind goes into ${repo.name}; ` +
 					`${repo.name} can define its own: crud ${qualified.repo}:kind --name ${qualified.ref} <gist...>`,
 			);
 	}

@@ -5,7 +5,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { checkLinkTargets } from "./crudLinks.js";
-import { formatPath, uuidLike } from "./coreParsing.js";
+import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
 import { loadKbDocs, readKbDoc, type KbDoc } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { checkDocMeta, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
@@ -167,6 +167,15 @@ function patchTargets(block: Block, patch: Record<string, unknown>, target: Crud
 	);
 }
 
+/** Every new dive takes the backlog's scopes, so dropping the bridge there cuts them all off its kb. */
+function keepBridgeOnBacklog(id: string, before: object, after: object): void {
+	const rc = readNosediveRc(process.cwd());
+	if (id !== rc.backlog || !rc.bridge || !(rc.bridge in before) || rc.bridge in after) return;
+	throw new Error(
+		"the backlog keeps the bridge in its scopes: every new dive takes them, and without it none can write the bridge kb",
+	);
+}
+
 /**
  * Applies `patch` to one frontmatter block of a doc and rewrites only that
  * block. The patch is a JSON Merge Patch (RFC 7386): keys merge recursively
@@ -203,6 +212,7 @@ export function updateBlock(
 		string,
 		unknown
 	>;
+	if (block === "scopes") keepBridgeOnBacklog(id, current, merged);
 
 	let kind: KindDoc | undefined;
 	if (block === "meta") {

@@ -136,9 +136,14 @@ export function bridgeHomed(kinds: KindDoc[]): KindDoc[] {
 	return kinds.filter((kind) => !BRIDGE_ONLY.has(kind.id) || isBridge(kind.source));
 }
 
-/** A kind nosedive ships, as a bridge holds it, that any repo can take; dive and repo stay home. */
+/** The kind kind, as a bridge holds it: the one shipped kind any repo can take; the rest stay home. */
 export function isShipped(kind: KindDoc): boolean {
-	return isZerostar(kind.id) && !BRIDGE_ONLY.has(kind.id) && isBridge(kind.source);
+	return kind.id === KIND_KIND_ID && isBridge(kind.source);
+}
+
+/** A kind nosedive ships that stays in the bridge, so a repo's doc of it is not validated there. */
+export function staysHome(kind: KindDoc): boolean {
+	return isZerostar(kind.id) && !isShipped(kind) && isBridge(kind.source);
 }
 
 /**
@@ -224,7 +229,9 @@ export function validateMeta(kind: KindDoc, meta: unknown): string[] {
 /**
  * Validates a doc's meta against its kind in context, or warns that nothing in
  * context declares it. When `source` says which repo the doc is in, a bare
- * kind is that repo's own or a shipped one first (`repoKind`).
+ * kind is that repo's own or a shipped one first (`repoKind`); a repo's doc of
+ * a kind that stays in the bridge -- a memo written before only the kind kind
+ * crossed -- is reported, not validated.
  */
 export function checkDocMeta(
 	kinds: KindDoc[],
@@ -232,9 +239,19 @@ export function checkDocMeta(
 	source?: KindSource,
 ): { kind?: KindDoc; errors: string[]; warning?: string } {
 	const parsed = parseQualifiedRef(doc.kind);
-	const kind =
-		(source && parsed.repo === undefined ? repoKind(kinds, source, parsed.ref) : undefined) ??
-		resolveKind(kinds, doc.kind);
+	const own = source && parsed.repo === undefined ? repoKind(kinds, source, parsed.ref) : undefined;
+	if (
+		!own &&
+		source &&
+		parsed.repo === undefined &&
+		!isBridge(source) &&
+		kinds.some((kind) => staysHome(kind) && kind.name === parsed.ref)
+	)
+		return {
+			errors: [],
+			warning: `kind ${doc.kind} stays in the bridge, so ${source.name}'s doc of it is not validated`,
+		};
+	const kind = own ?? resolveKind(kinds, doc.kind);
 	if (!kind)
 		return { errors: [], warning: `no kind ${doc.kind} in context; its meta is not validated` };
 	return { kind, errors: validateMeta(kind, doc.meta) };

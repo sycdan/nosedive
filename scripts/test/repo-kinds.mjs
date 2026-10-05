@@ -84,17 +84,11 @@ test("a repo with an empty kb takes shipped kinds on a dive, and defines its own
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /widget meta would not validate/);
 
-	// A memo is shipped too; it is written, and found again, in the repo.
-	const memo = run(["crud", `${repo}:memo`, "A", "repo", "memo"], bridge);
-	assertOk(memo, "crud <repo>:memo failed");
-	const memoId = madeId(memo.stdout);
-	assert.match(readFileSync(join(kb, `${memoId}.md`), "utf8"), /^kind: memo$/m);
-	const again = run(["crud", `${repo}:memo`, "A", "repo", "memo"], bridge);
-	assertOk(again, "reading the repo memo failed");
-	assert.match(again.stdout, new RegExp(`^id: ${memoId}$`, "m"));
-
-	// The dive and repo kinds and the bridge's own kinds stay in the bridge.
+	// Only the kind kind crosses: memo, dive, repo and the bridge's own kinds stay in the bridge.
 	const before = git(["rev-list", "--count", "HEAD"], worktree);
+	const memo = run(["crud", `${repo}:memo`, "A", "repo", "memo"], bridge);
+	assert.equal(memo.status, 1);
+	assert.match(memo.stderr, /kind memo is the bridge's own, and only the kind kind goes into/);
 	const dive = run(["crud", `${repo}:dive`, "--feat", FEAT, "x"], bridge, "Brief.\n");
 	assert.equal(dive.status, 1);
 	assert.match(dive.stderr, /a dive lives only in a bridge/);
@@ -107,11 +101,11 @@ test("a repo with an empty kb takes shipped kinds on a dive, and defines its own
 	assert.match(note.stderr, new RegExp(`crud ${repo}:kind --name note`));
 	assert.equal(git(["rev-list", "--count", "HEAD"], worktree), before);
 
-	// Helm offers the repo its own kinds and the shipped ones, but no dive.
+	// Helm offers the repo its own kinds and the kind kind, but no memo or dive.
 	const offered = helmCreatableKinds(bridge)
 		.filter((entry) => entry.repoName === repo)
 		.map((entry) => `${entry.name}${entry.shipped ? " (shipped)" : ""}`);
-	assert.deepEqual(offered, ["kind (shipped)", "memo (shipped)", "widget"]);
+	assert.deepEqual(offered, ["kind (shipped)", "widget"]);
 	const bridgeOffers = helmCreatableKinds(bridge).filter((entry) => entry.repoName !== repo);
 	assert.ok(bridgeOffers.some((entry) => entry.name === "note"));
 	assert.ok(bridgeOffers.every((entry) => !entry.shipped && entry.name !== "dive"));
@@ -147,23 +141,31 @@ test("a repo's own kind wins over a shipped kind of the same name inside it", ()
 	);
 });
 
-test("land refuses a shipped kind change that strands a memo in a repo that takes it", () => {
-	const { bridge, impl, kb } = onDive("strand");
-	const memo = run(["crud", `${impl.name}:memo`, "A", "repo", "memo"], bridge);
-	assertOk(memo, "crud <repo>:memo failed");
-	const memoId = madeId(memo.stdout);
-	assert.ok(existsSync(join(kb, `${memoId}.md`)));
+test("a memo already in a repo is reported, not validated, and a memo change does not refuse land over it", () => {
+	const { bridge, impl, worktree, kb } = onDive("strand");
+	// Written before only the kind kind crossed.
+	const memoId = run(["mint"], bridge).stdout.trim();
+	write(
+		join(kb, `${memoId}.md`),
+		`---\nkind: memo\nid: ${memoId}\nname: old\ngist: "Old"\n---\n\n# Old\n`,
+	);
+	runTool("git", ["add", "."], worktree);
+	gitCommit(worktree, "an old memo");
+	const patched = run(["crud", memoId, "--meta", "-"], bridge, "topic: x\n");
+	assertOk(patched, "patching the repo memo failed");
+	assert.match(patched.stderr, new RegExp(`kind memo stays in the bridge, so ${impl.name}'s doc`));
 
 	assertOk(
 		run(
 			["crud", "strand:00000000-0000-7bb2-8122-2cad84184e09", "--meta", "-"],
 			bridge,
-			"schema:\n  required: [owner]\n",
+			// The bridge's memos have no topic; the repo's has a string one.
+			"schema:\n  properties:\n    topic:\n      type: number\n",
 		),
 		"tightening the bridge's memo failed",
 	);
-	const refused = run(["land"], bridge);
-	assert.equal(refused.status, 1, refused.stdout);
-	assert.match(refused.stderr, /fail its new schema/);
-	assert.match(refused.stderr, new RegExp(`${impl.name}: memo ${memoId}`));
+	const landed = run(["land"], bridge);
+	assertOk(landed, "land failed");
+	assert.match(landed.stderr, /a doc of a kind that stays in the bridge fails its new schema/);
+	assert.match(landed.stderr, new RegExp(`${impl.name}: memo ${memoId}`));
 });

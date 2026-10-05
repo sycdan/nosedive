@@ -1,6 +1,4 @@
-import { readActiveDiveId } from "./kbDocs.js";
-import { DIVE_KIND_ID, isBridge, isShipped, kindSources, loadKinds } from "./kinds.js";
-import { readNosediveRc } from "./coreParsing.js";
+import { bridgeHomed, DIVE_KIND_ID, isBridge, isShipped, kindSources, loadKinds } from "./kinds.js";
 
 export interface HelmCreatableKind {
 	id: string;
@@ -17,14 +15,12 @@ export interface HelmCreatableKind {
  * What the dive bar can make: under each repo the active dive scopes, the
  * kinds `crud <repo>:<kind>` takes there -- its own and, outside a bridge, the
  * shipped ones it does not define -- by repo then name, with the schema for
- * the form. None with no dive, since helm writes only on one. Dives are left
- * out: one is planned on its feat, where the feat is known.
+ * the form. With no dive, the bridge's: making one starts a dive for it.
+ * Dives are left out: one is planned on its feat, where the feat is known.
  */
 export function helmCreatableKinds(cwd: string): HelmCreatableKind[] {
-	const rc = readNosediveRc(cwd);
-	if (!readActiveDiveId(rc.workspaceDir)) return [];
 	const sources = kindSources(cwd);
-	const kinds = loadKinds(sources);
+	const kinds = bridgeHomed(loadKinds(sources));
 	// The first of a name, as `repoKind` takes it.
 	const shipped = kinds
 		.filter(isShipped)

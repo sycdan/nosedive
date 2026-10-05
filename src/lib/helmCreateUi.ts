@@ -6,13 +6,13 @@
 export const helmCreateScript = String.raw`
 // --- create -----------------------------------------------------------------
 
-/** The kinds the active dive can make, by repo then name; none with no dive. */
+/** The kinds the active dive can make, by repo then name; with no dive, the bridge's. */
 let creatable = [];
 /** The kind last picked, by repo and id, so redrawing the bar keeps it. */
 let pickedKind = null;
 
 async function loadCreatable() {
-	creatable = dives.active ? await api("/api/creatable") : [];
+	creatable = await api("/api/creatable");
 }
 
 function createControl() {
@@ -53,7 +53,8 @@ function newMeta(inputs, required) {
 function createDialog(kind) {
 	const schema = kind.schema || {};
 	const properties = schema.properties || {};
-	const required = schema.required || [];
+	// A first anyOf's keys are what a new doc gives; the others admit older docs (the repo kind's url).
+	const required = [...(schema.required || []), ...((schema.anyOf || [])[0]?.required || [])];
 	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
 	const name = el("input", { type: "text", placeholder: "name (optional)", "aria-label": "name" });
 	// A property built from other schemas (a kind's own schema, say) is no simple field.
@@ -70,6 +71,7 @@ function createDialog(kind) {
 	const form = el("form", {},
 		el("h3", {}, "New " + kind.name + " in " + kind.repoName),
 		el("p", { class: "detail" }, kind.gist),
+		dives.active ? null : el("p", { class: "detail" }, "No dive is on: Create records one for this, jumps it, and makes the doc there."),
 		gist, name,
 		rows.length ? el("fieldset", { class: "meta" }, el("legend", {}, "meta"), rows) : null,
 		out, actions);
@@ -80,6 +82,7 @@ function createDialog(kind) {
 		create.disabled = true;
 		try {
 			const meta = newMeta(inputs, required);
+			if (!dives.active) return await diveToMake(dialog, kind, gist.value, name.value || undefined, meta);
 			const run = await write("/api/crud/mint", {
 				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
 				meta: Object.keys(meta).length ? meta : undefined,
@@ -112,6 +115,36 @@ function createDialog(kind) {
 	document.body.append(dialog);
 	dialog.showModal();
 	gist.focus();
+}
+
+/**
+ * Making a doc with no dive: crud dive records one titled for it on the
+ * selected feat, else the picked one, else the kb feat; jump takes it, and the
+ * doc is minted on it and opened with its meta form. A refused record stays
+ * in the modal; a refused jump or mint shows in the view.
+ */
+async function diveToMake(dialog, kind, gist, name, meta) {
+	const picked = ctx.root && backlogRoot && ctx.root !== backlogRoot.ref ? ctx.root : null;
+	const made = kind.name + " " + (name || gist);
+	const recorded = await write("/api/crud/dive", {
+		feat: ctx.feat || picked || KB_FEAT, title: "Add " + made, gist: "Adds the " + made,
+		brief: "Made in helm with no dive: a new " + kind.name + ", " + JSON.stringify(gist) + ". Fill in its meta, then land.",
+	});
+	const dive = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(recorded.stdout);
+	if (!dive) throw new Error(recorded.stdout || "crud dive recorded nothing");
+	dialog.close();
+	if (!(await runVerb({ verb: "jump", ref: dive[1] }))) return;
+	let run;
+	try {
+		run = await write("/api/crud/mint", { repo: kind.repoId, kind: kind.name, gist, name,
+			meta: Object.keys(meta).length ? meta : undefined });
+	} catch (err) {
+		return document.getElementById("view").append(outputBox(String(err.message || err), true));
+	}
+	refreshSections();
+	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
+	const kindRef = { id: kind.id, repoId: kind.repoId, name: kind.name, inCrudContext: true };
+	if (id) select([rootStep(ctx.root), { id: id[1], name: gist, kind: kind.name, repo: kind.repoId, kindRef }], null, outputBox(run.stdout));
 }
 
 /**

@@ -98,7 +98,9 @@ export async function helmWrite(
 	req: IncomingMessage,
 ): Promise<CrudRun | undefined> {
 	if (!path.startsWith("/api/crud/")) return undefined;
-	if (crudReach(cwd).size === 0) throw new HelmRequestError(409, NO_DIVE);
+	// Recording a dive is the bridge's bookkeeping, as jump's is: it needs no dive.
+	if (path !== "/api/crud/dive" && crudReach(cwd).size === 0)
+		throw new HelmRequestError(409, NO_DIVE);
 	const body = await readJsonBody(req);
 	if (path === "/api/crud/mint") {
 		const repo = text(body, "repo")!;

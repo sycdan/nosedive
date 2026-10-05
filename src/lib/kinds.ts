@@ -30,6 +30,10 @@ const KIND_LINE = /^kind: kind\s*$/m;
 /** The shipped kind whose docs live only in a bridge, and whose crud does more than write the doc. */
 export const DIVE_KIND_ID = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
 export const KIND_KIND_ID = "00000000-0000-70a0-90bd-1d49dc6264b9";
+/** The shipped kind of a bridge's repo docs, which mint only into a bridge. */
+export const REPO_KIND_ID = "00000000-0000-7dfa-bfc7-99ba38b8ed1e";
+/** Shipped kinds whose docs live only in a bridge. */
+const BRIDGE_ONLY = new Set([DIVE_KIND_ID, REPO_KIND_ID]);
 
 /** What a new kind starts as when nobody says: closed, with nothing declared yet. */
 export const STARTER_SCHEMA = { type: "object", additionalProperties: false, properties: {} };
@@ -125,16 +129,16 @@ export function isBridge(source: KindSource): boolean {
 }
 
 /**
- * A dive lives only in a bridge, so a copy of its kind in a repo in play that
- * is not one -- a scoped nosedive checkout -- is not a candidate.
+ * A dive or a repo doc lives only in a bridge, so a copy of its kind in a repo
+ * in play that is not one -- a scoped nosedive checkout -- is not a candidate.
  */
 export function bridgeHomed(kinds: KindDoc[]): KindDoc[] {
-	return kinds.filter((kind) => kind.id !== DIVE_KIND_ID || isBridge(kind.source));
+	return kinds.filter((kind) => !BRIDGE_ONLY.has(kind.id) || isBridge(kind.source));
 }
 
-/** A kind nosedive ships, as a bridge holds it, that any repo can take; the dive kind stays home. */
+/** A kind nosedive ships, as a bridge holds it, that any repo can take; dive and repo stay home. */
 export function isShipped(kind: KindDoc): boolean {
-	return isZerostar(kind.id) && kind.id !== DIVE_KIND_ID && isBridge(kind.source);
+	return isZerostar(kind.id) && !BRIDGE_ONLY.has(kind.id) && isBridge(kind.source);
 }
 
 /**

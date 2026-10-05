@@ -18,6 +18,7 @@ import {
 	type KindSource,
 	loadKinds,
 	parseQualifiedRef,
+	REPO_KIND_ID,
 	repoKind,
 	resolveKind,
 	selectRepo,
@@ -177,6 +178,8 @@ function crud(args: string[], io: CommandIo): void {
 			throw new Error(
 				`a dive lives only in a bridge: crud ${qualified.ref} --feat <feat> <gist...>`,
 			);
+		if (kinds.some((k) => k.id === REPO_KIND_ID && k.name === qualified.ref))
+			throw new Error(`a repo doc lives only in a bridge: crud ${qualified.ref} <gist...>`);
 		if (kinds.some((k) => isBridge(k.source) && k.name === qualified.ref))
 			throw new Error(
 				`kind ${qualified.ref} is the bridge's own, and only kinds nosedive ships go into ${repo.name}; ` +

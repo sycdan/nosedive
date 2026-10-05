@@ -37,7 +37,7 @@ function confirmButton(label, cls, act) {
 function renderBar() {
 	const bar = document.getElementById("divebar");
 	const dive = dives.active || dives.staged;
-	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"));
+	if (!dive) return bar.replaceChildren(el("span", { class: "state" }, "No dive"), el("span", { class: "gap" }), ...createControl());
 	const title = el("button", { class: "linkish", onclick: () => select([{ id: dive.id, name: dive.title, kind: "dive" }]) }, dive.title);
 	if (dives.active)
 		return bar.replaceChildren(el("span", { class: "state" }, "On dive"), title,
@@ -156,7 +156,7 @@ function stage(dive) {
 	refreshSections();
 }
 
-/** Runs a dive verb and shows its output as it streams in. */
+/** Runs a dive verb, shows its output as it streams in, and says whether it succeeded. */
 async function runVerb(body) {
 	const out = el("pre", { class: "output streaming" }, "");
 	document.getElementById("view").replaceChildren(el("h3", {}, "nosedive " + body.verb), out);
@@ -185,6 +185,7 @@ async function runVerb(body) {
 	// A land can add a root to the bridge, so the tree re-reads them too.
 	await loadRoots();
 	refreshSections();
+	return !out.classList.contains("failed");
 }
 
 /** Clicking a dive's card opens its doc, which stages it. */

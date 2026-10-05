@@ -93,11 +93,14 @@ test("a repo with an empty kb takes shipped kinds on a dive, and defines its own
 	assertOk(again, "reading the repo memo failed");
 	assert.match(again.stdout, new RegExp(`^id: ${memoId}$`, "m"));
 
-	// The dive kind and the bridge's own kinds stay in the bridge.
+	// The dive and repo kinds and the bridge's own kinds stay in the bridge.
 	const before = git(["rev-list", "--count", "HEAD"], worktree);
 	const dive = run(["crud", `${repo}:dive`, "--feat", FEAT, "x"], bridge, "Brief.\n");
 	assert.equal(dive.status, 1);
 	assert.match(dive.stderr, /a dive lives only in a bridge/);
+	const repoDoc = run(["crud", `${repo}:repo`, "--meta", "-", "x"], bridge, "url: x\n");
+	assert.equal(repoDoc.status, 1);
+	assert.match(repoDoc.stderr, /a repo doc lives only in a bridge/);
 	const note = run(["crud", `${repo}:note`, "x"], bridge);
 	assert.equal(note.status, 1);
 	assert.match(note.stderr, /kind note is the bridge's own/);

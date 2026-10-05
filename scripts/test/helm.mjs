@@ -262,7 +262,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	);
 	// Collapse state is per viewer, and a browser that keeps nothing still works.
 	const openSource = [
-		/function sectionOpen\(name\) \{[\s\S]*?\n\}/.exec(script)?.[0],
+		/function sectionOpen\(name, byDefault = true\) \{[\s\S]*?\n\}/.exec(script)?.[0],
 		/function rememberOpen\(name, open\) \{[\s\S]*?\n\}/.exec(script)?.[0],
 	];
 	assert.ok(openSource.every(Boolean), "page carries the collapse helpers");
@@ -279,6 +279,17 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	remembering.rememberOpen("kinds", false);
 	assert.equal(remembering.sectionOpen("kinds"), false, "a collapse is remembered");
 	assert.equal(remembering.sectionOpen("repos"), true, "per section");
+	assert.equal(
+		remembering.sectionOpen("repos-rest", false),
+		false,
+		"the rest of the repos start folded",
+	);
+	remembering.rememberOpen("repos-rest", true);
+	assert.equal(
+		remembering.sectionOpen("repos-rest", false),
+		true,
+		"showing them all is remembered",
+	);
 	const throwing = run({
 		getItem() {
 			throw new Error("denied");
@@ -288,6 +299,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		},
 	});
 	assert.equal(throwing.sectionOpen("repos"), true);
+	assert.equal(throwing.sectionOpen("repos-rest", false), false);
 	assert.doesNotThrow(() => throwing.rememberOpen("repos", false));
 	// The home view offers the kb jump on the backlog only; other roots point at their feats.
 	const rootForm = /function rootForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];

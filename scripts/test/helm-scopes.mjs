@@ -18,11 +18,11 @@ import {
 } from "../test-helpers.mjs";
 
 const tmp = createTmp("helm-scopes");
-const minted = run(["mint", "4"], tmp);
+const minted = run(["mint", "6"], tmp);
 assertOk(minted, "mint failed");
-const [BACKLOG, CARDS, DECKS, FEAT] = minted.stdout.trim().split(/\r?\n/);
+const [BACKLOG, CARDS, DECKS, FEAT, PARENT, CHILD] = minted.stdout.trim().split(/\r?\n/);
 
-/** A backlog scoping one repo and reaching a feat that scopes none. */
+/** A backlog scoping one repo and reaching a feat that scopes none; a scoped feat whose child scopes none. */
 function fixture() {
 	const bridge = createBridge(tmp, "bridge", { backlog: BACKLOG });
 	writeImplRepoDoc(bridge, CARDS, implRepo(tmp, "cards"));
@@ -33,7 +33,15 @@ function fixture() {
 	);
 	write(
 		join(bridge, "kb", `${FEAT}.md`),
-		`---\nkind: feat\nid: ${FEAT}\nname: elves\ngist: "Elf deck"\n---\n\n# Elves\n`,
+		`---\nkind: feat\nid: ${FEAT}\nname: elves\ngist: "Elf deck"\nlinks:\n  - kb/${BACKLOG}.md:\n      rel: parent\n---\n\n# Elves\n`,
+	);
+	write(
+		join(bridge, "kb", `${PARENT}.md`),
+		`---\nkind: feat\nid: ${PARENT}\nname: goblins\ngist: "Goblin deck"\nscopes:\n  - ${DECKS}:\n      work-branch: work/goblins\n---\n`,
+	);
+	write(
+		join(bridge, "kb", `${CHILD}.md`),
+		`---\nkind: feat\nid: ${CHILD}\nname: hobs\ngist: "Hobgoblins"\nlinks:\n  - kb/${PARENT}.md:\n      rel: parent\n---\n`,
 	);
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
@@ -93,6 +101,7 @@ test("helm's repo cards add, drop and repin scopes on a dive, a feat and the bac
 		doc(FEAT),
 		new RegExp(`^scopes:\\n {2}- ${DECKS}:\\n {6}work-branch: work/elves$`, "m"),
 	);
+	assert.doesNotMatch(doc(FEAT), new RegExp(CARDS), "the backlog's scopes are not copied");
 	assert.deepEqual((await cards(`root=${BACKLOG}&feat=${FEAT}`))[DECKS], {
 		workBranch: "work/elves",
 	});
@@ -100,6 +109,19 @@ test("helm's repo cards add, drop and repin scopes on a dive, a feat and the bac
 	assert.match(doc(FEAT), new RegExp(`^scopes:\\n {2}- ${DECKS}$`, "m"), "no branch: a bare scope");
 	ok(await verb({ verb: "feat-scope", doc: FEAT, repo: DECKS, drop: true }));
 	assert.doesNotMatch(doc(FEAT), /^scopes:/m);
+
+	// A feat's first own scope copies its nearest scoped ancestor's, branches included, in one commit.
+	const commits = () => Number(runTool("git", ["rev-list", "--count", "HEAD"], bridge).stdout);
+	const before = commits();
+	ok(await verb({ verb: "feat-scope", doc: CHILD, repo: CARDS, branch: "work/hobs" }));
+	assert.match(
+		doc(CHILD),
+		new RegExp(
+			`^scopes:\\n {2}- ${DECKS}:\\n {6}work-branch: work/goblins\\n {2}- ${CARDS}:\\n {6}work-branch: work/hobs$`,
+			"m",
+		),
+	);
+	assert.equal(commits(), before + 1);
 
 	// The backlog, at level 0, is edited the same way.
 	assert.deepEqual((await cards(`root=${BACKLOG}`))[CARDS], { workBranch: null });
@@ -135,4 +157,13 @@ test("helm's repo cards add, drop and repin scopes on a dive, a feat and the bac
 	assert.match(refused, /\[exit 1\]\s*$/);
 	ok(await verb({ verb: "unscope", dive, repo: CARDS }));
 	assert.equal((await cards(`root=${BACKLOG}&dive=${dive}`))[CARDS], null);
+
+	// Read-only: upscoped, then its branch cleared by crud on the bridge's copy; the pin stays.
+	ok(await verb({ verb: "upscope", dive, repo: CARDS, readOnly: true, branch: "ignored" }));
+	assert.match(doc(dive), new RegExp(`^ {2}- ${CARDS}:\\n {6}ref: [0-9a-f]{40}\\n(?! {6})`, "m"));
+	assert.deepEqual((await cards(`root=${BACKLOG}&dive=${dive}`))[CARDS], { workBranch: null });
+	assert.match(
+		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout,
+		new RegExp(`^crud\\(${dive}\\): updated dive`),
+	);
 });

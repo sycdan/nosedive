@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
@@ -7,13 +8,14 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
 import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
-import { readActiveDiveId } from "../lib/kbDocs.js";
+import { readActiveDiveId, readKbDocById } from "../lib/kbDocs.js";
 import {
 	bridgeHomed,
 	DIVE_KIND_ID,
 	isBridge,
 	KIND_KIND_ID,
 	kindSources,
+	type KindSource,
 	loadKinds,
 	parseQualifiedRef,
 	repoKind,
@@ -94,6 +96,18 @@ function repinDive(
 	);
 }
 
+/**
+ * A dive is jump's and land's record, so crud reads and patches the live
+ * bridge's copy, never a `__self` one -- and needs no scoped repo hydrated.
+ */
+function liveDive(ref: string): KindSource[] | undefined {
+	if (!uuidLike(ref)) return undefined;
+	const rc = readNosediveRc(process.cwd());
+	if (!rc.kbDir || readKbDocById(rc.kbDir, rc.bridgeDir, ref.toLowerCase())?.kind !== "dive")
+		return undefined;
+	return [{ id: rc.bridge, name: basename(rc.bridgeDir), root: rc.bridgeDir, kbDir: rc.kbDir }];
+}
+
 function crud(args: string[], io: CommandIo): void {
 	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
 		printCommandHelp("crud", io);
@@ -126,7 +140,8 @@ function crud(args: string[], io: CommandIo): void {
 	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo;
 	// the kinds stay every repo's in play, since a repo can take a shipped one.
 	const qualified = parseQualifiedRef(first);
-	const inPlay = kindSources(process.cwd());
+	const inPlay =
+		(qualified.repo === undefined && liveDive(qualified.ref)) || kindSources(process.cwd());
 	const sources = qualified.repo === undefined ? inPlay : selectRepo(inPlay, qualified.repo);
 	const kinds = loadKinds(inPlay);
 

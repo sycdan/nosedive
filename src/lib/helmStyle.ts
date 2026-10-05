@@ -222,4 +222,14 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 .synccard .overwritten li { text-decoration: line-through; color: var(--dim); }
 .synccard .poll { font-variant-numeric: tabular-nums; }
 dialog.modal textarea.squashmsg { height: 260px; min-height: 160px; width: 100%; box-sizing: border-box; font: 13px/1.5 var(--mono); }
+.repofilter { font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px;
+	background: var(--panel); color: var(--text); width: min(320px, 100%); box-sizing: border-box; margin: 0 0 10px; }
+.repofilter:focus { outline: none; border-color: var(--accent); }
+.cards > [hidden], .repolines > [hidden] { display: none; }
+details.top details.rest summary { font-size: 12px; text-transform: none; letter-spacing: normal; padding: 10px 0 6px; }
+.repolines { display: grid; gap: 4px; }
+.repoline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px;
+	border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.repoline .gap { flex: 1; }
+.repoline .icon { font-size: 14px; }
 `;

@@ -105,7 +105,7 @@ function rootForm() {
 	if (dives.active) return [];
 	if (ctx.root && backlogRoot && ctx.root !== backlogRoot.id)
 		return [el("p", { class: "empty" }, "Pick a feat in the tree to plan a dive on it, or dive it free.")];
-	const hint = el("p", { class: "empty" }, "Jump a dive to make a root.");
+	const hint = el("p", { class: "empty" }, "Pick a feat in the tree to plan a dive on it.");
 	api("/api/doc?id=" + KB_FEAT).then((feat) => hint.replaceWith(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
 	return [hint];
 }

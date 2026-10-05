@@ -223,6 +223,29 @@ test("a dive on a feat that already scopes the bridge scopes it once", () => {
 	assert.equal(scopeIds(text.slice(0, text.indexOf("meta:"))).length, 1);
 });
 
+test("crud patches an active dive's scopes in the live bridge, where jump and land read them", () => {
+	const { bridge } = seededBridge(tmp, "live-dive", "pilot@nosedive.invalid");
+	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Read"], bridge, "Read.\n");
+	assertOk(recorded, "crud dive failed");
+	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
+	assertOk(run(["jump", divePath], bridge), "jump failed");
+	const diveId = /^id: (\S+)$/m.exec(readFileSync(join(bridge, divePath), "utf8"))[1];
+	const bridgeId = /^bridge: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const selfCopy = join(bridge, "workspace", "__self", divePath);
+	const selfBefore = existsSync(selfCopy) ? readFileSync(selfCopy, "utf8") : null;
+	const patch = JSON.stringify({ [bridgeId]: { "work-branch": null } });
+	assertOk(run(["crud", diveId, "--scopes", "-"], bridge, patch), "crud --scopes failed");
+	assert.match(
+		readFileSync(join(bridge, divePath), "utf8"),
+		new RegExp(`- ${bridgeId}:\\n {6}ref: [0-9a-f]{40}\\n(?! {6})`),
+		"read-only now, the pin kept",
+	);
+	assert.equal(existsSync(selfCopy) ? readFileSync(selfCopy, "utf8") : null, selfBefore);
+	assert.match(git(["log", "-1", "--format=%s"], bridge), new RegExp(`^crud\\(${diveId}\\)`));
+});
+
 test("a second dive on the bridge lands only its own work, after the first landed through a merge", () => {
 	const { bridge, origin } = seededBridge(tmp, "self-twice", "pilot@nosedive.invalid");
 	const dive = (name) => {

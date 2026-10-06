@@ -46,6 +46,7 @@ import {
 	moveScopeToPin,
 	pinBehindTrunk,
 	refuseUnmovableScopes,
+	workBranchPinWarning,
 	type HydratedScope,
 	type StalePin,
 } from "../lib/scopeHydration.js";
@@ -396,6 +397,8 @@ export function jump(args: string[], io: CommandIo): void {
 			`hydrated repo=${scope.repoId} path=${formatPath(path)}` +
 				(settled.movedFrom ? ` moved-from=${settled.movedFrom}` : ""),
 		);
+		const branchWarning = workBranchPinWarning(hydrated, scope, dive.id, nosediveInvocation());
+		if (branchWarning) io.err(branchWarning);
 		// A warning, not a refusal: a planned dive that merely waited is the
 		// ordinary case. The agent picking it up was not there when the pin was
 		// chosen and has no reason to suspect it, so say how far behind and name

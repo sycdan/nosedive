@@ -29,6 +29,65 @@ import {
 
 const tmp = createTmp("jump");
 
+test("a second dive on the same feat warns at jump and gets a clear land refusal", () => {
+	const { bridge, source, repoId, featId, diveId: firstDive, pinnedRef } = deckSetup("sibling-pin");
+	assertOk(run(["pack"], bridge), "packing the first planned dive failed");
+	const second = run(
+		["record.dive", "--feat", featId, "--diver", "jump@example.test", "--brief", "-"],
+		bridge,
+		"Second dive brief.",
+	);
+	assertOk(second, "recording the sibling dive failed");
+	const secondDive = /^Recorded kb[\\/]([0-9a-f-]{36})\.md$/m.exec(second.stdout)?.[1];
+	assert.ok(secondDive, "missing second dive id: " + second.stdout);
+	assert.match(readFileSync(join(bridge, "kb", secondDive + ".md"), "utf8"), new RegExp(pinnedRef));
+	assertOk(run(["pack"], bridge), "packing the second planned dive failed");
+
+	assertOk(run(["jump", firstDive], bridge), "first jump failed");
+	gitCommitEmpty(repoWorktree(bridge, "sibling-pin"), "first dive work");
+	assertOk(run(["land"], bridge), "first land failed");
+	const branch = "work/jump-test.nosedive";
+	const published = runTool("git", ["rev-parse", branch], source).stdout.trim();
+	assert.notEqual(published, pinnedRef);
+
+	const jumped = run(["jump", secondDive], bridge);
+	assertOk(jumped, "second jump failed");
+	assert.equal(worktreeHead(bridge, "sibling-pin"), pinnedRef, "jump must keep the old pin");
+	assert.match(jumped.stderr, new RegExp("scope sibling-pin-repo \\(" + repoId + "\\)"));
+	assert.match(
+		jumped.stderr,
+		/work branch origin\/work\/jump-test\.nosedive is 1 commit ahead of its pin/,
+	);
+	const repin = "crud " + secondDive + " --repin " + branch + " --scope " + repoId;
+	assert.ok(jumped.stderr.includes(repin), "jump must name the repin command");
+	gitCommitEmpty(repoWorktree(bridge, "sibling-pin"), "second dive work");
+	const refused = run(["land"], bridge);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /work branch on origin has moved past this dive's pin/);
+	assert.match(refused.stderr, /Rebase the dive's work onto origin\/work\/jump-test\.nosedive/);
+	assert.ok(refused.stderr.includes(repin), "land must name the repin command");
+	assert.equal(runTool("git", ["rev-parse", branch], source).stdout.trim(), published);
+});
+
+test("jump calls out a work branch that no longer contains the pin", () => {
+	const { bridge, source, repoId, diveId, pinnedRef } = deckSetup("branch-diverged");
+	runTool("git", ["switch", "--orphan", "work/jump-test.nosedive"], source);
+	write(join(source, "different.txt"), "different history\n");
+	runTool("git", ["add", "different.txt"], source);
+	gitCommit(source, "replace work branch history");
+	const jumped = run(["jump", diveId], bridge);
+	assertOk(jumped, "jump should warn without refusing");
+	assert.equal(worktreeHead(bridge, "branch-diverged"), pinnedRef);
+	assert.match(
+		jumped.stderr,
+		/pin has diverged from work branch origin\/work\/jump-test\.nosedive/,
+	);
+	assert.ok(
+		jumped.stderr.includes("crud " + diveId + " --repin work/jump-test.nosedive --scope " + repoId),
+		"warning must name the scope-specific repin",
+	);
+});
+
 function bareRemote(name) {
 	const path = join(tmp, name);
 	mkdirSync(path, { recursive: true });

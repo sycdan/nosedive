@@ -44,6 +44,7 @@ import {
 } from "../lib/landGates.js";
 import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { gitOutput } from "../lib/gitProcess.js";
+import { leaseRefusal, movedBranchRefusal, type LandLease } from "../lib/landRefusals.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
@@ -51,14 +52,6 @@ import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/r
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 
 const refusalPrefix = "land refused because ";
-
-/** The explicit expected value of a `--hard` push, plus what a refusal must name. */
-interface LandLease {
-	repoId: string;
-	pin: string;
-	diveId: string;
-	cli: string;
-}
 
 function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
 	return feat?.name ?? dive.name;
@@ -81,17 +74,6 @@ function originUrl(worktreePath: string): string {
 	);
 }
 
-/** Shared by the pre-gate check and the push itself, so both refusals read alike. */
-function leaseRefusal(branch: string, lease: LandLease): string {
-	return (
-		`${refusalPrefix}scope ${lease.repoId} could not replace ${branch} under a lease expecting ` +
-		`${lease.pin} -- the branch moved since this dive was pinned, or does not exist. ` +
-		`Repin the dive at the new branch head (\`${lease.cli} record.dive --ref ${lease.diveId} ` +
-		`--repin\`) and rebase again; do not force-push past it, which would discard whatever ` +
-		`moved it`
-	);
-}
-
 /**
  * Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own
  * cloud remote (read-only scopes never reach here).
@@ -109,14 +91,31 @@ function leaseRefusal(branch: string, lease: LandLease): string {
  * this dive started -- and refuses an absent branch for free, since git rejects
  * a non-empty expected value against a ref that is not there.
  */
-function landRepoScope(worktreePath: string, branch: string, lease?: LandLease): string {
+function landRepoScope(
+	worktreePath: string,
+	branch: string,
+	scope: LandLease,
+	hard: boolean,
+): string {
 	const url = originUrl(worktreePath);
-	const force = lease ? [`--force-with-lease=refs/heads/${branch}:${lease.pin}`] : [];
-	gitRun(
-		worktreePath,
-		["push", url, ...force, `HEAD:refs/heads/${branch}`],
-		lease ? leaseRefusal(branch, lease) : `failed to push ${formatPath(worktreePath)} to ${branch}`,
-	);
+	const force = hard ? [`--force-with-lease=refs/heads/${branch}:${scope.pin}`] : [];
+	try {
+		gitRun(
+			worktreePath,
+			["push", url, ...force, `HEAD:refs/heads/${branch}`],
+			hard
+				? leaseRefusal(branch, scope)
+				: `failed to push ${formatPath(worktreePath)} to ${branch}`,
+		);
+	} catch (error) {
+		if (!hard) {
+			const published = remoteBranchHead(worktreePath, branch, scope.repoId);
+			if (published && published !== scope.pin && !headContains(worktreePath, published)) {
+				throw new Error(movedBranchRefusal(branch, published, scope));
+			}
+		}
+		throw error;
+	}
 	return branch;
 }
 
@@ -187,14 +186,8 @@ function assertScopesCanPublish(
 		}
 
 		throw new Error(
-			`${refusalPrefix}scope ${scope.repoId} cannot fast-forward ${branch}: the branch is at ` +
-				`${published} and this dive's work does not contain it (pinned at ${pin}). ` +
-				`Nothing was pushed and no gates ran. Repin onto the published head and replay this ` +
-				`dive's work onto it:\n` +
-				`  ${cli} pack\n` +
-				`  ${cli} record.dive --ref ${dive.id} --repin\n` +
-				`  ${cli} jump ${dive.id}\n` +
-				`then land again.`,
+			`${movedBranchRefusal(branch, published, { repoId: scope.repoId, pin, diveId: dive.id, cli })} ` +
+				`Nothing was pushed and no gates ran.`,
 		);
 	}
 }
@@ -501,11 +494,9 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		 * unconditional force wearing the flag's name, so there is deliberately no
 		 * weaker push to fall back to here.
 		 */
-		const lease = hard
-			? { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli }
-			: undefined;
+		const publishScope = { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli };
 		io.err(`land: pushing scope ${scope.repoId} -> ${branch}`);
-		landRepoScope(path, branch, lease);
+		landRepoScope(path, branch, publishScope, hard);
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
 		scopeOutcomes.push(`${scope.repoId} -> ${branch}`);
 	}

@@ -80,6 +80,66 @@ export interface StalePin {
 	trunkCommit: string;
 }
 
+export type WorkBranchPin = { kind: "ahead"; commits: number } | { kind: "diverged" };
+
+/** Compare a dive's pin with the fetched origin work branch, if it exists. */
+export function workBranchPastPin(
+	sourcePath: string,
+	commit: string,
+	branch: string,
+): WorkBranchPin | undefined {
+	const branchCommit = gitOutput(sourcePath, [
+		"rev-parse",
+		"--verify",
+		`refs/remotes/origin/${branch}^{commit}`,
+	]);
+	if (!branchCommit || branchCommit === commit) return undefined;
+	if (runGit(sourcePath, ["merge-base", "--is-ancestor", commit, branchCommit]).status !== 0) {
+		return { kind: "diverged" };
+	}
+	const commits = Number(
+		gitOutput(sourcePath, ["rev-list", "--count", `${commit}..${branchCommit}`]),
+	);
+	return { kind: "ahead", commits };
+}
+
+export function workBranchPinWarning(
+	hydrated: HydratedScope,
+	scope: { repoId: string; workBranch?: string },
+	diveId: string,
+	cli: string,
+): string | undefined {
+	if (!scope.workBranch) return undefined;
+	const branch = scope.workBranch;
+	const repoId = scope.repoId;
+	const repoName = hydrated.repoDoc.name || repoId;
+	const difference = workBranchPastPin(hydrated.sourcePath, hydrated.commit, branch);
+	if (!difference) return undefined;
+	const repair = cli + " crud " + diveId + " --repin " + branch + " --scope " + repoId;
+	const subject = "jump: warning: scope " + repoName + " (" + repoId + ") ";
+	if (difference.kind === "diverged")
+		return (
+			subject +
+			"pin has diverged from work branch origin/" +
+			branch +
+			"; move the pin with `" +
+			repair +
+			"` after reconciling the histories"
+		);
+	return (
+		subject +
+		"work branch origin/" +
+		branch +
+		" is " +
+		difference.commits +
+		" commit" +
+		(difference.commits === 1 ? "" : "s") +
+		" ahead of its pin; move the pin with `" +
+		repair +
+		"`"
+	);
+}
+
 /**
  * Moves an already-existing scoped worktree onto its pin, reporting the commit
  * it came off, or `undefined` when nothing moved.

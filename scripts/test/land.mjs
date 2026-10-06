@@ -473,7 +473,7 @@ test("land refuses a scope whose work branch has moved past the pin, before runn
 	assert.match(result.stderr, new RegExp(pin), "and the pin this dive holds");
 	assert.match(
 		result.stderr,
-		new RegExp(`record\.dive --ref ${diveId} --repin`),
+		new RegExp(`crud ${diveId} --repin ${escapeRegExp(workBranch)} --scope ${repoId}`),
 		"name the repin that fixes it",
 	);
 	assert.match(result.stderr, / pack$/m, "and the pack that saves the work first");

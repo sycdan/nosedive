@@ -31,8 +31,22 @@ function repoLine(repo) {
 	return el("div", { class: "repoline", title: repo.gist },
 		el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "name" }, repo.name),
 		repo.isBridge ? el("span", { class: "tag" }, "bridge") : null,
-		repo.hydrated ? fact("ok", "hydrated") : fact("", "not hydrated"),
-		el("span", { class: "gap" }), cardActions(repo), scopeActions(repo));
+		el("span", { class: "repo-status" }, "checking…"),
+		el("span", { class: "gap" }), el("span", { class: "repo-actions" }), el("span", { class: "scope-actions" }));
+}
+
+function fillRepoStatus(node, repo, status) {
+	const h = status.hydrated;
+	const n = status.nosedive;
+	const facts = node.querySelector(".repo-status");
+	if (repo.inScope) facts.replaceChildren(
+		h ? fact(h.atTrunk ? "ok" : "warn", (h.atTrunk ? "at " : "off ") + repo.trunk, h.commit.slice(0, 8)) : fact("", "not hydrated"),
+		n === "unknown" ? fact("", "nosedive ?") : n ? fact("ok", "nosedive", "L" + n.level) : fact("", "no nosedive"));
+	else facts.replaceChildren(h ? fact("ok", "hydrated") : fact("", "not hydrated"));
+	const actions = cardActions({ ...repo, ...status });
+	node.querySelector(".repo-actions").replaceChildren(...(actions ? [actions] : []));
+	const scope = scopeActions(repo);
+	node.querySelector(".scope-actions").replaceChildren(...(scope ? [scope] : []));
 }
 
 /** In-scope repos as cards, the rest as lines behind "show all"; the filter narrows both by name or gist. */
@@ -58,7 +72,8 @@ function reposSection(repos) {
 	};
 	filter.addEventListener("input", apply);
 	apply();
-	return topSection("repos", "Repos", filter, el("div", { class: "cards" }, cards), lines.length ? rest : null);
+	return { section: topSection("repos", "Repos (0/" + repos.length + ")", filter,
+		el("div", { class: "cards" }, cards), lines.length ? rest : null), shown };
 }
 
 /** Bumped by each redraw, so an older one's late answer is dropped. */
@@ -84,8 +99,9 @@ async function refreshSections() {
 			: null;
 		// A redraw mid-typing keeps the filter's focus.
 		const typing = document.activeElement && document.activeElement.classList.contains("repofilter");
+		const repoView = reposSection(context.repos);
 		document.getElementById("top").replaceChildren(
-			reposSection(context.repos),
+			repoView.section,
 			topSection("kinds", "Kinds", kinds.length ? el("ul", { class: "doclist" }, kinds)
 				: el("p", { class: "rel" }, "No kinds in scope."), unreadable));
 		if (typing) {
@@ -93,6 +109,23 @@ async function refreshSections() {
 			box.focus();
 			box.setSelectionRange(box.value.length, box.value.length);
 		}
+		// In-scope cards arrive first. Each request is bounded, and a later redraw
+		// invalidates every answer still in flight.
+		void (async () => {
+			let loaded = 0;
+			for (let i = 0; i < repoView.shown.length; i += 8) {
+				const batch = repoView.shown.slice(i, i + 8);
+				const statuses = await api("/api/repo-statuses?ids=" + batch.map(({ repo }) => repo.id).join(","));
+				if (drawn !== sectionsDrawn) return;
+				for (const { repo, node } of batch) {
+					if (statuses[repo.id]) fillRepoStatus(node, repo, statuses[repo.id]);
+					loaded++;
+				}
+				repoView.section.querySelector("summary").textContent = loaded === repoView.shown.length
+					? "Repos" : "Repos (" + loaded + "/" + repoView.shown.length + ")";
+			}
+			if (!repoView.shown.length) repoView.section.querySelector("summary").textContent = "Repos";
+		})().catch((err) => { if (drawn === sectionsDrawn) showError(err); });
 		const repos = [...new Set(context.kinds.map((kind) => kind.repoId))];
 		if (!repos.length) return;
 		const tally = await api("/api/kind-counts?repos=" + repos.join(","));

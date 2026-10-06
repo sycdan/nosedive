@@ -80,18 +80,13 @@ function fact(dotClass, label, value) {
 }
 
 function repoCard(repo) {
-	const h = repo.hydrated;
-	const n = repo.nosedive;
 	return el("article", { class: "card" + (repo.inScope ? " inscope" : "") + (repo.inCrudContext === false ? " out" : ""), title: repo.inCrudContext === false ? OUT_OF_REACH : null },
 		el("div", { class: "name" }, el("span", { class: "icon" }, repo.icon || "▢"), repo.name,
 			repo.isBridge ? el("span", { class: "tag" }, "bridge") : null,
 			repo.inScope ? el("span", { class: "tag" }, "in scope") : null),
 		el("div", { class: "gist" }, repo.gist),
-		el("div", { class: "facts" },
-			h ? fact(h.atTrunk ? "ok" : "warn", (h.atTrunk ? "at " : "off ") + repo.trunk, h.commit.slice(0, 8))
-				: fact("", "not hydrated"),
-			n === "unknown" ? fact("", "nosedive ?") : n ? fact("ok", "nosedive", "L" + n.level) : fact("", "no nosedive")),
-		cardActions(repo), scopeActions(repo));
+		el("div", { class: "facts repo-status" }, "checking…"),
+		el("div", { class: "repo-actions" }), el("div", { class: "scope-actions" }));
 }
 
 function crumbs(path) {

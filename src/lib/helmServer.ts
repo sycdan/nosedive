@@ -5,7 +5,14 @@ import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 
 import { readNosediveRc, type NosediveRc } from "./coreParsing.js";
-import { helmContext, helmDoc, helmKindCheck, helmKindCounts, helmKindDocs } from "./helm.js";
+import {
+	helmContext,
+	helmDoc,
+	helmKindCheck,
+	helmKindCounts,
+	helmKindDocs,
+	helmRepoStatuses,
+} from "./helm.js";
 import { HELM_POLL_MS, helmInternals, helmLogFollower } from "./helmInternals.js";
 import { helmPage } from "./helmPage.js";
 import { gitOutput } from "./gitProcess.js";
@@ -255,6 +262,12 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 						url.searchParams.get("dive") || undefined,
 					),
 				);
+			if (url.pathname === "/api/repo-statuses") {
+				const ids = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+				if (!ids.length || ids.length > 8 || new Set(ids).size !== ids.length)
+					throw new HelmRequestError(400, "request 1 to 8 distinct repo ids");
+				return sendJson(res, helmRepoStatuses(cwd, ids));
+			}
 			if (url.pathname === "/api/kind-counts")
 				return sendJson(
 					res,

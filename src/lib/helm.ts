@@ -22,13 +22,16 @@ import { bridgeView, type BridgeView } from "./helmView.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath } from "./repoWorktrees.js";
 
-export interface HelmRepoCard {
+export interface HelmRepoSummary {
 	id: string;
 	name: string;
 	gist: string;
 	icon: string | null;
 	isBridge: boolean;
 	trunk: string;
+}
+
+export interface HelmRepoStatus {
 	/** Null when the repo has no checkout in the workspace. */
 	hydrated: { path: string; commit: string; atTrunk: boolean } | null;
 	/** Null when not installed; "unknown" when trunk has never been fetched. */
@@ -80,27 +83,24 @@ function installedOnTrunk(cachePath: string, trunk: string): { level: number } |
 	return null;
 }
 
-function hydratedState(root: string, repoId: string, trunk: string, isBridge: boolean) {
+function hasWorkspaceCheckout(root: string, repoId: string, isBridge: boolean): boolean {
 	if (!isBridge) {
 		const marker = join(root, ".nosedive-ref");
-		if (!existsSync(marker) || !readFileSync(marker, "utf8").includes(repoId)) return null;
+		if (!existsSync(marker) || !readFileSync(marker, "utf8").includes(repoId)) return false;
 	}
+	return existsSync(root);
+}
+
+function hydratedState(root: string, repoId: string, trunk: string, isBridge: boolean) {
+	if (!hasWorkspaceCheckout(root, repoId, isBridge)) return null;
 	const commit = gitOutput(root, ["rev-parse", "HEAD"]);
 	if (!commit) return null;
 	const trunkTip = gitOutput(root, ["rev-parse", `refs/remotes/origin/${trunk}`]);
 	return { path: root, commit, atTrunk: trunkTip === commit };
 }
 
-function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCard {
+function repoSummary(doc: KbDoc, isBridge: boolean): HelmRepoSummary {
 	const trunk = doc.repoBaseBranch ?? doc.metaScalars.trunk ?? "main";
-	const root = isBridge ? bridgeDir : expectedWorktreePath(doc, bridgeDir);
-	const hydrated = hydratedState(root, doc.id, trunk, isBridge);
-	const cache = managedCachePath(doc.id, bridgeDir);
-	const nosedive = hydrated
-		? installedInCheckout(root)
-		: existsSync(cache)
-			? installedOnTrunk(cache, trunk)
-			: "unknown";
 	return {
 		id: doc.id,
 		name: doc.name,
@@ -108,9 +108,28 @@ function repoCard(doc: KbDoc, bridgeDir: string, isBridge: boolean): HelmRepoCar
 		icon: doc.metaScalars.icon || null,
 		isBridge,
 		trunk,
-		hydrated,
-		nosedive,
 	};
+}
+
+/** Git and install state for a small batch of known repos. */
+export function helmRepoStatuses(cwd: string, ids: string[]): Record<string, HelmRepoStatus> {
+	const view = bridgeDocs(cwd);
+	const wanted = new Set(ids);
+	const statuses: Record<string, HelmRepoStatus> = {};
+	for (const doc of view.docs.filter((doc) => doc.kind === "repo" && wanted.has(doc.id))) {
+		const isBridge = doc.id === view.rc.bridge;
+		const trunk = doc.repoBaseBranch ?? doc.metaScalars.trunk ?? "main";
+		const root = isBridge ? view.rc.bridgeDir : expectedWorktreePath(doc, view.rc.bridgeDir);
+		const hydrated = hydratedState(root, doc.id, trunk, isBridge);
+		const cache = managedCachePath(doc.id, view.rc.bridgeDir);
+		const nosedive = hydrated
+			? installedInCheckout(root)
+			: existsSync(cache)
+				? installedOnTrunk(cache, trunk)
+				: "unknown";
+		statuses[doc.id] = { hydrated, nosedive };
+	}
+	return statuses;
 }
 
 function bridgeDocs(cwd: string): BridgeView {
@@ -138,9 +157,8 @@ function readableSource(view: BridgeView, repo: KbDoc): KindSource | undefined {
 		return view.self
 			? { id: repo.id, name: repo.name, root: view.self.root, kbDir: view.self.kbDir }
 			: { id: repo.id, name: repo.name, root: rc.bridgeDir, kbDir: rc.kbDir! };
-	const trunk = repo.repoBaseBranch ?? "main";
 	const root = expectedWorktreePath(repo, rc.bridgeDir);
-	if (!hydratedState(root, repo.id, trunk, false)) return undefined;
+	if (!hasWorkspaceCheckout(root, repo.id, false)) return undefined;
 	return { id: repo.id, name: repo.name, root, kbDir: repoKbDir(root) };
 }
 
@@ -172,7 +190,7 @@ export function crudReach(cwd: string): Set<string | undefined> {
 
 export interface HelmContext {
 	repos: Array<
-		HelmRepoCard & {
+		HelmRepoSummary & {
 			inScope: boolean;
 			inCrudContext: boolean;
 			/** The edited doc's own entry for this repo -- the dive's, else the picked feat's -- or null. */
@@ -225,7 +243,7 @@ export function helmContext(
 		.filter((doc) => doc.kind === "repo" && !inScope.has(doc.id))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const repos = [...inView, ...outOfScope].map((doc) => ({
-		...repoCard(doc, rc.bridgeDir, doc.id === rc.bridge),
+		...repoSummary(doc, doc.id === rc.bridge),
 		inScope: inScope.has(doc.id),
 		inCrudContext: reach.has(doc.id),
 		scope: own.has(doc.id) ? { workBranch: own.get(doc.id)!.workBranch ?? null } : null,

@@ -213,6 +213,21 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
+	assert.match(
+		script,
+		/repoView\.shown\.slice\(i, i \+ 8\)/,
+		"repo statuses load in batches of eight",
+	);
+	assert.match(
+		script,
+		/drawn !== sectionsDrawn\) return/,
+		"late status batches cannot alter a new draw",
+	);
+	assert.match(
+		script,
+		/loaded \+ "\/" \+ repoView\.shown\.length/,
+		"the header tracks loaded repos",
+	);
 	// A reload restores a kind page through showKind, and kindRef on a doc under a kind step.
 	const restore =
 		/Promise\.all\(\[loadRoots\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
@@ -427,14 +442,25 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const [bridgeCard, hydratedCard, installedCard] = repos;
 	assert.equal(bridgeCard.isBridge, true);
 	assert.equal(bridgeCard.icon, "🛰");
-	assert.deepEqual(bridgeCard.nosedive, { level: 2 });
-	assert.match(bridgeCard.hydrated.commit, /^[0-9a-f]{40}$/);
+	assert.equal("hydrated" in bridgeCard, false, "context carries no git status");
+	assert.equal("nosedive" in bridgeCard, false, "context carries no install status");
 	assert.equal(hydratedCard.name, "hydrated");
 	assert.equal(hydratedCard.icon, null);
-	assert.equal(hydratedCard.hydrated.atTrunk, true);
-	assert.equal(hydratedCard.nosedive, null, "no config file means not installed");
-	assert.equal(installedCard.hydrated, null);
-	assert.deepEqual(installedCard.nosedive, { level: 1 }, "read from trunk without hydrating");
+	const status = await get(`/api/repo-statuses?ids=${BRIDGE_REPO},${HYDRATED},${INSTALLED}`);
+	assert.deepEqual(status[BRIDGE_REPO].nosedive, { level: 2 });
+	assert.match(status[BRIDGE_REPO].hydrated.commit, /^[0-9a-f]{40}$/);
+	assert.equal(status[HYDRATED].hydrated.atTrunk, true);
+	assert.equal(status[HYDRATED].nosedive, null, "no config file means not installed");
+	assert.equal(status[INSTALLED].hydrated, null);
+	assert.deepEqual(status[INSTALLED].nosedive, { level: 1 }, "read from trunk without hydrating");
+	assert.deepEqual(Object.keys(status), [BRIDGE_REPO, HYDRATED, INSTALLED]);
+	const tooMany = await fetch(
+		new URL(`/api/repo-statuses?ids=${Array(9).fill(BRIDGE_REPO).join(",")}`, base),
+		{
+			headers: { "x-helm-token": token },
+		},
+	);
+	assert.equal(tooMany.status, 400, "status requests are capped at eight distinct repos");
 	assert.deepEqual(
 		(await get(`/api/context?root=${IDEAS}`)).repos.filter((repo) => repo.inScope),
 		[],

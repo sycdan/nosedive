@@ -208,14 +208,14 @@ test("helm lists dives and runs the dive lifecycle through the real commands", a
 	const dehydrated = await runVerb({ verb: "dehydrate", repo: REPO });
 	assert.equal(dehydrated.exit, 0, dehydrated.text);
 	assert.equal(existsSync(worktree), false);
-	const cardAfter = (await get(`/api/context?root=${BACKLOG}`)).repos[0];
-	assert.equal(cardAfter.hydrated, null);
+	const cardAfter = await get(`/api/repo-statuses?ids=${REPO}`);
+	assert.equal(cardAfter[REPO].hydrated, null);
 
 	const hydrated = await runVerb({ verb: "hydrate", repo: REPO, at: "main" });
 	assert.equal(hydrated.exit, 0, hydrated.text);
 	assert.ok(existsSync(worktree));
-	const card = (await get(`/api/context?root=${BACKLOG}`)).repos[0];
-	assert.match(card.hydrated.commit, /^[0-9a-f]{40}$/);
+	const card = await get(`/api/repo-statuses?ids=${REPO}`);
+	assert.match(card[REPO].hydrated.commit, /^[0-9a-f]{40}$/);
 
 	const nope = await runVerb({ verb: "nuke" });
 	assert.equal(nope.status, 400, "only the dive verbs run");

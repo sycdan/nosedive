@@ -3,12 +3,13 @@ import { join, relative } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import { builtinKindPath } from "./builtinKinds.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { checkLinkTargets } from "./crudLinks.js";
 import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById, type KbDoc } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
-import { checkDocMeta, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
+import { checkDocMeta, isBridge, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
 import { entriesToMapping, isMapping, mappingToEntries, mergePatch } from "./mergePatch.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { reconcileLinkTarget } from "./repoFeatScopes.js";
@@ -274,9 +275,12 @@ export interface CrudTarget {
 
 /** The doc with this id in the first kb in context that holds one. */
 export function findDocByQuid(sources: KindSource[], quid: string): CrudTarget | undefined {
+	const path = builtinKindPath(quid.toLowerCase());
+	const bridge = sources.find((source) => isBridge(source));
+	if (path && bridge) return { path, source: bridge };
 	for (const source of sources) {
-		const path = join(source.kbDir, `${quid.toLowerCase()}.md`);
-		if (existsSync(path)) return { path, source };
+		const local = join(source.kbDir, `${quid.toLowerCase()}.md`);
+		if (existsSync(local)) return { path: local, source };
 	}
 	return undefined;
 }

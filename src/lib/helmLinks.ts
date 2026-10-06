@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 
+import { builtinKindPath } from "./builtinKinds.js";
 import type { BridgeView } from "./helmView.js";
-import type { KbDoc, LinkRef } from "./kbDocs.js";
+import { readKbDoc, type KbDoc, type LinkRef } from "./kbDocs.js";
 import { splitRepoRef } from "./kbRefs.js";
 import { mayLinkRepo, readRepoDoc, readRepoFile } from "./repoLinks.js";
 
@@ -75,6 +76,8 @@ export function helmLink(
 	link: LinkRef,
 ): HelmLink {
 	const { rc } = view;
+	const builtin = builtinKindPath(link.id);
+	if (builtin) return docLink(link, readKbDoc(builtin, rc.bridgeDir));
 	const inBridge = (id: string) => view.docs.find((doc) => doc.id === id);
 	const own = fromRepo === rc.bridge ? undefined : fromRepo;
 	if (link.repo && link.repo !== fromRepo) {

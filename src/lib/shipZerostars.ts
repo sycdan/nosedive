@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
+import { BUILTIN_KIND_IDS } from "./builtinKinds.js";
 import { formatPath, toPosixPath } from "./coreParsing.js";
 import { runGit } from "./gitProcess.js";
 import { readKbDoc } from "./kbDocs.js";
@@ -27,6 +28,7 @@ export function shippedFiles(kbDir: string): string[] {
 	if (!existsSync(kbDir)) return [];
 	return readdirSync(kbDir)
 		.filter((file) => file.endsWith(".md") && isZerostar(basename(file, ".md")))
+		.filter((file) => !BUILTIN_KIND_IDS.has(basename(file, ".md")))
 		.filter((file) => {
 			const frontmatter = FRONTMATTER.exec(readFileSync(join(kbDir, file), "utf8"))?.[1] ?? "";
 			return !/^scopes:/m.test(frontmatter);
@@ -118,9 +120,12 @@ export function shipZerostars(
 ): string[] {
 	const packageKb = join(packageRoot(), "kb");
 	const files = shippedFiles(packageKb);
+	const builtins = [...BUILTIN_KIND_IDS].map((id) => `${id}.md`);
 	const rels = files.map((file) => toPosixPath(relative(bridgeDir, join(kbDir, file))));
 
-	const dirty = runGit(bridgeDir, ["status", "--porcelain", "--", ...rels]).stdout.trim();
+	const dirty = rels.length
+		? runGit(bridgeDir, ["status", "--porcelain", "--", ...rels]).stdout.trim()
+		: "";
 	if (dirty)
 		throw new Error(
 			`seed merges nosedive's shipped docs into these, which have uncommitted changes; commit or discard them first:\n${dirty}`,
@@ -128,6 +133,21 @@ export function shipZerostars(
 
 	const paths: string[] = [];
 	const conflicts: string[] = [];
+	for (const file of builtins) {
+		const path = join(kbDir, file);
+		if (!existsSync(path)) continue;
+		const rel = toPosixPath(relative(bridgeDir, path));
+		const seeded = lastSeeded(bridgeDir, rel);
+		if (!seeded || readFileSync(path, "utf8") !== seeded) {
+			io.log(
+				`Kept edited built-in kind ${formatPath(path)}; it has no effect. Delete it or mint it as a new kind.`,
+			);
+			continue;
+		}
+		rmSync(path);
+		paths.push(path);
+		io.log(`Removed ${formatPath(path)}`);
+	}
 	files.forEach((file, i) => {
 		const path = join(kbDir, file);
 		const shipped = readFileSync(join(packageKb, file), "utf8");

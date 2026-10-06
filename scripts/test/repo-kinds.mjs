@@ -141,7 +141,7 @@ test("a repo's own kind wins over a shipped kind of the same name inside it", ()
 	);
 });
 
-test("a memo already in a repo is reported, not validated, and a memo change does not refuse land over it", () => {
+test("a memo already in a repo is reported, not validated, and the package's memo kind is read-only", () => {
 	const { bridge, impl, worktree, kb } = onDive("strand");
 	// Written before only the kind kind crossed.
 	const memoId = run(["mint"], bridge).stdout.trim();
@@ -155,17 +155,11 @@ test("a memo already in a repo is reported, not validated, and a memo change doe
 	assertOk(patched, "patching the repo memo failed");
 	assert.match(patched.stderr, new RegExp(`kind memo stays in the bridge, so ${impl.name}'s doc`));
 
-	assertOk(
-		run(
-			["crud", "strand:00000000-0000-7bb2-8122-2cad84184e09", "--meta", "-"],
-			bridge,
-			// The bridge's memos have no topic; the repo's has a string one.
-			"schema:\n  properties:\n    topic:\n      type: number\n",
-		),
-		"tightening the bridge's memo failed",
+	const immutable = run(
+		["crud", "strand:00000000-0000-7bb2-8122-2cad84184e09", "--meta", "-"],
+		bridge,
+		"schema: {}\n",
 	);
-	const landed = run(["land"], bridge);
-	assertOk(landed, "land failed");
-	assert.match(landed.stderr, /a doc of a kind that stays in the bridge fails its new schema/);
-	assert.match(landed.stderr, new RegExp(`${impl.name}: memo ${memoId}`));
+	assert.equal(immutable.status, 1);
+	assert.match(immutable.stderr, /built-in kind .* is read-only/);
 });

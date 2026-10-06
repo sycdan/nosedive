@@ -8,6 +8,7 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
 import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
+import { builtinKindPath } from "../lib/builtinKinds.js";
 import { diveRepinPatch, diveScopesPatch } from "../lib/diveScopePatch.js";
 import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
 import {
@@ -158,6 +159,8 @@ function crud(args: string[], io: CommandIo): void {
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, qualified.ref);
 		if (!target) throw new Error(`no doc ${first} in context`);
+		if (block && builtinKindPath(qualified.ref.toLowerCase()))
+			throw new Error(`built-in kind ${qualified.ref} is read-only in the package`);
 		if (!block) {
 			io.writeOut(readFileSync(target.path, "utf8"));
 			return;

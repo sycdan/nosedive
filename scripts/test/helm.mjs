@@ -498,6 +498,10 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	assert.deepEqual(
 		root.kinds.map((kind) => [kind.id, kind.name, kind.repoId, kind.inCrudContext]),
 		[
+			["00000000-0000-70a0-90bd-1d49dc6264b9", "kind", BRIDGE_REPO, false],
+			["00000000-0000-77cb-bcfe-6c9fb07f42ab", "dive", BRIDGE_REPO, false],
+			["00000000-0000-7bb2-8122-2cad84184e09", "memo", BRIDGE_REPO, false],
+			["00000000-0000-7dfa-bfc7-99ba38b8ed1e", "repo", BRIDGE_REPO, false],
 			[NOTE_KIND, "note", BRIDGE_REPO, false],
 			[CARD_KIND, "card", HYDRATED, false],
 		],
@@ -525,7 +529,7 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	const bridgeOnly = await get(`/api/context?root=${BACKLOG}&repo=${BRIDGE_REPO}`);
 	assert.deepEqual(
 		bridgeOnly.kinds.map((kind) => kind.name),
-		["note"],
+		["kind", "dive", "memo", "repo", "note"],
 		"a selected repo narrows the kinds",
 	);
 

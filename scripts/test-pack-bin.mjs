@@ -112,29 +112,37 @@ try {
 	assert.doesNotMatch(seed.stdout, /\.nosedive\.local\.yaml/);
 	assert.doesNotMatch(seed.stdout, /Seeded .*foundation docs/);
 	assert.doesNotMatch(seed.stdout, /migration doc/);
-	// A fresh seed writes exactly seven kb docs: the backlog memo `backlog:` names,
+	// A fresh seed writes exactly three kb docs: the backlog memo `backlog:` names,
 	// the bridge's own `kind: repo` doc, so a new pilot has something to scope a
-	// dive to without first finding `record.repo`, and the five zerostars nosedive
-	// ships -- the kind, memo, dive and repo kinds and the kb feat -- which only a
-	// packed install proves are in the tarball.
+	// dive to without first finding `record.repo`, and the kb feat zerostar. The
+	// built-in kinds stay in the package, which only a packed install proves holds
+	// them.
 	const seededKb = readdirSync(join(seedBridge, "kb"));
-	assert.equal(seededKb.length, 7, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
-	for (const shipped of [
-		"00000000-0000-70a0-90bd-1d49dc6264b9.md",
-		"00000000-0000-7bb2-8122-2cad84184e09.md",
-		"00000000-0000-77cb-bcfe-6c9fb07f42ab.md",
-		"00000000-0000-7dfa-bfc7-99ba38b8ed1e.md",
-		"00000000-0000-7003-a10b-25d64dd1d5ba.md",
-	])
-		assert.ok(seededKb.includes(shipped), `seed did not ship ${shipped}`);
+	assert.equal(seededKb.length, 3, `unexpected seeded kb contents: ${seededKb.join(", ")}`);
+	assert.ok(
+		seededKb.includes("00000000-0000-7003-a10b-25d64dd1d5ba.md"),
+		"seed did not ship the kb feat",
+	);
 	const seededKinds = seededKb
 		.map((entry) => /^kind: (\w+)$/m.exec(readFileSync(join(seedBridge, "kb", entry), "utf8"))?.[1])
 		.sort();
 	assert.deepEqual(
 		seededKinds,
-		["kind", "kind", "kind", "kind", "memo", "memo", "repo"],
-		"seed should write one backlog memo, one repo and the shipped zerostars",
+		["memo", "memo", "repo"],
+		"seed should write one backlog memo, one repo and the kb feat",
 	);
+	for (const builtin of [
+		"00000000-0000-70a0-90bd-1d49dc6264b9",
+		"00000000-0000-7bb2-8122-2cad84184e09",
+		"00000000-0000-77cb-bcfe-6c9fb07f42ab",
+		"00000000-0000-7dfa-bfc7-99ba38b8ed1e",
+	]) {
+		const shown = runPackedNpm(
+			["exec", "--yes", "--package", packedPath, "-c", `nosedive crud ${builtin}`],
+			seedBridge,
+		);
+		assert.match(shown.stdout, /^kind: kind$/m, `the package does not hold ${builtin}`);
+	}
 	assert.equal(
 		readFileSync(join(seedBridge, ".nosedive", ".gitignore"), "utf8"),
 		["cache/", "migration-backups/", ""].join("\n"),

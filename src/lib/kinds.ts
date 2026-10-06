@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
+import { BUILTIN_KIND_IDS, builtinKindPath } from "./builtinKinds.js";
 import { formatPath, parseYamlBlock, readNosediveRc, resolveFrom } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById } from "./kbDocs.js";
 import { writeFileAtomic } from "./renderPlan.js";
@@ -98,19 +99,31 @@ function kindFiles(kbDir: string): string[] {
 }
 
 export function loadKinds(sources: KindSource[]): KindDoc[] {
-	return sources.flatMap((source) =>
-		kindFiles(source.kbDir).map((file) => {
-			const doc = readKbDoc(join(source.kbDir, file), source.root);
-			return {
-				id: doc.id,
-				name: doc.name,
-				gist: doc.gist,
-				path: doc.path,
-				source,
-				meta: doc.metaRaw,
-			};
-		}),
-	);
+	return sources.flatMap((source) => {
+		const local = kindFiles(source.kbDir)
+			.filter((file) => !BUILTIN_KIND_IDS.has(basename(file, ".md")))
+			.map((file) => {
+				const doc = readKbDoc(join(source.kbDir, file), source.root);
+				if (BUILTIN_KIND_IDS.has(doc.id)) return undefined;
+				return {
+					id: doc.id,
+					name: doc.name,
+					gist: doc.gist,
+					path: doc.path,
+					source,
+					meta: doc.metaRaw,
+				};
+			})
+			.filter((kind): kind is KindDoc => kind !== undefined);
+		if (!isBridge(source)) return local;
+		const builtin = [...BUILTIN_KIND_IDS].map((id) => {
+			const path = builtinKindPath(id);
+			if (!path) throw new Error(`package is missing built-in kind ${id}`);
+			const doc = readKbDoc(path, source.root);
+			return { id: doc.id, name: doc.name, gist: doc.gist, path, source, meta: doc.metaRaw };
+		});
+		return [...builtin, ...local];
+	});
 }
 
 /** Narrows what is in play to one repo, named or identified; one out of play is refused. */

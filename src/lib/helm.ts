@@ -3,8 +3,9 @@ import { join } from "node:path";
 
 import { Marked } from "marked";
 
+import { BUILTIN_KIND_IDS, builtinKindPath } from "./builtinKinds.js";
 import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
-import { isZerostar, kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
+import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
 import {
 	configCompatibilityLevel,
@@ -15,7 +16,7 @@ import {
 } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { isJumpable, rootedScopes } from "./jumpable.js";
-import { loadKbDocs, readActiveDiveId, type KbDoc } from "./kbDocs.js";
+import { loadKbDocs, readActiveDiveId, readKbDoc, type KbDoc } from "./kbDocs.js";
 import { helmDocText, helmLink, helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
 import { managedCachePath } from "./repoWorkspaceCore.js";
@@ -38,6 +39,7 @@ export type { HelmLink };
 
 export interface HelmDoc {
 	id: string;
+	builtin?: boolean;
 	/** What crud and jump take: the id, or `<repo-quid>:<path>` for a doc in another repo. */
 	ref: string;
 	kind: string;
@@ -147,6 +149,7 @@ function kindCounts(kbDir: string): Map<string, number> {
 	const counts = new Map<string, number>();
 	if (!existsSync(kbDir)) return counts;
 	for (const file of readdirSync(kbDir).filter((name) => name.endsWith(".md"))) {
+		if (BUILTIN_KIND_IDS.has(file.slice(0, -3))) continue;
 		const kind = /^kind: (\S+)\s*$/m.exec(readFileSync(join(kbDir, file), "utf8"))?.[1];
 		if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
 	}
@@ -326,9 +329,8 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 	}
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	// A repo that takes a shipped kind reads it from the bridge.
-	const doc =
-		byId.get(id) ??
-		(isZerostar(id) ? bridgeKb.find((d) => d.id === id && d.kind === "kind") : undefined);
+	const builtin = builtinKindPath(id);
+	const doc = builtin ? readKbDoc(builtin, rc.bridgeDir) : byId.get(id);
 	if (!doc) return undefined;
 	const text = helmDocText(view, doc);
 	const block = leadingMarkdownFrontmatter(text);
@@ -344,6 +346,7 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 	});
 	return {
 		id: doc.id,
+		...(builtin ? { builtin: true } : {}),
 		ref: home === rc.bridge || doc.kind === "kind" ? doc.id : `${home}:${doc.relPath}`,
 		kind: doc.kind,
 		name: doc.name,

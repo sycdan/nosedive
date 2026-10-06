@@ -37,7 +37,8 @@ const minted = run(["mint", "6"], tmp);
 assertOk(minted, "mint failed");
 const [BACKLOG_KIND, CARD_A, CARD_B, REPO_A, REPO_B, DIVE] = minted.stdout.trim().split(/\r?\n/);
 
-const packageSource = { name: "nosedive", root, kbDir: join(root, "kb") };
+const packageBridge = createBridge(tmp, "package-kinds");
+const packageSource = { name: "bridge", root: packageBridge, kbDir: join(packageBridge, "kb") };
 const packageKinds = loadKinds([packageSource]);
 const kindKind = resolveKind(packageKinds, "kind");
 const diveKind = resolveKind(packageKinds, "dive");
@@ -126,11 +127,13 @@ test("a dive kind counts only from a bridge; other kinds count anywhere", () => 
 	const homed = bridgeHomed(loadKinds([packageSource, bridgeSource]));
 	assert.deepEqual(
 		homed.filter((kind) => kind.name === "dive").map((kind) => kind.source.name),
-		["homed"],
-		"nosedive's own dive kind is not a candidate; the bridge's is",
+		["bridge", "homed"],
+		"each bridge reads the same packaged dive kind",
 	);
-	assert.equal(resolveKind(homed, "dive").source.root, bridge);
-	assert.ok(resolveKind(homed, "memo"), "memo is not bridge-only");
+	assert.ok(
+		homed.some((kind) => kind.name === "memo"),
+		"memo is read from the package",
+	);
 });
 
 test("every unscoped zerostar ships; a scoped or minted one stays in its repo", () => {
@@ -145,7 +148,7 @@ test("every unscoped zerostar ships; a scoped or minted one stays in its repo", 
 		join(dir, "00000000-0000-7000-8000-000000000002.md"),
 		`---\nkind: noun\nid: 00000000-0000-7000-8000-000000000002\nname: y\ngist: "y"\nscopes:\n  - ${REPO_A}\n---\n`,
 	);
-	assert.deepEqual(shippedFiles(dir), ["00000000-0000-7000-8000-000000000001.md", `${KIND}.md`]);
+	assert.deepEqual(shippedFiles(dir), ["00000000-0000-7000-8000-000000000001.md"]);
 });
 
 test("with no dive kinds are the bridge's; on a dive only the scoped repos'", () => {

@@ -210,7 +210,7 @@ async function showKind(kind, path, row, message) {
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
 		const rerender = (msg) => showKind(kind, path, row, msg);
-		view.replaceChildren(...[message, list].filter(Boolean), schemaEditor(kind, doc, path, rerender), ...docBody(doc, false));
+		view.replaceChildren(...[message, list].filter(Boolean), ...(doc.builtin ? [] : [schemaEditor(kind, doc, path, rerender)]), ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 

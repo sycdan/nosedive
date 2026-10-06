@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -20,7 +20,6 @@ const MEMO = "00000000-0000-7bb2-8122-2cad84184e09";
 const DIVE = "00000000-0000-77cb-bcfe-6c9fb07f42ab";
 const REPO = "00000000-0000-7dfa-bfc7-99ba38b8ed1e";
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
-const MEMO_LAST_LINE = "`crud memo <gist>` mints one.";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 const commits = (cwd) => git(["rev-list", "--count", "HEAD"], cwd);
@@ -36,15 +35,16 @@ function commitAll(bridge, message) {
 	gitCommit(bridge, message);
 }
 
-test("seed ships the unscoped zerostars, scopes the kb feat to the bridge, and links it from the backlog", () => {
+test("seed keeps only the kb feat in the bridge, scopes it, and links it from the backlog", () => {
 	const { bridge } = seededBridge(tmp, "fresh", "pilot@nosedive.invalid");
 	const kb = join(bridge, "kb");
-	assert.deepEqual(zerostars(kb), [KB_FEAT, KIND, MEMO, DIVE, REPO].map((id) => `${id}.md`).sort());
-	for (const id of [KIND, MEMO, DIVE, REPO])
-		assert.equal(
-			readFileSync(join(kb, `${id}.md`), "utf8"),
-			readFileSync(join(root, "kb", `${id}.md`), "utf8"),
-		);
+	assert.deepEqual(zerostars(kb), [`${KB_FEAT}.md`]);
+	for (const id of [KIND, MEMO, DIVE, REPO]) {
+		assert.equal(existsSync(join(kb, `${id}.md`)), false);
+		const shown = run(["crud", id], bridge);
+		assertOk(shown, `crud ${id} failed`);
+		assert.equal(shown.stdout, readFileSync(join(root, "kb", `${id}.md`), "utf8"));
+	}
 
 	const feat = readFileSync(join(kb, `${KB_FEAT}.md`), "utf8");
 	const self = configKey(bridge, "bridge");
@@ -63,54 +63,59 @@ test("seed ships the unscoped zerostars, scopes the kb feat to the bridge, and l
 		"Tidy the kb",
 	);
 	assertOk(dive, "the kb feat is something to dive from");
+	const linked = run(["crud", "memo", "Linked", "memo"], bridge);
+	assertOk(linked, "crud memo failed");
+	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(linked.stdout)?.[1];
+	assertOk(
+		run(["crud", id, "--links", "-"], bridge, `${KIND}: {rel: reference}\n`),
+		"a link to a package kind resolves without a bridge file",
+	);
 });
 
-test("seed merges the package's change into a shipped doc the pilot edited, and leaves the kb feat alone", () => {
+test("seed removes a built-in copy identical to the last seed and leaves the kb feat alone", () => {
 	const { bridge } = seededBridge(tmp, "merge", "pilot@nosedive.invalid");
 	const memo = join(bridge, "kb", `${MEMO}.md`);
-	const shipped = readFileSync(memo, "utf8");
-	// Pretend seed last wrote an older memo kind doc, so the package's copy reads as a change to it.
-	write(memo, shipped.replace(MEMO_LAST_LINE, "An older last line."));
+	write(memo, readFileSync(join(root, "kb", `${MEMO}.md`), "utf8"));
 	commitAll(bridge, "seed(nosedive@old): surface did not change");
-	write(memo, readFileSync(memo, "utf8").replace("# Memo", "# Memo, as we use it"));
-	commitAll(bridge, "our heading");
 	const feat = join(bridge, "kb", `${KB_FEAT}.md`);
 	write(feat, `${readFileSync(feat, "utf8")}\nOur notes.\n`);
 	commitAll(bridge, "our kb notes");
 
 	const seeded = run(["seed", "--headless", "--no-push"], bridge, "");
 	assertOk(seeded, "seed failed");
-	assert.match(seeded.stdout, new RegExp(`Merged kb[\\\\/]${MEMO}\\.md`));
-	const merged = readFileSync(memo, "utf8");
-	assert.match(merged, /^# Memo, as we use it$/m, "the pilot's edit survives");
-	assert.ok(merged.includes(`\n${MEMO_LAST_LINE}\n`), "the package's change arrives");
+	assert.match(seeded.stdout, new RegExp(`Removed kb[\\\\/]${MEMO}\\.md`));
+	assert.equal(existsSync(memo), false);
 	assert.match(readFileSync(feat, "utf8"), /Our notes\./, "a create-only doc is never merged");
 	assert.equal(git(["status", "--porcelain"], bridge), "");
 });
 
-test("seed stops on a conflict with markers left in the doc, and refuses a shipped doc with uncommitted changes", () => {
+test("seed leaves an edited built-in copy in place and ignores it for crud and validation", () => {
 	const { bridge } = seededBridge(tmp, "conflict", "pilot@nosedive.invalid");
 	const memo = join(bridge, "kb", `${MEMO}.md`);
-	const shipped = readFileSync(memo, "utf8");
-	write(memo, shipped.replace(MEMO_LAST_LINE, "An older last line."));
+	const shipped = readFileSync(join(root, "kb", `${MEMO}.md`), "utf8");
+	write(memo, shipped);
 	commitAll(bridge, "seed(nosedive@old): surface did not change");
-	write(memo, shipped.replace(MEMO_LAST_LINE, "Our own last line."));
-	commitAll(bridge, "our last line");
+	write(
+		memo,
+		shipped
+			.replace("# Memo", "# Our Memo")
+			.replace("additionalProperties: true", "additionalProperties: false"),
+	);
+	commitAll(bridge, "our heading");
 	const before = commits(bridge);
-
-	const conflicted = run(["seed", "--headless", "--no-push"], bridge, "");
-	assert.equal(conflicted.status, 1, conflicted.stdout);
-	assert.match(conflicted.stderr, /conflict with edits in this bridge/);
-	assert.match(conflicted.stderr, new RegExp(`kb[\\\\/]${MEMO}\\.md`));
-	const text = readFileSync(memo, "utf8");
-	assert.match(text, /^<<<<<<< bridge$/m);
-	assert.match(text, /^>>>>>>> nosedive$/m);
-	assert.equal(commits(bridge), before, "nothing is committed");
-
-	const dirty = run(["seed", "--headless", "--no-push"], bridge, "");
-	assert.equal(dirty.status, 1);
-	assert.match(dirty.stderr, /uncommitted changes/);
-	assert.equal(readFileSync(memo, "utf8"), text, "a refused seed touches nothing");
+	const seeded = run(["seed", "--headless", "--no-push"], bridge, "");
+	assertOk(seeded, "seed failed");
+	assert.match(seeded.stdout, /Kept edited built-in kind/);
+	assert.equal(commits(bridge), before);
+	assert.match(readFileSync(memo, "utf8"), /# Our Memo/);
+	assert.equal(run(["crud", MEMO], bridge).stdout, shipped, "crud reads the package copy");
+	const made = run(["crud", "memo", "Valid", "memo"], bridge);
+	assertOk(made, "crud memo failed");
+	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
+	assertOk(
+		run(["crud", id, "--meta", "-"], bridge, "extra: allowed\n"),
+		"validation uses the package's open schema",
+	);
 });
 
 test("seed keeps picker-level, and an old roots: or decks: key as it is", () => {

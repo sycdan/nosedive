@@ -6,11 +6,12 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { checkLinkTargets } from "./crudLinks.js";
 import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
-import { loadKbDocs, readKbDoc, type KbDoc } from "./kbDocs.js";
+import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById, type KbDoc } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
 import { checkDocMeta, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
 import { entriesToMapping, isMapping, mappingToEntries, mergePatch } from "./mergePatch.js";
 import { writeFileAtomic } from "./renderPlan.js";
+import { reconcileLinkTarget } from "./repoFeatScopes.js";
 import { slugFromGist } from "./slugs.js";
 import { uuid7AtMs } from "./uuid7.js";
 
@@ -113,7 +114,26 @@ export function mintDoc(
 	);
 	io.log(`Minted ${formatPath(path)}`);
 	commitBridgeDocs(kind.source.root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path], io);
+	linkMintToActiveDive(kind.source, id, io);
 	return id;
+}
+
+/** The live dive is jump's and land's record, even when the doc lives in __self. */
+function linkMintToActiveDive(
+	source: KindSource,
+	id: string,
+	io: { log(message: string): void },
+): void {
+	const rc = readNosediveRc(process.cwd());
+	const activeId = readActiveDiveId(rc.workspaceDir);
+	if (!activeId || !rc.kbDir) return;
+	const dive = readKbDocById(rc.kbDir, rc.bridgeDir, activeId);
+	if (!dive || dive.kind !== "dive")
+		throw new Error(`active dive ${activeId} has no live dive doc`);
+	if (!source.id) throw new Error(`cannot link ${id} from the active dive: its repo has no id`);
+	const target = source.id === rc.bridge ? `kb/${id}.md` : `${source.id}:kb/${id}.md`;
+	reconcileLinkTarget(dive.path, target, "made");
+	commitBridgeDocs(rc.bridgeDir, `dive(${dive.name}): linked made ${id}`, [dive.path], io);
 }
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;

@@ -264,11 +264,22 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 	);
 	assert.equal(subject(worktree), `crud(${id}): created card ${id}`);
 	assert.equal(git(["status", "--porcelain"], worktree), "");
-	assert.equal(commits(bridge), bridgeBefore, "the bridge is untouched on a dive");
+	const liveDive = () => readFileSync(join(bridge, "kb", `${DIVE}.md`), "utf8");
+	assert.match(liveDive(), new RegExp(`^  - ${CARDS_REPO}:kb/${id}\\.md:\\n      rel: made$`, "m"));
+	assert.equal(
+		Number(commits(bridge)),
+		Number(bridgeBefore) + 1,
+		"the live bridge commits the made link",
+	);
 
 	const pinned = run(["crud", "cards:card", "Black", "Lotus"], bridge);
 	assertOk(pinned, "crud <repo>:<kind> failed");
-	assert.ok(existsSync(join(worktree, "kb", `${madeId(pinned.stdout)}.md`)));
+	const pinnedId = madeId(pinned.stdout);
+	assert.ok(existsSync(join(worktree, "kb", `${pinnedId}.md`)));
+	assert.match(
+		liveDive(),
+		new RegExp(`^  - ${CARDS_REPO}:kb/${pinnedId}\\.md:\\n      rel: made$`, "m"),
+	);
 	const elsewhere = run(["crud", "nope:card", "x"], bridge);
 	assert.equal(elsewhere.status, 1);
 	assert.match(elsewhere.stderr, /repo nope is not in context/);
@@ -288,7 +299,7 @@ test("on a dive crud works only in the scoped repos, and commits where the kind 
 		/no kind dive in context/,
 		"a dive kind outside a bridge is not in play",
 	);
-	assert.equal(commits(bridge), bridgeBefore);
+	assert.equal(Number(commits(bridge)), Number(bridgeBefore) + 2);
 	assert.equal(commits(worktree), worktreeBefore);
 	assert.equal(git(["status", "--porcelain"], worktree), "", "the refused mint is undone");
 	assert.equal(readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"), configBefore);

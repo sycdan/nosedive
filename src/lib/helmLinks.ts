@@ -15,6 +15,7 @@ export type HelmLink =
 			rel?: string;
 			id: string;
 			repo?: string;
+			repoName?: string;
 			name: string;
 			kind: string;
 			gist: string;

@@ -85,6 +85,13 @@ test("with no dive, helm offers the bridge's kinds; making a repo records a dive
 	const doc = join(bridge, "workspace", "__self", "kb", `${id}.md`);
 	assert.ok(existsSync(doc), "minted in the dive's __self checkout");
 	assert.ok(!existsSync(join(bridge, "kb", `${id}.md`)), "not in the live bridge");
+	const liveDive = readFileSync(join(bridge, "kb", `${dive}.md`), "utf8");
+	assert.match(liveDive, new RegExp(`^  - kb/${id}\\.md:\\n      rel: made$`, "m"));
+	const shownDive = await get(`/api/doc?id=${dive}`);
+	assert.ok(
+		shownDive.links.some((link) => link.id === id && link.rel === "made" && link.repoName),
+		"helm reads made links from the live dive",
+	);
 
 	const edited = await post("/api/crud/meta", {
 		id,

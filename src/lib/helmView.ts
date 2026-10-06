@@ -29,10 +29,13 @@ export function bridgeView(cwd: string): BridgeView {
 	if (!root) return { rc, docs: live };
 	const kbDir = repoKbDir(root);
 	const checkout = loadKbDocs(kbDir, root);
-	const shown = new Set(checkout.map((doc) => doc.id));
+	const active = readActiveDiveId(rc.workspaceDir);
+	// Crud links mints on the live dive. Its checkout copy predates those links.
+	const current = checkout.filter((doc) => doc.id !== active || doc.kind !== "dive");
+	const shown = new Set(current.map((doc) => doc.id));
 	return {
 		rc,
-		docs: [...checkout, ...live.filter((doc) => !shown.has(doc.id))],
+		docs: [...current, ...live.filter((doc) => !shown.has(doc.id))],
 		self: { root, kbDir },
 	};
 }

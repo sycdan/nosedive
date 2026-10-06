@@ -157,13 +157,39 @@ async function select(path, row, message) {
 			return;
 		}
 		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
-		const ref = last.kindRef;
+		let ref = last.kindRef;
+		let reach = ref?.inCrudContext;
+		if (!ref && doc.kind !== "dive" && doc.kind !== "kind" && ctx.root) {
+			const context = await api(contextQuery(ctx.root, false));
+			const repoId = last.repo || bridge.id;
+			ref = context.kinds.find((kind) => kind.name === doc.kind && kind.repoId === repoId)
+				|| context.kinds.find((kind) => kind.name === doc.kind && kind.repoId === bridge.id);
+			reach = context.repos.find((repo) => repo.id === repoId)?.inCrudContext;
+			if (ref) last.kindRef = ref;
+		}
 		const kindDoc = ref ? await api("/api/doc?id=" + ref.id + "&repo=" + ref.repoId) : null;
 		const form = kindDoc
-			? metaForm(doc, ref.repoId, kindDoc.meta && kindDoc.meta.schema, ref.inCrudContext, (msg) => select(path, row, msg))
+			? metaForm(doc, last.repo || bridge.id, kindDoc.meta && kindDoc.meta.schema, reach, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[message, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[docsMadeSection(doc), message, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
+}
+
+/** Docs minted on this dive, linked from its live bridge record. */
+function docsMadeSection(doc) {
+	if (doc.kind !== "dive") return null;
+	const made = doc.links.filter((link) => link.rel === "made");
+	const rows = made.map((link) => el("li", {},
+		link.type === "doc"
+			? el("button", { class: "linkish", onclick: () => select([
+				{ id: doc.id, name: label(doc), kind: "dive" },
+				{ id: link.id, name: label(link), kind: link.kind, repo: link.repo },
+			]) }, label(link))
+			: el("span", { title: link.target }, link.target),
+		" ", link.type === "doc" ? el("span", { class: "rel" }, link.kind + " · " + link.repoName) : null));
+	return topSection("docs", "Docs", made.length
+		? el("ul", { class: "doclist" }, rows)
+		: el("p", { class: "rel" }, "No docs made on this dive yet."));
 }
 
 /** A kind: the docs of it listed above the kind doc's own body. */

@@ -669,7 +669,7 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 		"the picker lists repos",
 	);
 
-	// On a dive that scopes the hydrated repo, helm writes there and nowhere else.
+	// On a dive that scopes the hydrated repo, helm writes the doc there and its made link on the bridge.
 	write(
 		join(bridge, "kb", `${DIVE}.md`),
 		`---\nkind: dive\nid: ${DIVE}\nname: a-dive\ngist: "A dive"\nscopes:\n  - ${HYDRATED}\n---\n`,
@@ -705,6 +705,10 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	assert.equal(minted.status, 200, minted.text);
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.body.stdout)?.[1];
 	assert.equal(subject(), `crud(${id}): created card ${id}`);
+	assert.match(
+		readFileSync(join(bridge, "kb", `${DIVE}.md`), "utf8"),
+		new RegExp(`^  - ${HYDRATED}:kb/${id}\\.md:\\n      rel: made$`, "m"),
+	);
 
 	const edited = await post("/api/crud/meta", { id, repo: HYDRATED, patch: { condition: "mint" } });
 	assert.equal(edited.status, 200, edited.text);
@@ -726,11 +730,11 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	});
 	assert.equal(outOfReach.status, 409, "the bridge is not scoped, so refused before crud runs");
 	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
-	assert.equal(count(bridge), before + 1, "only the note reached the bridge");
+	assert.equal(count(bridge), before + 2, "the note and dive's made link reached the bridge");
 
 	const gone = await post("/api/crud/deck", { name: "Magic Cards", gist: "Cards" });
 	assert.equal(gone.status, 404, "there is no deck to create");
-	assert.equal(count(bridge), before + 1);
+	assert.equal(count(bridge), before + 2);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

@@ -333,7 +333,15 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 	const text = helmDocText(view, doc);
 	const block = leadingMarkdownFrontmatter(text);
 	const home = repoId ?? rc.bridge;
-	const links = doc.links.map((link) => helmLink(view, doc, home, byId, link));
+	const links = doc.links.map((link) => {
+		const shown = helmLink(view, doc, home, byId, link);
+		if (shown.type !== "doc") return shown;
+		const repoId = shown.repo ?? rc.bridge;
+		return {
+			...shown,
+			repoName: bridgeKb.find((repo) => repo.id === repoId && repo.kind === "repo")?.name ?? repoId,
+		};
+	});
 	return {
 		id: doc.id,
 		ref: home === rc.bridge || doc.kind === "kind" ? doc.id : `${home}:${doc.relPath}`,

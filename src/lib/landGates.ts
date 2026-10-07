@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
+import { toPosixPath } from "./coreParsing.js";
+import { gateDocsById, resolveGateScript } from "./gateDocs.js";
 import { commandForSpawn } from "./gitState.js";
 import { KbDoc, LinkRef, relativeDocPath } from "./kbDocs.js";
 import { isFeatEdge } from "./relGrammar.js";
-import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
 
 const GATE_VERBS = new Set(["land", "test", "drop", "lift"]);
@@ -68,29 +68,7 @@ function gateAttrBool(value: string | undefined, label: string): boolean {
 	throw new Error(`${label} must be true or false, got: ${value}`);
 }
 
-/**
- * `meta.test-script` is a bridge-relative path, resolved the same way patch and
- * prover artifacts are: no absolute paths, no traversal, no URIs. A gate that
- * cannot produce a runnable script is a hard failure -- silently skipping one
- * would turn a broken gate into a passing land.
- */
-export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
-	const label = `gate ${doc.id} (${doc.relPath}) meta.test-script`;
-	const rel = doc.metaScalars["test-script"];
-	if (!rel) {
-		throw new Error(
-			`${label} is missing; add one naming the script that proves this gate, e.g. kb/artifacts/<quid>.mjs`,
-		);
-	}
-	if (isAbsolute(rel) || unsafeLinkPath(rel)) {
-		throw new Error(`${label} must be a bridge-relative path without traversal: ${rel}`);
-	}
-	const path = resolveFrom(bridgeDir, rel);
-	if (!existsSync(path) || !statSync(path).isFile()) {
-		throw new Error(`${label} does not resolve to a file: ${formatPath(path)} -- create it`);
-	}
-	return path;
-}
+export { resolveGateScript };
 
 /**
  * An edge a wide walk must not follow, and the reason `collectReachableGates`
@@ -134,7 +112,7 @@ function walkGates(
 	followEdge: (link: LinkRef, target: KbDoc) => boolean,
 ): LandGate[] {
 	const GATE_REL = gateRel(verb);
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const byId = gateDocsById(kbDocs);
 	const claimed = new Map<string, LandGate>();
 	const visited = new Set<string>();
 	const order: string[] = [];
@@ -251,7 +229,7 @@ export function collectDiveGates(
 	bridgeDir: string,
 ): LandGate[] {
 	const GATE_REL = gateRel(verb);
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const byId = gateDocsById(kbDocs);
 	const gates: LandGate[] = [];
 	const seen = new Set<string>();
 

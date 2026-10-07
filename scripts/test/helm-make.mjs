@@ -56,7 +56,10 @@ test("with no dive, helm offers the bridge's kinds; making a repo records a dive
 		offered.map((kind) => kind.name),
 		["kind", "memo", "repo"],
 	);
-	assert.deepEqual(offered.find((kind) => kind.name === "repo").schema.anyOf[0].required, ["url"]);
+	const repoSchema = offered.find((kind) => kind.name === "repo").schema;
+	assert.deepEqual(repoSchema.required, ["remotes"]);
+	assert.equal(repoSchema.anyOf, undefined);
+	assert.deepEqual(Object.keys(repoSchema.properties.remotes.properties), ["cloud", "local"]);
 
 	// The three steps the Add modal runs with no dive.
 	const recorded = await post("/api/crud/dive", {
@@ -71,14 +74,19 @@ test("with no dive, helm offers the bridge's kinds; making a repo records a dive
 	const jumped = await post("/api/run", { verb: "jump", ref: dive });
 	assert.match(jumped.text, /\[exit 0\]\s*$/, jumped.text);
 
-	const bare = await post("/api/crud/mint", { repo: bridgeId, kind: "repo", gist: "No url" });
-	assert.equal(bare.status, 400, "a new repo doc gives its url");
-	assert.match(bare.body.error, /required property 'url'/);
+	const bare = await post("/api/crud/mint", {
+		repo: bridgeId,
+		kind: "repo",
+		gist: "No remotes",
+		meta: { url: "https://example.invalid/cards" },
+	});
+	assert.equal(bare.status, 400, "a new repo doc gives its remotes");
+	assert.match(bare.body.error, /required property 'remotes'/);
 	const minted = await post("/api/crud/mint", {
 		repo: bridgeId,
 		kind: "repo",
 		gist: "Cards",
-		meta: { url: "X:/srv/repos/cards" },
+		meta: { url: "https://example.invalid/cards", remotes: { local: "X:/srv/repos/cards" } },
 	});
 	assert.equal(minted.status, 200, minted.text);
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.body.stdout)?.[1];

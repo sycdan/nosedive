@@ -154,3 +154,39 @@ test("seed skips minting when a matching bridge repo doc already exists", () => 
 		[`${backlogId}.md`, "existing-repo.md"],
 	);
 });
+
+const GIVEN_ID = "01a11663-816a-7104-aa58-cf138eda6d29";
+const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
+
+test("seed --repo-id mints the bridge's own repo doc with that id, and everything names it", () => {
+	const bridgeDir = newBridge("given-id");
+	runTool("git", ["remote", "add", "origin", bareRepo(tmp, "given-id.git")], bridgeDir);
+	assertOk(
+		run(["seed", "--headless", "--file", "AGENTS.md", "--repo-id", GIVEN_ID], bridgeDir, ""),
+		"seed failed",
+	);
+	const config = readFileSync(join(bridgeDir, ".nosedive", "config.yaml"), "utf8");
+	assert.match(config, new RegExp(`^bridge: ${GIVEN_ID}$`, "m"));
+	assert.match(readFileSync(join(bridgeDir, "kb", `${GIVEN_ID}.md`), "utf8"), /^kind: repo$/m);
+	const backlog = /^backlog: (\S+)$/m.exec(config)[1];
+	const scoped = new RegExp(`^  - ${GIVEN_ID}:$`, "m");
+	assert.match(readFileSync(join(bridgeDir, "kb", `${backlog}.md`), "utf8"), scoped);
+	assert.match(readFileSync(join(bridgeDir, "kb", `${KB_FEAT}.md`), "utf8"), scoped);
+
+	assertOk(
+		run(["seed", "--headless", "--repo-id", GIVEN_ID], bridgeDir, ""),
+		"a repeat run with the same id is a no-op",
+	);
+	const other = run(["seed", "--headless", "--repo-id", KB_FEAT], bridgeDir, "");
+	assert.notEqual(other.status, 0, "another id is refused");
+	assert.match(other.stderr, new RegExp(`own repo doc is already ${GIVEN_ID}`));
+});
+
+test("seed --no-agents writes no instruction file", () => {
+	const bridgeDir = newBridge("no-agents");
+	runTool("git", ["remote", "add", "origin", bareRepo(tmp, "no-agents.git")], bridgeDir);
+	assertOk(run(["seed", "--headless", "--no-agents"], bridgeDir, ""), "seed failed");
+	assert.ok(existsSync(join(bridgeDir, ".nosedive", "config.yaml")));
+	for (const file of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"])
+		assert.ok(!existsSync(join(bridgeDir, file)), `${file} was written`);
+});

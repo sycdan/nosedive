@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { Marked } from "marked";
 
-import { BUILTIN_KIND_IDS, builtinKindPath } from "./builtinKinds.js";
+import { BUILTIN_KIND_IDS, builtinDocPath } from "./builtinKinds.js";
 import { instanceFailures, type InstanceFailure } from "./kindInstances.js";
 import { kindSources, loadKinds, repoKbDir, type KindSource } from "./kinds.js";
 import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME, LEGACY_CONFIG_FILENAME } from "./constants.js";
@@ -347,7 +347,7 @@ export function helmDoc(cwd: string, id: string, repoId?: string): HelmDoc | und
 	}
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	// A repo that takes a shipped kind reads it from the bridge.
-	const builtin = builtinKindPath(id);
+	const builtin = builtinDocPath(id);
 	const doc = builtin ? readKbDoc(builtin, rc.bridgeDir) : byId.get(id);
 	if (!doc) return undefined;
 	const text = helmDocText(view, doc);

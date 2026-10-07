@@ -36,9 +36,9 @@ function newMeta(inputs, required) {
 	for (const input of inputs) {
 		const key = input.name;
 		if (input.dataset.kind === "boolean") {
-			if (input.checked || required.includes(key)) meta[key] = input.checked;
+			if (input.checked || required.includes(key)) setPath(meta, key, input.checked);
 		} else if (input.value !== "") {
-			meta[key] = input.dataset.kind === "number" || input.dataset.kind === "integer" ? Number(input.value) : input.value;
+			setPath(meta, key, input.dataset.kind === "number" || input.dataset.kind === "integer" ? Number(input.value) : input.value);
 		}
 	}
 	return meta;
@@ -53,14 +53,13 @@ function newMeta(inputs, required) {
 function createDialog(kind) {
 	const schema = kind.schema || {};
 	const properties = schema.properties || {};
-	// A first anyOf's keys are what a new doc gives; the others admit older docs (the repo kind's url).
-	const required = [...(schema.required || []), ...((schema.anyOf || [])[0]?.required || [])];
+	const required = schema.required || [];
 	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
 	const name = el("input", { type: "text", placeholder: "name (optional)", "aria-label": "name" });
 	// A property built from other schemas (a kind's own schema, say) is no simple field.
 	const composite = (spec) => !spec.type && !Array.isArray(spec.enum) && !!(spec.allOf || spec.anyOf || spec.oneOf || spec.$ref || spec.properties);
 	const inputs = Object.entries(properties).filter(([, spec]) => !composite(spec || {}))
-		.map(([key, spec]) => fieldFor(key, spec || {}, undefined)).filter((input) => !input.disabled);
+		.flatMap(([key, spec]) => fieldsFor(key, spec || {}, undefined)).filter((input) => !input.disabled);
 	for (const input of inputs) if (required.includes(input.name) && input.dataset.kind !== "boolean") input.required = true;
 	const rows = inputs.map((input) => el("label", { class: "field" },
 		el("span", {}, input.name + (required.includes(input.name) ? " *" : "")), input));

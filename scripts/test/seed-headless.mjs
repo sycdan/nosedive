@@ -215,7 +215,7 @@ test("seed-headless", () => {
 	assert.match(seedHelp.stdout, /Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\]/);
 	assert.match(
 		seedHelp.stdout,
-		/Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\] \[--no-push\]\n\nCreate, migrate, or edit bridge config/,
+		/Usage: nosedive seed \[--file <path>\]\.\.\. \[--headless\] \[--no-push\] \[--no-agents\] \[--repo-id <quid>\]\n\nCreate, migrate, or edit bridge config/,
 	);
 
 	const initHelp = run(["init", "--help"], noBridge);

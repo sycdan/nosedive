@@ -228,8 +228,12 @@ function bridgeRemoteUrls(bridgeDir: string): string[] {
  * only. The name is the bridge directory's basename, which is what the L1
  * migration's `ensureBridgeRepoDoc` also uses.
  */
-function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
-	const id = uuid7AtMs(Date.now());
+function mintBridgeRepoDoc(
+	bridgeDir: string,
+	kbDir: string,
+	io: CommandIo,
+	id = uuid7AtMs(Date.now()),
+): MintedDoc {
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
 	mkdirSync(kbDir, { recursive: true });
@@ -370,10 +374,9 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 
 	// Classified before prompting and before the config write, so an unusable
 	// set of instruction files costs the pilot nothing.
-	const instructionWrites = planAgentInstructions(
-		resolveInstructionTargets(bridgeDir, options.files),
-		io,
-	);
+	const instructionWrites = options.noAgents
+		? []
+		: planAgentInstructions(resolveInstructionTargets(bridgeDir, options.files), io);
 
 	const settings = loadSplitRcSettings(bridgeDir);
 
@@ -416,7 +419,13 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	if (selfDoc && !selfDoc.id) {
 		throw new Error(`bridge repo document ${formatPath(selfDoc.path)} has no id`);
 	}
-	const mintedBridgeRepoDoc = selfDoc ? undefined : mintBridgeRepoDoc(bridgeDir, kbDir, io);
+	if (options.repoId && selfDoc && selfDoc.id !== options.repoId)
+		throw new Error(
+			`seed --repo-id ${options.repoId}: this bridge's own repo doc is already ${selfDoc.id} (${formatPath(selfDoc.path)})`,
+		);
+	const mintedBridgeRepoDoc = selfDoc
+		? undefined
+		: mintBridgeRepoDoc(bridgeDir, kbDir, io, options.repoId);
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 

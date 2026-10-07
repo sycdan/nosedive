@@ -19,13 +19,20 @@ import {
 	parseMarkdownDoc,
 	parseYamlBlock,
 	toPosixPath,
+	uuidLike,
 } from "./coreParsing.js";
 import { nosediveInvocation, packageMigrationDocs, packageRoot } from "./packageBacklog.js";
 import { levelMigration, levelsInGap } from "./packageLevels.js";
 import { readGitAuthorIdentity } from "./gitProcess.js";
 
 export function parseSeedOptions(args: string[]): SeedOptions {
-	const options: SeedOptions = { help: false, headless: false, noPush: false, files: [] };
+	const options: SeedOptions = {
+		help: false,
+		headless: false,
+		noPush: false,
+		files: [],
+		noAgents: false,
+	};
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === "-h" || arg === "--help") {
@@ -38,6 +45,16 @@ export function parseSeedOptions(args: string[]): SeedOptions {
 		}
 		if (arg === "--no-push") {
 			options.noPush = true;
+			continue;
+		}
+		if (arg === "--no-agents") {
+			options.noAgents = true;
+			continue;
+		}
+		if (arg === "--repo-id" || arg.startsWith("--repo-id=")) {
+			const value = arg === "--repo-id" ? args[++i] : arg.slice("--repo-id=".length);
+			if (!value || !uuidLike(value)) throw new Error("seed --repo-id requires a quid");
+			options.repoId = value.toLowerCase();
 			continue;
 		}
 		if (arg === "--file" || arg.startsWith("--file=")) {

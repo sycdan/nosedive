@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
-import { BUILTIN_KIND_IDS } from "./builtinKinds.js";
+import { BUILTIN_GATE_IDS, BUILTIN_KIND_IDS } from "./builtinKinds.js";
 import { formatPath, toPosixPath } from "./coreParsing.js";
 import { runGit } from "./gitProcess.js";
 import { readKbDoc } from "./kbDocs.js";
@@ -29,6 +29,7 @@ export function shippedFiles(kbDir: string): string[] {
 	return readdirSync(kbDir)
 		.filter((file) => file.endsWith(".md") && isZerostar(basename(file, ".md")))
 		.filter((file) => !BUILTIN_KIND_IDS.has(basename(file, ".md")))
+		.filter((file) => !BUILTIN_GATE_IDS.has(basename(file, ".md")))
 		.filter((file) => {
 			const frontmatter = FRONTMATTER.exec(readFileSync(join(kbDir, file), "utf8"))?.[1] ?? "";
 			return !/^scopes:/m.test(frontmatter);

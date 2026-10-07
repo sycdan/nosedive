@@ -57,19 +57,38 @@ function fieldFor(key, spec, value) {
 	return input;
 }
 
+/** A field per property; an object of named strings (a repo's remotes) gets one per key, named key.sub. */
+function fieldsFor(key, spec, value) {
+	const subs = spec.type === "object" && spec.properties ? Object.entries(spec.properties) : [];
+	if (!subs.length || subs.some(([, sub]) => (sub || {}).type !== "string")) return [fieldFor(key, spec, value)];
+	return subs.map(([sub, subSpec]) => fieldFor(key + "." + sub, subSpec, value == null ? undefined : value[sub]));
+}
+
+function getPath(object, name) {
+	return name.split(".").reduce((at, key) => (at == null ? undefined : at[key]), object);
+}
+
+function setPath(object, name, value) {
+	const keys = name.split(".");
+	const last = keys.pop();
+	let at = object;
+	for (const key of keys) at = at[key] = at[key] && typeof at[key] === "object" ? at[key] : {};
+	at[last] = value;
+}
+
 /** What changed in the form, as a crud --meta patch: a cleared field removes its key. */
 function patchFrom(inputs, meta) {
 	const patch = {};
 	for (const input of inputs) {
 		if (input.disabled) continue;
 		const key = input.name;
-		const had = meta[key];
+		const had = getPath(meta, key);
 		let next;
 		if (input.dataset.kind === "boolean") next = input.checked;
 		else if (input.value === "") next = null;
 		else if (input.dataset.kind === "number" || input.dataset.kind === "integer") next = Number(input.value);
 		else next = input.value;
-		if (next === null ? had != null : next !== had) patch[key] = next;
+		if (next === null ? had != null : next !== had) setPath(patch, key, next);
 	}
 	return patch;
 }
@@ -79,7 +98,7 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	const properties = (schema && schema.properties) || {};
 	const required = (schema && schema.required) || [];
 	const meta = doc.meta || {};
-	const inputs = Object.entries(properties).map(([key, spec]) => fieldFor(key, spec || {}, meta[key]));
+	const inputs = Object.entries(properties).flatMap(([key, spec]) => fieldsFor(key, spec || {}, meta[key]));
 	if (!inputs.length) return null;
 	const rows = inputs.map((input) => el("label", { class: "field" },
 		el("span", {}, input.name + (required.includes(input.name) ? " *" : "")), input));

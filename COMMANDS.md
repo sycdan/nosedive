@@ -333,7 +333,7 @@ More: nosedive render 88bf4e10-3fd7-58c0-a247-f2dae9c886e3
 npx -y nosedive@2026.9.18-1789698885570 seed --help
 ```
 ```md
-Usage: nosedive seed [--file <path>]... [--headless] [--no-push]
+Usage: nosedive seed [--file <path>]... [--headless] [--no-push] [--no-agents] [--repo-id <quid>]
 
 Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level.
 

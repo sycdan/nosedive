@@ -418,4 +418,8 @@ export interface SeedOptions {
 	noPush: boolean;
 	/** Agent instruction files named with `--file`; empty means autodetect. */
 	files: string[];
+	/** Write no agent instruction files. */
+	noAgents: boolean;
+	/** The id the bridge's own repo doc is minted with, instead of a fresh one. */
+	repoId?: string;
 }

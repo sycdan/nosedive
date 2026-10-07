@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { builtinKindPath } from "./builtinKinds.js";
+import { builtinDocPath } from "./builtinKinds.js";
 import { formatPath, readNosediveRc, toPosixPath } from "./coreParsing.js";
 import { loadKbDocs, type ScopeRef } from "./kbDocs.js";
 import { splitRepoRef } from "./kbRefs.js";
@@ -45,7 +45,7 @@ export function checkLinkTargets(
 	const refused: string[] = [];
 	for (const { key, path } of entries) {
 		const builtin = KB_DOC.exec(toPosixPath(splitRepoRef(path)?.path ?? path));
-		if (builtin?.[1] === "kb" && builtinKindPath(builtin[2]!.toLowerCase())) continue;
+		if (builtin?.[1] === "kb" && builtinDocPath(builtin[2]!.toLowerCase())) continue;
 		const qualified = splitRepoRef(path);
 		if (qualified && qualified.repo !== source.id) {
 			const problem = repoLinkProblem(rc, qualified, scopes, source, bridge);

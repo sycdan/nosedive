@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { builtinKindPath } from "./builtinKinds.js";
+import { builtinDocPath } from "./builtinKinds.js";
 import { toPosixPath, type NosediveRc } from "./coreParsing.js";
 import { gitOutput } from "./gitProcess.js";
 import { readKbDoc, type KbDoc, type LinkRef, type ScopeRef } from "./kbDocs.js";
@@ -76,7 +76,7 @@ export function resolveRepoRef(kbDocs: KbDoc[], rc: NosediveRc, ref: string): Kb
 	const path = toPosixPath(qualified.path);
 	if (qualified.repo === rc.bridge) {
 		const builtin = /^kb\/([0-9a-f-]{36})\.md$/.exec(path)?.[1];
-		const builtinPath = builtin && builtinKindPath(builtin);
+		const builtinPath = builtin && builtinDocPath(builtin);
 		if (builtinPath) return readKbDoc(builtinPath, rc.bridgeDir);
 		const doc = kbDocs.find((candidate) => candidate.relPath === path);
 		if (!doc) throw new Error(`not found: ${ref} (no ${path} in the bridge)`);
@@ -115,7 +115,7 @@ export function linkedDoc(
 	link: LinkRef,
 	byId: Map<string, KbDoc>,
 ): KbDoc | undefined {
-	const builtin = builtinKindPath(link.id);
+	const builtin = builtinDocPath(link.id);
 	if (builtin) return readKbDoc(builtin, rc.bridgeDir);
 	const fromRepo = from.home?.repoId ?? rc.bridge;
 	const repoId = link.repo ?? fromRepo;

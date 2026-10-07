@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import { builtinKindPath } from "./builtinKinds.js";
+import { builtinDocPath } from "./builtinKinds.js";
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { latestLoggedSection, type LoggedSection } from "./kbSections.js";
 import {
@@ -250,7 +250,7 @@ export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
  * frontmatter holds, and nothing else enforces the filename.
  */
 export function readKbDocById(kbDir: string, bridgeDir: string, id: string): KbDoc | undefined {
-	const builtin = builtinKindPath(id);
+	const builtin = builtinDocPath(id);
 	if (builtin) return readKbDoc(builtin, bridgeDir);
 	const path = join(kbDir, `${id}.md`);
 	if (!existsSync(path) || !statSync(path).isFile()) return undefined;

@@ -3,13 +3,20 @@ import { join, relative } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import { builtinKindPath } from "./builtinKinds.js";
+import { builtinKindPath, REPO_CREATE_GATE_ID } from "./builtinKinds.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { checkLinkTargets } from "./crudLinks.js";
 import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById, type KbDoc } from "./kbDocs.js";
 import { parseScopeRefs } from "./kbRefs.js";
-import { checkDocMeta, isBridge, validateMeta, type KindDoc, type KindSource } from "./kinds.js";
+import {
+	checkDocMeta,
+	isBridge,
+	REPO_KIND_ID,
+	validateMeta,
+	type KindDoc,
+	type KindSource,
+} from "./kinds.js";
 import { entriesToMapping, isMapping, mappingToEntries, mergePatch } from "./mergePatch.js";
 import { writeFileAtomic } from "./renderPlan.js";
 import { reconcileLinkTarget } from "./repoFeatScopes.js";
@@ -115,16 +122,16 @@ export function mintDoc(
 	);
 	io.log(`Minted ${formatPath(path)}`);
 	commitBridgeDocs(kind.source.root, `crud(${id}): created ${kind.name} ${name ?? id}`, [path], io);
-	linkMintToActiveDive(kind.source, id, io);
+	linkMintToActiveDive(kind, id, io);
 	return id;
 }
 
-/** The live dive is jump's and land's record, even when the doc lives in __self. */
-function linkMintToActiveDive(
-	source: KindSource,
-	id: string,
-	io: { log(message: string): void },
-): void {
+/**
+ * The live dive is jump's and land's record, even when the doc lives in __self.
+ * A repo doc also brings the shipped repo-create gate, which makes the repo at land.
+ */
+function linkMintToActiveDive(kind: KindDoc, id: string, io: { log(message: string): void }): void {
+	const source = kind.source;
 	const rc = readNosediveRc(process.cwd());
 	const activeId = readActiveDiveId(rc.workspaceDir);
 	if (!activeId || !rc.kbDir) return;
@@ -134,6 +141,8 @@ function linkMintToActiveDive(
 	if (!source.id) throw new Error(`cannot link ${id} from the active dive: its repo has no id`);
 	const target = source.id === rc.bridge ? `kb/${id}.md` : `${source.id}:kb/${id}.md`;
 	reconcileLinkTarget(dive.path, target, "made");
+	if (kind.id === REPO_KIND_ID)
+		reconcileLinkTarget(dive.path, `kb/${REPO_CREATE_GATE_ID}.md`, "land.gate");
 	commitBridgeDocs(rc.bridgeDir, `dive(${dive.name}): linked made ${id}`, [dive.path], io);
 }
 

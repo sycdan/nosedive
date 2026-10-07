@@ -19,15 +19,15 @@ const GATE = "00000000-0000-7d9b-bd90-df6c304acccb";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 
-/** A jumped dive on the kb feat that has minted repo `name`, its local remote `../<name>`. */
-function diveWithRepo(bridge, name) {
+/** A jumped dive on the kb feat that has minted repo `name`, its local remote `../<name>` unless given. */
+function diveWithRepo(bridge, name, local = `../${name}`) {
 	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Add", name], bridge, "Add a repo.\n");
 	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)[1]], bridge), "jump failed");
 	const minted = run(
 		["crud", "repo", "--name", name, "--meta", "-", `The ${name} repo`],
 		bridge,
-		`remotes:\n  local: ../${name}\n`,
+		`remotes:\n  local: ${local}\n`,
 	);
 	assertOk(minted, "crud repo failed");
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(minted.stdout)[1];
@@ -77,6 +77,15 @@ test("a repo doc minted on a dive brings the repo-create gate, which makes the r
 		readFileSync(join(bridge, "workspace", "cards", ".nosedive", "config.yaml"), "utf8"),
 		new RegExp(`^bridge: ${id}$`, "m"),
 	);
+});
+
+test("{id} in a repo's remotes is minted as the doc's id, and land creates the repo there", () => {
+	const { bridge } = seededBridge(tmp, "by-id", "pilot@nosedive.invalid");
+	const { id } = diveWithRepo(bridge, "ledger", "../repos/{id}");
+	const doc = readFileSync(join(bridge, "workspace", "__self", "kb", `${id}.md`), "utf8");
+	assert.match(doc, new RegExp(`^ {4}local: \\.\\./repos/${id}$`, "m"));
+	assertOk(run(["land"], bridge), "land failed");
+	assert.ok(existsSync(join(tmp, "repos", `${id}.git`)), "the bare repo is named by id");
 });
 
 test("the gate keeps a repo whose trunk is already the bridge of the same doc", () => {

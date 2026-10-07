@@ -76,6 +76,18 @@ export function matchDocs(kind: KindDoc, gist: string): CrudMatch[] {
  * requires meta refuses a mint without it rather than committing a doc it
  * would reject.
  */
+/** A repo's remotes may say `{id}` for the id it is about to be minted with. */
+function withRemoteIds(meta: Record<string, unknown>, id: string): Record<string, unknown> {
+	if (!isMapping(meta.remotes)) return meta;
+	const remotes = Object.fromEntries(
+		Object.entries(meta.remotes).map(([key, value]) => [
+			key,
+			typeof value === "string" ? value.replaceAll("{id}", id) : value,
+		]),
+	);
+	return { ...meta, remotes };
+}
+
 export function mintDoc(
 	kind: KindDoc,
 	gist: string,
@@ -101,6 +113,7 @@ export function mintDoc(
 			`a ${kind.name} cannot be minted with that meta; pass what its kind requires with --meta -:\n  ${errors.join("\n  ")}`,
 		);
 	const id = uuid7AtMs(Date.now());
+	if (kind.id === REPO_KIND_ID) meta = withRemoteIds(meta, id);
 	const path = join(kind.source.kbDir, `${id}.md`);
 	const title = gist.trim();
 	writeFileAtomic(

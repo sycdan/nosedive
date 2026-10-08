@@ -40,7 +40,13 @@ export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 // Exported so the merge is tested against RFC 7386's own examples.
 export { mergePatch } from "./lib/mergePatch.js";
 // Exported so helm's picker and its view of a dive's __self checkout are tested below the server.
-export { helmFeats, helmPicker, helmPickerLoad, helmRepoList } from "./lib/helmPicker.js";
+export {
+	helmConfigNotes,
+	helmFeats,
+	helmPicker,
+	helmPickerLoad,
+	helmRepoList,
+} from "./lib/helmPicker.js";
 // Exported so a doc's links, those into other repos among them, are tested below the server.
 export { helmDoc, helmKindCounts, helmKindDocs } from "./lib/helm.js";
 // Exported so what the dive bar can create is tested below the server.

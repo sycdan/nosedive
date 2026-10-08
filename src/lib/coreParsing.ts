@@ -72,8 +72,6 @@ export interface NosediveRc {
 	kbDir?: string;
 	/** `bridge`: id of the bridge's own `kind: repo` doc. */
 	bridge?: string;
-	/** `picker-level`: how many `.feat` links below the backlog helm's picker lists. */
-	pickerLevel: number;
 	pilotName?: string;
 	pilotEmail?: string;
 	/** `<command>-prompt`: id of the `kind: idea` doc a command builds its prompt from. */
@@ -324,14 +322,6 @@ export function configCompatibilityLevel(config: SimpleYaml, label: string): num
 	return level;
 }
 
-function configPickerLevel(config: SimpleYaml, label: string): number {
-	const raw = config.scalars["picker-level"];
-	if (raw === undefined) return 1;
-	if (!/^[12]$/.test(raw))
-		throw new Error(`${formatPath(label)}: picker-level is 1 or 2, not ${JSON.stringify(raw)}`);
-	return Number(raw);
-}
-
 export function readNosediveRc(start: string): NosediveRc {
 	const resolved = findBridgeConfig(start);
 	if (!resolved) throw noBridgeConfigError();
@@ -355,7 +345,6 @@ export function readNosediveRc(start: string): NosediveRc {
 		backlog,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		bridge: rc.scalars.bridge,
-		pickerLevel: configPickerLevel(rc, path),
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
 		prompts: parseCommandPrompts(rc.scalars),

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -16,7 +16,8 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmDives, helmFeats, helmPicker, helmPickerLoad, helmRepoList } = await import(libUrl);
+const { helmConfigNotes, helmDives, helmFeats, helmPicker, helmPickerLoad, helmRepoList } =
+	await import(libUrl);
 const tmp = createTmp("helm-picker");
 const minted = run(["mint", "16"], tmp);
 assertOk(minted, "mint failed");
@@ -275,4 +276,20 @@ test("a deck's .feat children, and the repos it scopes, inherited", () => {
 	assert.deepEqual(repos(A), [R_A, R_BACKLOG], "its own and the backlog's");
 	assert.deepEqual(repos(B), [R_BACKLOG], "none of its own: its parent's");
 	assert.deepEqual(repos(undefined), [R_BACKLOG], "the backlog's when none is named");
+});
+
+test("picker-level is retired: helm ignores the key and notes it", (t) => {
+	const configPath = join(bridge, ".nosedive", "config.yaml");
+	const before = readFileSync(configPath, "utf8");
+	t.after(() => write(configPath, before));
+	assert.deepEqual(helmConfigNotes(bridge), []);
+	for (const value of ["2", "nonsense"]) {
+		write(configPath, `${before}picker-level: ${value}\n`);
+		assert.deepEqual(
+			helmPicker(bridge).defaultChain,
+			[A],
+			`picker-level: ${value} changes nothing`,
+		);
+		assert.match(helmConfigNotes(bridge).join("\n"), /picker-level in .* is retired and ignored/);
+	}
 });

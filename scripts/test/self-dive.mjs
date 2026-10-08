@@ -72,15 +72,12 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	runTool("git", ["add", ".nosedive/config.yaml"], self);
 	runTool("git", ["commit", "-m", "a picker"], self);
 
-	// Helm shows the bridge as the dive has it; the live config sets its level.
+	// Helm shows the bridge as the dive has it; the retired key changes nothing.
 	const view = helmPicker(bridge);
-	assert.equal(view.level, 1);
-	assert.equal(view.choices[0].id, KB_FEAT);
+	assert.deepEqual(view.defaultChain, [KB_FEAT]);
 	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
 	assert.equal(view.backlog.id, backlog);
-	assert.equal(view.locked, true, "on a dive the pick is locked");
-	assert.equal(view.pick, KB_FEAT);
-	assert.equal(helmPicker(bridge, KB_FEAT).pick, KB_FEAT, "a pick cannot move a locked one");
+	assert.equal(view.locked.ref, KB_FEAT, "on a dive the deck locks to its feat");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -141,16 +138,11 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 		"with no dive helm offers the bridge's kinds, to make on a new dive",
 	);
 
-	// With no dive the pilot picks among what the backlog's feat links reach.
-	const picked = helmPicker(bridge, KB_FEAT);
-	assert.equal(picked.locked, false);
-	assert.ok(picked.choices.some((choice) => choice.id === KB_FEAT));
-	assert.equal(picked.pick, KB_FEAT);
-	assert.equal(
-		helmPicker(bridge, "not-a-pick").pick,
-		KB_FEAT,
-		"an unknown pick falls back to first",
-	);
+	// With no dive the deck is unlocked, the kb feat among the rows and the default.
+	const picked = helmPicker(bridge);
+	assert.equal(picked.locked, undefined);
+	assert.ok(picked.rows.some((row) => row.id === KB_FEAT));
+	assert.deepEqual(picked.defaultChain, [KB_FEAT]);
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {

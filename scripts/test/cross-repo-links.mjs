@@ -17,7 +17,7 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmDoc, helmFeats, helmPicker } = await import(libUrl);
+const { helmDoc, helmFeats, helmPicker, helmPickerLoad } = await import(libUrl);
 const tmp = createTmp("cross-repo-links");
 const B_REPO = "01a0ff4a-e058-7744-b150-cdc7928f345d";
 const C_REPO = "01a0ff4a-e059-7323-a55b-3a5064d11e8e";
@@ -117,9 +117,16 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 	);
 	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "B is not hydrated");
 
-	// Helm's picker offers the feat, and its tree expands into B's feat.
-	assert.ok(helmPicker(bridge).choices.some((feat) => feat.id === FEAT));
-	assert.ok(helmPicker(bridge, FEAT).feats.some((feat) => feat.id === B_FEAT));
+	// Helm's picker lists B's feat unread, under the feat; Load reads it.
+	const { rows } = helmPicker(bridge);
+	const unread = rows.find((row) => row.ref === B_FEAT_LINK);
+	assert.ok(rows.some((row) => row.id === FEAT));
+	assert.equal(unread.load, true);
+	const [loaded] = helmPickerLoad(bridge, unread.chain).rows;
+	assert.deepEqual(
+		{ ref: loaded.ref, gist: loaded.gist, load: loaded.load },
+		{ ref: B_FEAT_LINK, gist: "Work in B", load: undefined },
+	);
 	const cached = helmDoc(bridge, FEAT).links.find((link) => link.id === B_FEAT);
 	assert.deepEqual(
 		{ type: cached.type, repo: cached.repo, rel: cached.rel, gist: cached.gist },

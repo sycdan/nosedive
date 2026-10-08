@@ -10,6 +10,7 @@ import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { assertBridgeInStep } from "../lib/bridgeTrunk.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { LAND_IN_FLIGHT_ENV, NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
+import { diveGateView } from "../lib/diveGateView.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
 	formatPath,
@@ -412,6 +413,7 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	 * already there would block unrelated work. Dirty scopes were refused
 	 * above, so a change is a commit past the pin.
 	 */
+	const gateDocs = diveGateView(kbDocs, dive, rc);
 	const gateRoots = [
 		dive,
 		...(feat ? [feat] : []),
@@ -420,7 +422,18 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 			.map(({ scope }) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	const gates = collectFeatGates("land", gateRoots, kbDocs, rc.bridgeDir);
+	const gates = collectFeatGates(
+		"land",
+		gateRoots
+			.map(
+				(doc) =>
+					gateDocs.find((entry) => entry.id === doc.id) ??
+					(kbDocs.some((entry) => entry.id === doc.id) ? undefined : doc),
+			)
+			.filter((doc): doc is KbDoc => doc !== undefined),
+		gateDocs,
+		rc.bridgeDir,
+	);
 	// Before the run, not after: a gate whose source differs from what will be
 	// published has already made its own result meaningless, green or red. Before
 	// the stash too, which is why no pre-push hook can stand in for this.

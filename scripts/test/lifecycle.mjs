@@ -104,7 +104,15 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	runTool("git", ["push"], bridge);
 
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate repo failed");
-	const first = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
+	// This first dive authors gates in the live bridge. Scoped bridge gate
+	// authoring is covered separately in self-gates.mjs.
+	const bridgeId = /^bridge: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const first = run(
+		["record.dive", "--feat", featId, "--diver", diver, "--unscope", bridgeId],
+		bridge,
+	);
 	assertOk(first, "first record.dive failed");
 	const firstId = recordedDiveId(first.stdout);
 	assertFeatDiveRel(featPath, firstId, "planned\\.dive");
@@ -246,9 +254,6 @@ meta:
 	const secondId = recordedDiveId(second.stdout);
 	assertFeatDiveRel(featPath, secondId, "planned\\.dive");
 	annotateDiveLink(featPath, secondId);
-	const noDiveGates = run(["test"], bridge);
-	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
-	assert.match(noDiveGates.stderr, /--full/);
 	assertOk(
 		run(
 			["record.dive", "--ref", secondId, "--brief", "-"],
@@ -259,6 +264,9 @@ meta:
 	);
 	assertDiveLinkAttrs(featPath, secondId, "planned.dive");
 	assertOk(run(["jump"], bridge), "second jump failed");
+	const noDiveGates = run(["test"], bridge);
+	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
+	assert.match(noDiveGates.stderr, /--full/);
 	assertFeatDiveRel(featPath, secondId, "jumped\\.dive");
 	assertDiveLinkAttrs(featPath, secondId, "jumped.dive");
 	write(join(worktree, "landed.txt"), "landed work\n");

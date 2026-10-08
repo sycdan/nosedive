@@ -45,6 +45,11 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	const { bridge, origin } = seededBridge(tmp, "first-gate-arc", diver);
 
 	// 1. Seed a bridge, register a repo, pitch a feat, record a dive on it, jump.
+	// This arc exercises record.gate's live-bridge write path. With the bridge
+	// scoped, gate authoring belongs in __self instead (covered by self-gates).
+	const bridgeId = /^bridge: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
 	const source = implSource("first-gate-arc-impl");
 	const registered = run(["record.repo", source, "--name", "first-gate-arc-impl"], bridge);
 	assertOk(registered, "record.repo failed");
@@ -65,6 +70,8 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 			repoId,
 			"--work-branch",
 			"work/export-honesty",
+			"--unscope",
+			bridgeId,
 		],
 		bridge,
 		"Prove the export list stays honest.",

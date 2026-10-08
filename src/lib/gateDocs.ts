@@ -1,5 +1,5 @@
-import { existsSync, statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 import { BUILTIN_GATE_IDS, builtinDocPath } from "./builtinKinds.js";
 import { formatPath, resolveFrom } from "./coreParsing.js";
@@ -16,7 +16,7 @@ import { unsafeLinkPath } from "./proveCore.js";
 export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
 	const label = `gate ${doc.id} (${doc.relPath}) meta.test-script`;
 	// A shipped gate's script ships beside it, so it resolves in the package.
-	const root = BUILTIN_GATE_IDS.has(doc.id) ? packageRoot() : bridgeDir;
+	const root = BUILTIN_GATE_IDS.has(doc.id) ? packageRoot() : gateSourceRoot(doc, bridgeDir);
 	const rel = doc.metaScalars["test-script"];
 	if (!rel) {
 		throw new Error(
@@ -41,4 +41,34 @@ export function gateDocsById(kbDocs: KbDoc[]): Map<string, KbDoc> {
 		if (path) byId.set(id, readKbDoc(path, packageRoot()));
 	}
 	return byId;
+}
+
+/** The document and its relative path identify the checkout owning its script. */
+export function gateSourceRoot(doc: KbDoc, bridgeDir: string): string {
+	if (!doc.path) return resolve(bridgeDir);
+	return resolve(
+		dirname(doc.path),
+		...doc.relPath
+			.split(/[\\/]/)
+			.slice(0, -1)
+			.map(() => ".."),
+	);
+}
+
+export function gateChangedOnDive(doc: KbDoc, bridgeDir: string): boolean {
+	if (BUILTIN_GATE_IDS.has(doc.id) || gateSourceRoot(doc, bridgeDir) === resolve(bridgeDir))
+		return false;
+	const rel = doc.metaScalars["test-script"];
+	if (!rel) return false;
+	const liveDocPath = resolveFrom(bridgeDir, doc.relPath);
+	if (!existsSync(liveDocPath)) return true;
+	const liveDoc = readKbDoc(liveDocPath, bridgeDir);
+	const liveRel = liveDoc.metaScalars["test-script"];
+	if (!liveRel || isAbsolute(liveRel) || unsafeLinkPath(liveRel)) return true;
+	const live = resolveFrom(bridgeDir, liveRel);
+	return (
+		!existsSync(live) ||
+		!statSync(live).isFile() ||
+		!readFileSync(live).equals(readFileSync(resolveGateScript(doc, bridgeDir)))
+	);
 }

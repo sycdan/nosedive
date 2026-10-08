@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { toPosixPath } from "./coreParsing.js";
-import { gateDocsById, resolveGateScript } from "./gateDocs.js";
+import { gateChangedOnDive, gateDocsById, resolveGateScript } from "./gateDocs.js";
 import { commandForSpawn } from "./gitState.js";
 import { KbDoc, LinkRef, relativeDocPath } from "./kbDocs.js";
 import { isFeatEdge } from "./relGrammar.js";
@@ -27,6 +27,7 @@ function gateRel(verb: string): string {
 
 export interface LandGate {
 	doc: KbDoc;
+	changedOnDive?: boolean;
 	scriptPath: string;
 	gateHeight: number;
 	flaky: boolean;
@@ -140,6 +141,7 @@ function walkGates(
 					claimed.set(target.id, {
 						doc: target,
 						scriptPath: resolveGateScript(target, bridgeDir),
+						changedOnDive: gateChangedOnDive(target, bridgeDir),
 						gateHeight: gateAttrInt(link.attrs["gate-height"], `${label}: gate-height`),
 						flaky: gateAttrBool(link.attrs["test-is-flaky"], `${label}: test-is-flaky`),
 						introducedBy: doc,
@@ -250,6 +252,7 @@ export function collectDiveGates(
 		gates.push({
 			doc: target,
 			scriptPath: resolveGateScript(target, bridgeDir),
+			changedOnDive: gateChangedOnDive(target, bridgeDir),
 			gateHeight: gateAttrInt(link.attrs["gate-height"], `${label}: gate-height`),
 			flaky: gateAttrBool(link.attrs["test-is-flaky"], `${label}: test-is-flaky`),
 			introducedBy: root,
@@ -547,11 +550,12 @@ export function renderGateReport(
 		const label = `[${gate.doc.name || gate.doc.id}](${relativeDocPath(reportDoc, gate.doc)})`;
 		// Which edge won stays auditable whatever the verdict; everything else below
 		// is only worth keeping for a gate that did not pass.
+		const changed = gate.changedOnDive ? " (changed on this dive)" : "";
 		const shadowed = gate.shadowedBy.length
 			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map((doc) => relativeDocPath(reportDoc, doc)).join(", ")}`
 			: undefined;
 		if (run?.status === 0) {
-			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s`);
+			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s${changed}`);
 			if (shadowed) lines.push(shadowed);
 			continue;
 		}
@@ -560,7 +564,7 @@ export function renderGateReport(
 			: gate.flaky
 				? `failed (exit ${run.status}) -- flaky, not blocking`
 				: `FAILED (exit ${run.status})`;
-		lines.push(`- ${label}: ${verdict}`);
+		lines.push(`- ${label}: ${verdict}${changed}`);
 		lines.push(`  - script: ${gate.scriptPath}`);
 		lines.push(`  - gate-height: ${gate.gateHeight}, test-is-flaky: ${gate.flaky}`);
 		lines.push(`  - declared by: ${relativeDocPath(reportDoc, gate.introducedBy)}`);

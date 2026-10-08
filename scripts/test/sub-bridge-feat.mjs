@@ -46,7 +46,7 @@ const links = (...entries) => [
  * nothing in the sub-bridge scopes it; `subBranch` has the sub-bridge's
  * backlog scope itself, as a seeded sub-bridge's does.
  */
-function world(name, { propsBranch = BRANCH, subBranch } = {}) {
+function world(name, { propsBranch = BRANCH, subBranch, subConfig } = {}) {
 	const { bridge } = seededBridge(tmp, name, "pilot@nosedive.invalid");
 	const bridgeId = /^bridge: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
@@ -60,7 +60,8 @@ function world(name, { propsBranch = BRANCH, subBranch } = {}) {
 		doc("memo", SUB_BACKLOG, "bridge", [...subScope, ...links([`kb/${WATER}.md`, "system.feat"])]),
 	);
 	write(join(sub.source, "kb", `${WATER}.md`), doc("system", WATER, "water"));
-	runTool("git", ["add", "kb"], sub.source);
+	if (subConfig) write(join(sub.source, ".nosedive", "config.yaml"), `backlog: ${SUB_BACKLOG}\n`);
+	runTool("git", ["add", "kb", ...(subConfig ? [".nosedive"] : [])], sub.source);
 	gitCommit(sub.source, "kb");
 	runTool("git", ["push", "cloud", "main"], sub.source);
 	runTool("git", ["push", "local", "main"], sub.source);
@@ -142,6 +143,18 @@ test("the feat's repo lands on the crossing doc's branch, never the sub-bridge's
 	assert.equal(branchOf(world("self", { subBranch: "work/kb" }).bridge), BRANCH);
 	const bare = world("bare", { propsBranch: null, subBranch: "work/kb" });
 	assert.equal(branchOf(bare.bridge), `bare-main/water-${WATER}`);
+});
+
+test("crud re-renders a hydrated sub-bridge's backlog when its links change", () => {
+	const { bridge, checkout } = world("render", { subConfig: true });
+	const recorded = run(["crud", "dive", "--feat", WATER_REF, "Water"], bridge, "Work.\n");
+	assertOk(recorded, "crud dive failed");
+	assertOk(run(["jump", `kb/${recordedDiveId(recorded.stdout)}.md`], bridge), "jump failed");
+	const patch = `kb/${WATER}.md:\n  rel: system.feat\n`;
+	assertOk(run(["crud", SUB_BACKLOG, "--links", "-"], bridge, patch), "backlog patch failed");
+	const backlog = readFileSync(join(checkout, "kb", `${SUB_BACKLOG}.md`), "utf8");
+	assert.match(backlog, /^## System$/m, "the sub-bridge's backlog lists its system feat");
+	assert.equal(git(["status", "--porcelain", "--", "kb"], checkout), "");
 });
 
 test("a dive that does not scope its feat's repo writes nothing there", () => {

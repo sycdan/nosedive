@@ -6,6 +6,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { builtinKindPath, REPO_CREATE_GATE_ID } from "./builtinKinds.js";
 import { renderUpdatedBacklogMemo } from "./backlogDives.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
+import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
 import { checkLinkTargets } from "./crudLinks.js";
 import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
 import { loadKbDocs, readActiveDiveId, readKbDoc, readKbDocById, type KbDoc } from "./kbDocs.js";
@@ -278,8 +279,7 @@ export function updateBlock(
 	const yaml = withBlock(match[1]!.split(/\r?\n/), block, lines).join("\n");
 	const patched = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
 	let next = title === undefined ? patched : withTitle(patched, title);
-	const rc = readNosediveRc(target.source.root);
-	if (block === "links" && id === rc.backlog)
+	if (block === "links" && id === repoBacklog(target.source.root))
 		next = renderUpdatedBacklogMemo(
 			next,
 			target.path,
@@ -315,6 +315,16 @@ export function findDocByQuid(sources: KindSource[], quid: string): CrudTarget |
 		if (existsSync(local)) return { path: local, source };
 	}
 	return undefined;
+}
+
+/**
+ * The backlog a repo's own config names. Read from the checkout, not through
+ * `readNosediveRc`: a sub-bridge hydrated in a workspace resolves to the outer bridge.
+ */
+function repoBacklog(root: string): string | undefined {
+	const config = join(root, BRIDGE_STATE_DIRNAME, BASE_CONFIG_FILENAME);
+	if (!existsSync(config)) return undefined;
+	return /^backlog:\s*(\S+)\s*$/m.exec(readFileSync(config, "utf8"))?.[1];
 }
 
 /** Set the body's first h1, preserving the frontmatter and remaining body. */

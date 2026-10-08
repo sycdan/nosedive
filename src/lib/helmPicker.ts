@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
-import { formatPath, parseYamlBlock, readNosediveRc } from "./coreParsing.js";
+import { readNosediveRc } from "./coreParsing.js";
 
 import { sameFeatRef } from "./diveListing.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
@@ -148,15 +147,4 @@ export function helmRepoList(cwd: string, ref?: string): { id: string; name: str
 		.filter((repo): repo is KbDoc => repo?.kind === "repo")
 		.map((repo) => ({ id: repo.id, name: repo.name }))
 		.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/** Notes for config keys helm no longer reads: `picker-level` retired with the flat deck picker. */
-export function helmConfigNotes(cwd: string): string[] {
-	const rc = readNosediveRc(cwd);
-	const { scalars } = parseYamlBlock(readFileSync(rc.path, "utf8"), rc.path);
-	return "picker-level" in scalars
-		? [
-				`helm: picker-level in ${formatPath(rc.path)} is retired and ignored; the deck picker lists every feat the backlog reaches`,
-			]
-		: [];
 }

@@ -631,3 +631,21 @@ test("crud --links refuses a link to a doc that does not exist, but removes one 
 		),
 	);
 });
+
+test("crud title replaces or adds h1 and combines with a meta patch", () => {
+	const bridge = bridgeWithKinds("titles");
+	const made = run(["crud", "note", "Original heading"], bridge);
+	assertOk(made);
+	const id = madeId(made.stdout);
+	const path = join(bridge, "kb", `${id}.md`);
+	const before = commits(bridge);
+	assertOk(run(["crud", id, "--title", "A $& title", "--meta", "-"], bridge, "topic: titles"));
+	assert.equal(commits(bridge), String(Number(before) + 1), "title and meta share one commit");
+	assert.match(readFileSync(path, "utf8"), /# A \$& title/);
+	assert.match(readFileSync(path, "utf8"), /topic: titles/);
+	assert.equal(subject(bridge), `crud(${id}): updated note ${id}`);
+	write(path, readFileSync(path, "utf8").replace(/^# .*$/m, "Paragraph without a heading."));
+	assertOk(run(["crud", id, "--title", "Inserted"], bridge));
+	assert.match(readFileSync(path, "utf8"), /---\n\n# Inserted\n/);
+	assert.match(readFileSync(path, "utf8"), /Paragraph without a heading/);
+});

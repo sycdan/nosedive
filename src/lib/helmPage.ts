@@ -142,8 +142,12 @@ async function select(path, row, message) {
 		showError(null);
 		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
+		const titleContext = await api(contextQuery(ctx.root, false));
+		const titleReach = !doc.builtin && (dives.active?.id === doc.id || titleContext.repos.some((repo) => repo.id === (last.repo || bridge.id) && repo.inCrudContext));
+		const editTitle = titleForm(doc, last.repo || bridge.id, titleReach, (msg) => select(path, row, msg));
+		const editLog = logForm(doc, (msg) => select(path, row, msg));
 		if (rootIds.has(last.id)) {
-			view.replaceChildren(dives.active ? planForm(doc) : divePicker(), ...docBody(doc, false));
+			view.replaceChildren(dives.active ? planForm(doc) : divePicker(), editTitle, ...docBody(doc, false));
 			return;
 		}
 		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
@@ -162,7 +166,7 @@ async function select(path, row, message) {
 			? metaForm(doc, last.repo || bridge.id, kindDoc.meta && kindDoc.meta.schema, reach, (msg) => select(path, row, msg))
 			: null;
 		const repo = doc.kind === "repo" ? await repoPanel(doc.id) : null;
-		view.replaceChildren(...[docsMadeSection(doc), message, repo, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
+		view.replaceChildren(...[docsMadeSection(doc), message, editTitle, editLog, repo, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 
@@ -201,7 +205,7 @@ async function showKind(kind, path, row, message) {
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
 		const rerender = (msg) => showKind(kind, path, row, msg);
-		view.replaceChildren(...[message, list].filter(Boolean), ...(doc.builtin ? [] : [schemaEditor(kind, doc, path, rerender)]), ...docBody(doc, false));
+		view.replaceChildren(...[message, list].filter(Boolean), ...(doc.builtin ? [] : [schemaEditor(kind, doc, path, rerender)]), editTitle, ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
 

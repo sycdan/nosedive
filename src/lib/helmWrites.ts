@@ -32,13 +32,13 @@ const OUT_OF_REACH = "crud cannot write to that repo now: jump a dive that scope
  * doc itself: every write is the command a pilot would type, so a refusal is
  * the command's own and there is one implementation to trust.
  */
-function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
+function runCrud(cwd: string, args: string[], stdin = "", command = "crud"): Promise<CrudRun> {
 	const activeDive = () => readActiveDiveId(readNosediveRc(cwd).workspaceDir);
 	const diveBefore = activeDive();
 	return new Promise((resolveRun, reject) => {
 		const child = spawn(
 			process.execPath,
-			[join(packageRoot(), "dist", "cli.js"), "crud", ...args],
+			[join(packageRoot(), "dist", "cli.js"), command, ...args],
 			{
 				cwd,
 				stdio: ["pipe", "pipe", "pipe"],
@@ -53,7 +53,7 @@ function runCrud(cwd: string, args: string[], stdin = ""): Promise<CrudRun> {
 			appendHelmLog(
 				cwd,
 				diveBefore ?? activeDive(),
-				["crud", ...args],
+				[command, ...args],
 				`${stdout}${stderr}\n[exit ${code ?? 1}]`,
 			);
 			resolveRun({ exitCode: code ?? 1, stdout, stderr });
@@ -99,9 +99,40 @@ export async function helmWrite(
 ): Promise<CrudRun | undefined> {
 	if (!path.startsWith("/api/crud/")) return undefined;
 	// Recording a dive is the bridge's bookkeeping, as jump's is: it needs no dive.
-	if (path !== "/api/crud/dive" && crudReach(cwd).size === 0)
+	if (
+		path !== "/api/crud/dive" &&
+		(path === "/api/crud/log" || path === "/api/crud/title"
+			? !readActiveDiveId(readNosediveRc(cwd).workspaceDir)
+			: crudReach(cwd).size === 0)
+	)
 		throw new HelmRequestError(409, NO_DIVE);
 	const body = await readJsonBody(req);
+	if (path === "/api/crud/title") {
+		const id = text(body, "id")!;
+		const active = readActiveDiveId(readNosediveRc(cwd).workspaceDir);
+		const repo = id === active ? undefined : text(body, "repo", false);
+		return succeeded(
+			await runCrud(cwd, [
+				repo ? `${repo}:${text(body, "id")!}` : text(body, "id")!,
+				"--title",
+				text(body, "title")!,
+			]),
+		);
+	}
+	if (path === "/api/crud/log") {
+		const active = readActiveDiveId(readNosediveRc(cwd).workspaceDir);
+		if (!active || text(body, "id") !== active)
+			throw new HelmRequestError(409, "log belongs to the active dive");
+		const gist = text(body, "gist", false);
+		return succeeded(
+			await runCrud(
+				cwd,
+				["--label", text(body, "label")!, ...(gist ? ["--gist", gist] : [])],
+				text(body, "body")!,
+				"append-log.dive",
+			),
+		);
+	}
 	if (path === "/api/crud/mint") {
 		const repo = text(body, "repo")!;
 		if (!crudReach(cwd).has(repo)) throw new HelmRequestError(409, OUT_OF_REACH);

@@ -236,6 +236,7 @@ export function updateBlock(
 	io: { log(message: string): void; err(message: string): void },
 	/** The repos in play, where a bare link can find the nearest copy of its doc. */
 	inPlay: KindSource[],
+	title?: string,
 ): void {
 	const text = readFileSync(target.path, "utf8");
 	const match = FRONTMATTER.exec(text);
@@ -274,7 +275,8 @@ export function updateBlock(
 					.replace(/\n$/, "")
 					.split("\n");
 	const yaml = withBlock(match[1]!.split(/\r?\n/), block, lines).join("\n");
-	const next = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
+	const patched = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
+	const next = title === undefined ? patched : withTitle(patched, title);
 	if (next === text) {
 		io.log(`Unchanged ${where}`);
 		return;
@@ -305,4 +307,39 @@ export function findDocByQuid(sources: KindSource[], quid: string): CrudTarget |
 		if (existsSync(local)) return { path: local, source };
 	}
 	return undefined;
+}
+
+/** Set the body's first h1, preserving the frontmatter and remaining body. */
+function withTitle(text: string, title: string): string {
+	if (!title.trim() || /[\r\n]/.test(title))
+		throw new Error("--title requires a nonempty single line");
+	const match = FRONTMATTER.exec(text);
+	if (!match) throw new Error("doc has no frontmatter");
+	const body = text.slice(match[0].length);
+	const heading = /^#[ \t]+[^\r\n]*\r?$/m;
+	const nextBody = heading.test(body)
+		? body.replace(heading, () => `# ${title.trim()}`)
+		: `\n# ${title.trim()}\n\n${body.replace(/^\s*\n/, "")}`;
+	return match[0] + nextBody;
+}
+
+export function updateTitle(
+	target: CrudTarget,
+	title: string,
+	io: { log(message: string): void },
+): void {
+	const text = readFileSync(target.path, "utf8");
+	const next = withTitle(text, title);
+	if (next === text) {
+		io.log(`Unchanged ${formatPath(target.path)}`);
+		return;
+	}
+	const doc = readKbDoc(target.path, target.source.root);
+	writeFileAtomic(target.path, next);
+	commitBridgeDocs(
+		target.source.root,
+		`crud(${doc.id}): updated ${doc.kind} ${doc.name}`,
+		[target.path],
+		io,
+	);
 }

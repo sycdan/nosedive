@@ -119,6 +119,34 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	return form;
 }
 
+/** Title and active-dive log writes use the same command paths as the terminal. */
+function titleForm(doc, repo, reach, rerender) {
+	const input = el("input", { type: "text", value: doc.title || "", required: "", "aria-label": "Title" });
+	const form = el("form", { class: "meta", title: reach ? null : OUT_OF_REACH },
+		el("fieldset", { disabled: reach ? null : "" }, el("legend", {}, "Title"), input,
+			el("button", { type: "submit" }, "Save title")));
+	onSubmit(form, async () => {
+		try { const run = await write("/api/crud/title", { id: doc.id, repo, title: input.value }); rerender(outputBox(run.stdout)); }
+		catch (err) { rerender(outputBox(String(err.message || err), true)); }
+	});
+	return form;
+}
+
+function logForm(doc, rerender) {
+	if (doc.kind !== "dive" || dives.active?.id !== doc.id) return null;
+	const label = el("input", { value: "Progress", required: "", "aria-label": "Label" });
+	const gist = el("input", { "aria-label": "Gist (optional)" });
+	const body = el("textarea", { required: "", "aria-label": "Body" });
+	const form = el("form", { class: "meta" }, el("fieldset", {}, el("legend", {}, "Log"),
+		el("label", { class: "field" }, "Label", label), el("label", { class: "field" }, "Gist (optional)", gist),
+		el("label", { class: "field" }, "Body", body), el("button", { type: "submit" }, "Append log")));
+	onSubmit(form, async () => {
+		try { const run = await write("/api/crud/log", { id: doc.id, label: label.value, gist: gist.value, body: body.value }); rerender(outputBox(run.stdout)); }
+		catch (err) { rerender(outputBox(String(err.message || err), true)); }
+	});
+	return form;
+}
+
 /**
  * The home page's way to the deck's own page, where a dive is planned on it;
  * with no dive, also the bridge's own standing feat when it is the deck.

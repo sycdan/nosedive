@@ -693,6 +693,8 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	for (const [path, body] of [
 		["/api/crud/mint", { repo: BRIDGE_REPO, kind: "note", gist: "Buy sleeves" }],
 		["/api/crud/meta", { id: NOTE_1, patch: { topic: "x" } }],
+		["/api/crud/title", { id: NOTE_1, title: "Changed" }],
+		["/api/crud/log", { id: DIVE, label: "Progress", body: "Logged" }],
 		["/api/crud/links", { id: NOTE_1, patch: { [NOTE_1]: { rel: "idea.feat" } } }],
 	]) {
 		const refused = await post(path, body);
@@ -770,6 +772,27 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	assert.equal(edited.status, 200, edited.text);
 	assert.match(readFileSync(join(worktree, "kb", `${id}.md`), "utf8"), /^ {2}condition: mint$/m);
 
+	const titled = await post("/api/crud/title", { id, repo: HYDRATED, title: "New card heading" });
+	assert.equal(titled.status, 200, titled.text);
+	assert.match(readFileSync(join(worktree, "kb", `${id}.md`), "utf8"), /# New card heading/);
+	const logged = await post("/api/crud/log", {
+		id: DIVE,
+		label: "Verified",
+		gist: "Card saved",
+		body: "Title persisted.",
+	});
+	assert.equal(logged.status, 200, logged.text);
+	assert.match(readFileSync(join(bridge, "kb", `${DIVE}.md`), "utf8"), /Title persisted\./);
+	const activeTitle = await post("/api/crud/title", {
+		id: DIVE,
+		repo: BRIDGE_REPO,
+		title: "Live dive title",
+	});
+	assert.equal(activeTitle.status, 200, activeTitle.text);
+	assert.match(readFileSync(join(bridge, "kb", `${DIVE}.md`), "utf8"), /# Live dive title/);
+	const wrongLog = await post("/api/crud/log", { id, label: "Progress", body: "Wrong dive" });
+	assert.equal(wrongLog.status, 409);
+
 	const refused = await post("/api/crud/meta", {
 		id,
 		repo: HYDRATED,
@@ -786,11 +809,15 @@ test("helm writes only by running crud, and only on an active dive; a note needs
 	});
 	assert.equal(outOfReach.status, 409, "the bridge is not scoped, so refused before crud runs");
 	assert.match(outOfReach.body.error, /jump a dive that scopes it/);
-	assert.equal(count(bridge), before + 2, "the note and dive's made link reached the bridge");
+	assert.equal(
+		count(bridge),
+		before + 3,
+		"the note, made link and active dive title reached the bridge",
+	);
 
 	const gone = await post("/api/crud/deck", { name: "Magic Cards", gist: "Cards" });
 	assert.equal(gone.status, 404, "there is no deck to create");
-	assert.equal(count(bridge), before + 2);
+	assert.equal(count(bridge), before + 3);
 });
 
 test("helm refuses a request whose Host is not the address it bound", async (t) => {

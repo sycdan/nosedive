@@ -7,7 +7,15 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import type { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc, uuidLike } from "../lib/coreParsing.js";
-import { BLOCKS, findDocByQuid, matchDocs, mintDoc, updateBlock, type Block } from "../lib/crud.js";
+import {
+	BLOCKS,
+	findDocByQuid,
+	matchDocs,
+	mintDoc,
+	updateTitle,
+	updateBlock,
+	type Block,
+} from "../lib/crud.js";
 import { builtinKindPath } from "../lib/builtinKinds.js";
 import { diveRepinPatch, diveScopesPatch } from "../lib/diveScopePatch.js";
 import { readActiveDiveId, readKbDoc } from "../lib/kbDocs.js";
@@ -138,6 +146,8 @@ function crud(args: string[], io: CommandIo): void {
 	const name = takeFlag(args, "--name");
 	const feat = takeFlag(args, "--feat");
 	const title = takeFlag(args, "--title");
+	if (title !== undefined && (!title.trim() || /[\r\n]/.test(title)))
+		throw new Error("--title requires a nonempty single line");
 	if (args.includes("--repo"))
 		throw new Error(
 			"crud takes no --repo; name the repo on the ref: crud <repo>:<kind> or <repo>:<quid>",
@@ -164,15 +174,19 @@ function crud(args: string[], io: CommandIo): void {
 	const kinds = loadKinds(inPlay);
 
 	if (uuidLike(qualified.ref)) {
-		if (name !== undefined || feat !== undefined || title !== undefined)
-			throw new Error("crud <quid> takes no --name, --feat or --title");
+		if (name !== undefined || feat !== undefined)
+			throw new Error("crud <quid> takes no --name or --feat");
 		if (rest.length > 0) throw new Error(`crud <quid> takes nothing else: ${rest.join(" ")}`);
 		const target = findDocByQuid(sources, qualified.ref);
 		if (!target) throw new Error(`no doc ${first} in context`);
-		if (block && builtinKindPath(qualified.ref.toLowerCase()))
+		if ((block || title !== undefined) && builtinKindPath(qualified.ref.toLowerCase()))
 			throw new Error(`built-in kind ${qualified.ref} is read-only in the package`);
-		if (!block) {
+		if (!block && title === undefined) {
 			io.writeOut(readFileSync(target.path, "utf8"));
+			return;
+		}
+		if (!block) {
+			updateTitle(target, title!, io);
 			return;
 		}
 		const patch = parseYaml(readStdinText(hint(block))) as unknown;
@@ -181,10 +195,10 @@ function crud(args: string[], io: CommandIo): void {
 		// A dive's scopes take record.dive's rules, then are written whole.
 		if (block === "scopes" && readKbDoc(target.path, target.source.root).kind === "dive") {
 			const scopes = diveScopesPatch(target, patch as Record<string, unknown>, replace);
-			updateBlock(target, kinds, block, scopes, true, io, inPlay);
+			updateBlock(target, kinds, block, scopes, true, io, inPlay, title);
 			return;
 		}
-		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io, inPlay);
+		updateBlock(target, kinds, block, patch as Record<string, unknown>, replace, io, inPlay, title);
 		return;
 	}
 	if (block && (block !== "meta" || replace))

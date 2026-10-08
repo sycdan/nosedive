@@ -45,6 +45,7 @@ import {
 import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
 import { managedDiveName, titleFromSlug } from "./slugs.js";
 import { rootedScopes } from "./jumpable.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 /** What a scope's branch fields become when a feat hands the repo down. */
@@ -287,11 +288,16 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 		 * The backlog's scopes come too, for a feat it reaches: the root says what
 		 * every dive scopes. A repo only the backlog names lands where the
 		 * backlog's entry says, and `--clear-scopes` keeps those.
+		 *
+		 * A feat in another repo brings that repo, so the dive can write it.
 		 */
-		const { nearest, root, backlog } = rootedScopes(rc, kbDocs, feat);
+		const { nearest, root, home, backlog } = rootedScopes(rc, kbDocs, feat);
 		const named = new Set(options.clearScopes ? [] : nearest.map((scope) => scope.repoId));
-		const pinned = (scope: ScopeRef, from: KbDoc | undefined): ScopeRef => {
-			const branch = inheritedBranch(scope.repoId, rc, kbDocs, from);
+		const pinned = (
+			scope: ScopeRef,
+			from: KbDoc | undefined,
+			branch = inheritedBranch(scope.repoId, rc, kbDocs, from),
+		): ScopeRef => {
 			return {
 				...pinnedScope(
 					resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
@@ -302,9 +308,14 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 				...branch,
 			};
 		};
+		const homeBranch = (scope: ScopeRef) => ({
+			workBranch: scope.workBranch ?? defaultFeatWorkBranch(rc, kbDocs, feat),
+			readOnly: false,
+		});
 		const inherited = [
 			...(options.clearScopes ? [] : nearest.map((scope) => pinned(scope, feat))),
 			...root.filter((scope) => !named.has(scope.repoId)).map((scope) => pinned(scope, backlog)),
+			...(home && !options.clearScopes ? [pinned(home, feat, homeBranch(home))] : []),
 		];
 		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
 		// `--clear-scopes` says what the pilot wants; only the inherited path can

@@ -376,6 +376,8 @@ export function packDive(args: string[], io: CommandIo): void {
 			].join("\n"),
 		);
 	}
+	// Committed in the feat's repo ahead of the scope loop, so it packs with the dive's work there.
+	if (feat?.home) reconcileDiveFeatLinks(feat, feat, dive.id, "packed.dive", { scoping: dive, io });
 	const mintUuid = createUuid7Minter();
 	const groups: CapturedPatch[][] = [];
 	let capturedCount = 0;

@@ -40,6 +40,30 @@ export function featChildren(
 	return [...children.values()];
 }
 
+/** Every doc `featChildren` reaches from `start`, by key, with the key of the doc it was first reached from. */
+function featWalk(
+	rc: NosediveRc,
+	kbDocs: KbDoc[],
+	start: KbDoc,
+	edge: (rel: string | undefined) => boolean,
+): Map<string, { doc: KbDoc; via: string }> {
+	const byId = new Map(kbDocs.map((candidate) => [candidate.id, candidate]));
+	const queue = [start];
+	const walked = new Set<string>();
+	const reached = new Map<string, { doc: KbDoc; via: string }>();
+	while (queue.length > 0) {
+		const current = queue.shift()!;
+		if (walked.has(docKey(current))) continue;
+		walked.add(docKey(current));
+		for (const target of featChildren(rc, current, byId, edge)) {
+			if (!reached.has(docKey(target)))
+				reached.set(docKey(target), { doc: target, via: docKey(current) });
+			queue.push(target);
+		}
+	}
+	return reached;
+}
+
 /** The keys of every doc `featChildren` reaches from `start`, at any depth. */
 export function featReach(
 	rc: NosediveRc,
@@ -47,20 +71,41 @@ export function featReach(
 	start: KbDoc,
 	edge = isFeatEdge,
 ): Set<string> {
-	const byId = new Map(kbDocs.map((candidate) => [candidate.id, candidate]));
-	const queue = [start];
-	const walked = new Set<string>();
-	const reached = new Set<string>();
-	while (queue.length > 0) {
-		const current = queue.shift()!;
-		if (walked.has(docKey(current))) continue;
-		walked.add(docKey(current));
-		for (const target of featChildren(rc, current, byId, edge)) {
-			reached.add(docKey(target));
-			queue.push(target);
-		}
+	return new Set(featWalk(rc, kbDocs, start, edge).keys());
+}
+
+/**
+ * The docs a walk from the backlog passes through to reach `feat` by `.feat`
+ * links, nearest first and the backlog last; none when it does not reach it.
+ */
+function featAncestors(rc: NosediveRc, kbDocs: KbDoc[], feat: KbDoc): KbDoc[] {
+	const backlog = rc.backlog ? kbDocs.find((doc) => doc.id === rc.backlog) : undefined;
+	if (!backlog) return [];
+	const reached = featWalk(rc, kbDocs, backlog, anyFeatRel);
+	let step = reached.get(docKey(feat));
+	if (!step) return [];
+	const chain: KbDoc[] = [];
+	while (step.via !== docKey(backlog)) {
+		step = reached.get(step.via)!;
+		chain.push(step.doc);
 	}
-	return reached;
+	return [...chain, backlog];
+}
+
+/**
+ * The scope a dive takes for the repo its feat lives in, when that is not the
+ * bridge: the entry of the nearest doc on the feat's `.feat` path that names a
+ * branch for the repo, the feat itself first. Undefined `workBranch` when none
+ * does; the dive then takes the feat's default branch.
+ * @see kb/01a11c86-8bb4-7a3a-a33b-58a25a51b990.md
+ */
+function featRepoScope(rc: NosediveRc, kbDocs: KbDoc[], feat: KbDoc): ScopeRef | undefined {
+	const repoId = feat.home?.repoId;
+	if (!repoId) return undefined;
+	const named = [feat, ...featAncestors(rc, kbDocs, feat)]
+		.map((doc) => doc.scopes.find((scope) => scope.repoId === repoId && scope.workBranch))
+		.find((scope) => scope !== undefined);
+	return named ?? { repoId, path: "", readOnly: false, flags: [], attrs: {} };
 }
 
 /**
@@ -84,13 +129,14 @@ export function isJumpable(
  * The scopes a dive under `feat` starts from: its nearest scoped ancestor's,
  * plus the backlog's when the backlog reaches it through `.feat` links. `all`
  * names each repo once, the ancestor's entry winning; `root` is the backlog's
- * whole list, which `--clear-scopes` keeps.
+ * whole list, which `--clear-scopes` keeps. `home` is the repo a feat in
+ * another repo lives in, when neither names it: see `featRepoScope`.
  */
 export function rootedScopes(
 	rc: NosediveRc,
 	kbDocs: KbDoc[],
 	feat: KbDoc,
-): { nearest: ScopeRef[]; root: ScopeRef[]; backlog?: KbDoc; all: ScopeRef[] } {
+): { nearest: ScopeRef[]; root: ScopeRef[]; home?: ScopeRef; backlog?: KbDoc; all: ScopeRef[] } {
 	const nearest = inheritedScopes(feat, kbDocs).scopes;
 	const backlog = rc.backlog ? kbDocs.find((doc) => doc.id === rc.backlog) : undefined;
 	const reached =
@@ -98,7 +144,10 @@ export function rootedScopes(
 	const root = reached ? backlog.scopes : [];
 	const named = new Set(nearest.map((scope) => scope.repoId));
 	const all = [...nearest, ...root.filter((scope) => !named.has(scope.repoId))];
-	return { nearest, root, backlog, all };
+	const home = all.some((scope) => scope.repoId === feat.home?.repoId)
+		? undefined
+		: featRepoScope(rc, kbDocs, feat);
+	return { nearest, root, home, backlog, all: home ? [...all, home] : all };
 }
 
 export function assertJumpable(rc: NosediveRc, kbDocs: KbDoc[], doc: KbDoc): void {

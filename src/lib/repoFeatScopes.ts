@@ -223,11 +223,13 @@ export function reconcileDiveFeatLinks(
 	feat: KbDoc,
 	diveId: string,
 	rel: string,
+	/** A feat in another repo is linked back only where a caller passes the dive whose checkout commits it. */
+	back?: { scoping: KbDoc; io: { log(message: string): void; err(message: string): void } },
 ): void {
-	// A feat in another repo is linked back by `linkFeatBack`, where a caller asks for it.
 	if (previousFeat && previousFeat.id !== feat.id && !previousFeat.home)
 		reconcileDocLink(previousFeat.path, diveId, undefined);
 	if (!feat.home) reconcileDocLink(feat.path, diveId, rel);
+	else if (back) linkFeatBack(feat, diveId, rel, back.scoping, back.io);
 }
 
 /** How a dive's `meta.feat` names its feat: by quid, or as `<repo-quid>:<path>` from another repo. */
@@ -242,10 +244,11 @@ export function bridgeFeatPath(feat: KbDoc | undefined): string | undefined {
 
 /**
  * A dive's phase link on a feat in another repo, as `<bridge-quid>:kb/<dive>.md`,
- * written into that repo's checkout. It is committed there when `scoping` -- the
- * dive whose checkout it is -- scopes the repo, so it lands with that dive;
- * otherwise it is left for one that does. A feat read from the managed cache
- * has no checkout to write to.
+ * written into that repo's checkout and committed there, so it lands with
+ * `scoping` -- the dive whose checkout it is. Only a dive that scopes the repo
+ * with a branch can publish that commit, so without one nothing is written: an
+ * edit no dive commits is one nothing ever cleans up. A feat read from the
+ * managed cache has no checkout to write to.
  */
 export function linkFeatBack(
 	feat: KbDoc,
@@ -256,16 +259,17 @@ export function linkFeatBack(
 ): void {
 	const home = feat.home;
 	if (!home) return;
+	const unwritten = `feat ${feat.name}'s ${rel} link to dive ${diveId} is not written`;
 	if (!home.checkout) {
-		io.err(
-			`feat ${feat.name} is not hydrated, so its ${rel} link to dive ${diveId} is not written`,
-		);
+		io.err(`${unwritten}: its repo is not hydrated`);
+		return;
+	}
+	if (!scoping?.scopes.some((scope) => scope.repoId === home.repoId && scope.workBranch)) {
+		io.err(`${unwritten}: no dive in flight scopes its repo with a branch to commit it`);
 		return;
 	}
 	reconcileLinkTarget(feat.path, `${home.bridgeId}:kb/${diveId}.md`, rel);
-	if (scoping?.scopes.some((scope) => scope.repoId === home.repoId))
-		commitBridgeDocs(home.checkout, `dive(${diveId}): ${rel}`, [feat.path], io, feat.id);
-	else io.err(`wrote ${rel} into ${formatPath(feat.path)}; no dive scopes its repo to commit it`);
+	commitBridgeDocs(home.checkout, `dive(${diveId}): ${rel}`, [feat.path], io, feat.id);
 }
 
 /**

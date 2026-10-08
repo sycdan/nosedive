@@ -386,6 +386,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		);
 	}
 
+	// Committed in the feat's repo before anything is weighed, so it publishes with the dive's work there.
+	if (feat?.home) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive", { scoping: dive, io });
 	// A writable scope with nothing of the dive's past its pin has nothing to
 	// publish, so it is not pushed: every dive takes the backlog's scopes, and most never touch them.
 	const unchanged = writableScopes.filter(({ scope, path }) => scopeUnchanged(scope, path, rc));

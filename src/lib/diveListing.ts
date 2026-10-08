@@ -248,6 +248,15 @@ export function walkRootDives(root: KbDoc, kbDocs: KbDoc[], rc?: NosediveRc): Di
 				queue.push(target);
 			}
 		}
+		// A feat in another repo links only the dives a dive scoping it could
+		// commit, so its others are found by the `meta.feat` that names it.
+		if (!current.home) continue;
+		for (const dive of kbDocs) {
+			if (dive.kind !== "dive" || seenDives.has(dive.id)) continue;
+			if (!sameFeatRef(dive.featRef, current)) continue;
+			seenDives.add(dive.id);
+			dives.push({ dive, owner: current });
+		}
 	}
 
 	return dives;

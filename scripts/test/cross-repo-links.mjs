@@ -205,7 +205,10 @@ test("a dive on a feat in another repo records it qualified, inherits its scopes
 	assert.match(dive, new RegExp(`- ${B_REPO}:\n {6}ref: [0-9a-f]{40}\n {6}work-branch: work/b`));
 	assert.match(dive, new RegExp(`- ${bridgeId}:`), "the bridge is in scope too");
 	const backLink = (rel) => new RegExp(`- ${bridgeId}:kb/${id}\\.md:\n {6}rel: ${rel}`);
-	assert.match(readFileSync(checkoutFeat, "utf8"), backLink("planned.dive"));
+	// No dive in flight scopes B, so nothing could commit the link: it is not written.
+	assert.doesNotMatch(readFileSync(checkoutFeat, "utf8"), backLink("planned.dive"));
+	assert.match(recorded.stderr, /planned\.dive link to dive .* is not written: no dive in flight/);
+	assert.equal(git(["status", "--porcelain", "--", "kb"], checkout), "");
 
 	const jumped = run(["jump", `kb/${id}.md`], bridge);
 	assertOk(jumped, "jump failed");

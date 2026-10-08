@@ -213,6 +213,53 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
+	// Exercise the rendering path for a deck doc in another repo, including its link targets.
+	const bodySource = /function docBody\(doc, withFrontmatter\) \{[\s\S]*?\n\}/.exec(script)[0];
+	const selected = [];
+	const makeEl = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat() });
+	const docBody = new Script("(" + bodySource + ")").runInNewContext({
+		el: makeEl,
+		label: (d) => d.title || d.name,
+		currentPath: () => [{ id: FEAT, repo: HYDRATED }],
+		select: (path) => selected.push(path),
+	});
+	const rendered = docBody(
+		{
+			html: "<p>Service schedule</p>",
+			frontmatter: "kind: system",
+			links: [{ type: "doc", id: CARD_1, repo: HYDRATED, name: "Installer", rel: "installer" }],
+		},
+		false,
+	);
+	assert.equal(rendered.at(-1).innerHTML, "<p>Service schedule</p>");
+	const linkButton = rendered[0].children[0].children[0];
+	linkButton.attrs.onclick();
+	assert.equal(selected[0].at(-1).repo, HYDRATED, "a cross-repo doc's links keep their repo");
+	assert.equal(selected[0].at(-1).id, CARD_1);
+	const resetSource = /function reset\(\) \{[\s\S]*?\n\}/.exec(script)[0];
+	let home;
+	const resetHome = new Script("(" + resetSource + ")").runInNewContext({
+		highlight() {},
+		ctx: {},
+		history: { replaceState() {} },
+		location: { pathname: "/", search: "" },
+		refreshSections() {},
+		crumbs() {},
+		el: makeEl,
+		rootForm: () => [],
+		dives: { active: { id: DIVE } },
+		divePicker: () => "dive cards",
+		document: {
+			getElementById: () => ({
+				replaceChildren: (...children) => {
+					home = children;
+				},
+			}),
+		},
+	});
+	resetHome();
+	assert.equal(home[0], "dive cards", "the active dive does not hide home cards");
+
 	assert.match(script, /shown\.slice\(i, i \+ 8\)/, "repo statuses load in batches of eight");
 	assert.match(
 		script,

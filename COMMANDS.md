@@ -60,7 +60,7 @@ More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 npx -y nosedive@2026.9.18-1789698885570 crud --help
 ```
 ```md
-Usage: nosedive crud [<repo>:]<kind> [--name <name>] [--meta -] <gist...> | nosedive crud dive --feat <feat> [--title <title>] <gist...> | nosedive crud [<repo>:]<quid> [--meta - | --scopes - | --links -] [--replace] | nosedive crud <dive-quid> --repin [<ref>] [--scope <repo>]
+Usage: nosedive crud [<repo>:]<kind> [--name <name>] [--meta -] <gist...> | nosedive crud dive --feat <feat> [--title <title>] <gist...> < brief.md | nosedive crud [<repo>:]<quid> [--title <text>] [--meta - | --scopes - | --links -] [--replace] | nosedive crud <repo>:<path> | nosedive crud <dive-quid> --repin [<ref>] [--scope <repo>]
 
 Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
 
@@ -114,7 +114,7 @@ npx -y nosedive@2026.9.18-1789698885570 helm --help
 ```md
 Usage: nosedive helm [<branch>]
 
-Serve a local admin UI for the bridge: its backlog's feats as a link tree, the repos in view with hydration and nosedive install state, and kb docs rendered.
+Serve a local admin UI for the bridge: a deck picker over its backlog's feats, the repos in scope with their kinds and docs, hydration and nosedive install state, and kb docs rendered.
 
 More: nosedive render 6a704279-69c1-5dcb-a2c0-b0b5dc93d56e
 ```

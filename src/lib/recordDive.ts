@@ -329,7 +329,16 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 			throw new Error("duplicate repo scope");
 		const id = newId ?? uuid7AtMs(Date.now());
 		const path = join(kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
+		writeFileAtomic(
+			path,
+			renderNewDive(
+				id,
+				feat,
+				{ ...options, diver: target ? pilotEmail : options.diver },
+				scopes,
+				brief,
+			),
+		);
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
 		linkFeatBack(feat, id, "planned.dive", scoping, io);
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))

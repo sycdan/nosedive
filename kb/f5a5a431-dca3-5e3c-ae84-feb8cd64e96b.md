@@ -52,3 +52,7 @@ pilot's list of what every dive scopes, never derived from the rendered docs.
 
 A link naming a doc that does not exist, or naming a `kind: dive` or
 `kind: repo` doc, fails and says which link did it.
+
+A crud patch to the configured backlog's links also re-renders its body with
+this renderer, in the same commit. Adding, changing or removing a `.feat`
+link therefore updates its section immediately.

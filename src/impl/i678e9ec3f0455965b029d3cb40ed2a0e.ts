@@ -249,11 +249,12 @@ function crud(args: string[], io: CommandIo): void {
 			throw new Error(
 				"crud dive needs --feat: echo <brief> | nosedive crud dive --feat <feat> <gist...>",
 			);
-		recordDive(
-			["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : []), "--brief", "-"],
-			io,
-			{ target: { root: kind.source.root, kbDir: kind.source.kbDir } },
-		);
+		const brief = readStdinText("crud dive reads its brief on stdin");
+		if (!brief.trim()) throw new Error("crud dive requires a nonempty brief on stdin");
+		recordDive(["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : [])], io, {
+			brief,
+			target: { root: kind.source.root, kbDir: kind.source.kbDir },
+		});
 		return;
 	}
 	if (feat !== undefined || title !== undefined)

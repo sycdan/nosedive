@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { builtinKindPath, REPO_CREATE_GATE_ID } from "./builtinKinds.js";
+import { renderUpdatedBacklogMemo } from "./backlogDives.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
 import { checkLinkTargets } from "./crudLinks.js";
 import { formatPath, readNosediveRc, uuidLike } from "./coreParsing.js";
@@ -276,7 +277,14 @@ export function updateBlock(
 					.split("\n");
 	const yaml = withBlock(match[1]!.split(/\r?\n/), block, lines).join("\n");
 	const patched = `---\n${yaml}\n---\n${text.slice(match[0].length)}`;
-	const next = title === undefined ? patched : withTitle(patched, title);
+	let next = title === undefined ? patched : withTitle(patched, title);
+	const rc = readNosediveRc(target.source.root);
+	if (block === "links" && id === rc.backlog)
+		next = renderUpdatedBacklogMemo(
+			next,
+			target.path,
+			loadKbDocs(target.source.kbDir, target.source.root),
+		);
 	if (next === text) {
 		io.log(`Unchanged ${where}`);
 		return;

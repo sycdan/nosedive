@@ -118,16 +118,22 @@ function reset() {
 	refreshSections();
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
-		...(dives.active ? [] : [divePicker()]),
+		divePicker(),
 		el("div", { class: "start" }, ...rootForm()));
 }
 
 function docBody(doc, withFrontmatter) {
 	const body = el("div", { class: "doc" + (withFrontmatter ? "" : " root-body") });
 	body.innerHTML = doc.html;
+	const links = doc.links.length ? el("ul", { class: "doclist" }, doc.links.map((link) => el("li", {},
+		link.type === "doc"
+			? el("button", { class: "linkish", onclick: () => select([...currentPath(), { id: link.id, name: label(link), kind: link.kind, repo: link.repo, rel: link.rel }]) }, label(link))
+			: link.type === "url" && /^https?:\/\//i.test(link.target) ? el("a", { href: link.target, target: "_blank", rel: "noopener" }, link.target)
+			: el("span", {}, link.target),
+		link.rel ? el("span", { class: "rel" }, " · " + link.rel) : null))) : null;
 	return withFrontmatter
-		? [el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), body]
-		: [body];
+		? [el("details", { class: "fm" }, el("summary", {}, "frontmatter"), el("pre", {}, doc.frontmatter)), links, body].filter(Boolean)
+		: [links, body].filter(Boolean);
 }
 
 /** Selects the last doc on a path of steps from a root down. */

@@ -389,12 +389,17 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^gist: "Add the note button"$/m);
 	assert.match(doc, new RegExp(`^  feat: ${KB_FEAT}$`, "m"));
-	assert.match(doc, /^  diver: null$/m, "recording claims nothing");
+	assert.match(doc, /^  diver: "pilot@nosedive.invalid"$/m, "records the pilot without activating");
 	assert.doesNotMatch(doc, /^ {2}(root|deck):/m, "a dive keeps no root");
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
 	assert.match(subject(bridge), /^dive\(\S+\): created$/);
 	assert.ok(!existsSync(join(bridge, "workspace", ".nosedive-ref")), "nothing is on deck");
+
+	const empty = run(["crud", "dive", "--feat", KB_FEAT, "Empty"], bridge, "   \n");
+	assert.equal(empty.status, 1);
+	assert.match(empty.stderr.trim(), /^[^\n]*stdin[^\n]*$/);
+	assert.match(run(["crud", "--help"], bridge).stdout, /< brief.md/);
 
 	for (const [args, pattern] of [
 		[["dive", "No", "feat"], /crud dive needs --feat/],
@@ -648,4 +653,39 @@ test("crud title replaces or adds h1 and combines with a meta patch", () => {
 	assertOk(run(["crud", id, "--title", "Inserted"], bridge));
 	assert.match(readFileSync(path, "utf8"), /---\n\n# Inserted\n/);
 	assert.match(readFileSync(path, "utf8"), /Paragraph without a heading/);
+});
+
+test("crud backlog links re-render additions, rel changes and removals in the patch commit", () => {
+	const { bridge } = seededBridge(tmp, "backlog-links", "pilot@nosedive.invalid");
+	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	const backlog = /^backlog: (.+)$/m.exec(config)[1];
+	const path = join(bridge, "kb", backlog + ".md");
+	write(
+		join(bridge, "kb", SPARE + ".md"),
+		"---\nkind: memo\nid: " + SPARE + "\nname: water\ngist: Water\n---\n\n# Water treatment\n",
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "water");
+	for (const rel of ["system.feat", "property.feat", null]) {
+		const before = commits(bridge);
+		const patch = rel ? SPARE + ": {rel: " + rel + "}\n" : SPARE + ": null\n";
+		assertOk(run(["crud", backlog, "--links", "-"], bridge, patch), "patch backlog");
+		assert.equal(
+			Number(commits(bridge)),
+			Number(before) + 1,
+			"frontmatter and body share a commit",
+		);
+		const rendered = readFileSync(path, "utf8");
+		if (rel)
+			assert.match(
+				rendered,
+				new RegExp(
+					"## " + (rel === "system.feat" ? "System" : "Property") + "\\n[\\s\\S]*Water treatment",
+				),
+			);
+		else assert.doesNotMatch(rendered, /Water treatment/);
+		assertOk(run(["update-backlog"], bridge), "render backlog again");
+		assert.equal(readFileSync(path, "utf8"), rendered, "same renderer as update-backlog");
+		assert.equal(git(["status", "--porcelain"], bridge), "");
+	}
 });

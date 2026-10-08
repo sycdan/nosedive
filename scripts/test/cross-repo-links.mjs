@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -205,4 +205,90 @@ test("a dive on a feat in another repo records it qualified, inherits its scopes
 	assert.match(readFileSync(checkoutFeat, "utf8"), backLink("jumped.dive"));
 	assert.equal(git(["log", "-1", "--format=%s"], checkout), `dive(${id}): jumped.dive`);
 	assert.equal(git(["status", "--porcelain", "--", "kb"], checkout), "");
+});
+
+const GONE_REPO = "01a1198f-f7bc-764d-ad46-3a80781b4770";
+const cachePath = (bridge, repo) => join(bridge, ".nosedive", "cache", repo);
+
+/** Publishes `text` as B's feat on `branch` of both B remotes, leaving B's source on main. */
+function publishBranch(b, branch, text) {
+	runTool("git", ["checkout", "-B", branch, "main"], b.source);
+	write(join(b.source, "kb", `${B_FEAT}.md`), text);
+	runTool("git", ["add", "kb"], b.source);
+	gitCommit(b.source, branch);
+	runTool("git", ["push", "-f", "cloud", branch], b.source);
+	runTool("git", ["push", "-f", "local", branch], b.source);
+	runTool("git", ["checkout", "main"], b.source);
+}
+
+test("crud prints a doc from a repo nobody hydrated, out of its managed cache", () => {
+	const { bridge, b } = world("read");
+	const published = readFileSync(join(b.source, "kb", `${B_FEAT}.md`), "utf8");
+	assert.ok(!existsSync(cachePath(bridge, B_REPO)), "B has no cache yet");
+
+	const byPath = run(["crud", B_FEAT_LINK], bridge);
+	assertOk(byPath, "crud <repo>:<path> failed");
+	assert.equal(byPath.stdout, published, "the doc whole, frontmatter and body");
+	assert.ok(existsSync(cachePath(bridge, B_REPO)), "the read cloned the cache");
+	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "nothing is hydrated");
+	assert.equal(run(["crud", `${B_REPO}:${B_FEAT}`], bridge).stdout, published);
+
+	// A fresh cache is read as it is; a stale one is fetched first.
+	publish(b, [[B_FEAT, doc("feat", B_FEAT, "b-work", "Moved on in B")]]);
+	assert.match(run(["crud", B_FEAT_LINK], bridge).stdout, /Work in B/);
+	const old = new Date(Date.now() - 3_600_000);
+	utimesSync(join(cachePath(bridge, B_REPO), "FETCH_HEAD"), old, old);
+	assert.match(run(["crud", B_FEAT_LINK], bridge).stdout, /Moved on in B/);
+});
+
+test("crud fails a read with one line for a missing doc, no frontmatter or an unreachable remote", () => {
+	const { bridge, b } = world("unreadable");
+	write(
+		join(bridge, "kb", `${GONE_REPO}.md`),
+		doc("repo", GONE_REPO, "gone", "Gone").replace(
+			"---\n\n",
+			`meta:\n  trunk: main\n  remotes:\n    local: ${join(tmp, "nowhere.git").replaceAll("\\", "/")}\n---\n\n`,
+		),
+	);
+	const refuses = (ref, reason) => {
+		const failed = run(["crud", ref], bridge);
+		assert.equal(failed.status, 1, ref);
+		assert.equal(failed.stdout, "", ref);
+		assert.match(failed.stderr, reason, ref);
+		assert.equal(failed.stderr.trim().split("\n").length, 1, `one line: ${failed.stderr}`);
+	};
+	refuses(
+		`${B_REPO}:kb/${MISSING}.md`,
+		new RegExp(`no kb/${MISSING}\\.md in unreadable-b at main`),
+	);
+	refuses(`${B_REPO}:README.md`, /README\.md in unreadable-b at main has no frontmatter/);
+	refuses(`${GONE_REPO}:${MISSING}`, /nowhere\.git/);
+
+	// A stale cache whose remote is gone cannot be fetched.
+	rmSync(b.cloud, { recursive: true, force: true });
+	const old = new Date(Date.now() - 3_600_000);
+	utimesSync(join(cachePath(bridge, B_REPO), "FETCH_HEAD"), old, old);
+	refuses(B_FEAT_LINK, /failed to fetch managed cache for repo/);
+});
+
+test("helm resolves a link into a repo never cached, at the asking doc's work branch", () => {
+	const { bridge, b } = world("branch");
+	linkBFeat(bridge);
+	assertOk(
+		run(["crud", WIDE, "--links", "-"], bridge, `${B_FEAT_LINK}: {rel: child.feat}\n`),
+		"linking the feat from the wide feat failed",
+	);
+	publishBranch(b, "work/f", doc("feat", B_FEAT, "b-work", "On work/f in B"));
+	rmSync(cachePath(bridge, B_REPO), { recursive: true, force: true });
+
+	// FEAT scopes B on work/f, which origin has; WIDE scopes it on work/w, which it has not.
+	const linked = (from) => helmDoc(bridge, from).links.find((link) => link.id === B_FEAT);
+	assert.deepEqual(
+		{ type: linked(FEAT).type, name: linked(FEAT).name, title: linked(FEAT).title },
+		{ type: "doc", name: "b-work", title: "On work/f in B" },
+	);
+	assert.equal(linked(WIDE).title, "Work in B", "trunk when origin lacks the scope's branch");
+	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "nothing is hydrated");
+	// With no asking doc, crud reads trunk.
+	assert.match(run(["crud", B_FEAT_LINK], bridge).stdout, /# Work in B/);
 });

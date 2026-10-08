@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 
 import { builtinDocPath } from "./builtinKinds.js";
 import type { BridgeView } from "./helmView.js";
-import { readKbDoc, type KbDoc, type LinkRef } from "./kbDocs.js";
+import { readKbDoc, type KbDoc, type LinkRef, type ScopeRef } from "./kbDocs.js";
 import { splitRepoRef } from "./kbRefs.js";
-import { mayLinkRepo, readRepoDoc, readRepoFile } from "./repoLinks.js";
+import { mayLinkRepo } from "./repoLinks.js";
+import { readRepoRefDoc, readRepoText } from "./repoRead.js";
 
 const URL_TARGET = /^[a-z][a-z0-9+.-]*:\/\//i;
 
@@ -25,27 +26,32 @@ export type HelmLink =
 	| { type: "url" | "file" | "unresolved"; target: string; rel?: string };
 
 /**
- * A doc in another repo, named `<repo-quid>:<path>`, read without fetching:
- * helm shows what is on disk. Undefined for any other ref, and for one it
- * cannot read.
+ * A doc in another repo, named `<repo-quid>:<path>`, read as `crud` reads it:
+ * at the branch `scopes` -- the asking doc's -- name for that repo, cloning or
+ * fetching its managed cache as needed. Undefined for any other ref, and for
+ * one it cannot read.
  */
-export function helmRepoDoc(view: BridgeView, ref: string): KbDoc | undefined {
+export function helmRepoDoc(view: BridgeView, ref: string, scopes?: ScopeRef[]): KbDoc | undefined {
 	const qualified = splitRepoRef(ref);
 	if (!qualified || qualified.repo === view.rc.bridge) return undefined;
 	const repo = view.docs.find((doc) => doc.id === qualified.repo && doc.kind === "repo");
 	try {
-		return repo && readRepoDoc(view.rc, repo, qualified.path, false);
+		return repo && readRepoRefDoc(view.rc, repo, qualified.path, scopes);
 	} catch {
 		return undefined;
 	}
 }
 
-/** A doc's text: off disk, or out of the managed cache for one read from there. */
+/** A doc's text: off disk, or as crud reads it for one read from the managed cache. */
 export function helmDocText(view: BridgeView, doc: KbDoc): string {
 	const home = doc.home;
 	if (!home || home.checkout) return readFileSync(doc.path, "utf8");
 	const repo = view.docs.find((candidate) => candidate.id === home.repoId)!;
-	return readRepoFile(view.rc, repo, doc.relPath, false)?.text ?? "";
+	try {
+		return readRepoText(view.rc, repo, doc.relPath).text;
+	} catch {
+		return "";
+	}
 }
 
 function docLink(link: LinkRef, target: KbDoc, repo?: string): HelmLink {
@@ -86,7 +92,7 @@ export function helmLink(
 			link.repo === rc.bridge ? view.docs.find((doc) => doc.relPath === path) : undefined;
 		if (bridgeDoc) return docLink(link, bridgeDoc);
 		const elsewhere = mayLinkRepo(rc, from.scopes, fromRepo, link.repo)
-			? helmRepoDoc(view, link.target)
+			? helmRepoDoc(view, link.target, from.scopes)
 			: undefined;
 		if (elsewhere) return docLink(link, elsewhere, link.repo);
 		return { type: "unresolved", target: link.target, rel: link.rel };

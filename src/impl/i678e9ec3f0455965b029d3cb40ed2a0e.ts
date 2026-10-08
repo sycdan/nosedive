@@ -28,6 +28,7 @@ import {
 } from "../lib/kinds.js";
 import { printCommandHelp } from "../lib/packageBacklog.js";
 import { recordDive } from "../lib/recordDive.js";
+import { readQualifiedRef } from "../lib/repoRead.js";
 import { readStdinText } from "../lib/stdinText.js";
 
 const hint = (block: Block) =>
@@ -148,6 +149,15 @@ function crud(args: string[], io: CommandIo): void {
 	// `<repo>:<kind>` or `<repo>:<quid>` narrows what is in play to that repo;
 	// the kinds stay every repo's in play, since a repo can take a shipped one.
 	const qualified = parseQualifiedRef(first);
+	const bare = !block && rest.length === 0 && [name, feat, title].every((v) => v === undefined);
+	if (qualified.repo !== undefined && bare) {
+		const rc = readNosediveRc(process.cwd());
+		const text = readQualifiedRef(rc, qualified.repo, qualified.ref);
+		if (text !== undefined) {
+			io.writeOut(text);
+			return;
+		}
+	}
 	const inPlay =
 		(qualified.repo === undefined && liveDive(qualified.ref)) || kindSources(process.cwd());
 	const sources = qualified.repo === undefined ? inPlay : selectRepo(inPlay, qualified.repo);

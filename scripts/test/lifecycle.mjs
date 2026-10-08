@@ -89,12 +89,13 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 
 	// The feat says where its repo lands, so the dives under it inherit somewhere
 	// to push. The work-loop test below covers the feat that named no branch.
-	const { featPath, featId } = pitchFeat(
+	const { featPath, featId, featText } = pitchFeat(
 		bridge,
 		"Exercise a complete lifecycle.",
 		"lifecycle",
 		repoId,
 	);
+	const featWorkBranch = /^      work-branch: (.+)$/m.exec(featText)[1];
 	// Work is picked up off the deck, so a feat nothing reaches has no dives
 	// anybody can jump -- and this test puts its dive down and picks it back up.
 	assertOk(run(["update-backlog", "--inject", featId], bridge), "backlog injection failed");
@@ -110,7 +111,7 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	annotateDiveLink(featPath, firstId);
 	assertOk(run(["record.dive", "--ref", firstId, "--repin"], bridge), "first repin failed");
 	assertDiveLinkAttrs(featPath, firstId, "planned.dive");
-	// Nothing has published `work/lifecycle` yet, so trunk is the only pin there
+	// Nothing has published the feat's work branch yet, so trunk is the only pin there
 	// is to give the first dive on a feat. The third dive below is where that
 	// stops being true.
 	const trunkHead = cloudHead(repo, "main");
@@ -270,7 +271,7 @@ meta:
 	assert.match(landed, /^## Outcome$/m);
 	assertFeatDiveRel(featPath, secondId, "landed\\.dive");
 	assertDiveLinkAttrs(featPath, secondId, "landed.dive");
-	const published = cloudHead(repo, "work/lifecycle");
+	const published = cloudHead(repo, featWorkBranch);
 	assert.match(published, /^[0-9a-f]{40}$/, "land should publish the work branch to cloud");
 	assert.notEqual(published, trunkHead, "the landed branch must stand ahead of trunk");
 
@@ -299,7 +300,7 @@ meta:
 	runTool("git", ["add", "stacked.txt"], worktree);
 	gitCommit(worktree, "add stacked work");
 	assertOk(run(["land"], bridge), "the dive after a landing must land without a repin");
-	const restacked = cloudHead(repo, "work/lifecycle");
+	const restacked = cloudHead(repo, featWorkBranch);
 	assert.notEqual(restacked, published, "the second landing must carry the branch on");
 });
 
@@ -468,7 +469,10 @@ meta:
 		1,
 		"only the bridge scope names a branch",
 	);
-	assert.match(mintedDoc, /^  - \S+:\n      ref: \S+\n      work-branch: work\/kb\nmeta:/m);
+	assert.match(
+		mintedDoc,
+		/^  - \S+:\n      ref: \S+\n      work-branch: work-loop-bridge-main\/bridge-[0-9a-f-]{36}\nmeta:/m,
+	);
 	assert.doesNotMatch(mintedDoc, /^      mode: /m);
 
 	// 3. Preflight offers it, so a pilot finds the work without being told it exists.
@@ -525,7 +529,11 @@ meta:
 		run(["record.dive", "--ref", mintedId, "--upscope", workLoopRepoId], bridge),
 		"--upscope failed",
 	);
-	assert.match(readFileSync(mintedPath, "utf8"), /^      work-branch: work\/work-loop$/m);
+	const generatedBranch = `work-loop-bridge-main/work-loop-${featId}`;
+	assert.match(
+		readFileSync(mintedPath, "utf8"),
+		new RegExp(`^      work-branch: ${generatedBranch}$`, "m"),
+	);
 
 	/**
 	 * 10. A branch now exists, so land reaches the convention declared by the
@@ -536,10 +544,10 @@ meta:
 	assert.notEqual(defaultBranch.status, 0, "the repo's branch convention must refuse land");
 	assert.match(
 		defaultBranch.stderr + defaultBranch.stdout,
-		/work-loop branch gate expected feature\/work-loop, found work\/work-loop/,
+		new RegExp(`work-loop branch gate expected feature/work-loop, found ${generatedBranch}`),
 	);
 	const unpublishedDefault = runGit(
-		["show-ref", "--verify", "--quiet", "refs/heads/work/work-loop"],
+		["show-ref", "--verify", "--quiet", `refs/heads/${generatedBranch}`],
 		repo.cloud,
 		{ expectOk: false },
 	);
@@ -711,7 +719,7 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${waitingId}.md`), "utf8"),
-		/work-branch: work\/stale-pin/,
+		new RegExp(`work-branch: stale-pin-bridge-main/stale-pin-${featId}`),
 		"--repin must leave the work branch alone",
 	);
 

@@ -72,7 +72,6 @@ export interface NosediveRc {
 	kbDir?: string;
 	/** `bridge`: id of the bridge's own `kind: repo` doc. */
 	bridge?: string;
-	workBranchPrefix?: string;
 	/** `picker-level`: how many `.feat` links below the backlog helm's picker lists. */
 	pickerLevel: number;
 	pilotName?: string;
@@ -356,21 +355,11 @@ export function readNosediveRc(start: string): NosediveRc {
 		backlog,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		bridge: rc.scalars.bridge,
-		workBranchPrefix: rc.scalars["work-branch-prefix"],
 		pickerLevel: configPickerLevel(rc, path),
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
 		prompts: parseCommandPrompts(rc.scalars),
 	};
-}
-
-/**
- * The branch a scope gets when nobody names one. Shared so that `record.dive`
- * writes exactly what `land` used to compute for itself: every dive on a feat
- * publishes to one branch, and a scope that wants its own says so.
- */
-export function defaultWorkBranch(rc: Pick<NosediveRc, "workBranchPrefix">, slug: string): string {
-	return `${rc.workBranchPrefix ?? DEFAULT_RC["work-branch-prefix"]}${slug}`;
 }
 
 // --- seed --------------------------------------------------------------
@@ -398,7 +387,6 @@ export interface RcSettings {
 	backlog: string;
 	kb: string;
 	bridge: string;
-	workBranchPrefix: string;
 	pilotName: string;
 	pilotEmail: string;
 	/**

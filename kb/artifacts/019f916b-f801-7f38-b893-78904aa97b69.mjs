@@ -16,14 +16,13 @@ import {
 import { basename, dirname, join, relative } from "node:path";
 import { parse, stringify } from "yaml";
 
-const KNOWN_BASE_KEYS = ["workspace", "backlog", "kb", "home-branch", "work-branch-prefix"];
+const KNOWN_BASE_KEYS = ["workspace", "backlog", "kb", "home-branch"];
 
 const DEFAULT_BASE = {
 	workspace: "./workspace",
 	backlog: "./backlog",
 	kb: "./kb",
 	"home-branch": "main",
-	"work-branch-prefix": "work/",
 };
 
 function displayPath(path) {
@@ -499,6 +498,7 @@ function baseConfigFromLegacy(legacy, backlogMemoId) {
 	delete remaining["pilot-name"];
 	delete remaining["pilot-email"];
 	delete remaining.current;
+	delete remaining["work-branch-prefix"];
 
 	const base = { "compatibility-level": 1 };
 	for (const key of KNOWN_BASE_KEYS) {

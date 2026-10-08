@@ -63,14 +63,13 @@ function seedBridge(bridge) {
 	return run(["seed", "--headless", "--file", "AGENTS.md"], bridge, "");
 }
 
-test("interactive seed prompts only for configurable paths and branch prefix", () => {
+test("interactive seed prompts only for configurable paths", () => {
 	const { bridge } = emptyOriginBridge("interactive-prompts");
-	const seeded = run(["seed", "--file", "AGENTS.md"], bridge, "\n\n\n");
+	const seeded = run(["seed", "--file", "AGENTS.md"], bridge, "\n\n");
 	assertOk(seeded, "interactive seed failed");
 	assert.deepEqual(seeded.stdout.match(/[a-z-]+ \[[^\]]+\]: /g), [
 		"workspace [./workspace]: ",
 		"kb [./kb]: ",
-		"work-branch-prefix [work/]: ",
 	]);
 	assert.doesNotMatch(seeded.stdout, /backlog \[/);
 });
@@ -260,13 +259,24 @@ test("seed-headless", () => {
 			`backlog: ${freshMemoId}`,
 			"kb: ./kb",
 			`bridge: ${freshBridgeId}`,
-			"work-branch-prefix: work/",
 			"",
 		].join("\n"),
 	);
 	const freshMemo = readFileSync(join(headlessFreshBridge, "kb", `${freshMemoId}.md`), "utf8");
 	assert.match(freshMemo, /^kind: memo$/m);
 	assert.match(freshMemo, /^name: bridge$/m);
+	assert.match(
+		freshMemo,
+		new RegExp(`work-branch: headless-fresh-bridge-main/bridge-${freshMemoId}`),
+	);
+	const kbFeat = readFileSync(
+		join(headlessFreshBridge, "kb", "00000000-0000-7003-a10b-25d64dd1d5ba.md"),
+		"utf8",
+	);
+	assert.match(
+		kbFeat,
+		/work-branch: headless-fresh-bridge-main\/00000000-0000-7003-a10b-25d64dd1d5ba-00000000-0000-7003-a10b-25d64dd1d5ba/,
+	);
 	assert.match(freshMemo, /^# Bridge$/m);
 	assert.equal(existsSync(join(headlessFreshBridge, ".nosedive.local.yaml")), false);
 	assert.equal(
@@ -346,7 +356,6 @@ current:
 			`backlog: ${existingMemoId}`,
 			"kb: ./custom-kb",
 			`bridge: ${existingBridgeId}`,
-			"work-branch-prefix: work/",
 			"",
 		].join("\n"),
 	);
@@ -393,6 +402,16 @@ test("seed pushes the trunk resolved from git", () => {
 	);
 });
 
+test("seed refuses a detached bridge checkout before writing", () => {
+	const { bridge } = emptyOriginBridge("detached-seed");
+	runTool("git", ["commit", "--allow-empty", "-m", "initial"], bridge);
+	runTool("git", ["switch", "--detach"], bridge);
+	const seeded = seedBridge(bridge);
+	assert.notEqual(seeded.status, 0);
+	assert.match(seeded.stderr, /bridge checkout is detached/);
+	assert.equal(existsSync(join(bridge, ".nosedive", "config.yaml")), false);
+});
+
 test("seed removes home-branch and preserves unowned config", () => {
 	const bridge = join(tmp, "old-home-branch");
 	mkdirSync(bridge, { recursive: true });
@@ -417,6 +436,8 @@ test("seed removes home-branch and preserves unowned config", () => {
 	assertOk(result, "re-seed with home-branch failed");
 	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
 	assert.doesNotMatch(config, /^home-branch:/m);
+	assert.doesNotMatch(config, /^work-branch-prefix:/m);
+	assert.match(result.stdout, /^Ignoring retired work-branch-prefix in bridge config\.$/m);
 	assert.match(/^bridge: (\S+)$/m.exec(config)?.[1] ?? "", quidPattern);
 	assert.match(config, new RegExp(`^agent-runner: ${runnerId}$`, "m"));
 });

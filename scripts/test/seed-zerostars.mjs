@@ -48,7 +48,13 @@ test("seed keeps only the kb feat in the bridge, scopes it, and links it from th
 
 	const feat = readFileSync(join(kb, `${KB_FEAT}.md`), "utf8");
 	const self = configKey(bridge, "bridge");
-	assert.match(feat, new RegExp(`^scopes:\\n {2}- ${self}:\\n {6}work-branch: work/kb$`, "m"));
+	assert.match(
+		feat,
+		new RegExp(
+			`^scopes:\\n {2}- ${self}:\\n {6}work-branch: fresh-main/${KB_FEAT}-${KB_FEAT}$`,
+			"m",
+		),
+	);
 	const backlog = readFileSync(join(kb, `${configKey(bridge, "backlog")}.md`), "utf8");
 	assert.match(backlog, new RegExp(`- kb/${KB_FEAT}\\.md:\\n {6}rel: zerostar\\.feat`));
 	assert.equal(git(["status", "--porcelain"], bridge), "", "seed committed everything it wrote");

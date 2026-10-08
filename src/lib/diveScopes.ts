@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { defaultWorkBranch, formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
+import { formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { hydratedScopedRepoPath } from "./gitState.js";
 import { KbDoc, loadKbDocs, ScopeRef } from "./kbDocs.js";
@@ -14,6 +14,7 @@ import {
 	parseRepoMarkerStrict,
 } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 
 /**
  * Resolving what a dive scopes, and rendering it back out.
@@ -362,7 +363,7 @@ export function upscopeBranch(
 	if (requested) return requested;
 	return (
 		featWorkBranch(repoId, rc, kbDocs, feat) ??
-		(feat ? defaultWorkBranch(rc, feat.name) : undefined)
+		(feat ? defaultFeatWorkBranch(rc, kbDocs, feat) : undefined)
 	);
 }
 
@@ -390,7 +391,7 @@ export function featWorkBranch(
 	const declared = scopes.find((scope) => scope.repoId === repoId);
 	if (!declared || !source) return undefined;
 	if (declared.workBranch) return declared.workBranch;
-	return declared.legacyMode === "rw" ? defaultWorkBranch(rc, source.name) : undefined;
+	return declared.legacyMode === "rw" ? defaultFeatWorkBranch(rc, kbDocs, source) : undefined;
 }
 
 /**

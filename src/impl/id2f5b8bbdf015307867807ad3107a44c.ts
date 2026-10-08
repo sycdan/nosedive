@@ -12,7 +12,6 @@ import { commitMessage } from "../lib/commitProvenance.js";
 import { LAND_IN_FLIGHT_ENV, NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
-	defaultWorkBranch,
 	formatPath,
 	parseMarkdownDoc,
 	readNosediveRc,
@@ -50,12 +49,9 @@ import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
 import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
+import { upscopeBranch } from "../lib/diveScopes.js";
 
 const refusalPrefix = "land refused because ";
-
-function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
-	return feat?.name ?? dive.name;
-}
 
 function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
 	const status = gitRun(
@@ -75,7 +71,7 @@ function originUrl(worktreePath: string): string {
 }
 
 /**
- * Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own
+ * Push one scoped repo's current HEAD to its recorded work branch on its own
  * cloud remote (read-only scopes never reach here).
  *
  * Deliberately by resolved URL rather than by remote name: hydration leaves
@@ -319,7 +315,6 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
 
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
-	const slug = slugForBranch(dive, feat);
 	const cli = nosediveInvocation();
 
 	// Before the scope loop, the gates and every push: see `bridgeUpstreamForLand`.
@@ -344,6 +339,10 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
 		hydratedWorktrees.push({ scope, path });
 		if (!scope.workBranch) {
+			const suggested = upscopeBranch(scope.repoId, undefined, rc, kbDocs, feat);
+			const branchHint = suggested
+				? ` to publish it on ${suggested}, or pass --work-branch to choose another`
+				: " with --work-branch to name where it publishes";
 			if (!scope.ref) throw new Error(`${refusalPrefix}scope ${scope.repoId} has no pinned ref`);
 			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
 			/**
@@ -355,16 +354,12 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 				throw new Error(
 					`${refusalPrefix}scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
 						`(${commits.join(", ")}) and names no work branch. ` +
-						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
-						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
-						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\`${branchHint}.`,
 				);
 			if (headIsStrictlyBehindPin(path, scope.ref))
 				throw new Error(
 					`${refusalPrefix}scope ${scope.repoId} is behind pinned ref ${scope.ref} and names no work branch. ` +
-						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
-						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
-						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\`${branchHint}.`,
 				);
 			continue;
 		}

@@ -231,9 +231,14 @@ test("an unparented record.feat scopes the sole registered repo, on the generate
 
 	const pitched = run(["record.feat", "Add a hello note."], bridge);
 	assertOk(pitched, "record.feat failed");
+	const created = featDoc(bridge, pitched.stdout);
+	const featId = /^id: (.+)$/m.exec(created)[1];
 	assert.match(
-		featDoc(bridge, pitched.stdout),
-		new RegExp(`^scopes:\n  - ${repoId}:\n      work-branch: work/add-a-hello-note$`, "m"),
+		created,
+		new RegExp(
+			`^scopes:\n  - ${repoId}:\n      work-branch: ${repoName}-main/add-a-hello-note-${featId}$`,
+			"m",
+		),
 		"the sole repo should be scoped on record.dive's generated default branch",
 	);
 	assert.ok(
@@ -246,6 +251,28 @@ test("an unparented record.feat scopes the sole registered repo, on the generate
 	// re-open questions that are closed.
 	assert.doesNotMatch(pitched.stdout, /--upscope/);
 	assert.doesNotMatch(pitched.stdout, /--work-branch/);
+});
+
+test("record.feat includes the checked-out bridge branch in a new scope", () => {
+	const bridge = createBridge(tmp, "pitch-branch-name");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""));
+	runTool("git", ["switch", "-c", "work/kb"], bridge);
+	const pitched = run(["record.feat", "Branch work."], bridge);
+	assertOk(pitched);
+	const doc = featDoc(bridge, pitched.stdout);
+	const id = /^id: (.+)$/m.exec(doc)[1];
+	assert.match(doc, new RegExp(`work-branch: pitch-branch-name-work-kb/branch-work-${id}`));
+});
+
+test("record.feat refuses detached HEAD before writing a new feat", () => {
+	const bridge = createBridge(tmp, "pitch-detached");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""));
+	runTool("git", ["switch", "--detach"], bridge);
+	const before = readdirSync(join(bridge, "kb"));
+	const pitched = run(["record.feat", "Detached work."], bridge);
+	assert.notEqual(pitched.status, 0);
+	assert.match(pitched.stderr, /bridge checkout is detached/);
+	assert.deepEqual(readdirSync(join(bridge, "kb")), before);
 });
 
 test("a record.feat with several registered repos requires an explicit --scope", () => {
@@ -266,9 +293,14 @@ test("a record.feat with several registered repos requires an explicit --scope",
 
 	const scoped = run(["record.feat", "Touch two repos.", "--scope", "other"], bridge);
 	assertOk(scoped, "record.feat with an explicit scope failed");
+	const created = featDoc(bridge, scoped.stdout);
+	const featId = /^id: (.+)$/m.exec(created)[1];
 	assert.match(
-		featDoc(bridge, scoped.stdout),
-		/^scopes:\n  - 019fc623-0000-7000-8000-0000000000d1:\n      work-branch: work\/touch-two-repos$/m,
+		created,
+		new RegExp(
+			`^scopes:\n  - 019fc623-0000-7000-8000-0000000000d1:\n      work-branch: pitch-many-repos-bridge-main/touch-two-repos-${featId}$`,
+			"m",
+		),
 	);
 	assert.match(scoped.stdout, /^Scoped feat to repo: other /m);
 });

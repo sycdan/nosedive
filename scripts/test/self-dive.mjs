@@ -20,6 +20,14 @@ const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
+const backlogWorkBranch = (bridge) => {
+	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
+	const backlogId = /^backlog: (\S+)$/m.exec(config)[1];
+	const backlog = readFileSync(join(bridge, "kb", `${backlogId}.md`), "utf8");
+	return /^      work-branch: (.+)$/m.exec(backlog)[1];
+};
+const kbFeatWorkBranch = (bridge) =>
+	/^      work-branch: (.+)$/m.exec(readFileSync(join(bridge, "kb", `${KB_FEAT}.md`), "utf8"))[1];
 
 test("a memo made on a dive that scopes the bridge goes to its __self checkout, and the live bridge is untouched", () => {
 	const { bridge, origin } = seededBridge(tmp, "self", "pilot@nosedive.invalid");
@@ -117,7 +125,10 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	const landed = run(["land"], bridge);
 	assertOk(landed, "land failed");
 	assert.match(landed.stderr, /brought the bridge's own scope into the bridge/);
-	assert.match(git(["show", "work/kb:.nosedive/config.yaml"], origin), /^picker-level: 1$/m);
+	assert.match(
+		git(["show", `${kbFeatWorkBranch(bridge)}:.nosedive/config.yaml`], origin),
+		/^picker-level: 1$/m,
+	);
 	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), /^picker-level: 1$/m);
 	assert.match(readFileSync(configPath, "utf8"), /^picker-level: 1$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8"), /^name: magic-cards$/m);
@@ -162,7 +173,8 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	runTool("git", ["add", "shared.md"], self);
 	runTool("git", ["commit", "-m", "dive edit"], self);
 	const head = git(["rev-parse", "HEAD"], bridge);
-	const workBranch = () => git(["branch", "--list", "--format=%(objectname)", "work/kb"], origin);
+	const workBranch = () =>
+		git(["branch", "--list", "--format=%(objectname)", kbFeatWorkBranch(bridge)], origin);
 	const pushedBefore = workBranch();
 	const refused = run(["land"], bridge);
 	assert.equal(refused.status, 1, refused.stdout);
@@ -190,7 +202,7 @@ const IMPL_REPO = "01a0fe76-1da6-7642-a463-38849050d728";
 
 /**
  * A seeded bridge holding one other repo, and a feat scoping only that repo.
- * The seeded backlog scopes the bridge on `work/kb`.
+ * The seeded backlog gives the bridge its own work branch.
  */
 function bridgeWithImplFeat(name) {
 	const seeded = seededBridge(tmp, name, "pilot@nosedive.invalid");
@@ -216,7 +228,9 @@ test("a backlog scoping the bridge gives every dive it, and kb writes on it go t
 	assert.deepEqual(scopeIds(scopes), [IMPL_REPO, bridgeId]);
 	assert.match(
 		scopes,
-		new RegExp(`- ${bridgeId}:\\n      ref: [0-9a-f]{40}\\n      work-branch: work/kb\\n`),
+		new RegExp(
+			`- ${bridgeId}:\\n      ref: [0-9a-f]{40}\\n      work-branch: ${backlogWorkBranch(bridge)}\\n`,
+		),
 		"the bridge scope lands where the backlog's entry says",
 	);
 

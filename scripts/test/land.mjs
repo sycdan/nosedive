@@ -360,7 +360,6 @@ test("land refuses a scope that is ahead of its pin and names no work branch", (
 	);
 	assert.doesNotMatch(result.stderr, /Run `nosedive record\.dive/);
 	assert.match(result.stderr, /work\/land-test\.nosedive/, "and the branch that would be used");
-	assert.match(result.stderr, /branch convention may differ/, "and why to check it first");
 	assert.doesNotMatch(result.stderr, /\(no scoped repos to push\)/);
 
 	// Naming a branch is all it takes to make the same commits landable.
@@ -411,7 +410,6 @@ test("land refuses a scope that is behind its pin and names no work branch", () 
 		),
 	);
 	assert.match(result.stderr, /work\/land-test\.nosedive/);
-	assert.match(result.stderr, /branch convention may differ/);
 });
 
 /**

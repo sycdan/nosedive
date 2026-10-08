@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { injectDocsIntoBacklogMemo } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
-import { defaultWorkBranch, formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
+import { formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { editKbDoc } from "./kbDocEdit.js";
 import {
@@ -28,6 +28,7 @@ import {
 } from "./repoFeatScopes.js";
 import { resolveRepoDoc } from "./repoWorkspaceCore.js";
 import { assertSlug, managedDiveName, slugFromGist } from "./slugs.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 
 export interface RecordFeatOptions {
 	/** The feat to patch. Absent means record a new one. */
@@ -190,6 +191,9 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	const id = mintFeatId();
 	const path = join(rc.kbDir!, `${id}.md`);
 	if (existsSync(path)) throw new Error(`kb doc already exists: ${formatPath(path)}`);
+	const soleRepo = !parent && scoped.length === 0 && repos.length === 1 ? repos[0]! : undefined;
+	const workBranch =
+		soleRepo || scoped.length > 0 ? defaultFeatWorkBranch(rc, kbDocs, { id, name }) : undefined;
 	writeFileAtomic(path, renderRecordedFeat({ id, name, gist, parentId: parent?.id }));
 	if (parent) appendLinkToDoc(parent.path, id, "child.feat");
 
@@ -201,13 +205,12 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	// several, `--scope` is required above, and a parented feat is left alone
 	// because it already inherits its parent's scopes -- writing here would be a
 	// second source.
-	const soleRepo = !parent && scoped.length === 0 && repos.length === 1 ? repos[0]! : undefined;
 	if (soleRepo) {
-		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch: defaultWorkBranch(rc, name) });
+		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch });
 		io.log(`Scoped feat to the only registered repo: ${soleRepo.name} (${soleRepo.id})`);
 	}
 	for (const repoDoc of scoped) {
-		appendRepoScopeToFeat(path, { id: repoDoc.id, workBranch: defaultWorkBranch(rc, name) });
+		appendRepoScopeToFeat(path, { id: repoDoc.id, workBranch });
 		io.log(`Scoped feat to repo: ${repoDoc.name} (${repoDoc.id})`);
 	}
 

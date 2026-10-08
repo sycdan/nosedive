@@ -21,12 +21,12 @@ import {
 } from "../lib/constants.js";
 import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { commitMessage } from "../lib/commitProvenance.js";
-import { shipZerostars } from "../lib/shipZerostars.js";
+import { KB_FEAT_ID, shipZerostars } from "../lib/shipZerostars.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
-	defaultWorkBranch,
 	formatPath,
+	legacyConfigPath,
 	readNosediveRc,
 	resolveFrom,
 	toPosixPath,
@@ -49,6 +49,7 @@ import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
+import { defaultWorkBranch } from "../lib/workBranches.js";
 
 const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
 const MANAGED_END = MANAGED_INSTRUCTIONS_END;
@@ -164,11 +165,12 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 function mintBacklogMemo(
 	bridgeDir: string,
 	kbDir: string,
-	bridgeScope: { id: string; workBranch: string },
+	bridgeScope: { id: string; name: string },
 	io: CommandIo,
 ): MintedDoc {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
+	const workBranch = defaultWorkBranch(bridgeDir, bridgeScope.name, { id, name: "bridge" });
 	const path = join(kbDir, `${id}.md`);
 	mkdirSync(kbDir, { recursive: true });
 	writeFileAtomic(
@@ -182,7 +184,7 @@ function mintBacklogMemo(
 			`gist: ${quoteYamlString(`The bridge of ${name}: the feats every pilot starts from.`)}`,
 			"scopes:",
 			`  - ${bridgeScope.id}:`,
-			`      work-branch: ${bridgeScope.workBranch}`,
+			`      work-branch: ${workBranch}`,
 			"---",
 			"",
 			"# Bridge",
@@ -369,7 +371,15 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 				"seed inside the clone, or run `git remote add origin <url>` here.",
 		);
 	}
+	if (!gitOutput(bridgeDir, ["symbolic-ref", "--quiet", "HEAD"]))
+		throw new Error("cannot choose a default work branch: bridge checkout is detached");
 
+	if (
+		[baseConfigPath(bridgeDir), legacyConfigPath(bridgeDir)].some(
+			(path) => existsSync(path) && /^work-branch-prefix:/m.test(readFileSync(path, "utf8")),
+		)
+	)
+		io.log("Ignoring retired work-branch-prefix in bridge config.");
 	await migrateBridgeConfig(bridgeDir, io);
 
 	// Classified before prompting and before the config write, so an unusable
@@ -384,11 +394,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		try {
 			settings.workspace = await promptScalar(io, "workspace", settings.workspace);
 			settings.kb = await promptScalar(io, "kb", settings.kb);
-			settings.workBranchPrefix = await promptScalar(
-				io,
-				"work-branch-prefix",
-				settings.workBranchPrefix,
-			);
 		} finally {
 			io.close();
 		}
@@ -427,18 +432,18 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		? undefined
 		: mintBridgeRepoDoc(bridgeDir, kbDir, io, options.repoId);
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
+	const bridgeName = selfDoc?.name ?? readKbDocById(kbDir, bridgeDir, settings.bridge)!.name;
+	const kbWorkBranch = defaultWorkBranch(bridgeDir, bridgeName, {
+		id: KB_FEAT_ID,
+		name: KB_FEAT_ID,
+	});
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
 
 	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
 	// L0 already carries the memo its migration minted; a fresh one does not,
 	// and without this update-backlog and dump-backlog have nothing to read.
 	const mintedBacklogMemo = !uuidLike(settings.backlog)
-		? mintBacklogMemo(
-				bridgeDir,
-				kbDir,
-				{ id: settings.bridge, workBranch: defaultWorkBranch(settings, "kb") },
-				io,
-			)
+		? mintBacklogMemo(bridgeDir, kbDir, { id: settings.bridge, name: bridgeName }, io)
 		: undefined;
 	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
 
@@ -446,7 +451,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		bridgeDir,
 		kbDir,
 		settings.bridge,
-		defaultWorkBranch(settings, "kb"),
+		kbWorkBranch,
 		join(kbDir, `${settings.backlog}.md`),
 		io,
 	);

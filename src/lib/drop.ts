@@ -138,10 +138,14 @@ export function collectDropReadiness(feat: KbDoc, kbDocs: KbDoc[], rc: NosediveR
 	}
 
 	const repos: DropRepo[] = [];
-	const branch = `${rc.workBranchPrefix ?? "work/"}${feat.name}`;
 	for (const scope of feat.scopes) {
 		const repo = kbDocs.find((doc) => doc.id === scope.repoId && doc.kind === "repo");
 		if (!repo) throw new Error(`scoped repo not found: ${scope.repoId}`);
+		const branch = scope.workBranch;
+		if (!branch) {
+			blockers.push(`repo ${repo.name} has no work branch on feat ${feat.name}`);
+			continue;
+		}
 		const merge = (repo.metaScalars.merge ?? "").trim();
 		if (!merge) {
 			blockers.push(`repo ${repo.name} has no meta.merge; fix ${repo.relPath}`);

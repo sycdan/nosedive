@@ -81,7 +81,6 @@ export function loadSplitRcSettings(bridgeDir: string): RcSettings {
 		backlog: base.scalars.backlog ?? DEFAULT_RC.backlog,
 		kb: base.scalars.kb ?? DEFAULT_RC.kb,
 		bridge: base.scalars.bridge ?? "",
-		workBranchPrefix: base.scalars["work-branch-prefix"] ?? DEFAULT_RC["work-branch-prefix"],
 		pilotName: "",
 		pilotEmail: "",
 		extra: unownedConfigScalars(base.scalars),
@@ -116,7 +115,6 @@ export function renderBaseConfig(settings: RcSettings, compatibilityLevel: numbe
 		`backlog: ${toPosixPath(settings.backlog)}`,
 		`kb: ${toPosixPath(settings.kb)}`,
 		`bridge: ${settings.bridge}`,
-		`work-branch-prefix: ${settings.workBranchPrefix}`,
 		...Object.entries(settings.extra).map(([key, value]) => `${key}: ${value}`),
 		"",
 	].join("\n");

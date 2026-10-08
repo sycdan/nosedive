@@ -27,6 +27,8 @@ const featId = "019fc623-0000-7000-8000-000000000002";
 const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
 const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
 const backlogId = "019fc623-0000-7000-8000-000000000005";
+const bridgeRepoId = "019fc623-0000-7000-8000-000000000006";
+const bridgeName = "test-bridge";
 const testDiver = "01a05527-a49a-714c-9d35-3fa310ac6270@nosedive.invalid";
 
 function createRepo(path, id) {
@@ -58,7 +60,8 @@ meta:
 }
 
 function setup(name) {
-	const bridge = createBridge(tmp, name);
+	const bridge = createBridge(tmp, name, { bridge: bridgeRepoId });
+	writeRepoDoc(bridge, bridgeRepoId, bridgeName, "workspace/__self", bridge);
 	const repo = join(bridge, "workspace", "repo");
 	const repoCommit = createRepo(repo, repoId);
 	writeRepoDoc(bridge, repoId, "repo", "workspace/repo");
@@ -82,7 +85,8 @@ scopes:
 
 /** A bridge whose configured backlog memo scopes the fixture repo, for `--free`. */
 function setupFree(name, { scopeRepo = true } = {}) {
-	const bridge = createBridge(tmp, name, { backlog: backlogId });
+	const bridge = createBridge(tmp, name, { backlog: backlogId, bridge: bridgeRepoId });
+	writeRepoDoc(bridge, bridgeRepoId, bridgeName, "workspace/__self", bridge);
 	const repo = join(bridge, "workspace", "repo");
 	const repoCommit = createRepo(repo, repoId);
 	write(
@@ -732,7 +736,7 @@ test("record.dive --upscope adds to the inherited set rather than replacing it",
 	assert.match(
 		doc,
 		new RegExp(
-			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`,
+			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: ${bridgeName}-main/leaf.record-dive.nosedive-${childEffortId}$`,
 			"m",
 		),
 	);
@@ -1438,7 +1442,7 @@ test("record.dive resolves --upscope and --unscope repos by name", () => {
 	assert.match(
 		doc,
 		new RegExp(
-			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: work/record-dive.nosedive$`,
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: ${bridgeName}-main/record-dive.nosedive-${featId}$`,
 			"m",
 		),
 	);
@@ -1599,7 +1603,7 @@ test("crud <dive> --scopes pins what it adds, drops on null, and leaves the pin 
 		);
 
 	patch("other: {}\n");
-	other("\n      work-branch: work/record-dive.nosedive\n");
+	other(`\n      work-branch: ${bridgeName}-main/record-dive.nosedive-${featId}\n`);
 	patch("other: {work-branch: null}\n");
 	other("\n(?!      )");
 	patch("other: null\n");

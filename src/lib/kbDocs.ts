@@ -57,7 +57,6 @@ export interface BridgeConfig {
 	workspaceDir?: string;
 	backlogDir?: string;
 	kbDir: string;
-	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
 	featPath?: string;

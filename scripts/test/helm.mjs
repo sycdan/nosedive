@@ -316,22 +316,67 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.equal(throwing.sectionOpen("repos"), true);
 	assert.equal(throwing.sectionOpen("repos-rest", false), false);
 	assert.doesNotThrow(() => throwing.rememberOpen("repos", false));
-	// The home view offers the kb jump on the backlog only; other roots point at their feats.
+	// The home view offers the kb jump only when the kb feat is the deck.
 	const rootForm = /function rootForm\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(rootForm, "page carries rootForm");
-	assert.ok(
-		rootForm.includes("ctx.root && backlogRoot && ctx.root !== backlogRoot.id"),
-		"rootForm guards on the backlog",
+	assert.ok(rootForm.includes("if (ctx.root === KB_FEAT)"), "rootForm guards on the deck");
+	// The deck is kept per viewer as its chain of refs; a chain that breaks is thrown, for the default to take over.
+	const pickerSource = ["deckOrder", "rememberedChain", "rememberChain", "settleChain"].map(
+		(name) =>
+			new RegExp(`(async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`).exec(script)?.[0],
 	);
-	assert.ok(
-		rootForm.includes("Pick a feat in the tree to plan a dive on it, or dive it free."),
-		"other roots get the feat hint",
+	assert.ok(pickerSource.every(Boolean), "page carries the deck helpers");
+	const picker = (localStorage, deck, loadRow) =>
+		new Script(
+			`const DECK_KEY = "helm-deck"; ${pickerSource.join("\n")} ({ deckOrder, rememberedChain, rememberChain, settleChain })`,
+		).runInNewContext({ localStorage, deck, loadRow, JSON });
+	const store = new Map();
+	const keeping = picker({
+		getItem: (k) => store.get(k) ?? null,
+		setItem: (k, v) => store.set(k, v),
+	});
+	assert.equal(keeping.rememberedChain(), null, "no chain until one is picked");
+	keeping.rememberChain(["a", "b:kb/c.md"]);
+	assert.deepEqual([...keeping.rememberedChain()], ["a", "b:kb/c.md"]);
+	store.set("helm-deck", "{not json");
+	assert.equal(keeping.rememberedChain(), null, "a garbled chain is no chain");
+	const denied = picker({
+		getItem() {
+			throw new Error("denied");
+		},
+		setItem() {
+			throw new Error("denied");
+		},
+	});
+	assert.equal(denied.rememberedChain(), null);
+	assert.doesNotThrow(() => denied.rememberChain(["a"]));
+	const row = (name, path = [], more = {}) => ({
+		ref: name,
+		name,
+		path,
+		chain: [...path, name],
+		...more,
+	});
+	assert.deepEqual(
+		[row("b"), row("c", ["a"]), row("a"), row("a", ["b"])]
+			.sort(keeping.deckOrder)
+			.map((r) => r.chain.join(">")),
+		["a", "a>c", "b", "b>a"],
+		"a doc's rows sit right under it",
 	);
-	assert.ok(
-		rootForm.indexOf("backlogRoot.id") < rootForm.indexOf("KB_FEAT"),
-		"the guard comes before the kb fetch",
+	const deck = { rows: [row("a"), row("x", ["a"], { load: true })] };
+	const settling = picker({}, deck, async (loading) => {
+		deck.rows = deck.rows.map((r) => (r === loading ? { ...r, load: undefined } : r));
+		deck.rows.push(row("y", ["a", "x"]));
+	});
+	assert.equal((await settling.settleChain(["a", "x", "y"])).ref, "y", "Load fills each step in");
+	await assert.rejects(settling.settleChain(["a", "z"]), /nothing links z/);
+	deck.rows.push(row("w", [], { container: true }));
+	await assert.rejects(
+		settling.settleChain(["w"]),
+		/w is not a feat/,
+		"a backlog is never the deck",
 	);
-	assert.doesNotMatch(script, /deck/i, "the page says root, never deck");
 	// Pull and Push report in a corner notice and leave the view alone.
 	const runSync = /async function runSync\(action, root\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(runSync, "page carries runSync");
@@ -374,8 +419,8 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.match(script, /function groupedRows\(items, render\)/, "page carries groupedRows");
 	assert.match(
 		script,
-		/\.\.\.groupedRows\(listing\.feats, \(feat, hideRel\) => node\(feat, home, hideRel, true\)\)/,
-		"loadRoots groups the root's feats",
+		/\.\.\.groupedRows\(rootFeats, \(feat, hideRel\) => node\(feat, home, hideRel, true\)\)/,
+		"the tree groups the deck's feats",
 	);
 	assert.match(
 		script,
@@ -402,14 +447,12 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		"api with wrong token",
 	);
 
-	// At the default picker-level 1, the first feat is offered and selected.
+	// The first feat the backlog links is the default deck.
 	const {
 		bridge: bridgeInfo,
 		backlog: backlogRoot,
-		feats,
-		level,
-		choices,
-		pick,
+		rows,
+		defaultChain,
 		locked,
 	} = await get("/api/picker");
 	assert.deepEqual(
@@ -419,14 +462,13 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.equal(bridgeInfo.branch.name, "main", "the header's branch is the bridge's checkout");
 	assert.equal(bridgeInfo.branch.trunk, "main");
 	assert.equal(backlogRoot.id, BACKLOG);
-	assert.deepEqual(feats, []);
-	assert.equal(level, 1);
 	assert.deepEqual(
-		choices.map((choice) => choice.id),
+		rows.map((row) => row.id),
 		[FEAT],
 	);
-	assert.equal(pick, FEAT);
-	assert.equal(locked, false);
+	assert.deepEqual(defaultChain, [FEAT]);
+	assert.equal(locked, undefined);
+	assert.deepEqual(await get(`/api/feats?ref=${FEAT}`), []);
 
 	const { repos } = await get(`/api/context?root=${BACKLOG}`);
 	assert.deepEqual(
@@ -617,7 +659,7 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	);
 });
 
-test("on a dive helm picks the first feat when it cannot find an ancestor; meta.root and meta.deck are ignored", (t) => {
+test("a dive with no feat locks the deck to the default; meta.root and meta.deck are ignored", (t) => {
 	const bridge = join(tmp, "bridge");
 	const diveDoc = join(bridge, "kb", `${DIVE}.md`);
 	const before = readFileSync(diveDoc, "utf8");
@@ -634,10 +676,8 @@ test("on a dive helm picks the first feat when it cannot find an ancestor; meta.
 		);
 	dive(`  root: ${IDEAS}\n  deck: ${IDEAS}\n`);
 	const picker = helmPicker(bridge);
-	assert.equal(picker.locked, true);
-	assert.equal(picker.pick, FEAT, "the first offered feat is picked");
+	assert.equal(picker.locked.ref, FEAT, "the first feat the backlog links");
 	assert.equal(picker.backlog.id, BACKLOG);
-	assert.deepEqual(picker.feats, []);
 });
 
 test("helm writes only by running crud, and only on an active dive; a note needs none", async (t) => {

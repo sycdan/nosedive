@@ -248,8 +248,9 @@ function stageOpened(doc) {
 }
 
 /**
- * With no active dive, the page is for getting onto one: the dives the picked
- * root reaches, or -- given a feat -- the ones that feat reaches, which, when
+ * With no active dive, the page is for getting onto one: the dives on deck --
+ * the deck feat's and those of every feat below it -- or, given a feat, the
+ * ones that feat reaches, which, when
  * it has none, can be jumped straight into if jump would take it.
  */
 function divePicker(feat) {
@@ -271,6 +272,6 @@ function divePicker(feat) {
 	let timer;
 	search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(fill, 200); });
 	fill().catch(showError);
-	return el("section", { class: "picker" }, el("h3", {}, "Dives"), search, cards);
+	return el("section", { class: "picker" }, el("h3", {}, feat ? "Dives" : "Dives on deck"), search, cards);
 }
 `;

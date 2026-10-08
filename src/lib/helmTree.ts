@@ -7,28 +7,6 @@
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
 
-/** The backlog memo, used for actions that target it explicitly. */
-let backlogRoot = null;
-/** The backlog and the docs the picker offers, by the ref the server names them with. */
-const rootNames = new Map();
-const rootCards = new Map();
-const PICK_KEY = "helm-pick";
-/** The picked doc's feats, as its links name them: what Add as feat offers to nest under. */
-let rootFeats = [];
-
-function rememberedPick() {
-	try { return localStorage.getItem(PICK_KEY); } catch { return null; }
-}
-
-function rememberPick(ref) {
-	try { localStorage.setItem(PICK_KEY, ref); } catch { /* a private window keeps nothing */ }
-}
-
-function rootStep(ref) {
-	const card = rootCards.get(ref);
-	return { id: card ? card.id : ref, repo: card && card.repo, name: rootNames.get(ref) || ref, kind: "root" };
-}
-
 /** A doc's name in the tree and the breadcrumbs. */
 function label(doc) {
 	return display(doc);
@@ -134,24 +112,6 @@ function section(title, onPick) {
 	return el("li", { class: "section" }, row);
 }
 
-/** The picker in the header: only the docs picker-level offers; locked on a dive. */
-function renderPicker(listing) {
-	const picker = document.getElementById("rootpick");
-	picker.hidden = false;
-	const options = listing.choices
-		.map((pick) => el("option", { value: pick.ref }, rootNames.get(pick.ref)));
-	picker.replaceChildren(...options);
-	picker.value = ctx.root || "";
-	picker.disabled = listing.locked;
-	picker.title = listing.locked ? "On a dive, the pick is the one its feat is under" : "Pick what the tree shows";
-	picker.onchange = async () => {
-		rememberPick(picker.value);
-		Object.assign(ctx, { root: picker.value, feat: null, repo: null, kind: null });
-		await loadRoots();
-		reset();
-	};
-}
-
 /** The branch the bridge has checked out, and how far it is from trunk. */
 function renderBranch(branch) {
 	const badge = document.getElementById("branch");
@@ -163,31 +123,13 @@ function renderBranch(branch) {
 	badge.onclick = showBranch;
 }
 
-/** Reads the pick and fills the tree with its .feat children. */
-async function loadRoots() {
-	const wanted = ctx.root || rememberedPick();
-	const listing = await api("/api/picker" + (wanted ? "?pick=" + encodeURIComponent(wanted) : ""));
-	bridge = listing.bridge;
-	renderBranch(bridge.branch);
-	backlogRoot = listing.backlog || null;
-	rootIds.clear();
-	rootNames.clear();
-	rootCards.clear();
-	for (const pick of listing.choices) {
-		rootIds.add(pick.id);
-		rootNames.set(pick.ref, display(pick));
-		rootCards.set(pick.ref, pick);
-	}
-	const root = listing.pick || null;
-	if (ctx.root !== root) Object.assign(ctx, { feat: null, repo: null, kind: null });
-	ctx.root = root;
-	renderPicker(listing);
-	rootFeats = listing.feats;
+/** The deck heads the tree, its .feat children below. */
+function drawTree() {
 	const home = ctx.root ? [rootStep(ctx.root)] : [];
 	const items = [];
 	if (ctx.root)
 		items.push(section(rootNames.get(ctx.root), (row) => { highlight(row); reset(); }),
-			...groupedRows(listing.feats, (feat, hideRel) => node(feat, home, hideRel, true)));
+			...groupedRows(rootFeats, (feat, hideRel) => node(feat, home, hideRel, true)));
 	document.getElementById("tree").replaceChildren(...items);
 }
 `;

@@ -18,7 +18,7 @@ import { helmPage } from "./helmPage.js";
 import { gitOutput } from "./gitProcess.js";
 import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
-import { helmFeats, helmPicker, helmRepoList } from "./helmPicker.js";
+import { helmFeats, helmPicker, helmPickerLoad, helmRepoList } from "./helmPicker.js";
 import { helmDives } from "./helmDives.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
@@ -245,8 +245,9 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				return sendJson(res, helmRepoList(cwd, url.searchParams.get("root") || undefined));
 			if (url.pathname === "/api/internals") return sendJson(res, helmInternals(cwd, lastChangeAt));
 			if (url.pathname === "/api/creatable") return sendJson(res, helmCreatableKinds(cwd));
-			if (url.pathname === "/api/picker")
-				return sendJson(res, helmPicker(cwd, url.searchParams.get("pick") || undefined));
+			if (url.pathname === "/api/picker") return sendJson(res, helmPicker(cwd));
+			if (url.pathname === "/api/picker/load")
+				return sendJson(res, helmPickerLoad(cwd, url.searchParams.getAll("chain")));
 			if (url.pathname === "/api/feats")
 				return sendJson(res, helmFeats(cwd, url.searchParams.get("ref") ?? ""));
 			if (url.pathname === "/api/doc")

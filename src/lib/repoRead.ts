@@ -1,8 +1,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { BASE_CONFIG_FILENAME, BRIDGE_STATE_DIRNAME } from "./constants.js";
 import {
 	leadingMarkdownFrontmatter,
+	parseYamlBlock,
 	toPosixPath,
 	uuidLike,
 	type NosediveRc,
@@ -128,4 +130,35 @@ export function readQualifiedRef(rc: NosediveRc, repoRef: string, ref: string): 
 	if (!leadingMarkdownFrontmatter(text))
 		throw new Error(`${path} in the bridge has no frontmatter`);
 	return text;
+}
+
+/**
+ * The backlog a repo's own nosedive config names -- what makes a doc there a
+ * sub-bridge's backlog -- read from its checkout, else its managed cache as
+ * `readRepoText` reads it. Never fetches; undefined when there is nothing to read.
+ */
+export function repoBacklogId(
+	rc: NosediveRc,
+	repo: KbDoc,
+	scopes: ScopeRef[] = activeDiveScopes(rc),
+): string | undefined {
+	const config = `${BRIDGE_STATE_DIRNAME}/${BASE_CONFIG_FILENAME}`;
+	const checkout = repoCheckout(rc, repo);
+	const cache = managedCachePath(repo.id, rc.bridgeDir);
+	let text: string | undefined;
+	if (checkout) {
+		const file = join(checkout, config);
+		if (existsSync(file)) text = readFileSync(file, "utf8");
+	} else if (existsSync(cache)) {
+		const shown = runGit(cache, [
+			"show",
+			`refs/remotes/origin/${readBranch(cache, repo, scopes)}:${config}`,
+		]);
+		if (shown.status === 0) text = shown.stdout;
+	}
+	try {
+		return text ? parseYamlBlock(text, config).scalars.backlog : undefined;
+	} catch {
+		return undefined;
+	}
 }

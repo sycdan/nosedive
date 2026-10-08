@@ -131,8 +131,25 @@ details.top summary { cursor: pointer; font-size: 11px; text-transform: uppercas
 	color: var(--dim); padding: 2px 0 8px; }
 details.top .doclist { margin: 0; }
 .card.inscope { border-color: var(--accent); }
-#rootpick, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+.deckbtn, .kindpick { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
 	background: var(--panel); color: var(--text); max-width: 16em; }
+.deck { position: relative; }
+.deckbtn { display: flex; align-items: baseline; gap: 6px; max-width: 34em; cursor: pointer; overflow: hidden; white-space: nowrap; }
+.deckbtn:disabled { cursor: default; opacity: 1; }
+.deckbtn .icon, .deckrow .icon { width: auto; font-size: 13px; flex: none; }
+.dname { overflow: hidden; text-overflow: ellipsis; }
+.dtitle { color: var(--dim); overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 50%; }
+.deckpop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: min(560px, calc(100vw - 32px));
+	background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .18); display: grid; gap: 6px; }
+.deckfilter { font: inherit; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.decklist { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+.decklist li { display: flex; align-items: center; gap: 6px; }
+.deckrow { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; border: 0; background: none; padding: 4px 6px;
+	border-radius: 5px; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; }
+.deckrow:hover:not(:disabled) { background: var(--hover); }
+.deckrow:disabled { cursor: default; opacity: 1; color: var(--dim); }
+.deckrow.current { box-shadow: inset 2px 0 0 var(--accent); }
 dialog.modal { padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
 	background: var(--panel); color: var(--text); width: min(420px, calc(100vw - 32px)); }
 dialog.modal.wide { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }

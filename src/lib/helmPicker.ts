@@ -2,9 +2,11 @@ import { basename } from "node:path";
 
 import { sameFeatRef } from "./diveListing.js";
 import { helmBranchStatus, type HelmBranchStatus } from "./helmBranch.js";
+import { deckLoad, deckRows, type DeckRow } from "./helmDeck.js";
 import { helmRepoDoc, type HelmLink } from "./helmLinks.js";
 import { bridgeView, type BridgeView } from "./helmView.js";
-import { docKey, featChildren, featReach, isFeatEdge, rootedScopes } from "./jumpable.js";
+import { HelmRequestError } from "./helmWrites.js";
+import { featChildren, isFeatEdge, rootedScopes } from "./jumpable.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { linkedDoc } from "./repoLinks.js";
 import { KB_FEAT_ID } from "./shipZerostars.js";
@@ -42,29 +44,6 @@ function pickedDoc(view: BridgeView, ref: string): KbDoc | undefined {
 	return view.docs.find((doc) => doc.id === ref) ?? helmRepoDoc(view, ref);
 }
 
-/** The docs `level` steps of `.feat` links below the backlog reach, each once. */
-function levelDocs(view: BridgeView, backlog: KbDoc, byId: Map<string, KbDoc>, level: number) {
-	let docs = [backlog];
-	for (let depth = 0; depth < level; depth++) {
-		const next = new Map<string, KbDoc>();
-		for (const doc of docs)
-			for (const child of featChildren(view.rc, doc, byId)) next.set(docKey(child), child);
-		docs = [...next.values()];
-	}
-	return docs;
-}
-
-/** The first of `choices` that is the dive's feat or reaches it through `.feat` links. */
-function diveAncestor(view: BridgeView, choices: KbDoc[], dive: KbDoc): KbDoc | undefined {
-	const ref = dive.featRef;
-	const feat = ref
-		? (view.docs.find((doc) => sameFeatRef(ref, doc)) ?? helmRepoDoc(view, ref))
-		: undefined;
-	if (!feat) return undefined;
-	const key = docKey(feat);
-	return choices.find((doc) => docKey(doc) === key || featReach(view.rc, view.docs, doc).has(key));
-}
-
 const kbFeatFirst = (a: HelmLink, b: HelmLink) => {
 	const isKbFeat = (link: HelmLink) => link.type === "doc" && link.id === KB_FEAT_ID;
 	return Number(isKbFeat(b)) - Number(isKbFeat(a));
@@ -88,42 +67,39 @@ function featItems(view: BridgeView, from: KbDoc, byId: Map<string, KbDoc>): Hel
 }
 
 /**
- * What helm's picker offers and what the tree shows. Level 1 offers the
- * backlog's `.feat` children; level 2 offers theirs. The first is picked by
- * default. On a dive the pick locks to the offered ancestor of its feat, or
- * the first choice if none reaches it.
+ * The deck picker: every row the backlog reaches without a fetch and the
+ * default deck's chain. On a dive the deck is locked to the dive's feat,
+ * with its chain when the picker lists it.
  */
-export function helmPicker(
-	cwd: string,
-	asked?: string,
-): {
+export function helmPicker(cwd: string): {
 	bridge: { id?: string; name: string; branch: HelmBranchStatus };
-	level: number;
-	backlog?: HelmPick;
-	choices: HelmPick[];
-	pick?: string;
-	locked: boolean;
-	feats: HelmFeat[];
+	backlog?: DeckRow;
+	rows: DeckRow[];
+	defaultChain?: string[];
+	locked?: Pick<DeckRow, "ref" | "id" | "repo" | "name" | "title" | "gist"> & { chain?: string[] };
 } {
 	const view = bridgeView(cwd);
 	const { rc, docs } = view;
 	const byId = new Map(docs.map((doc) => [doc.id, doc]));
 	const bridgeDoc = rc.bridge ? byId.get(rc.bridge) : undefined;
-	const backlog = rc.backlog ? byId.get(rc.backlog) : undefined;
-	const offered = backlog ? levelDocs(view, backlog, byId, rc.pickerLevel) : [];
+	const { backlog, rows, defaultChain } = deckRows(view);
 	const activeId = readActiveDiveId(rc.workspaceDir);
-	const dive = activeId ? byId.get(activeId) : undefined;
-	const picked =
-		(activeId
-			? dive && diveAncestor(view, offered, dive)
-			: offered.find((doc) => refOf(doc) === asked)) ?? offered[0];
+	const ref = activeId ? byId.get(activeId)?.featRef : undefined;
+	const feat = ref
+		? (docs.find((doc) => sameFeatRef(ref, doc)) ?? helmRepoDoc(view, ref))
+		: undefined;
+	const lockedRef = feat ? refOf(feat) : defaultChain?.at(-1);
+	const lockedRow = rows.find((row) => row.ref === lockedRef);
+	const locked = feat ? { ...pickOf(feat), chain: lockedRow?.chain } : lockedRow;
 	const missing = rc.backlog
 		? {
 				ref: rc.backlog,
 				id: rc.backlog,
+				chain: [],
+				path: [],
 				name: rc.backlog,
-				kind: "missing",
 				gist: `no kb doc ${rc.backlog}`,
+				container: true as const,
 			}
 		: undefined;
 	return {
@@ -132,13 +108,20 @@ export function helmPicker(
 			name: bridgeDoc?.name ?? basename(rc.bridgeDir),
 			branch: helmBranchStatus(rc.bridgeDir, bridgeDoc?.repoBaseBranch ?? "main"),
 		},
-		level: rc.pickerLevel,
-		backlog: backlog ? pickOf(backlog) : missing,
-		choices: offered.map(pickOf),
-		pick: picked ? refOf(picked) : undefined,
-		locked: Boolean(activeId),
-		feats: picked ? featItems(view, picked, byId) : [],
+		backlog: backlog ?? missing,
+		rows,
+		defaultChain,
+		...(activeId ? { locked } : {}),
 	};
+}
+
+/** Load: the row a chain of refs leads to, read through crud's read, and the rows below it. */
+export function helmPickerLoad(cwd: string, chain: string[]): { rows: DeckRow[] } {
+	try {
+		return { rows: deckLoad(bridgeView(cwd), chain) };
+	} catch (error) {
+		throw new HelmRequestError(422, error instanceof Error ? error.message : String(error));
+	}
 }
 
 /** A picked doc's `.feat` children, for a row of its tree to expand into. */

@@ -94,15 +94,18 @@ function featAncestors(rc: NosediveRc, kbDocs: KbDoc[], feat: KbDoc): KbDoc[] {
 
 /**
  * The scope a dive takes for the repo its feat lives in, when that is not the
- * bridge: the entry of the nearest doc on the feat's `.feat` path that names a
- * branch for the repo, the feat itself first. Undefined `workBranch` when none
- * does; the dive then takes the feat's default branch.
+ * bridge: the entry of the nearest doc on the feat's `.feat` path, outside
+ * that repo, that names a branch for it -- the doc whose link crosses into the
+ * repo, which is the branch the feat was read at. A doc inside the repo scoping
+ * it, a sub-bridge's backlog scoping itself, speaks for that bridge's own dives.
+ * Undefined `workBranch` when none does; the dive then takes the feat's default.
  * @see kb/01a11c86-8bb4-7a3a-a33b-58a25a51b990.md
  */
 function featRepoScope(rc: NosediveRc, kbDocs: KbDoc[], feat: KbDoc): ScopeRef | undefined {
 	const repoId = feat.home?.repoId;
 	if (!repoId) return undefined;
-	const named = [feat, ...featAncestors(rc, kbDocs, feat)]
+	const named = featAncestors(rc, kbDocs, feat)
+		.filter((doc) => doc.home?.repoId !== repoId)
 		.map((doc) => doc.scopes.find((scope) => scope.repoId === repoId && scope.workBranch))
 		.find((scope) => scope !== undefined);
 	return named ?? { repoId, path: "", readOnly: false, flags: [], attrs: {} };

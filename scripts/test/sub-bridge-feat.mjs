@@ -43,8 +43,8 @@ const links = (...entries) => [
  * The wild-harvest-homestead shape: the bridge's backlog links `properties`,
  * which scopes the sub-bridge on `work/props` and links its backlog as
  * `property.feat`; that backlog links `water` as `system.feat`. By default
- * nothing in the sub-bridge scopes it, so `properties` is the nearest
- * ancestor that does; `subBranch` has the sub-bridge's backlog scope it too.
+ * nothing in the sub-bridge scopes it; `subBranch` has the sub-bridge's
+ * backlog scope itself, as a seeded sub-bridge's does.
  */
 function world(name, { propsBranch = BRANCH, subBranch } = {}) {
 	const { bridge } = seededBridge(tmp, name, "pilot@nosedive.invalid");
@@ -130,7 +130,7 @@ test("a dive on a feat two links into a sub-bridge scopes it and commits its boo
 	assert.equal(git(["status", "--porcelain", "--", "kb"], checkout), "");
 });
 
-test("the feat's repo lands on the nearest ancestor's branch, else the feat's default", () => {
+test("the feat's repo lands on the crossing doc's branch, never the sub-bridge's own", () => {
 	const branchOf = (bridge) => {
 		const recorded = run(["crud", "dive", "--feat", WATER_REF, "Water"], bridge, "Work.\n");
 		assertOk(recorded, "crud dive failed");
@@ -139,8 +139,9 @@ test("the feat's repo lands on the nearest ancestor's branch, else the feat's de
 			dive,
 		)?.[1];
 	};
-	assert.equal(branchOf(world("nearer", { subBranch: "work/kb" }).bridge), "work/kb");
-	assert.equal(branchOf(world("bare", { propsBranch: null }).bridge), `bare-main/water-${WATER}`);
+	assert.equal(branchOf(world("self", { subBranch: "work/kb" }).bridge), BRANCH);
+	const bare = world("bare", { propsBranch: null, subBranch: "work/kb" });
+	assert.equal(branchOf(bare.bridge), `bare-main/water-${WATER}`);
 });
 
 test("a dive that does not scope its feat's repo writes nothing there", () => {

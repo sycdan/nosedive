@@ -380,6 +380,41 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		/w is not a feat/,
 		"a backlog is never the deck",
 	);
+	// Unfiltered, a row is its own name indented under its parent; filtered, it carries its path.
+	const deckTextSource = /function deckText\(row, withPath = true\) \{[\s\S]*?\n\}/.exec(
+		script,
+	)?.[0];
+	assert.ok(deckTextSource, "page carries deckText");
+	const deckText = new Script(`(${deckTextSource})`).runInNewContext({
+		display: (row) => row.name,
+		el: (tag, attrs, text) => ({ cls: attrs.class, text }),
+	});
+	const child = { name: "dive-handoff", title: "Dive Handoff", path: ["nosedive-level-2"] };
+	assert.deepEqual(
+		JSON.parse(JSON.stringify(deckText(child, false))),
+		[
+			{ cls: "dname", text: "dive-handoff" },
+			{ cls: "dtitle", text: "Dive Handoff" },
+		],
+		"two tones, no path",
+	);
+	assert.equal(deckText(child, true)[0].text, "nosedive-level-2 › dive-handoff");
+	assert.equal(
+		deckText(child)[0].text,
+		"nosedive-level-2 › dive-handoff",
+		"the deck button keeps it",
+	);
+	const deckItemSource = /function deckItem\(row, close, redraw, filtered\) \{[\s\S]*?\n\}/.exec(
+		script,
+	)?.[0];
+	assert.ok(deckItemSource, "page carries deckItem");
+	assert.match(deckItemSource, /deckText\(row, filtered\)/);
+	assert.match(
+		deckItemSource,
+		/const depth = filtered \? 0 : \(row\.path \|\| \[\]\)\.length;/,
+		"indent a step per path segment",
+	);
+	assert.match(script, /deckItem\(row, close, draw, words !== ""\)/, "the filter's text decides");
 	// Pull and Push report in a corner notice and leave the view alone.
 	const runSync = /async function runSync\(action, root\) \{[\s\S]*?\n\}/.exec(script)?.[0];
 	assert.ok(runSync, "page carries runSync");

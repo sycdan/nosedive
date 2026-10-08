@@ -125,10 +125,10 @@ async function chooseDeck(row) {
 	reset();
 }
 
-/** Two tones: the name, behind the path it was reached through, then the title. */
-function deckText(row) {
+/** Two tones: the name -- behind the path it was reached through, unless indenting says it -- then the title. */
+function deckText(row, withPath = true) {
 	const name = display(row);
-	return [el("span", { class: "dname" }, [...(row.path || []), name].join(" › ")),
+	return [el("span", { class: "dname" }, [...(withPath ? row.path || [] : []), name].join(" › ")),
 		row.title && row.title !== name ? el("span", { class: "dtitle" }, row.title) : null];
 }
 
@@ -145,13 +145,20 @@ function renderPicker() {
 	box.replaceChildren(button);
 }
 
-/** 🏗️ a feat, the deck to pick; 🌉 a backlog, listed with its feats under it but never picked. */
-function deckItem(row, close, redraw) {
+/**
+ * 🏗️ a feat, the deck to pick; 🌉 a backlog, listed with its feats under it
+ * but never picked. Unfiltered, a row is its own name, indented a step per
+ * doc it was reached through; filtered, it carries its path, as its parents
+ * may not be listed.
+ */
+function deckItem(row, close, redraw, filtered) {
 	const pick = el("button", { class: "deckrow" + (row.ref === ctx.root ? " current" : ""), type: "button",
 		disabled: row.container || row.load ? "" : null, title: row.gist },
-		el("span", { class: "icon" }, row.load ? "▢" : row.container ? "🌉" : "🏗️"), ...deckText(row));
+		el("span", { class: "icon" }, row.load ? "▢" : row.container ? "🌉" : "🏗️"), ...deckText(row, filtered));
 	pick.addEventListener("click", () => { close(); chooseDeck(row); });
-	if (!row.load) return el("li", {}, pick);
+	const depth = filtered ? 0 : (row.path || []).length;
+	const li = (...items) => el("li", { style: depth ? "padding-left: " + depth * 18 + "px" : null }, ...items);
+	if (!row.load) return li(pick);
 	const load = el("button", { class: "act jump", type: "button", title: "Read " + row.ref }, "Load");
 	load.addEventListener("click", async () => {
 		load.disabled = true;
@@ -165,7 +172,7 @@ function deckItem(row, close, redraw) {
 			syncNotice("Load refused", String(err.message || err), true);
 		}
 	});
-	return el("li", {}, pick, load);
+	return li(pick, load);
 }
 
 /** The list under the picker, filtered by path, name, title or gist; Esc or a click outside closes it. */
@@ -180,7 +187,7 @@ function openDeckList(box) {
 		const words = filter.value.trim().toLowerCase();
 		const rows = [backlogRoot, ...deck.rows].filter((row) => row && (!words ||
 			[...(row.path || []), row.name, row.title || "", row.gist].join(" ").toLowerCase().includes(words)));
-		list.replaceChildren(...rows.map((row) => deckItem(row, close, draw)));
+		list.replaceChildren(...rows.map((row) => deckItem(row, close, draw, words !== "")));
 	};
 	filter.addEventListener("input", draw);
 	filter.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });

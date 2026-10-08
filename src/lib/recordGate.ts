@@ -13,6 +13,7 @@ import {
 } from "./coreParsing.js";
 import { resolveBridgeDocRef, resolveScopeRepo } from "./diveScopes.js";
 import { KbDoc, loadKbDocs, retitleGeneratedHeading } from "./kbDocs.js";
+import { kindSources } from "./kinds.js";
 import { resolveGateScript } from "./landGates.js";
 import { LinkRef } from "./kbRefs.js";
 import { bridgeDocRefPredicate, positionalGistNotice } from "./recordArgs.js";
@@ -173,16 +174,23 @@ function renderGateDoc(
  * `false` rather than `process.exit(1)`: the runner maps a `false` return to
  * exit 1, and exiting on the spot would cut off output the runner is still
  * draining.
+ *
+ * The path is read where it runs, so it names a dive's `__self` copy there
+ * and the bridge's copy once that lands.
  */
-function renderGateStub(scriptRel: string): string {
-	return `export async function run(ctx) {
+function renderGateStub(): string {
+	return `import { relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export async function run(ctx) {
 	/**
 	 * Minted by \`nosedive record.gate\` and deliberately failing. Replace this body
 	 * with the check itself: return false (or throw) when what it proves does not
 	 * hold, and return anything else when it does.
 	 */
+	const script = relative(ctx.bridgeRoot, fileURLToPath(import.meta.url)).split(sep).join("/");
 	console.error(\`ctx: \${JSON.stringify(ctx, null, 2)}\`);
-	console.error(\`gate \${ctx.gateId} is unimplemented -- write the check in ${scriptRel}\`);
+	console.error(\`gate \${ctx.gateId} is unimplemented -- write the check in \${script}\`);
 	return false;
 }
 `;
@@ -285,7 +293,7 @@ function createGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions,
 	// whose script does not resolve, so a command that minted only the doc would
 	// produce something that breaks the moment anything selects it.
 	mkdirSync(join(rc.kbDir!, "artifacts"), { recursive: true });
-	writeFileAtomic(scriptPath, renderGateStub(scriptRel));
+	writeFileAtomic(scriptPath, renderGateStub());
 	writeFileAtomic(
 		docPath,
 		renderGateDoc(id, name, gist, scriptRel, options.repo ? declaring.id : undefined),
@@ -387,12 +395,19 @@ function editGate(rc: NosediveRc, kbDocs: KbDoc[], options: RecordGateOptions, i
 	);
 }
 
+/** A gate is dive content, so it goes where crud sends it: `__self` on a dive scoping the bridge. */
+function gateHome(rc: NosediveRc): NosediveRc {
+	const home = kindSources(process.cwd()).find((source) => source.id === rc.bridge);
+	return home ? { ...rc, bridgeDir: home.root, kbDir: home.kbDir } : rc;
+}
+
 export function recordGate(args: string[], io: CommandIo): void {
-	const rc = readNosediveRc(process.cwd());
-	if (!rc.kbDir) throw new Error("record.gate requires a configured kb directory");
+	const live = readNosediveRc(process.cwd());
+	if (!live.kbDir) throw new Error("record.gate requires a configured kb directory");
+	const rc = gateHome(live);
 	// Before the parse, because whether the positional is a document is a
 	// question only the bridge can answer.
-	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	const kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 	const options = parseRecordGateArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
 	if (options.positionalGist) io.err(positionalGistNotice("record.gate"));
 	if (options.ref === undefined) createGate(rc, kbDocs, options, io);

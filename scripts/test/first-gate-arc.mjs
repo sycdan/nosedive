@@ -35,9 +35,9 @@ function recordedRepoId(stdout) {
 	return match[1];
 }
 
-/** The stub path a gate's error message names. */
+/** The stub path a gate's error message names: the dive's `__self` copy, since the dive scopes the bridge. */
 function stubPathFor(gateId) {
-	return join("kb", "artifacts", `${gateId}.mjs`);
+	return join("workspace", "__self", "kb", "artifacts", `${gateId}.mjs`);
 }
 
 test("a pilot's first gate: minted from a gist, red until written, green once it is", () => {
@@ -45,11 +45,6 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	const { bridge, origin } = seededBridge(tmp, "first-gate-arc", diver);
 
 	// 1. Seed a bridge, register a repo, pitch a feat, record a dive on it, jump.
-	// This arc exercises record.gate's live-bridge write path. With the bridge
-	// scoped, gate authoring belongs in __self instead (covered by self-gates).
-	const bridgeId = /^bridge: (\S+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
 	const source = implSource("first-gate-arc-impl");
 	const registered = run(["record.repo", source, "--name", "first-gate-arc-impl"], bridge);
 	assertOk(registered, "record.repo failed");
@@ -70,8 +65,6 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 			repoId,
 			"--work-branch",
 			"work/export-honesty",
-			"--unscope",
-			bridgeId,
 		],
 		bridge,
 		"Prove the export list stays honest.",
@@ -84,15 +77,22 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	assert.equal(existsSync(worktree), true, "jump should have hydrated the scoped repo");
 
 	// 2. record.gate mints the gate doc, the stub, and the feat's test.gate link,
-	// and its name is derived from the gist rather than a clock.
+	// and its name is derived from the gist rather than a clock. The dive scopes
+	// the bridge, so all three land in its `__self` checkout.
+	const self = join(bridge, "workspace", "__self");
 	const gist = "The export list matches what the package actually exports.";
 	const recorded = run(["record.gate", gist, "--feat", featId], bridge);
 	assertOk(recorded, "record.gate failed");
-	const gateMatch = /^Recorded kb[\\/]([0-9a-f-]{36})\.md$/m.exec(recorded.stdout);
+	const gateMatch = /^Recorded workspace\/__self\/kb\/([0-9a-f-]{36})\.md$/m.exec(recorded.stdout);
 	assert.ok(gateMatch, `record.gate did not report a written doc:\n${recorded.stdout}`);
 	const gateId = gateMatch[1];
+	assert.equal(
+		existsSync(join(bridge, "kb", `${gateId}.md`)),
+		false,
+		"the live bridge waits for land",
+	);
 
-	const gateDocPath = join(bridge, "kb", `${gateId}.md`);
+	const gateDocPath = join(self, "kb", `${gateId}.md`);
 	assert.equal(existsSync(gateDocPath), true, "the gate doc should exist");
 	const gateDoc = readFileSync(gateDocPath, "utf8");
 	assert.match(gateDoc, /^kind: gate$/m);
@@ -106,7 +106,7 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	const stubPath = join(bridge, stubPathFor(gateId));
 	assert.equal(existsSync(stubPath), true, "the stub script should exist");
 
-	const featPath = join(bridge, "kb", `${featId}.md`);
+	const featPath = join(self, "kb", `${featId}.md`);
 	assert.match(
 		readFileSync(featPath, "utf8"),
 		new RegExp(`- kb/${gateId}\\.md:\\n      rel: test\\.gate`),
@@ -160,11 +160,11 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 		"record.gate mints a test gate, not a land gate",
 	);
 
-	// 5. Rewrite the stub so it passes.
-	writeFileSync(
-		stubPath,
-		"export async function run() {\n\tconsole.error('export list is honest');\n\treturn true;\n}\n",
-	);
+	// 5. Rewrite the stub so it passes, and publish it: land refuses a dirty `__self`.
+	const written =
+		"export async function run() {\n\tconsole.error('export list is honest');\n\treturn true;\n}\n";
+	writeFileSync(stubPath, written);
+	assertOk(run(["record.gate", gateId], bridge), "record.gate publish failed");
 	// 6. nosedive test <gate-id> now passes. By this point the feat and the dive
 	// the sweep minted both declare the gate, so this also holds the rule that
 	// the active dive is the declaration a named gate inherits from.
@@ -194,6 +194,14 @@ test("a pilot's first gate: minted from a gist, red until written, green once it
 	assert.match(
 		runTool("git", ["show", "main:kb/" + diveId + ".md"], bridge).stdout,
 		/^kind: memo$/m,
+	);
+	// Land brought the gate written in `__self` into the bridge.
+	assert.equal(
+		runTool("git", ["show", `main:kb/artifacts/${gateId}.mjs`], bridge).stdout.replace(
+			/\r\n/g,
+			"\n",
+		),
+		written,
 	);
 	assert.equal(
 		runTool("git", ["rev-parse", "main"], bridge).stdout.trim(),

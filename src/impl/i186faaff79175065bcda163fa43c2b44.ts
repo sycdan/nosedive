@@ -206,7 +206,8 @@ function mintUnclaimedFailures(
 	rc: ReturnType<typeof readNosediveRc>,
 	io: CommandIo,
 ): void {
-	let kbDocs = initialDocs;
+	// Dives are live bookkeeping, so dedup reads the live bridge, never a dive's `__self` view.
+	let kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 	for (const run of runs) {
 		if (
 			kbDocs.some(
@@ -217,7 +218,7 @@ function mintUnclaimedFailures(
 		}
 
 		const declaredBy = run.gate.introducedBy;
-		const feat = owningFeat(declaredBy, kbDocs, rc);
+		const feat = owningFeat(declaredBy, initialDocs, rc);
 		if (!feat) {
 			io.writeErr(
 				`test: gate ${run.gate.doc.name || run.gate.doc.id} (${run.gate.doc.id}), declared by ${declaredBy.relPath}: a test.gate needs a feat in context to mint against.\n`,

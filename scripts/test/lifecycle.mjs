@@ -96,6 +96,48 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 		repoId,
 	);
 	const featWorkBranch = /^      work-branch: (.+)$/m.exec(featText)[1];
+	// The gates are on the bridge before any dive is pinned, so each dive's
+	// `__self` -- where test reads bridge gates -- carries them too.
+	write(
+		join(bridge, "kb", `${diveGateId}.md`),
+		`---
+kind: assertion
+id: ${diveGateId}
+name: lifecycle-dive-gate
+gist: "Run the lifecycle dive gate"
+meta:
+  test-script: kb/artifacts/lifecycle-dive-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
+		'export function run() { console.log("lifecycle dive gate ran"); }\n',
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		`---
+kind: assertion
+id: ${featGateId}
+name: lifecycle-feat-gate
+gist: "Run the lifecycle feat gate"
+meta:
+  test-script: kb/artifacts/lifecycle-feat-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+		'export function run() { console.log("lifecycle feat gate ran"); }\n',
+	);
+	const featGateLink = `  - kb/${featGateId}.md:\n      rel: test.gate\n`;
+	const featBeforeGate = readFileSync(featPath, "utf8");
+	write(
+		featPath,
+		featBeforeGate.includes("\nlinks:\n")
+			? featBeforeGate.replace(/^links:\n/m, `links:\n${featGateLink}`)
+			: featBeforeGate.replace(/\n---\n/, `\nlinks:\n${featGateLink}---\n`),
+	);
 	// Work is picked up off the deck, so a feat nothing reaches has no dives
 	// anybody can jump -- and this test puts its dive down and picks it back up.
 	assertOk(run(["update-backlog", "--inject", featId], bridge), "backlog injection failed");
@@ -104,15 +146,7 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	runTool("git", ["push"], bridge);
 
 	assertOk(run(["hydrate-repo.workspace", repoId], bridge), "hydrate repo failed");
-	// This first dive authors gates in the live bridge. Scoped bridge gate
-	// authoring is covered separately in self-gates.mjs.
-	const bridgeId = /^bridge: (\S+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
-	const first = run(
-		["record.dive", "--feat", featId, "--diver", diver, "--unscope", bridgeId],
-		bridge,
-	);
+	const first = run(["record.dive", "--feat", featId, "--diver", diver], bridge);
 	assertOk(first, "first record.dive failed");
 	const firstId = recordedDiveId(first.stdout);
 	assertFeatDiveRel(featPath, firstId, "planned\\.dive");
@@ -154,49 +188,10 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
 	assertDiveLinkAttrs(featPath, firstId, "jumped.dive");
 	write(
-		join(bridge, "kb", `${diveGateId}.md`),
-		`---
-kind: assertion
-id: ${diveGateId}
-name: lifecycle-dive-gate
-gist: "Run the lifecycle dive gate"
-meta:
-  test-script: kb/artifacts/lifecycle-dive-gate.mjs
----
-`,
-	);
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
-		'export function run() { console.log("lifecycle dive gate ran"); }\n',
-	);
-	write(
-		join(bridge, "kb", `${featGateId}.md`),
-		`---
-kind: assertion
-id: ${featGateId}
-name: lifecycle-feat-gate
-gist: "Run the lifecycle feat gate"
-meta:
-  test-script: kb/artifacts/lifecycle-feat-gate.mjs
----
-`,
-	);
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
-		'export function run() { console.log("lifecycle feat gate ran"); }\n',
-	);
-	write(
 		firstPath,
 		readFileSync(firstPath, "utf8").replace(
 			/^---\n\n/m,
 			`links:\n  - kb/${diveGateId}.md:\n      rel: test.gate\n---\n\n`,
-		),
-	);
-	write(
-		featPath,
-		readFileSync(featPath, "utf8").replace(
-			/^links:\n/m,
-			`links:\n  - kb/${featGateId}.md:\n      rel: test.gate\n`,
 		),
 	);
 	const diveTests = run(["test"], bridge);
@@ -213,11 +208,19 @@ meta:
 	 * pass whether or not anything attached it. The feat's gate is one this dive
 	 * has never named, so the link can only be there because the failure put it
 	 * there.
+	 *
+	 * Broken in both checkouts: the dive tests its `__self`, and the backlog
+	 * sweep after the bail reads the bridge.
 	 */
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
-		'export function run() { console.error("lifecycle feat gate failed"); return false; }\n',
-	);
+	const self = join(bridge, "workspace", "__self");
+	for (const root of [self, bridge]) {
+		write(
+			join(root, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+			'export function run() { console.error("lifecycle feat gate failed"); return false; }\n',
+		);
+	}
+	runTool("git", ["add", "--", "kb"], self);
+	gitCommit(self, "break the feat gate");
 	const failedTests = run(["test", "--full"], bridge);
 	assert.equal(failedTests.status, 1, "the failing feat gate must fail test --full");
 	const testedDive = readFileSync(firstPath, "utf8");
@@ -254,6 +257,9 @@ meta:
 	const secondId = recordedDiveId(second.stdout);
 	assertFeatDiveRel(featPath, secondId, "planned\\.dive");
 	annotateDiveLink(featPath, secondId);
+	const noDiveGates = run(["test"], bridge);
+	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
+	assert.match(noDiveGates.stderr, /--full/);
 	assertOk(
 		run(
 			["record.dive", "--ref", secondId, "--brief", "-"],
@@ -264,9 +270,6 @@ meta:
 	);
 	assertDiveLinkAttrs(featPath, secondId, "planned.dive");
 	assertOk(run(["jump"], bridge), "second jump failed");
-	const noDiveGates = run(["test"], bridge);
-	assert.notEqual(noDiveGates.status, 0, "a dive with no test gates must not pass");
-	assert.match(noDiveGates.stderr, /--full/);
 	assertFeatDiveRel(featPath, secondId, "jumped\\.dive");
 	assertDiveLinkAttrs(featPath, secondId, "jumped.dive");
 	write(join(worktree, "landed.txt"), "landed work\n");

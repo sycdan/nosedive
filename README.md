@@ -46,7 +46,7 @@ nosedive jump                                 # hydrates the workspace and rebui
 
 nosedive pack                                 # stopping partway; banks WIP as patches
 nosedive jump                                 # picks the same dive back up
-nosedive land                                 # pushes work/add-a-hello-note
+nosedive land                                 # pushes <bridge>-main/add-a-hello-note-<feat-quid>
 ```
 
 Every command prints a suggestion for the next one, so you can follow the prompts.

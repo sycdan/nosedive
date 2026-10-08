@@ -110,17 +110,17 @@ async function loadRoots() {
 	const root = picked ? picked.ref : null;
 	rootIds.clear();
 	if (picked) rootIds.add(picked.id);
-	if (ctx.root !== root) Object.assign(ctx, { feat: null, repo: null, kind: null });
+	if (ctx.root !== root) Object.assign(ctx, { repo: null, kind: null });
 	ctx.root = root;
 	renderPicker();
-	rootFeats = root ? await api("/api/feats?ref=" + encodeURIComponent(root)) : [];
-	drawTree();
+	// Add as feat is offered on a dive only, where the deck is the dive's feat.
+	rootFeats = root && deck.locked ? await api("/api/feats?ref=" + encodeURIComponent(root)) : [];
 }
 
 async function chooseDeck(row) {
 	rememberChain(row.chain);
 	deck.chain = row.chain;
-	Object.assign(ctx, { root: row.ref, feat: null, repo: null, kind: null });
+	Object.assign(ctx, { root: row.ref, repo: null, kind: null });
 	await loadRoots();
 	reset();
 }

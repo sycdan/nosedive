@@ -119,10 +119,14 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	return form;
 }
 
-/** With no dive, the empty page's way onto one: the bridge's own standing feat, when it is the deck. */
+/**
+ * The home page's way to the deck's own page, where a dive is planned on it;
+ * with no dive, also the bridge's own standing feat when it is the deck.
+ */
 function rootForm() {
-	if (dives.active) return [];
-	const hint = el("p", { class: "empty" }, "Open a feat to plan a dive on it, or pick another deck.");
+	const open = ctx.root ? el("button", { class: "linkish", onclick: () => select([rootStep(ctx.root)]) }, "Open " + rootNames.get(ctx.root)) : null;
+	if (dives.active) return open ? [el("p", { class: "empty" }, open)] : [];
+	const hint = el("p", { class: "empty" }, open || "No deck: link a feat from the backlog.");
 	if (ctx.root === KB_FEAT)
 		api("/api/doc?id=" + KB_FEAT).then((feat) => hint.after(el("div", { class: "cardacts" }, jumpInto(feat))), () => {});
 	return [hint];

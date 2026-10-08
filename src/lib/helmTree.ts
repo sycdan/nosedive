@@ -1,8 +1,7 @@
 /**
- * The page's left tree and picker, spliced into its script. The picked doc --
- * the first offered feat by default -- heads the tree, then the feats it links and
- * theirs -- dives are cards in the main view, never rows; repos and kinds sit
- * atop the main view.
+ * The page's left tree, spliced into its script: the repos in scope -- the
+ * dive's, else the deck's -- each expanding to its kinds and each kind to its
+ * docs, the rest folded behind "show all". Feats are the deck picker's.
  */
 export const helmTreeScript = String.raw`
 // --- tree -------------------------------------------------------------------
@@ -10,11 +9,6 @@ export const helmTreeScript = String.raw`
 /** A doc's name in the tree and the breadcrumbs. */
 function label(doc) {
 	return display(doc);
-}
-
-/** Dives are cards in the main view, so the tree leaves them out. */
-function notADive(link) {
-	return !/(^|\.)dive$/.test(link.rel || "") && link.kind !== "dive";
 }
 
 /** A row: a twisty that expands load() into children lazily, and a label. */
@@ -36,6 +30,7 @@ function branch(cls, parts, title, load, onPick, onToggle) {
 		li, row,
 		refill: () => { if (loaded) fill(); },
 		close: () => { children.hidden = true; twisty.textContent = "▶"; },
+		open: () => { if (load && children.hidden) twisty.click(); },
 	};
 	twisty.addEventListener("click", () => {
 		const open = children.hidden;
@@ -49,69 +44,6 @@ function branch(cls, parts, title, load, onPick, onToggle) {
 	return self;
 }
 
-/** Splits items into feat groups, named for what their rel says before .feat in first-seen order, and the rest. */
-function featGroups(items) {
-	const groups = [];
-	const rest = [];
-	for (const item of items) {
-		const m = /^(.+)\.feat$/.exec(item.rel || "");
-		if (!m) { rest.push(item); continue; }
-		let group = groups.find((g) => g.group === m[1]);
-		if (!group) { group = { group: m[1], items: [] }; groups.push(group); }
-		group.items.push(item);
-	}
-	return { groups, rest };
-}
-
-/** A level's rows: each feat group under its heading, rows without their rel, then the rest as they are. */
-function groupedRows(items, render) {
-	const { groups, rest } = featGroups(items);
-	const rows = [];
-	for (const { group, items: members } of groups)
-		rows.push(el("li", { class: "featgroup" }, group), ...members.map((item) => render(item, true)));
-	return [...rows, ...rest.map((item) => render(item, false))];
-}
-
-/**
- * One doc in the tree; it expands into its links, never into an ancestor. hideRel leaves off the rel its group heading already says.
- * A doc in another repo carries that repo, which reading it needs; a link helm cannot read is unresolved.
- */
-function node(item, ancestors, hideRel, featsOnly) {
-	if (item.type !== "doc") {
-		const parts = [el("span", { class: "text" }, item.target), item.rel && !hideRel ? el("span", { class: "rel" }, item.rel) : null];
-		const li = el("li", { class: item.type });
-		const link = item.type === "url"
-			? el("a", { class: "label", href: item.target, target: "_blank", rel: "noopener noreferrer", title: item.target }, parts)
-			: el("button", { class: "label", title: (item.type === "unresolved" ? "Unresolved: " : "") + item.target, disabled: "" }, parts);
-		li.append(el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), link));
-		return li;
-	}
-	const cycle = ancestors.some((a) => a.id === item.id);
-	const step = { id: item.id, name: label(item), kind: item.kind, rel: item.rel, repo: item.repo };
-	const path = [...ancestors, step];
-	const parts = [
-		el("span", { class: "kind" }, item.kind),
-		el("span", { class: "text" }, label(item)),
-		item.rel && !hideRel ? el("span", { class: "rel" }, item.rel) : null,
-		cycle ? el("span", { class: "rel" }, "↺") : null,
-	];
-	const load = cycle || (featsOnly && !item.hasFeats) ? null : featsOnly
-		? async () => groupedRows(await api("/api/feats?ref=" + encodeURIComponent(item.ref)), (feat, hideRel) => node(feat, path, hideRel, true))
-		: async () => {
-			const doc = await api("/api/doc?id=" + item.id + (item.repo ? "&repo=" + item.repo : ""));
-			return groupedRows(doc.links.filter(notADive), (link, hideRel) => node(link, path, hideRel));
-		};
-	return branch(cycle ? "cycle" : "doc", parts, item.gist, load, (row) => select(path, row)).li;
-}
-
-/** A heading in the tree; the root's opens that root. */
-function section(title, onPick) {
-	const heading = el("button", { class: "label", disabled: onPick ? null : "" }, el("span", { class: "text" }, title));
-	if (onPick) heading.addEventListener("click", () => onPick(row));
-	const row = el("div", { class: "row" }, el("button", { class: "twisty", disabled: "" }), heading);
-	return el("li", { class: "section" }, row);
-}
-
 /** The branch the bridge has checked out, and how far it is from trunk. */
 function renderBranch(branch) {
 	const badge = document.getElementById("branch");
@@ -123,13 +55,128 @@ function renderBranch(branch) {
 	badge.onclick = showBranch;
 }
 
-/** The deck heads the tree, its .feat children below. */
-function drawTree() {
-	const home = ctx.root ? [rootStep(ctx.root)] : [];
-	const items = [];
-	if (ctx.root)
-		items.push(section(rootNames.get(ctx.root), (row) => { highlight(row); reset(); }),
-			...groupedRows(rootFeats, (feat, hideRel) => node(feat, home, hideRel, true)));
-	document.getElementById("tree").replaceChildren(...items);
+/** What the repo filter holds, kept across redraws. */
+let repoFilter = "";
+/** Bumped by each redraw, so an older one's late answer is dropped. */
+let sectionsDrawn = 0;
+/** The context the tree last drew: a repo's page takes its card from it. */
+let treeContext = null;
+/** The repos and kinds expanded, kept across redraws. */
+const treeOpen = new Set();
+
+function rememberTreeOpen(key) {
+	return (open) => { if (open) treeOpen.add(key); else treeOpen.delete(key); };
+}
+
+function repoStep(repo) {
+	return { id: repo.id, name: repo.name, kind: "repo" };
+}
+
+/** A kind under its repo: its count fills in apart, and it expands into its docs. */
+function kindRow(kind, repo) {
+	const count = el("span", { class: "count", title: "counting" }, "…");
+	const path = [repoStep(repo), { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }];
+	const docs = async () => (await api("/api/kind-docs?repo=" + kind.repoId + "&kind=" + encodeURIComponent(kind.name)))
+		.map((d) => branch("doc", [el("span", { class: "text" }, d.gist || d.name)], d.name, null,
+			(row) => select([...path, { id: d.id, name: d.gist || d.name, kind: kind.name, repo: kind.repoId, kindRef: kind }], row)).li);
+	const key = "kind:" + kind.repoId + ":" + kind.id;
+	const node = branch("kindrow" + (kind.inCrudContext ? "" : " out"), [el("span", { class: "text" }, kind.name), count],
+		kind.inCrudContext ? kind.gist : OUT_OF_REACH, docs, (row) => showKind(kind, path, row), rememberTreeOpen(key));
+	return { kind, count, node, key };
+}
+
+/** A repo: in scope, it expands into its kinds; its status, a dot, fills in apart. */
+function repoRow(repo, kinds, unreadable) {
+	const out = repo.inCrudContext === false;
+	const parts = [el("span", { class: "icon" }, repo.icon || "▢"), el("span", { class: "text" }, repo.name),
+		repo.isBridge ? el("span", { class: "tag" }, "bridge") : null,
+		el("span", { class: "dot", title: "checking…" })];
+	const rows = kinds.map((kind) => kindRow(kind, repo));
+	const note = (text) => [el("li", { class: "note" }, text)];
+	const load = !repo.inScope ? null : async () => unreadable ? note("Not hydrated, so its kb cannot be read.")
+		: rows.length ? rows.map(({ node }) => node.li) : note("No kinds.");
+	const node = branch("repo" + (out ? " out" : ""), parts, repo.gist + (out ? "\n" + OUT_OF_REACH : ""), load,
+		(row) => select([repoStep(repo)], row), rememberTreeOpen("repo:" + repo.id));
+	return { repo, node, rows, key: "repo:" + repo.id };
+}
+
+/** A repo's status as a dot: green at trunk, amber off it, grey not hydrated; the details on hover. */
+function treeStatus(shown, status) {
+	const h = status.hydrated;
+	const n = status.nosedive;
+	const dot = shown.node.row.querySelector(".dot");
+	dot.className = "dot" + (h ? (h.atTrunk ? " ok" : " warn") : "");
+	dot.title = (h ? (h.atTrunk ? "at " : "off ") + shown.repo.trunk + " " + h.commit.slice(0, 8) : "not hydrated")
+		+ " · " + (n === "unknown" ? "nosedive ?" : n ? "nosedive L" + n.level : "no nosedive");
+}
+
+/**
+ * Redraws the tree for what is in context -- the dive's scopes, else the
+ * deck's: a filter, the repos in scope, the rest behind "show all". Statuses
+ * load eight repos a request, in-scope first, and kind counts apart.
+ */
+async function refreshSections() {
+	const drawn = ++sectionsDrawn;
+	try {
+		const context = await api(contextQuery(ctx.root || (backlogRoot && backlogRoot.ref), false));
+		if (drawn !== sectionsDrawn) return;
+		treeContext = context;
+		const shown = context.repos.map((repo) =>
+			repoRow(repo, context.kinds.filter((kind) => kind.repoId === repo.id), context.unreadable.includes(repo.name)));
+		const heading = el("li", { class: "section" }, "Repos (0/" + shown.length + ")");
+		const summary = el("summary", {});
+		const restList = el("ul", {}, shown.filter(({ repo }) => !repo.inScope).map(({ node }) => node.li));
+		const rest = el("details", { class: "rest", open: sectionOpen("repos-rest", false) ? "" : null }, summary, restList);
+		rest.addEventListener("toggle", () => rememberOpen("repos-rest", rest.open));
+		const filter = el("input", { type: "search", class: "repofilter", placeholder: "filter repos by name or gist", "aria-label": "Filter repos" });
+		filter.value = repoFilter;
+		const apply = () => {
+			repoFilter = filter.value;
+			const words = repoFilter.trim().toLowerCase();
+			let more = 0;
+			for (const { repo, node } of shown) {
+				node.li.hidden = words !== "" && !(repo.name + " " + repo.gist).toLowerCase().includes(words);
+				if (!repo.inScope && !node.li.hidden) more++;
+			}
+			summary.textContent = "show all (" + more + ")";
+		};
+		filter.addEventListener("input", apply);
+		apply();
+		// A redraw mid-typing keeps the filter's focus.
+		const typing = document.activeElement && document.activeElement.classList.contains("repofilter");
+		document.getElementById("tree").replaceChildren(el("li", { class: "filter" }, filter), heading,
+			...shown.filter(({ repo }) => repo.inScope).map(({ node }) => node.li),
+			...(restList.children.length ? [el("li", { class: "restfold" }, rest)] : []));
+		if (typing) { filter.focus(); filter.setSelectionRange(filter.value.length, filter.value.length); }
+		for (const { node, rows, key } of shown) {
+			if (treeOpen.has(key)) node.open();
+			for (const kind of rows) if (treeOpen.has(kind.key)) kind.node.open();
+		}
+		// In-scope repos come first. Each request is bounded, and a later redraw
+		// invalidates every answer still in flight.
+		void (async () => {
+			let loaded = 0;
+			for (let i = 0; i < shown.length; i += 8) {
+				const batch = shown.slice(i, i + 8);
+				const statuses = await api("/api/repo-statuses?ids=" + batch.map(({ repo }) => repo.id).join(","));
+				if (drawn !== sectionsDrawn) return;
+				for (const one of batch) {
+					if (statuses[one.repo.id]) treeStatus(one, statuses[one.repo.id]);
+					loaded++;
+				}
+				heading.textContent = loaded === shown.length ? "Repos" : "Repos (" + loaded + "/" + shown.length + ")";
+			}
+			if (!shown.length) heading.textContent = "Repos";
+		})().catch((err) => { if (drawn === sectionsDrawn) showError(err); });
+		const repos = [...new Set(context.kinds.map((kind) => kind.repoId))];
+		if (!repos.length) return;
+		const tally = await api("/api/kind-counts?repos=" + repos.join(","));
+		if (drawn !== sectionsDrawn) return;
+		for (const { rows } of shown)
+			for (const { kind, count } of rows) {
+				count.textContent = String((tally[kind.repoId] || {})[kind.name] || 0);
+				count.removeAttribute("title");
+			}
+	} catch (err) { showError(err); }
 }
 `;

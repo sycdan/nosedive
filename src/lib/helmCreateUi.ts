@@ -118,7 +118,7 @@ function createDialog(kind) {
 
 /**
  * Making a doc with no dive: crud dive records one titled for it on the
- * selected feat, else the picked one, else the kb feat; jump takes it, and the
+ * deck, else the kb feat; jump takes it, and the
  * doc is minted on it and opened with its meta form. A refused record stays
  * in the modal; a refused jump or mint shows in the view.
  */
@@ -126,7 +126,7 @@ async function diveToMake(dialog, kind, gist, name, meta) {
 	const picked = ctx.root && backlogRoot && ctx.root !== backlogRoot.ref ? ctx.root : null;
 	const made = kind.name + " " + (name || gist);
 	const recorded = await write("/api/crud/dive", {
-		feat: ctx.feat || picked || KB_FEAT, title: "Add " + made, gist: "Adds the " + made,
+		feat: picked || KB_FEAT, title: "Add " + made, gist: "Adds the " + made,
 		brief: "Made in helm with no dive: a new " + kind.name + ", " + JSON.stringify(gist) + ". Fill in its meta, then land.",
 	});
 	const dive = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(recorded.stdout);

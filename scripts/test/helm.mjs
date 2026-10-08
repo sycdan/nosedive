@@ -213,21 +213,13 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
-	assert.match(
-		script,
-		/repoView\.shown\.slice\(i, i \+ 8\)/,
-		"repo statuses load in batches of eight",
-	);
+	assert.match(script, /shown\.slice\(i, i \+ 8\)/, "repo statuses load in batches of eight");
 	assert.match(
 		script,
 		/drawn !== sectionsDrawn\) return/,
 		"late status batches cannot alter a new draw",
 	);
-	assert.match(
-		script,
-		/loaded \+ "\/" \+ repoView\.shown\.length/,
-		"the header tracks loaded repos",
-	);
+	assert.match(script, /loaded \+ "\/" \+ shown\.length/, "the Repos heading tracks loaded repos");
 	// A reload restores a kind page through showKind, and kindRef on a doc under a kind step.
 	const restore =
 		/Promise\.all\(\[loadRoots\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
@@ -254,7 +246,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		/api\(contextQuery\(ctx\.root, false\)\)/,
 		"the kind comes from the Kinds section's context",
 	);
-	// Repos and Kinds sit atop the main view; there is no Repos view any more.
+	// Repos and their kinds are the left tree; nothing sits atop the view.
 	assert.doesNotMatch(
 		html,
 		/reposbtn|showRepos|#repos/,
@@ -262,9 +254,20 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	);
 	assert.match(
 		html,
-		/<div id="top"><\/div><div id="view"><\/div>/,
-		"the sections sit above the view",
+		/<div id="error" hidden><\/div><div id="view"><\/div>/,
+		"nothing above the view",
 	);
+	assert.match(
+		/async function refreshSections\(\) \{[\s\S]*?\n\}/.exec(script)?.[0] ?? "",
+		/document\.getElementById\("tree"\)\.replaceChildren\(/,
+		"the repos in scope draw into the tree",
+	);
+	assert.match(
+		script,
+		/doc\.kind === "repo" \? await repoPanel\(doc\.id\)/,
+		"a repo's page carries its card: status, hydrate and scope edits",
+	);
+	assert.doesNotMatch(script, /ctx\.feat/, "the tree's scope is the dive's, else the deck's");
 	assert.match(
 		/function reset\(\) \{[\s\S]*?\n\}/.exec(script)?.[0] ?? "",
 		/refreshSections\(\)/,
@@ -383,60 +386,8 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	assert.ok(!runSync.includes('"view"'), "runSync leaves the view alone");
 	assert.match(runSync, /syncNotice\(/, "runSync creates the notice");
 	assert.match(script, /function syncNotice\([\s\S]*?id: "syncnotice"/, "the notice is built");
-	// The tree groups feat links under what their rel says before .feat, at every level.
-	const featGroupsSource = /function featGroups\(items\) \{[\s\S]*?\n\}/.exec(script)?.[0];
-	assert.ok(featGroupsSource, "page carries featGroups");
-	const featGroups = new Script(`(${featGroupsSource})`).runInNewContext({});
-	const grouped = featGroups([
-		{ id: "a", rel: "future.feat" },
-		{ id: "b", rel: "bug.note" },
-		{ id: "c", rel: "current.feat" },
-		{ id: "d", rel: "future.feat" },
-		{ id: "e" },
-		{ id: "f", rel: "https://example.com/x.feat.md" },
-	]);
-	assert.deepEqual(
-		JSON.parse(JSON.stringify(grouped)),
-		{
-			groups: [
-				{
-					group: "future",
-					items: [
-						{ id: "a", rel: "future.feat" },
-						{ id: "d", rel: "future.feat" },
-					],
-				},
-				{ group: "current", items: [{ id: "c", rel: "current.feat" }] },
-			],
-			rest: [
-				{ id: "b", rel: "bug.note" },
-				{ id: "e" },
-				{ id: "f", rel: "https://example.com/x.feat.md" },
-			],
-		},
-		"feat links group by prefix in first-seen order; the rest keep their order",
-	);
-	assert.match(script, /function groupedRows\(items, render\)/, "page carries groupedRows");
-	assert.match(
-		script,
-		/\.\.\.groupedRows\(rootFeats, \(feat, hideRel\) => node\(feat, home, hideRel, true\)\)/,
-		"the tree groups the deck's feats",
-	);
-	assert.match(
-		script,
-		/groupedRows\(doc\.links\.filter\(notADive\), \(link, hideRel\) => node\(link, path, hideRel\)\)/,
-		"an expanded doc groups its links",
-	);
-	assert.match(
-		script,
-		/item\.rel && !hideRel \? el\("span", \{ class: "rel" \}, item\.rel\)/,
-		"grouped rows leave the rel off",
-	);
-	assert.match(
-		script,
-		/const step = \{ id: item\.id, name: label\(item\), kind: item\.kind, rel: item\.rel, repo: item\.repo \}/,
-		"the path step keeps the full rel",
-	);
+	// Feats are the deck picker's: the tree draws no feat rows.
+	assert.doesNotMatch(script, /function (featGroups|groupedRows|node)\(/);
 
 	assert.equal((await fetch(new URL("/", base))).status, 403, "page without token");
 	const api = new URL("/api/picker", base);

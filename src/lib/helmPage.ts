@@ -21,15 +21,15 @@ export const helmPage = String.raw`<!doctype html>
 <body>
 <header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><span id="deckpick" class="deck"></span><span id="headacts"></span></header>
 <div id="divebar" aria-label="Dive"></div>
-<aside><ul class="tree" id="tree" aria-label="Bridge"></ul></aside>
-<main><div id="error" hidden></div><div id="top"></div><div id="view"></div></main>
+<aside><ul class="tree" id="tree" aria-label="Repos in scope"></ul></aside>
+<main><div id="error" hidden></div><div id="view"></div></main>
 <script>
 const token = new URLSearchParams(location.search).get("token");
 const rootIds = new Set();
 let bridge = { name: "" };
 let selectedRow = null;
-/** What is picked and selected: the root, a feat under it, and the repo and kind the subtrees show. */
-const ctx = { root: null, feat: null, repo: null, kind: null };
+/** What is picked and selected: the deck (by its ref), and the repo and kind a reload restores. */
+const ctx = { root: null, repo: null, kind: null };
 const OUT_OF_REACH = "crud cannot write here now: jump a dive that scopes it to edit";
 
 async function api(path) {
@@ -64,7 +64,6 @@ function display(doc) {
 
 function contextQuery(rootId, withRepo) {
 	const params = new URLSearchParams({ root: rootId });
-	if (ctx.feat && ctx.root === rootId) params.set("feat", ctx.feat);
 	if (withRepo && ctx.repo && ctx.root === rootId) params.set("repo", ctx.repo);
 	const dive = diveInContext();
 	if (dive) params.set("dive", dive);
@@ -114,7 +113,7 @@ function writeHash(path) {
 
 function reset() {
 	highlight(null);
-	Object.assign(ctx, { feat: null, repo: null, kind: null });
+	Object.assign(ctx, { repo: null, kind: null });
 	history.replaceState(null, "", location.pathname + location.search);
 	refreshSections();
 	crumbs([]);
@@ -135,12 +134,6 @@ function docBody(doc, withFrontmatter) {
 async function select(path, row, message) {
 	highlight(row);
 	const last = path[path.length - 1];
-	const feat = [...path].reverse().find(isFeatStep);
-	// A feat in another repo is named the way crud names it.
-	const featRef = feat ? (feat.repo ? feat.repo + ":kb/" + feat.id + ".md" : feat.id) : null;
-	const narrowed = ctx.feat !== featRef;
-	ctx.feat = featRef;
-	if (narrowed) refreshSections();
 	writeHash(path);
 	crumbs(path);
 	const view = document.getElementById("view");
@@ -150,7 +143,7 @@ async function select(path, row, message) {
 		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
 		if (rootIds.has(last.id)) {
-			view.replaceChildren(...(dives.active ? [] : [divePicker()]), ...docBody(doc, false));
+			view.replaceChildren(dives.active ? planForm(doc) : divePicker(), ...docBody(doc, false));
 			return;
 		}
 		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
@@ -168,7 +161,8 @@ async function select(path, row, message) {
 		const form = kindDoc
 			? metaForm(doc, last.repo || bridge.id, kindDoc.meta && kindDoc.meta.schema, reach, (msg) => select(path, row, msg))
 			: null;
-		view.replaceChildren(...[docsMadeSection(doc), message, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
+		const repo = doc.kind === "repo" ? await repoPanel(doc.id) : null;
+		view.replaceChildren(...[docsMadeSection(doc), message, repo, featActions(doc, last), featLinker(doc, last), form].filter(Boolean), ...docBody(doc, true));
 	} catch (err) { showError(err); }
 }
 

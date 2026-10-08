@@ -93,10 +93,7 @@ details.fm pre { background: var(--panel); border: 1px solid var(--line); border
 .count { font-size: 11px; color: var(--dim); background: var(--hover); border-radius: 8px; padding: 0 6px; flex: none; }
 .row .icon { width: 18px; font-size: 13px; flex: none; }
 .card.out { opacity: .6; }
-.tree li.section > .row .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 .tree li.section:not(:first-child) { margin-top: 10px; }
-.tree li.featgroup { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
-	opacity: .8; padding: 6px 0 1px 22px; cursor: default; user-select: none; }
 .card.pick { cursor: pointer; } .card.pick:hover, .card.pick:focus-visible { border-color: #2f6fdb; }
 .doclist { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 4px; }
 .doclist li { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
@@ -126,7 +123,6 @@ pre.output.failed { border-left-color: #d64545; }
 #divebar .gap, header .gap { flex: 1; }
 .cards .nodives { grid-column: 1 / -1; }
 .repos { display: grid; gap: 18px; }
-#top { display: grid; gap: 10px; margin: 0 0 18px; }
 details.top summary { cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
 	color: var(--dim); padding: 2px 0 8px; }
 details.top .doclist { margin: 0; }
@@ -240,13 +236,12 @@ form.schema legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
 .synccard .poll { font-variant-numeric: tabular-nums; }
 dialog.modal textarea.squashmsg { height: 260px; min-height: 160px; width: 100%; box-sizing: border-box; font: 13px/1.5 var(--mono); }
 .repofilter { font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px;
-	background: var(--panel); color: var(--text); width: min(320px, 100%); box-sizing: border-box; margin: 0 0 10px; }
+	background: var(--panel); color: var(--text); width: 100%; box-sizing: border-box; margin: 0 0 6px; }
 .repofilter:focus { outline: none; border-color: var(--accent); }
-.cards > [hidden], .repolines > [hidden] { display: none; }
-details.top details.rest summary { font-size: 12px; text-transform: none; letter-spacing: normal; padding: 10px 0 6px; }
-.repolines { display: grid; gap: 4px; }
-.repoline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px;
-	border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-.repoline .gap { flex: 1; }
-.repoline .icon { font-size: 14px; }
+.tree [hidden] { display: none; }
+.tree li.section { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); padding: 4px 4px 2px 22px; }
+.tree li.note { font-size: 12px; color: var(--dim); padding: 2px 4px 2px 22px; }
+.tree .label .dot { flex: none; align-self: center; }
+.tree details.rest summary { cursor: pointer; font-size: 12px; color: var(--dim); padding: 8px 4px 4px 22px; }
+.tree details.rest > ul { padding-left: 0; border-left: 0; margin-left: 0; }
 `;

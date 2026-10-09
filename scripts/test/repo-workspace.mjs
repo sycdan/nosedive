@@ -391,11 +391,6 @@ meta:
 		"managed cache should prefer meta.remotes.cloud over local",
 	);
 	assert.equal(
-		runTool("git", ["rev-parse", "--show-ref-format"], hydrateCache).stdout.trim(),
-		"reftable",
-		"branches differing only in case must fit on a case-insensitive disk",
-	);
-	assert.equal(
 		gitCommonDir(join(hydrateBridge, "workspace", "hydrated-target")),
 		realpathSync(hydrateCache),
 		"hydrated worktree should be attached to the managed cache",

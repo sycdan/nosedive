@@ -321,3 +321,19 @@ test("a second dive on the bridge lands only its own work, after the first lande
 	assert.equal(published.match(/created memo second/g)?.length, 1);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 });
+
+test("helm counts an effort doc as the feat it is read as, so the kind's list holds it", () => {
+	const { bridge } = seededBridge(tmp, "effort", "pilot@nosedive.invalid");
+	const bridgeId = /^bridge: (\S+)$/m.exec(
+		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
+	)[1];
+	const id = "01a1224b-36d8-7bdf-a735-3a5593eb7124";
+	writeFileSync(
+		join(bridge, "kb", `${id}.md`),
+		`---\nkind: effort\nid: ${id}\nname: old-effort\ngist: "Spelled the old way"\n---\n\n# Old effort\n`,
+	);
+	const counts = helmKindCounts(bridge, [bridgeId])[bridgeId];
+	assert.equal(counts.effort, undefined);
+	assert.equal(counts.feat, helmKindDocs(bridge, bridgeId, "feat").length);
+	assert.ok(helmKindDocs(bridge, bridgeId, "feat").some((doc) => doc.id === id));
+});

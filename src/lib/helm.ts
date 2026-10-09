@@ -168,7 +168,9 @@ function kindCounts(kbDir: string): Map<string, number> {
 	if (!existsSync(kbDir)) return counts;
 	for (const file of readdirSync(kbDir).filter((name) => name.endsWith(".md"))) {
 		if (BUILTIN_KIND_IDS.has(file.slice(0, -3))) continue;
-		const kind = /^kind: (\S+)\s*$/m.exec(readFileSync(join(kbDir, file), "utf8"))?.[1];
+		const raw = /^kind: (\S+)\s*$/m.exec(readFileSync(join(kbDir, file), "utf8"))?.[1];
+		// Counted as loadKbDocs reads it, so the kind's list holds what its count says.
+		const kind = raw === "effort" ? "feat" : raw;
 		if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
 	}
 	return counts;

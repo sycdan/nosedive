@@ -233,7 +233,8 @@ export function checkScopedRepoWip(
 	if (!scope.ref) {
 		reasons.push("active dive scope is missing a pinned ref");
 	} else {
-		const ahead = gitOutput(repoPath, ["rev-list", `${scope.ref}..HEAD`]);
+		// A commit a remote already has is published, not work a reset would lose.
+		const ahead = gitOutput(repoPath, ["rev-list", `${scope.ref}..HEAD`, "--not", "--remotes"]);
 		if (ahead === undefined) {
 			reasons.push(`could not compare ${scope.ref}..HEAD`);
 		} else if (ahead.trim() !== "") {

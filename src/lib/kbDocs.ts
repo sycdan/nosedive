@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { builtinDocPath } from "./builtinKinds.js";
 import { DIVE_BRIEF_HEADING_PATTERN } from "./constants.js";
 import { latestLoggedSection, type LoggedSection } from "./kbSections.js";
 import {
@@ -56,7 +57,6 @@ export interface BridgeConfig {
 	workspaceDir?: string;
 	backlogDir?: string;
 	kbDir: string;
-	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
 	featPath?: string;
@@ -92,6 +92,19 @@ export interface KbDoc {
 	hasScopes: boolean;
 	scopes: ScopeRef[];
 	links: LinkRef[];
+	/** Set on a doc read out of another repo through a `<repo-quid>:<path>` ref. */
+	home?: DocHome;
+}
+
+/**
+ * The repo a doc was read from, and the bridge it was read for -- a link back
+ * names it. `checkout` is where the doc can be written, absent when it was
+ * read from the managed cache.
+ */
+export interface DocHome {
+	repoId: string;
+	bridgeId: string;
+	checkout?: string;
 }
 
 export interface TargetDoc {
@@ -177,9 +190,13 @@ function kbMetaPath(path: string | undefined): string | undefined {
 	return path === undefined ? undefined : toPosixPath(path);
 }
 
-export function readKbDoc(path: string, bridgeDir: string): KbDoc {
+/** `text` stands in for the file, for a doc read out of git rather than off disk. */
+export function readKbDoc(
+	path: string,
+	bridgeDir: string,
+	text = readFileSync(path, "utf8"),
+): KbDoc {
 	const label = formatPath(path);
-	const text = readFileSync(path, "utf8");
 	const fm = parseMarkdownFrontmatter(text, label);
 	const raw = fm.raw;
 	return {
@@ -232,6 +249,8 @@ export function loadKbDocs(kbDir: string, bridgeDir: string): KbDoc[] {
  * frontmatter holds, and nothing else enforces the filename.
  */
 export function readKbDocById(kbDir: string, bridgeDir: string, id: string): KbDoc | undefined {
+	const builtin = builtinDocPath(id);
+	if (builtin) return readKbDoc(builtin, bridgeDir);
 	const path = join(kbDir, `${id}.md`);
 	if (!existsSync(path) || !statSync(path).isFile()) return undefined;
 	const doc = readKbDoc(path, bridgeDir);

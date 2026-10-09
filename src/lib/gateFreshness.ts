@@ -1,7 +1,9 @@
 import { relative } from "node:path";
 
+import { BUILTIN_GATE_IDS } from "./builtinKinds.js";
 import { toPosixPath } from "./coreParsing.js";
 import { runGit } from "./gitProcess.js";
+import { gateSourceRoot } from "./gateDocs.js";
 import { LandGate } from "./landGates.js";
 
 /**
@@ -17,7 +19,19 @@ import { LandGate } from "./landGates.js";
  * One `git status` over every gate's two paths rather than one call per gate:
  * the answer is the same and a land already spends enough on git.
  */
-export function dirtyGates(bridgeDir: string, gates: LandGate[]): LandGate[] {
+export function dirtyGates(bridgeDir: string, allGates: LandGate[]): LandGate[] {
+	const roots = new Map<string, LandGate[]>();
+	for (const gate of allGates) {
+		if (BUILTIN_GATE_IDS.has(gate.doc.id)) continue;
+		const root = gateSourceRoot(gate.doc, bridgeDir);
+		roots.set(root, [...(roots.get(root) ?? []), gate]);
+	}
+	return [...roots].flatMap(([root, gates]) => dirtyGatesAtRoot(root, gates));
+}
+
+function dirtyGatesAtRoot(bridgeDir: string, allGates: LandGate[]): LandGate[] {
+	// A shipped gate is the package's, not the bridge's to publish.
+	const gates = allGates.filter((gate) => !BUILTIN_GATE_IDS.has(gate.doc.id));
 	if (gates.length === 0) return [];
 	const pathsOf = (gate: LandGate) =>
 		[gate.doc.path, gate.scriptPath].map((path) => toPosixPath(relative(bridgeDir, path)));

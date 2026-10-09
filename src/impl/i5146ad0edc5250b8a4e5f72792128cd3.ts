@@ -7,6 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { assertBridgeInStep } from "../lib/bridgeTrunk.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "../lib/constants.js";
 import {
@@ -27,7 +28,7 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { gitOutput } from "../lib/gitProcess.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { ensureManagedRepoCache, gitRun } from "../lib/repoWorkspaceCore.js";
 import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
 
@@ -272,6 +273,7 @@ function bail(args: string[], io: CommandIo): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const dive = kbDocs.find((doc) => doc.id === marker.id);
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
+	assertBridgeInStep(rc.bridgeDir);
 
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");
 	const relDivePath = relative(rc.bridgeDir, dive.path);
@@ -300,7 +302,7 @@ function bail(args: string[], io: CommandIo): void {
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "bailed.dive");
 
-	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason, feat?.id, feat?.path);
+	commitAndPushBail(rc.bridgeDir, dive.path, dive.name, reason, feat?.id, bridgeFeatPath(feat));
 	if (existsSync(markerPath)) unlinkSync(markerPath);
 	removeDiveScratch(rc.workspaceDir!, dive.id);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);

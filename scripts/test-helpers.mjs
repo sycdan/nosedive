@@ -99,14 +99,19 @@ const testIdentityEnv = {
  * the hook's repository instead of the fixture the test just built.
  */
 export function run(args, cwd, input, cliPath = cli) {
-	const env = { ...process.env, ...testIdentityEnv };
-	for (const key of gitLocalEnvKeys) delete env[key];
 	return spawnSync(process.execPath, [cliPath, ...args], {
 		cwd,
 		encoding: "utf8",
 		input,
-		env,
+		env: cliEnv(),
 	});
+}
+
+/** The env `run` gives the CLI, for a test that spawns it itself, such as a helm server. */
+export function cliEnv() {
+	const env = { ...process.env, ...testIdentityEnv };
+	for (const key of gitLocalEnvKeys) delete env[key];
+	return env;
 }
 
 const gitSafeBareConfigArgs = ["-c", "safe.bareRepository=all"];

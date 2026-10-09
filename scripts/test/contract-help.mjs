@@ -125,7 +125,7 @@ test("contract help", () => {
 	}
 	const listDivesHelp = run(["list-dives", "--help"], noBridge);
 	assertOk(listDivesHelp, "list-dives --help failed");
-	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-deck>\]/);
+	assert.match(listDivesHelp.stdout, /Usage: nosedive list-dives \[<feat-or-root>\]/);
 	assert.match(listDivesHelp.stdout, /nosedive render 116ff634-3742-51ba-977f-44fc5b21e9e4/);
 	write(
 		join(whoamiContractBridge, "kb", "019f8584-453f-79ea-9d53-5f1b20b4cda9.md"),

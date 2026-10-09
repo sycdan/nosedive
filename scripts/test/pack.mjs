@@ -7,6 +7,7 @@ import {
 	assertOk,
 	createTmp,
 	gitCommit,
+	gitCommitEmpty,
 	packageVersionPattern,
 	run,
 	runTool,
@@ -372,10 +373,11 @@ test("a packed dive reaches jump and reapplies its patch chain", () => {
 	assert.doesNotMatch(diveText, /rel: patch/);
 });
 
-test("pack refuses a read-only scope with unpacked work", () => {
-	const { bridge, effortId, diveId } = setup("readonly");
+/** A dive with a second scope, hydrated and pinned, whose branch is taken away. */
+function readOnlyScope(name) {
+	const { bridge, diveId } = setup(name);
 	const roRepoId = "019fcf00-0000-7000-8000-000000000003";
-	const source = sourceRepo("readonly-ro-source");
+	const source = sourceRepo(`${name}-ro-source`);
 	write(
 		join(bridge, "kb", `${roRepoId}.md`),
 		`---
@@ -396,7 +398,18 @@ meta:
 		"hydrate read-only repo failed",
 	);
 	assertOk(
-		run(["record.dive", "--ref", diveId, "--upscope", roRepoId], bridge),
+		run(
+			[
+				"record.dive",
+				"--ref",
+				diveId,
+				"--upscope",
+				roRepoId,
+				"--work-branch",
+				"work/readonly-ro-repo",
+			],
+			bridge,
+		),
 		"scoping read-only repo onto dive failed",
 	);
 	/**
@@ -418,15 +431,35 @@ meta:
 	// so the read-only refusal below is the one under test.
 	runTool("git", ["add", "--", "kb"], bridge);
 	gitCommit(bridge, "publish the read-only repo doc");
+	return { bridge, roRepoId, source, roWorktree: repoWorktree(bridge, "readonly-ro") };
+}
 
-	const roWorktree = repoWorktree(bridge, "readonly-ro");
+test("pack refuses a read-only scope with unpacked work", () => {
+	const { bridge, roRepoId, roWorktree } = readOnlyScope("readonly");
 	write(join(roWorktree, "dirty.txt"), "dirty\n");
 
 	const result = run(["pack"], bridge);
 	assert.notEqual(result.status, 0, "pack over a dirty read-only scope unexpectedly succeeded");
 	assert.match(result.stderr, new RegExp(`read-only scoped repo ${roRepoId} has unpacked work`));
 	assert.equal(existsSync(roWorktree), true, "read-only scope should be left alone on refusal");
-	void effortId;
+});
+
+test("a read-only scope past its pin only by published commits packs; an unpublished one refuses", () => {
+	const { bridge, roRepoId, source, roWorktree } = readOnlyScope("published");
+	// Commits origin already has, as jump's own bookkeeping is in a bridge's __self.
+	write(join(source, "later.txt"), "later\n");
+	runTool("git", ["add", "later.txt"], source);
+	gitCommit(source, "published later");
+	runTool("git", ["fetch", "origin"], roWorktree);
+	runTool("git", ["checkout", "--detach", "origin/main"], roWorktree);
+	gitCommitEmpty(roWorktree, "not published");
+
+	const refused = run(["pack"], bridge);
+	assert.notEqual(refused.status, 0, "an unpublished commit is work pack would lose");
+	assert.match(refused.stderr, new RegExp(`read-only scoped repo ${roRepoId} has unpacked work`));
+
+	runTool("git", ["checkout", "--detach", "origin/main"], roWorktree);
+	assertOk(run(["pack"], bridge), "a published commit is nobody's unpacked work");
 });
 
 test("pack with nothing to capture still resets and reports no-op", () => {

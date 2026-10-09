@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createImplRegistry, type CommandImplRegistry } from "./impl/index.js";
+import type { ImplRuntime } from "./impl/types.js";
 import { setCommandIoFactory } from "./impl/commandAdapter.js";
 import {
 	deprecatedContractNotice,
@@ -138,6 +139,12 @@ async function runContractAdapter(
 	}
 
 	const value: unknown = { args, cwd: process.cwd() };
+	const runtime: ImplRuntime = {
+		cwd: process.cwd(),
+		commandDoc: { id: contract.id, name: contract.name, path: contract.path },
+	};
+	const impl = createImplRegistry(runtime);
+	runtime.impl = impl;
 	const ctx: ContractRunContext = {
 		command: contract.command,
 		cwd: process.cwd(),
@@ -154,10 +161,7 @@ async function runContractAdapter(
 			name: contract.name,
 			path: contract.path,
 		},
-		impl: createImplRegistry({
-			cwd: process.cwd(),
-			commandDoc: { id: contract.id, name: contract.name, path: contract.path },
-		}),
+		impl,
 		lib,
 	};
 

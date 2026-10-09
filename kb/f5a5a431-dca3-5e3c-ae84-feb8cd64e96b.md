@@ -47,9 +47,12 @@ reaches the backlog. The flag repeats, takes a quid or a bridge-relative KB
 path, and is a no-op when the memo already links that doc as work -- an
 existing rel is the pilot's own filing and is never rewritten to match the flag.
 
-Frontmatter is otherwise preserved as written. Only `scopes:` is recomputed, as
-the union of the scopes of the docs actually rendered; a repo that stays in that
-set keeps every key already written on it, including `note:`.
+Frontmatter is otherwise preserved as written, `scopes:` included: it is the
+pilot's list of what every dive scopes, never derived from the rendered docs.
 
 A link naming a doc that does not exist, or naming a `kind: dive` or
 `kind: repo` doc, fails and says which link did it.
+
+A crud patch to the configured backlog's links also re-renders its body with
+this renderer, in the same commit. Adding, changing or removing a `.feat`
+link therefore updates its section immediately.

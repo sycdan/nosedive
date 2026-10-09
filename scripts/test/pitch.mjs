@@ -213,88 +213,6 @@ test("a --parent record.feat is reachable only through its parent, not also inje
 	assert.match(memo, new RegExp(`- kb/${parentId}\\.md:`), "the parent should still be linked");
 });
 
-test("update-backlog rewrites the memo's scopes from its feats", () => {
-	const bridge = createBridge(tmp, "pitch-backlog-scopes-bridge");
-	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	const backlogId = /^backlog: (.+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
-	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
-	const zebraRepo = "019fc623-0000-7000-8000-0000000000a1";
-	const appleRepo = "019fc623-0000-7000-8000-0000000000a2";
-	const staleRepo = "019fc623-0000-7000-8000-0000000000a3";
-	for (const [id, name] of [
-		[zebraRepo, "zebra"],
-		[appleRepo, "apple"],
-	]) {
-		write(
-			join(bridge, "kb", `${id}.md`),
-			`---\nkind: repo\nid: ${id}\nname: ${name}\ngist: "Test repo"\n---\n`,
-		);
-	}
-	write(
-		join(bridge, "kb", "019fc623-0000-7000-8000-0000000000b1.md"),
-		`---\nkind: feat\nid: 019fc623-0000-7000-8000-0000000000b1\nname: scoped\ngist: "Scoped effort"\nscopes:\n  - ${zebraRepo}\n  - ${appleRepo}\n---\n\n# Scoped\n`,
-	);
-	// A scope the efforts no longer justify is replaced, not merged.
-	write(
-		backlogPath,
-		readFileSync(backlogPath, "utf8").replace(
-			/^kind: memo$/m,
-			`kind: memo\nscopes:\n  - ${staleRepo}`,
-		),
-	);
-
-	assertOk(
-		run(["update-backlog", "--inject", "019fc623-0000-7000-8000-0000000000b1"], bridge),
-		"update-backlog failed",
-	);
-	const memo = readFileSync(backlogPath, "utf8");
-	// Sorted by repo doc name, not by uuid.
-	assert.match(memo, new RegExp(`^scopes:\n  - ${appleRepo}\n  - ${zebraRepo}$`, "m"));
-	assert.doesNotMatch(memo, new RegExp(staleRepo));
-});
-
-test("update-backlog leaves scopes alone when the rendered tree scopes no repo", () => {
-	const bridge = createBridge(tmp, "pitch-backlog-noscopes-bridge");
-	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""), "seed failed");
-	const backlogId = /^backlog: (.+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
-	const backlogPath = join(bridge, "kb", `${backlogId}.md`);
-	const heldRepo = "019fc623-0000-7000-8000-0000000000c1";
-	// record.feat can no longer mint the unscoped feat this test needs -- with a
-	// second repo registered it demands --scope -- so the feat is written by hand,
-	// standing in for one recorded before that rule existed.
-	const featId = "019fc623-0000-7000-8000-0000000000c3";
-	write(
-		join(bridge, "kb", `${featId}.md`),
-		`---\nkind: feat\nid: ${featId}\nname: unscoped\ngist: "Legacy unscoped effort"\n---\n\n# Unscoped\n`,
-	);
-	// A second registered repo is what keeps that feat unreachable by derivation:
-	// with one repo in the bridge the derivation would pick it and no longer be
-	// empty, which is the case this test exists to cover.
-	write(
-		join(bridge, "kb", "019fc623-0000-7000-8000-0000000000c2.md"),
-		`---\nkind: repo\nid: 019fc623-0000-7000-8000-0000000000c2\nname: second\ngist: "Test repo"\n---\n`,
-	);
-	// An empty derivation is no information, not a verdict: it must not clear
-	// what the pilot wrote.
-	write(
-		backlogPath,
-		readFileSync(backlogPath, "utf8").replace(
-			/^kind: memo$/m,
-			`kind: memo\nscopes:\n  - ${heldRepo}`,
-		),
-	);
-	const updated = run(["update-backlog", "--inject", featId], bridge);
-	assertOk(updated, "update-backlog failed");
-
-	const memo = readFileSync(backlogPath, "utf8");
-	assert.match(memo, new RegExp(`^scopes:\n  - ${heldRepo}$`, "m"));
-	assert.match(memo, /Legacy unscoped effort/);
-});
-
 /**
  * A feat that scopes nothing hands every gate declared on it an empty repo set,
  * so the gate cannot pass under `test`. Where the bridge registers exactly one
@@ -313,9 +231,14 @@ test("an unparented record.feat scopes the sole registered repo, on the generate
 
 	const pitched = run(["record.feat", "Add a hello note."], bridge);
 	assertOk(pitched, "record.feat failed");
+	const created = featDoc(bridge, pitched.stdout);
+	const featId = /^id: (.+)$/m.exec(created)[1];
 	assert.match(
-		featDoc(bridge, pitched.stdout),
-		new RegExp(`^scopes:\n  - ${repoId}:\n      work-branch: work/add-a-hello-note$`, "m"),
+		created,
+		new RegExp(
+			`^scopes:\n  - ${repoId}:\n      work-branch: ${repoName}-main/add-a-hello-note-${featId}$`,
+			"m",
+		),
 		"the sole repo should be scoped on record.dive's generated default branch",
 	);
 	assert.ok(
@@ -328,6 +251,28 @@ test("an unparented record.feat scopes the sole registered repo, on the generate
 	// re-open questions that are closed.
 	assert.doesNotMatch(pitched.stdout, /--upscope/);
 	assert.doesNotMatch(pitched.stdout, /--work-branch/);
+});
+
+test("record.feat includes the checked-out bridge branch in a new scope", () => {
+	const bridge = createBridge(tmp, "pitch-branch-name");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""));
+	runTool("git", ["switch", "-c", "work/kb"], bridge);
+	const pitched = run(["record.feat", "Branch work."], bridge);
+	assertOk(pitched);
+	const doc = featDoc(bridge, pitched.stdout);
+	const id = /^id: (.+)$/m.exec(doc)[1];
+	assert.match(doc, new RegExp(`work-branch: pitch-branch-name-work-kb/branch-work-${id}`));
+});
+
+test("record.feat refuses detached HEAD before writing a new feat", () => {
+	const bridge = createBridge(tmp, "pitch-detached");
+	assertOk(run(["seed", "--headless", "--file", "AGENTS.md"], bridge, ""));
+	runTool("git", ["switch", "--detach"], bridge);
+	const before = readdirSync(join(bridge, "kb"));
+	const pitched = run(["record.feat", "Detached work."], bridge);
+	assert.notEqual(pitched.status, 0);
+	assert.match(pitched.stderr, /bridge checkout is detached/);
+	assert.deepEqual(readdirSync(join(bridge, "kb")), before);
 });
 
 test("a record.feat with several registered repos requires an explicit --scope", () => {
@@ -348,9 +293,14 @@ test("a record.feat with several registered repos requires an explicit --scope",
 
 	const scoped = run(["record.feat", "Touch two repos.", "--scope", "other"], bridge);
 	assertOk(scoped, "record.feat with an explicit scope failed");
+	const created = featDoc(bridge, scoped.stdout);
+	const featId = /^id: (.+)$/m.exec(created)[1];
 	assert.match(
-		featDoc(bridge, scoped.stdout),
-		/^scopes:\n  - 019fc623-0000-7000-8000-0000000000d1:\n      work-branch: work\/touch-two-repos$/m,
+		created,
+		new RegExp(
+			`^scopes:\n  - 019fc623-0000-7000-8000-0000000000d1:\n      work-branch: pitch-many-repos-bridge-main/touch-two-repos-${featId}$`,
+			"m",
+		),
 	);
 	assert.match(scoped.stdout, /^Scoped feat to repo: other /m);
 });

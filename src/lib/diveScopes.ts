@@ -2,10 +2,11 @@ import { existsSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
 import { CommandIo } from "./bridgeSetupIo.js";
-import { defaultWorkBranch, formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
+import { formatPath, NosediveRc, uuidLike } from "./coreParsing.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { hydratedScopedRepoPath } from "./gitState.js";
-import { KbDoc, ScopeRef } from "./kbDocs.js";
+import { KbDoc, loadKbDocs, ScopeRef } from "./kbDocs.js";
+import { repoKbDir } from "./kinds.js";
 import {
 	ensureManagedRepoCache,
 	ensureSafeTargetPath,
@@ -13,6 +14,7 @@ import {
 	parseRepoMarkerStrict,
 } from "./repoWorkspaceCore.js";
 import { expectedWorktreePath, resolveRefCommit } from "./repoWorktrees.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 
 /**
  * Resolving what a dive scopes, and rendering it back out.
@@ -337,8 +339,8 @@ export function repinScopes(
 	});
 }
 
-/** `parent`, plus the role-suffixed spellings a deck-rooted tree uses (`parent.feat`, `parent.deck`). */
-function isParentRel(rel: string | undefined): boolean {
+/** `parent`, plus the role-suffixed spellings a root's tree uses (`parent.feat`, say). */
+export function isParentRel(rel: string | undefined): boolean {
 	return rel === "parent" || (rel?.startsWith("parent.") ?? false);
 }
 
@@ -361,7 +363,7 @@ export function upscopeBranch(
 	if (requested) return requested;
 	return (
 		featWorkBranch(repoId, rc, kbDocs, feat) ??
-		(feat ? defaultWorkBranch(rc, feat.name) : undefined)
+		(feat ? defaultFeatWorkBranch(rc, kbDocs, feat) : undefined)
 	);
 }
 
@@ -389,7 +391,7 @@ export function featWorkBranch(
 	const declared = scopes.find((scope) => scope.repoId === repoId);
 	if (!declared || !source) return undefined;
 	if (declared.workBranch) return declared.workBranch;
-	return declared.legacyMode === "rw" ? defaultWorkBranch(rc, source.name) : undefined;
+	return declared.legacyMode === "rw" ? defaultFeatWorkBranch(rc, kbDocs, source) : undefined;
 }
 
 /**
@@ -475,12 +477,17 @@ export function editScopes(
  * and a dive with no scope can be jumped with no repo attached and landed
  * without pushing anything. The nearest scoped ancestor is the one the pitcher
  * meant, so the walk stops there instead of unioning the whole chain.
+ *
+ * A feat read from another repo's checkout walks that repo's kb first, then
+ * the bridge's: a bare link names the nearest copy.
  */
 export function inheritedScopes(
 	feat: KbDoc,
 	kbDocs: KbDoc[],
 ): { scopes: ScopeRef[]; source?: KbDoc } {
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const checkout = feat.home?.checkout;
+	const own = checkout ? loadKbDocs(repoKbDir(checkout), checkout) : [];
+	const byId = new Map([...kbDocs, ...own].map((doc) => [doc.id, doc]));
 	const seen = new Set<string>();
 	let current: KbDoc | undefined = feat;
 	while (current && !seen.has(current.id)) {

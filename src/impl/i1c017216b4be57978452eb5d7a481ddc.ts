@@ -10,14 +10,13 @@ import { commitBridgeDocs } from "../lib/commitBridgeDocs.js";
 import { formatPath, readNosediveRc } from "../lib/coreParsing.js";
 import { resolveScopeRepo } from "../lib/diveScopes.js";
 import { loadKbDocs, renderKbDocTitle } from "../lib/kbDocs.js";
-import { printNextSteps } from "../lib/nextSteps.js";
 import { appendLinkToDoc } from "../lib/repoFeatScopes.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
-import { assertSlug, slugFromGist } from "../lib/slugs.js";
+import { slugFromGist } from "../lib/slugs.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
 
 interface NoteOptions {
-	kind: string;
+	prefix?: string;
 	gist: string;
 	scopes: string[];
 	bodyFromStdin: boolean;
@@ -78,19 +77,26 @@ function parseNoteArgs(args: string[]): NoteOptions {
 	}
 
 	if (positionals.length === 0) throw new Error("note requires a gist");
-	let kind = "memo";
+	// A note is always a memo; a leading `<prefix>:` only labels the link.
+	let prefix: string | undefined;
 	if (positionals[0]!.endsWith(":")) {
-		const candidate = positionals[0]!.slice(0, -1);
-		try {
-			kind = assertSlug(candidate, "note kind");
+		const candidate = slugifyPrefix(positionals[0]!.slice(0, -1));
+		if (candidate) {
+			prefix = candidate;
 			positionals.shift();
-		} catch {
-			// Not a valid kind marker, so it remains part of the gist.
 		}
+		// A prefix that slugs to nothing is no prefix, so it remains part of the gist.
 	}
 	const gist = positionals.join(" ").trim();
 	if (!gist) throw new Error("gist cannot be empty");
-	return { kind, gist, scopes, bodyFromStdin, title };
+	return { prefix, gist, scopes, bodyFromStdin, title };
+}
+
+function slugifyPrefix(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
 }
 
 function readNoteBody(): string {
@@ -166,7 +172,7 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 		path,
 		renderNoteDoc({
 			id,
-			kind: options.kind,
+			kind: "memo",
 			name,
 			slug,
 			gist: options.gist,
@@ -175,7 +181,7 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 			body,
 		}),
 	);
-	for (const repo of scopeDocs) appendLinkToDoc(repo.path, id, `${options.kind}.note`);
+	for (const repo of scopeDocs) appendLinkToDoc(repo.path, id, `${options.prefix ?? "memo"}.note`);
 
 	io.log(`Noted ${formatPath(path)}`);
 	commitBridgeDocs(
@@ -184,7 +190,6 @@ function note(options: NoteOptions, io: CommandIo, body?: string): void {
 		[path, ...scopeDocs.map((doc) => doc.path)],
 		io,
 	);
-	if (options.kind === "feat") printNextSteps(io, [`nosedive update-backlog --inject ${id}`]);
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

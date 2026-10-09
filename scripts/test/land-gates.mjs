@@ -769,6 +769,39 @@ test("each gate receives its repo, feat, gate, and declaring doc ids", () => {
 	assert.notEqual(repoContext.introducedById, repoContext.gateId);
 });
 
+test("a repo's own gate runs only when the dive changed that repo", () => {
+	const repoGateId = "01a0ff30-bacc-72e6-820c-721bae8603de";
+	const declare = (bridge) => {
+		const repoPath = join(bridge, "kb", `${repoId}.md`);
+		write(
+			repoPath,
+			readFileSync(repoPath, "utf8").replace(
+				"\n---\n",
+				`\nlinks:\n  - kb/${repoGateId}.md:\n      rel: land.gate\n---\n`,
+			),
+		);
+		runTool("git", ["add", "--", "kb"], bridge);
+		gitCommit(bridge, "the repo declares a failing gate");
+	};
+
+	const untouched = setup("repo-gate-untouched", [
+		gate(repoGateId, "repo-breaks", GATE_FAIL, undefined, { link: false }),
+	]);
+	declare(untouched.bridge);
+	const skipped = run(["land"], untouched.bridge);
+	assertOk(skipped, "an untouched repo's failing gate should not block the land");
+	assert.match(skipped.stderr, /no land gates selected/);
+
+	const changed = setup("repo-gate-changed", [
+		gate(repoGateId, "repo-breaks", GATE_FAIL, undefined, { link: false }),
+	]);
+	declare(changed.bridge);
+	gitCommitEmpty(changed.worktree, "work");
+	const refused = run(["land"], changed.bridge);
+	assert.notEqual(refused.status, 0, "a changed repo's failing gate must refuse the land");
+	assert.match(refused.stderr, /gates did not pass; nothing was pushed/);
+});
+
 test("a gate resolves the dive and reads its own repo's scope entry", () => {
 	const logPath = join(tmp, "scope-reading-gate.json");
 	const { bridge, worktree } = setup("gate-resolve", [

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { injectDocsIntoBacklogMemo } from "./backlogDives.js";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { commitBridgeDocs } from "./commitBridgeDocs.js";
-import { defaultWorkBranch, formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
+import { formatPath, NosediveRc, readNosediveRc } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { editKbDoc } from "./kbDocEdit.js";
 import {
@@ -28,6 +28,7 @@ import {
 } from "./repoFeatScopes.js";
 import { resolveRepoDoc } from "./repoWorkspaceCore.js";
 import { assertSlug, managedDiveName, slugFromGist } from "./slugs.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 
 export interface RecordFeatOptions {
 	/** The feat to patch. Absent means record a new one. */
@@ -139,13 +140,21 @@ export function renderRecordedFeat(options: {
 	return lines.join("\n");
 }
 
+/** A parent takes a link to its child, which only a feat in this bridge can. */
+function bridgeParent(parent: KbDoc): KbDoc {
+	if (parent.home) throw new Error(`--parent must be a feat in this bridge: ${parent.name}`);
+	return parent;
+}
+
 function backlogMemoPath(rc: NosediveRc): string | undefined {
 	return rc.backlog && rc.kbDir ? join(rc.kbDir, `${rc.backlog}.md`) : undefined;
 }
 
 function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, io: CommandIo) {
 	const gist = options.gist!;
-	const parent = options.parent ? resolveFeatDoc(kbDocs, rc, options.parent) : undefined;
+	const parent = options.parent
+		? bridgeParent(resolveFeatDoc(kbDocs, rc, options.parent))
+		: undefined;
 	const repos = repoDocs(kbDocs);
 	if (parent && options.scopes.length > 0) {
 		throw new Error("a parented feat inherits its parent's scopes; do not pass --scope");
@@ -182,6 +191,9 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	const id = mintFeatId();
 	const path = join(rc.kbDir!, `${id}.md`);
 	if (existsSync(path)) throw new Error(`kb doc already exists: ${formatPath(path)}`);
+	const soleRepo = !parent && scoped.length === 0 && repos.length === 1 ? repos[0]! : undefined;
+	const workBranch =
+		soleRepo || scoped.length > 0 ? defaultFeatWorkBranch(rc, kbDocs, { id, name }) : undefined;
 	writeFileAtomic(path, renderRecordedFeat({ id, name, gist, parentId: parent?.id }));
 	if (parent) appendLinkToDoc(parent.path, id, "child.feat");
 
@@ -193,13 +205,12 @@ function createFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions,
 	// several, `--scope` is required above, and a parented feat is left alone
 	// because it already inherits its parent's scopes -- writing here would be a
 	// second source.
-	const soleRepo = !parent && scoped.length === 0 && repos.length === 1 ? repos[0]! : undefined;
 	if (soleRepo) {
-		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch: defaultWorkBranch(rc, name) });
+		appendRepoScopeToFeat(path, { id: soleRepo.id, workBranch });
 		io.log(`Scoped feat to the only registered repo: ${soleRepo.name} (${soleRepo.id})`);
 	}
 	for (const repoDoc of scoped) {
-		appendRepoScopeToFeat(path, { id: repoDoc.id, workBranch: defaultWorkBranch(rc, name) });
+		appendRepoScopeToFeat(path, { id: repoDoc.id, workBranch });
 		io.log(`Scoped feat to repo: ${repoDoc.name} (${repoDoc.id})`);
 	}
 
@@ -286,7 +297,7 @@ function editFeat(rc: NosediveRc, kbDocs: KbDoc[], options: RecordFeatOptions, i
 		feat.links.some((link) => link.rel === "parent.feat" && link.id === doc.id),
 	);
 	const parent = options.parent
-		? resolveFeatDoc(kbDocs, rc, options.parent)
+		? bridgeParent(resolveFeatDoc(kbDocs, rc, options.parent))
 		: options.unparent
 			? undefined
 			: previousParent;

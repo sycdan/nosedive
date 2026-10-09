@@ -14,12 +14,11 @@ import {
 	stringifyYaml,
 	uuidLike,
 } from "./coreParsing.js";
-import { KbDoc, ScopeRef, loadKbDocs, readKbDoc } from "./kbDocs.js";
+import { KbDoc, ScopeRef, loadKbDocs, readActiveDiveId, readKbDoc } from "./kbDocs.js";
 import {
 	cachedScope,
 	editScopes,
 	featWorkBranch,
-	inheritedScopes,
 	pinnedScope,
 	renderScopeEntry,
 	renderScopes,
@@ -35,13 +34,18 @@ import { parseRecordDiveArgs, type RecordDiveOptions } from "./recordDiveArgs.js
 import { printNextSteps } from "./nextSteps.js";
 import { quoteYamlString, writeFileAtomic } from "./renderPlan.js";
 import {
+	bridgeFeatPath,
 	ensureReleasable,
+	featRefOf,
+	linkFeatBack,
 	reconcileDiveFeatLinks,
 	releaseDiverInFrontmatter,
 	resolveFeatDoc,
 } from "./repoFeatScopes.js";
 import { parseRepoMarkerStrict } from "./repoWorkspaceCore.js";
 import { managedDiveName, titleFromSlug } from "./slugs.js";
+import { rootedScopes } from "./jumpable.js";
+import { defaultFeatWorkBranch } from "./workBranches.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 /** What a scope's branch fields become when a feat hands the repo down. */
@@ -53,6 +57,16 @@ function inheritedBranch(
 ): { workBranch?: string; readOnly: boolean } {
 	const workBranch = featWorkBranch(repoId, rc, kbDocs, feat);
 	return { workBranch, readOnly: !workBranch };
+}
+
+/** A feat in another repo takes a link back, so it has to be read from a checkout. */
+function writableFeat(feat: KbDoc): KbDoc {
+	if (feat.home && !feat.home.checkout)
+		throw new Error(
+			`feat ${feat.name} lives in a repo that is not hydrated, so it cannot take a link back; ` +
+				`hydrate it first: nosedive hydrate-repo.workspace ${feat.home.repoId}`,
+		);
+	return feat;
 }
 
 function featTitle(feat: KbDoc): string {
@@ -91,7 +105,7 @@ function renderNewDive(
 		`gist: ${quoteYamlString(gist)}`,
 		...renderScopes(scopes),
 		"meta:",
-		`  feat: ${feat.id}`,
+		`  feat: ${featRefOf(feat)}`,
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
@@ -201,23 +215,51 @@ function replaceTitle(body: string, title: string): string {
 	return `# ${title}\n\n${body}`;
 }
 
-/**
- * `brief` is for the in-process caller that already holds the text -- `test`
- * minting a dive for a failed gate. Every other caller is the CLI, where the
- * brief arrives on stdin because an argument cannot carry paragraphs.
- */
-export function recordDive(args: string[], io: CommandIo, brief?: string): void {
+/** Where `crud dive` has a new dive written: the kb the dive kind resolved from. */
+export interface DiveTarget {
+	root: string;
+	kbDir: string;
+}
+
+/** What an in-process caller hands `recordDive` beyond the CLI's own arguments. */
+export interface RecordDiveExtras {
+	/**
+	 * For the caller that already holds the text -- `test` minting a dive for a
+	 * failed gate. Every other caller is the CLI, where the brief arrives on
+	 * stdin because an argument cannot carry paragraphs.
+	 */
+	brief?: string;
+	/** `jump <feat>` mints the id first, to title the dive with the name it derives. */
+	newId?: string;
+	/**
+	 * Writes and commits a new dive in another checkout of the bridge -- a
+	 * dive's `__self` -- while its scopes still resolve against the live bridge
+	 * and workspace. Such a dive is recorded, never claimed.
+	 */
+	target?: DiveTarget;
+}
+
+export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtras = {}): void {
+	const { newId, target } = extras;
+	let brief = extras.brief;
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("record.dive requires a configured kb directory");
 	if (!rc.workspaceDir) throw new Error("record.dive requires a configured workspace directory");
+	const docRoot = target?.root ?? rc.bridgeDir;
+	const kbDir = target?.kbDir ?? rc.kbDir;
 	// Before the parse, because whether the positional is a document is a
 	// question only the bridge can answer.
-	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
-	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(rc.bridgeDir, kbDocs));
+	const kbDocs = loadKbDocs(kbDir, docRoot);
+	const options = parseRecordDiveArgs(args, bridgeDocRefPredicate(docRoot, kbDocs));
 	if (options.briefStdin) brief = readDiveBrief();
-	const active = activeDive(kbDocs, rc.workspaceDir);
+	if (target && (options.ref || options.free || options.diver))
+		throw new Error("a dive recorded elsewhere is only created, never claimed");
+	const active = target ? undefined : activeDive(kbDocs, rc.workspaceDir);
 	const pilotEmail = readGitAuthorIdentity(rc.bridgeDir).email;
 	const workspaceDir = rc.workspaceDir;
+	// The dive in flight, whose checkout of a feat's repo commits the feat's link back.
+	const activeId = readActiveDiveId(workspaceDir);
+	const scoping = kbDocs.find((doc) => doc.kind === "dive" && doc.id === activeId);
 
 	// After the active-dive read, not before it: a free dive claims the workspace
 	// like any other, so one already in flight is what refuses this one.
@@ -231,7 +273,7 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 		// dive nobody claims never touches the workspace marker. Claiming is the
 		// part that cannot happen twice, and `ensureActivation` below is where
 		// that is refused.
-		const feat = resolveFeatDoc(kbDocs, rc, options.feat!);
+		const feat = writableFeat(resolveFeatDoc(kbDocs, rc, options.feat!));
 		/**
 		 * A new dive inherits its feat's repos, and inherits where they land only
 		 * where the feat has said. A feat that has not said hands down a pinned but
@@ -242,44 +284,79 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 		 * on top of what the sibling published rather than behind it. A feat with no
 		 * branch for the repo, and the first dive on one that has yet to publish,
 		 * both start at trunk.
+		 *
+		 * The backlog's scopes come too, for a feat it reaches: the root says what
+		 * every dive scopes. A repo only the backlog names lands where the
+		 * backlog's entry says, and `--clear-scopes` keeps those.
+		 *
+		 * A feat in another repo brings that repo, so the dive can write it.
 		 */
-		const inherited = options.clearScopes
-			? []
-			: inheritedScopes(feat, kbDocs).scopes.map((scope) => {
-					const branch = inheritedBranch(scope.repoId, rc, kbDocs, feat);
-					return {
-						...pinnedScope(
-							resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
-							rc.bridgeDir,
-							workspaceDir,
-							branch.workBranch,
-						),
-						...branch,
-					};
-				});
+		const { nearest, root, home, backlog } = rootedScopes(rc, kbDocs, feat);
+		const named = new Set(options.clearScopes ? [] : nearest.map((scope) => scope.repoId));
+		const pinned = (
+			scope: ScopeRef,
+			from: KbDoc | undefined,
+			branch = inheritedBranch(scope.repoId, rc, kbDocs, from),
+		): ScopeRef => {
+			return {
+				...pinnedScope(
+					resolveScopeRepo(rc.bridgeDir, kbDocs, scope.repoId),
+					rc.bridgeDir,
+					workspaceDir,
+					branch.workBranch,
+				),
+				...branch,
+			};
+		};
+		const homeBranch = (scope: ScopeRef) => ({
+			workBranch: scope.workBranch ?? defaultFeatWorkBranch(rc, kbDocs, feat),
+			readOnly: false,
+		});
+		const inherited = [
+			...(options.clearScopes ? [] : nearest.map((scope) => pinned(scope, feat))),
+			...root.filter((scope) => !named.has(scope.repoId)).map((scope) => pinned(scope, backlog)),
+			...(home && !options.clearScopes ? [pinned(home, feat, homeBranch(home))] : []),
+		];
 		const scopes = editScopes(inherited, options, rc, kbDocs, workspaceDir, feat);
+		// `--clear-scopes` says what the pilot wants; only the inherited path can
+		// come back empty without anyone having asked for it.
+		if (!options.clearScopes && scopes.length === 0) {
+			io.err(
+				`feat ${feat.name}, its ancestors and the backlog scope no repos; recording a dive with no scopes`,
+			);
+		}
 		if (new Set(scopes.map((scope) => scope.repoId)).size !== scopes.length)
 			throw new Error("duplicate repo scope");
-		// `--clear-scopes` and `--upscope` both say what the pilot wants; only the
-		// inherited path can come back empty without anyone having asked for it.
-		if (!options.clearScopes && options.upscopes.length === 0 && scopes.length === 0) {
-			io.err(`feat ${feat.name} and its ancestors scope no repos; recording a dive with no scopes`);
-		}
-		const id = uuid7AtMs(Date.now());
-		const path = join(rc.kbDir, `${id}.md`);
-		writeFileAtomic(path, renderNewDive(id, feat, options, scopes, brief));
+		const id = newId ?? uuid7AtMs(Date.now());
+		const path = join(kbDir, `${id}.md`);
+		writeFileAtomic(
+			path,
+			renderNewDive(
+				id,
+				feat,
+				{ ...options, diver: target ? pilotEmail : options.diver },
+				scopes,
+				brief,
+			),
+		);
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");
+		linkFeatBack(feat, id, "planned.dive", scoping, io);
 		if (ensureActivation({ id }, options.diver, pilotEmail, active))
 			writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${id}\n`);
 		io.log(`Recorded ${formatPath(path)}`);
 		commitBridgeDocs(
-			rc.bridgeDir,
-			`dive(${readKbDoc(path, rc.bridgeDir).name}): created`,
-			[path, feat.path],
+			docRoot,
+			`dive(${readKbDoc(path, docRoot).name}): created`,
+			[path, bridgeFeatPath(feat)],
 			io,
 			feat.id,
 		);
-		printNextSteps(io, [`nosedive jump kb/${id}.md`]);
+		printNextSteps(
+			io,
+			docRoot === rc.bridgeDir
+				? [`nosedive jump kb/${id}.md`]
+				: ["nosedive land -- publish it to the bridge, to be jumped from there"],
+		);
 		return;
 	}
 
@@ -297,11 +374,11 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 	if (doc.errors.length > 0)
 		throw new Error(`invalid YAML in frontmatter in ${formatPath(dive.path)}`);
 	const previousFeat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
-	const feat = options.feat ? resolveFeatDoc(kbDocs, rc, options.feat) : previousFeat;
+	const feat = options.feat ? writableFeat(resolveFeatDoc(kbDocs, rc, options.feat)) : previousFeat;
 	if (options.feat) {
 		if (!feat) throw new Error(`dive ${dive.id} names no feat in meta.feat`);
 		doc.set("name", managedName(feat, dive.id));
-		doc.setIn(["meta", "feat"], feat.id);
+		doc.setIn(["meta", "feat"], featRefOf(feat));
 		// Not a migration -- the one case where leaving the old key would make the
 		// document name two different feats, with the parser silently preferring
 		// one of them.
@@ -381,6 +458,7 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 		// removes the old feat's reciprocal link.
 		const existingRel = previousFeat?.links.find((link) => link.id === dive.id)?.rel;
 		reconcileDiveFeatLinks(previousFeat, feat, dive.id, existingRel ?? "planned.dive");
+		linkFeatBack(feat, dive.id, existingRel ?? "planned.dive", scoping, io);
 	}
 	if (ensureActivation(dive, claimed, pilotEmail, active)) {
 		writeFileAtomic(join(workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
@@ -389,7 +467,7 @@ export function recordDive(args: string[], io: CommandIo, brief?: string): void 
 	commitBridgeDocs(
 		rc.bridgeDir,
 		`dive(${dive.name}): updated`,
-		[dive.path, feat?.path, previousFeat?.path],
+		[dive.path, bridgeFeatPath(feat), bridgeFeatPath(previousFeat)],
 		io,
 		feat?.id,
 	);

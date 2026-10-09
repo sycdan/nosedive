@@ -88,7 +88,6 @@ export const DEFAULT_RC = {
 	workspace: "./workspace",
 	backlog: "./backlog",
 	kb: "./kb",
-	"work-branch-prefix": "work/",
 };
 
 export const BRIDGE_STATE_DIRNAME = ".nosedive";
@@ -104,7 +103,6 @@ export const BASE_CONFIG_KNOWN_KEYS = [
 	"backlog",
 	"kb",
 	"bridge",
-	"work-branch-prefix",
 ] as const;
 
 /**

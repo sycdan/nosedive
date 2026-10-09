@@ -54,6 +54,19 @@ Abandon the active dive -- delete it if never committed, else record the reason 
 More: nosedive render 337b18d6-1cca-57b5-8d26-bb6aef1f50e9
 ```
 
+#### [Crud](kb/db6ef67b-dd5f-53a5-bc38-df18628db92b.md)
+
+```sh
+npx -y nosedive@2026.9.18-1789698885570 crud --help
+```
+```md
+Usage: nosedive crud [<repo>:]<kind> [--name <name>] [--meta -] <gist...> | nosedive crud dive --feat <feat> [--title <title>] <gist...> < brief.md | nosedive crud [<repo>:]<quid> [--title <text>] [--meta - | --scopes - | --links -] [--replace] | nosedive crud <repo>:<path> | nosedive crud <dive-quid> --repin [<ref>] [--scope <repo>]
+
+Mint or read a kb doc of any kind in play: `crud <kind> <gist...>` mints one or prints the one it names, `crud <quid>` prints a doc; kinds come from the bridge with no dive, from the scoped repos on one.
+
+More: nosedive render db6ef67b-dd5f-53a5-bc38-df18628db92b
+```
+
 #### [Dehydrate repo](kb/32123800-a61d-5ea1-8b85-98c288b127b3.md)
 
 ```sh
@@ -93,6 +106,19 @@ List backlog-reachable documents by role, optionally filtering by term, kind, sc
 More: nosedive render 2e5cd9a9-769a-5eda-8617-868c70f13757
 ```
 
+#### [Helm](kb/6a704279-69c1-5dcb-a2c0-b0b5dc93d56e.md)
+
+```sh
+npx -y nosedive@2026.9.18-1789698885570 helm --help
+```
+```md
+Usage: nosedive helm [<branch>]
+
+Serve a local admin UI for the bridge: a deck picker over its backlog's feats, the repos in scope with their kinds and docs, hydration and nosedive install state, and kb docs rendered.
+
+More: nosedive render 6a704279-69c1-5dcb-a2c0-b0b5dc93d56e
+```
+
 #### [Hydrate repo](kb/c4e93002-2925-58bd-9b70-d917017a9fc7.md)
 
 ```sh
@@ -112,7 +138,7 @@ More: nosedive render c4e93002-2925-58bd-9b70-d917017a9fc7
 npx -y nosedive@2026.9.18-1789698885570 jump --help
 ```
 ```md
-Usage: nosedive jump [<dive-ref>]
+Usage: nosedive jump [<dive-ref> | <feat-ref>]
 
 Pick up a packed dive -- hydrate its scoped repos at their pinned refs and reapply every linked patch chain on top.
 
@@ -138,7 +164,7 @@ More: nosedive render 587d3f73-2534-5179-b111-ce6c83d6814d
 npx -y nosedive@2026.9.18-1789698885570 list-dives --help
 ```
 ```md
-Usage: nosedive list-dives [<feat-or-deck>] [--include-historical] [--json]
+Usage: nosedive list-dives [<feat-or-root>] [--include-historical] [--json]
 
 Print all outstanding dives and what they still need.
 
@@ -164,7 +190,7 @@ More: nosedive render e8909eff-aee5-54f2-9ce2-85c2582e39f0
 npx -y nosedive@2026.9.18-1789698885570 note --help
 ```
 ```md
-Usage: nosedive note [<kind>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
+Usage: nosedive note [<prefix>:] <gist words...> [--scope <repo>]... [--title <text>] [--body -]
 
 Create one KB document and link it from the repos it is about.
 
@@ -270,7 +296,7 @@ npx -y nosedive@2026.9.18-1789698885570 record.repo --help
 ```md
 Usage: nosedive record.repo [<repo>] [--remote <clone-url-or-local-path>] [--url <page-url>] [--name <slug>] [--base-branch <branch>]
 
-Register a Git repository with the bridge and make it visible through the backlog.
+Register a Git repository with the bridge.
 
 More: nosedive render 6640f6d5-567d-51bd-b2ba-6239a7a58707
 ```
@@ -307,7 +333,7 @@ More: nosedive render 88bf4e10-3fd7-58c0-a247-f2dae9c886e3
 npx -y nosedive@2026.9.18-1789698885570 seed --help
 ```
 ```md
-Usage: nosedive seed [--file <path>]... [--headless] [--no-push]
+Usage: nosedive seed [--file <path>]... [--headless] [--no-push] [--no-agents] [--repo-id <quid>]
 
 Create, migrate, or edit bridge config in the current directory; every run first migrates an out-of-date bridge to the latest compatibility level.
 

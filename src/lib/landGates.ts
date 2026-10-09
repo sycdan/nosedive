@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formatPath, resolveFrom, toPosixPath } from "./coreParsing.js";
+import { toPosixPath } from "./coreParsing.js";
+import { gateChangedOnDive, gateDocsById, resolveGateScript } from "./gateDocs.js";
 import { commandForSpawn } from "./gitState.js";
 import { KbDoc, LinkRef, relativeDocPath } from "./kbDocs.js";
 import { isFeatEdge } from "./relGrammar.js";
-import { unsafeLinkPath } from "./proveCore.js";
 import { cleanGitEnv } from "./gitProcess.js";
 
 const GATE_VERBS = new Set(["land", "test", "drop", "lift"]);
@@ -27,6 +27,7 @@ function gateRel(verb: string): string {
 
 export interface LandGate {
 	doc: KbDoc;
+	changedOnDive?: boolean;
 	scriptPath: string;
 	gateHeight: number;
 	flaky: boolean;
@@ -68,29 +69,7 @@ function gateAttrBool(value: string | undefined, label: string): boolean {
 	throw new Error(`${label} must be true or false, got: ${value}`);
 }
 
-/**
- * `meta.test-script` is a bridge-relative path, resolved the same way patch and
- * prover artifacts are: no absolute paths, no traversal, no URIs. A gate that
- * cannot produce a runnable script is a hard failure -- silently skipping one
- * would turn a broken gate into a passing land.
- */
-export function resolveGateScript(doc: KbDoc, bridgeDir: string): string {
-	const label = `gate ${doc.id} (${doc.relPath}) meta.test-script`;
-	const rel = doc.metaScalars["test-script"];
-	if (!rel) {
-		throw new Error(
-			`${label} is missing; add one naming the script that proves this gate, e.g. kb/artifacts/<quid>.mjs`,
-		);
-	}
-	if (isAbsolute(rel) || unsafeLinkPath(rel)) {
-		throw new Error(`${label} must be a bridge-relative path without traversal: ${rel}`);
-	}
-	const path = resolveFrom(bridgeDir, rel);
-	if (!existsSync(path) || !statSync(path).isFile()) {
-		throw new Error(`${label} does not resolve to a file: ${formatPath(path)} -- create it`);
-	}
-	return path;
-}
+export { resolveGateScript };
 
 /**
  * An edge a wide walk must not follow, and the reason `collectReachableGates`
@@ -134,7 +113,7 @@ function walkGates(
 	followEdge: (link: LinkRef, target: KbDoc) => boolean,
 ): LandGate[] {
 	const GATE_REL = gateRel(verb);
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const byId = gateDocsById(kbDocs);
 	const claimed = new Map<string, LandGate>();
 	const visited = new Set<string>();
 	const order: string[] = [];
@@ -162,6 +141,7 @@ function walkGates(
 					claimed.set(target.id, {
 						doc: target,
 						scriptPath: resolveGateScript(target, bridgeDir),
+						changedOnDive: gateChangedOnDive(target, bridgeDir),
 						gateHeight: gateAttrInt(link.attrs["gate-height"], `${label}: gate-height`),
 						flaky: gateAttrBool(link.attrs["test-is-flaky"], `${label}: test-is-flaky`),
 						introducedBy: doc,
@@ -251,7 +231,7 @@ export function collectDiveGates(
 	bridgeDir: string,
 ): LandGate[] {
 	const GATE_REL = gateRel(verb);
-	const byId = new Map(kbDocs.map((doc) => [doc.id, doc]));
+	const byId = gateDocsById(kbDocs);
 	const gates: LandGate[] = [];
 	const seen = new Set<string>();
 
@@ -272,6 +252,7 @@ export function collectDiveGates(
 		gates.push({
 			doc: target,
 			scriptPath: resolveGateScript(target, bridgeDir),
+			changedOnDive: gateChangedOnDive(target, bridgeDir),
 			gateHeight: gateAttrInt(link.attrs["gate-height"], `${label}: gate-height`),
 			flaky: gateAttrBool(link.attrs["test-is-flaky"], `${label}: test-is-flaky`),
 			introducedBy: root,
@@ -569,11 +550,12 @@ export function renderGateReport(
 		const label = `[${gate.doc.name || gate.doc.id}](${relativeDocPath(reportDoc, gate.doc)})`;
 		// Which edge won stays auditable whatever the verdict; everything else below
 		// is only worth keeping for a gate that did not pass.
+		const changed = gate.changedOnDive ? " (changed on this dive)" : "";
 		const shadowed = gate.shadowedBy.length
 			? `  - also linked by (attributes ignored, first-seen wins): ${gate.shadowedBy.map((doc) => relativeDocPath(reportDoc, doc)).join(", ")}`
 			: undefined;
 		if (run?.status === 0) {
-			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s`);
+			lines.push(`- ${label}: passed in ${(run.elapsedMs / 1000).toFixed(1)}s${changed}`);
 			if (shadowed) lines.push(shadowed);
 			continue;
 		}
@@ -582,7 +564,7 @@ export function renderGateReport(
 			: gate.flaky
 				? `failed (exit ${run.status}) -- flaky, not blocking`
 				: `FAILED (exit ${run.status})`;
-		lines.push(`- ${label}: ${verdict}`);
+		lines.push(`- ${label}: ${verdict}${changed}`);
 		lines.push(`  - script: ${gate.scriptPath}`);
 		lines.push(`  - gate-height: ${gate.gateHeight}, test-is-flaky: ${gate.flaky}`);
 		lines.push(`  - declared by: ${relativeDocPath(reportDoc, gate.introducedBy)}`);

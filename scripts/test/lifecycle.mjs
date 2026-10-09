@@ -89,11 +89,54 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 
 	// The feat says where its repo lands, so the dives under it inherit somewhere
 	// to push. The work-loop test below covers the feat that named no branch.
-	const { featPath, featId } = pitchFeat(
+	const { featPath, featId, featText } = pitchFeat(
 		bridge,
 		"Exercise a complete lifecycle.",
 		"lifecycle",
 		repoId,
+	);
+	const featWorkBranch = /^      work-branch: (.+)$/m.exec(featText)[1];
+	// The gates are on the bridge before any dive is pinned, so each dive's
+	// `__self` -- where test reads bridge gates -- carries them too.
+	write(
+		join(bridge, "kb", `${diveGateId}.md`),
+		`---
+kind: assertion
+id: ${diveGateId}
+name: lifecycle-dive-gate
+gist: "Run the lifecycle dive gate"
+meta:
+  test-script: kb/artifacts/lifecycle-dive-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
+		'export function run() { console.log("lifecycle dive gate ran"); }\n',
+	);
+	write(
+		join(bridge, "kb", `${featGateId}.md`),
+		`---
+kind: assertion
+id: ${featGateId}
+name: lifecycle-feat-gate
+gist: "Run the lifecycle feat gate"
+meta:
+  test-script: kb/artifacts/lifecycle-feat-gate.mjs
+---
+`,
+	);
+	write(
+		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+		'export function run() { console.log("lifecycle feat gate ran"); }\n',
+	);
+	const featGateLink = `  - kb/${featGateId}.md:\n      rel: test.gate\n`;
+	const featBeforeGate = readFileSync(featPath, "utf8");
+	write(
+		featPath,
+		featBeforeGate.includes("\nlinks:\n")
+			? featBeforeGate.replace(/^links:\n/m, `links:\n${featGateLink}`)
+			: featBeforeGate.replace(/\n---\n/, `\nlinks:\n${featGateLink}---\n`),
 	);
 	// Work is picked up off the deck, so a feat nothing reaches has no dives
 	// anybody can jump -- and this test puts its dive down and picks it back up.
@@ -110,7 +153,7 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	annotateDiveLink(featPath, firstId);
 	assertOk(run(["record.dive", "--ref", firstId, "--repin"], bridge), "first repin failed");
 	assertDiveLinkAttrs(featPath, firstId, "planned.dive");
-	// Nothing has published `work/lifecycle` yet, so trunk is the only pin there
+	// Nothing has published the feat's work branch yet, so trunk is the only pin there
 	// is to give the first dive on a feat. The third dive below is where that
 	// stops being true.
 	const trunkHead = cloudHead(repo, "main");
@@ -145,49 +188,10 @@ test("a feat composes through packed, bailed and landed dives, and stacks the ne
 	assertFeatDiveRel(featPath, firstId, "jumped\\.dive");
 	assertDiveLinkAttrs(featPath, firstId, "jumped.dive");
 	write(
-		join(bridge, "kb", `${diveGateId}.md`),
-		`---
-kind: assertion
-id: ${diveGateId}
-name: lifecycle-dive-gate
-gist: "Run the lifecycle dive gate"
-meta:
-  test-script: kb/artifacts/lifecycle-dive-gate.mjs
----
-`,
-	);
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-dive-gate.mjs"),
-		'export function run() { console.log("lifecycle dive gate ran"); }\n',
-	);
-	write(
-		join(bridge, "kb", `${featGateId}.md`),
-		`---
-kind: assertion
-id: ${featGateId}
-name: lifecycle-feat-gate
-gist: "Run the lifecycle feat gate"
-meta:
-  test-script: kb/artifacts/lifecycle-feat-gate.mjs
----
-`,
-	);
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
-		'export function run() { console.log("lifecycle feat gate ran"); }\n',
-	);
-	write(
 		firstPath,
 		readFileSync(firstPath, "utf8").replace(
 			/^---\n\n/m,
 			`links:\n  - kb/${diveGateId}.md:\n      rel: test.gate\n---\n\n`,
-		),
-	);
-	write(
-		featPath,
-		readFileSync(featPath, "utf8").replace(
-			/^links:\n/m,
-			`links:\n  - kb/${featGateId}.md:\n      rel: test.gate\n`,
 		),
 	);
 	const diveTests = run(["test"], bridge);
@@ -204,11 +208,19 @@ meta:
 	 * pass whether or not anything attached it. The feat's gate is one this dive
 	 * has never named, so the link can only be there because the failure put it
 	 * there.
+	 *
+	 * Broken in both checkouts: the dive tests its `__self`, and the backlog
+	 * sweep after the bail reads the bridge.
 	 */
-	write(
-		join(bridge, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
-		'export function run() { console.error("lifecycle feat gate failed"); return false; }\n',
-	);
+	const self = join(bridge, "workspace", "__self");
+	for (const root of [self, bridge]) {
+		write(
+			join(root, "kb", "artifacts", "lifecycle-feat-gate.mjs"),
+			'export function run() { console.error("lifecycle feat gate failed"); return false; }\n',
+		);
+	}
+	runTool("git", ["add", "--", "kb"], self);
+	gitCommit(self, "break the feat gate");
 	const failedTests = run(["test", "--full"], bridge);
 	assert.equal(failedTests.status, 1, "the failing feat gate must fail test --full");
 	const testedDive = readFileSync(firstPath, "utf8");
@@ -270,7 +282,7 @@ meta:
 	assert.match(landed, /^## Outcome$/m);
 	assertFeatDiveRel(featPath, secondId, "landed\\.dive");
 	assertDiveLinkAttrs(featPath, secondId, "landed.dive");
-	const published = cloudHead(repo, "work/lifecycle");
+	const published = cloudHead(repo, featWorkBranch);
 	assert.match(published, /^[0-9a-f]{40}$/, "land should publish the work branch to cloud");
 	assert.notEqual(published, trunkHead, "the landed branch must stand ahead of trunk");
 
@@ -299,7 +311,7 @@ meta:
 	runTool("git", ["add", "stacked.txt"], worktree);
 	gitCommit(worktree, "add stacked work");
 	assertOk(run(["land"], bridge), "the dive after a landing must land without a repin");
-	const restacked = cloudHead(repo, "work/lifecycle");
+	const restacked = cloudHead(repo, featWorkBranch);
 	assert.notEqual(restacked, published, "the second landing must carry the branch on");
 });
 
@@ -460,9 +472,18 @@ meta:
 	/**
 	 * The feat never said where this repo lands, so the minted dive names no
 	 * branch either -- and no `mode` key, which decides nothing and is no longer
-	 * written at all. Step 8 is where that costs something.
+	 * written at all. Step 8 is where that costs something. The bridge scope the
+	 * seeded backlog hands down is the one entry that names a branch.
 	 */
-	assert.doesNotMatch(mintedDoc, /^      work-branch: /m);
+	assert.equal(
+		(mintedDoc.match(/^      work-branch: /gm) ?? []).length,
+		1,
+		"only the bridge scope names a branch",
+	);
+	assert.match(
+		mintedDoc,
+		/^  - \S+:\n      ref: \S+\n      work-branch: work-loop-bridge-main\/bridge-[0-9a-f-]{36}\nmeta:/m,
+	);
 	assert.doesNotMatch(mintedDoc, /^      mode: /m);
 
 	// 3. Preflight offers it, so a pilot finds the work without being told it exists.
@@ -519,7 +540,11 @@ meta:
 		run(["record.dive", "--ref", mintedId, "--upscope", workLoopRepoId], bridge),
 		"--upscope failed",
 	);
-	assert.match(readFileSync(mintedPath, "utf8"), /^      work-branch: work\/work-loop$/m);
+	const generatedBranch = `work-loop-bridge-main/work-loop-${featId}`;
+	assert.match(
+		readFileSync(mintedPath, "utf8"),
+		new RegExp(`^      work-branch: ${generatedBranch}$`, "m"),
+	);
 
 	/**
 	 * 10. A branch now exists, so land reaches the convention declared by the
@@ -530,10 +555,10 @@ meta:
 	assert.notEqual(defaultBranch.status, 0, "the repo's branch convention must refuse land");
 	assert.match(
 		defaultBranch.stderr + defaultBranch.stdout,
-		/work-loop branch gate expected feature\/work-loop, found work\/work-loop/,
+		new RegExp(`work-loop branch gate expected feature/work-loop, found ${generatedBranch}`),
 	);
 	const unpublishedDefault = runGit(
-		["show-ref", "--verify", "--quiet", "refs/heads/work/work-loop"],
+		["show-ref", "--verify", "--quiet", `refs/heads/${generatedBranch}`],
 		repo.cloud,
 		{ expectOk: false },
 	);
@@ -574,7 +599,7 @@ meta:
 	}
 	assert.doesNotMatch(chosenScope, new RegExp(`^  - ${workLoopThirdRepoId}:`, "m"));
 
-	// 12. The accepted branch lands both upscoped implementation repos together.
+	// 12. The accepted branch lands the repo the dive changed; the other upscoped one is untouched.
 	assertOk(run(["land"], bridge), "land failed");
 	assert.match(readFileSync(mintedPath, "utf8"), /^kind: memo$/m);
 	assertFeatDiveRel(featPath, mintedId, "landed\\.dive");
@@ -584,12 +609,18 @@ meta:
 		repo.cloud,
 	).stdout.trim();
 	assert.match(published, /^[0-9a-f]{40}$/, "land must publish the work branch");
-	const secondPublished = runTool(
-		"git",
+	// The second repo was upscoped but never changed: nothing past its pin, so
+	// nothing to publish, and the outcome says so rather than pushing trunk.
+	const secondPublished = runGit(
 		["show-ref", "--verify", "--hash", "refs/heads/feature/work-loop"],
 		secondRepo.cloud,
-	).stdout.trim();
-	assert.match(secondPublished, /^[0-9a-f]{40}$/, "land must publish the second repo");
+		{ expectOk: false },
+	);
+	assert.notEqual(secondPublished.status, 0, "land must not push an untouched repo");
+	assert.match(
+		readFileSync(mintedPath, "utf8"),
+		new RegExp(`^- ${workLoopSecondRepoId} unchanged; not pushed$`, "m"),
+	);
 
 	/**
 	 * Landing is not merging. Until the published branch reaches trunk, the pin a
@@ -699,7 +730,7 @@ test("a dive records current trunk, is warned when its pin goes stale, and re-pi
 	assert.equal(scopeRef(waitingId), movedTrunk, "--repin must move the pin to trunk");
 	assert.match(
 		readFileSync(join(bridge, "kb", `${waitingId}.md`), "utf8"),
-		/work-branch: work\/stale-pin/,
+		new RegExp(`work-branch: stale-pin-bridge-main/stale-pin-${featId}`),
 		"--repin must leave the work branch alone",
 	);
 

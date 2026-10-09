@@ -72,7 +72,6 @@ export interface NosediveRc {
 	kbDir?: string;
 	/** `bridge`: id of the bridge's own `kind: repo` doc. */
 	bridge?: string;
-	workBranchPrefix?: string;
 	pilotName?: string;
 	pilotEmail?: string;
 	/** `<command>-prompt`: id of the `kind: idea` doc a command builds its prompt from. */
@@ -335,9 +334,10 @@ export function readNosediveRc(start: string): NosediveRc {
 	const workspace = rc.scalars.workspace;
 	const backlog = rc.scalars.backlog;
 	const kb = rc.scalars.kb;
+	const path = resolved.shape === "split" ? resolved.basePath : resolved.legacyPath;
 
 	return {
-		path: resolved.shape === "split" ? resolved.basePath : resolved.legacyPath,
+		path,
 		bridgeDir,
 		compatibilityLevel:
 			resolved.shape === "split" ? configCompatibilityLevel(rc, resolved.basePath) : 0,
@@ -345,20 +345,10 @@ export function readNosediveRc(start: string): NosediveRc {
 		backlog,
 		kbDir: kb ? resolveFrom(bridgeDir, kb) : undefined,
 		bridge: rc.scalars.bridge,
-		workBranchPrefix: rc.scalars["work-branch-prefix"],
 		pilotName: rc.scalars["pilot-name"],
 		pilotEmail: rc.scalars["pilot-email"],
 		prompts: parseCommandPrompts(rc.scalars),
 	};
-}
-
-/**
- * The branch a scope gets when nobody names one. Shared so that `record.dive`
- * writes exactly what `land` used to compute for itself: every dive on a feat
- * publishes to one branch, and a scope that wants its own says so.
- */
-export function defaultWorkBranch(rc: Pick<NosediveRc, "workBranchPrefix">, slug: string): string {
-	return `${rc.workBranchPrefix ?? DEFAULT_RC["work-branch-prefix"]}${slug}`;
 }
 
 // --- seed --------------------------------------------------------------
@@ -386,7 +376,6 @@ export interface RcSettings {
 	backlog: string;
 	kb: string;
 	bridge: string;
-	workBranchPrefix: string;
 	pilotName: string;
 	pilotEmail: string;
 	/**
@@ -406,4 +395,8 @@ export interface SeedOptions {
 	noPush: boolean;
 	/** Agent instruction files named with `--file`; empty means autodetect. */
 	files: string[];
+	/** Write no agent instruction files. */
+	noAgents: boolean;
+	/** The id the bridge's own repo doc is minted with, instead of a fresh one. */
+	repoId?: string;
 }

@@ -119,83 +119,6 @@ function appendBacklogSubtree(
 }
 
 /**
- * Every repo the rendered backlog covers, as the union of the scopes of the
- * docs it actually shows. Derived rather than hand-kept so `record.dive --free`
- * never hydrates a repo the backlog stopped naming, but spliced rather than
- * rewritten so a scope that survives keeps whatever was written on it.
- */
-function backlogScopeRepoIds(docs: KbDoc[], kbDocs: KbDoc[]): string[] {
-	const repoIds = new Set<string>();
-	for (const doc of docs) {
-		for (const scope of doc.scopes) {
-			if (scope.repoId !== ".") repoIds.add(scope.repoId);
-		}
-	}
-	const nameById = new Map(kbDocs.map((doc) => [doc.id, doc.name]));
-	return [...repoIds].sort((a, b) => (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b));
-}
-
-/**
- * The raw lines of each existing `scopes:` entry, by repo id. Read as text
- * because a scope carries an open set of keys -- `note:` among them -- that no
- * parsed shape keeps, and a rewrite that dropped them would lose the pilot's
- * own words on every run.
- */
-function rawScopeEntries(yamlLines: string[]): Map<string, string[]> {
-	const entries = new Map<string, string[]>();
-	const start = yamlLines.findIndex((line) => /^scopes:/.test(line));
-	if (start < 0) return entries;
-
-	let id: string | undefined;
-	let buffer: string[] = [];
-	const flush = (): void => {
-		if (id) entries.set(id, buffer);
-		id = undefined;
-		buffer = [];
-	};
-	for (const line of yamlLines.slice(start + 1)) {
-		if (/^\S/.test(line)) break;
-		const entry = /^\s*-\s+(.+?)\s*$/.exec(line);
-		if (entry) {
-			flush();
-			id = entry[1]!.replace(/:$/, "").trim();
-		}
-		if (id) buffer.push(line);
-	}
-	flush();
-	return entries;
-}
-
-/**
- * Rewrite the `scopes:` block to the derived set, carrying each surviving
- * entry's own lines across so keys nothing parses -- `note:` among them --
- * outlive the run. A derivation of nothing is no information rather than a
- * verdict: feats routinely carry no scopes at all, so an empty set leaves
- * whatever the memo already said alone instead of deleting it.
- */
-function spliceScopes(
-	yamlLines: string[],
-	repoIds: string[],
-	existing: Map<string, string[]>,
-): string[] {
-	if (repoIds.length === 0) return yamlLines;
-	const block = [
-		"scopes:",
-		...repoIds.flatMap((repoId) => existing.get(repoId) ?? [`  - ${repoId}`]),
-	];
-
-	const start = yamlLines.findIndex((line) => /^scopes:/.test(line));
-	if (start < 0) {
-		const links = yamlLines.findIndex((line) => /^links:/.test(line));
-		const at = links < 0 ? yamlLines.length : links;
-		return [...yamlLines.slice(0, at), ...block, ...yamlLines.slice(at)];
-	}
-	let end = start + 1;
-	while (end < yamlLines.length && !/^\S/.test(yamlLines[end]!)) end += 1;
-	return [...yamlLines.slice(0, start), ...block, ...yamlLines.slice(end)];
-}
-
-/**
  * Append `rel: injected.feat` links for docs the memo does not already carry as
  * work. Appending is the whole contract: an existing link's rel is the pilot's
  * own filing and is never rewritten to match the flag.
@@ -259,7 +182,6 @@ export function renderUpdatedBacklogMemo(
 	}
 
 	const rendered = new Set<string>();
-	const shown: KbDoc[] = [];
 	const fallback = titleFromSlug((fm.scalars.name || "backlog").split(".")[0]!);
 	const lines = [`# ${firstMarkdownHeading(block.body, fallback)}`];
 	for (const predicate of [...sections.keys()].sort((a, b) => a.localeCompare(b))) {
@@ -274,14 +196,8 @@ export function renderUpdatedBacklogMemo(
 		lines.push("", `## ${titleFromSlug(predicate)}`, "", ...section);
 	}
 	if (rendered.size === 0) lines.push("", "The backlog links no work.");
-	for (const id of rendered) shown.push(byId.get(id)!);
-
-	const scoped = spliceScopes(
-		yamlLines,
-		backlogScopeRepoIds(shown, kbDocs),
-		rawScopeEntries(yamlLines),
-	);
-	return ["---", ...scoped, "---", "", `${lines.join("\n")}\n`].join("\n");
+	// The memo's `scopes:` is the pilot's list -- what every dive scopes -- so it is never derived.
+	return ["---", ...yamlLines, "---", "", `${lines.join("\n")}\n`].join("\n");
 }
 
 /**

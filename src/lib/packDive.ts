@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { isSeq, parseDocument } from "yaml";
 
 import { CommandIo, createUuid7Minter } from "./bridgeSetupIo.js";
+import { assertBridgeInStep } from "./bridgeTrunk.js";
 import { commitMessage } from "./commitProvenance.js";
 import { NO_ACTIVE_DIVE_ERROR_ID } from "./constants.js";
 import {
@@ -20,6 +21,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
+import { fetchLiveBridge, ownCommits } from "./landBridgeScope.js";
 import { printNextSteps } from "./nextSteps.js";
 import {
 	CapturedPatch,
@@ -45,11 +47,17 @@ function packRepoScope(
 	repoPath: string,
 	kbDir: string,
 	mintUuid: () => string,
+	bridgeDir?: string,
 ): CapturedPatch[] {
 	if (!scope.ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
 
+	// A checkout of the bridge itself has the live bridge merged in by jump:
+	// only the dive's own commits are its to pack.
+	const commits = bridgeDir
+		? ownCommits(repoPath, fetchLiveBridge(bridgeDir, repoPath), "HEAD", scope.ref)
+		: listAheadCommits(repoPath, scope.ref, scope.repoId);
 	const entries: CapturedPatch[] = [];
-	for (const sha of listAheadCommits(repoPath, scope.ref, scope.repoId)) {
+	for (const sha of commits) {
 		const patch = gitRunPatch(
 			repoPath,
 			["format-patch", "-1", sha, "--stdout", "--binary", "--no-signature"],
@@ -281,9 +289,11 @@ function commitAndPushPack(
 ): void {
 	// Pack records its phase on the feat's reciprocal link. Stage that edit
 	// with the dive so it cannot linger as bridge WIP for the next pack to capture.
-	const pathsToStage = [divePath, ...newArtifactAbsPaths, ...(feat ? [feat.path] : [])].map(
-		(path) => toPosixPath(relative(bridgeDir, path)),
-	);
+	const pathsToStage = [
+		divePath,
+		...newArtifactAbsPaths,
+		...(feat && !feat.home ? [feat.path] : []),
+	].map((path) => toPosixPath(relative(bridgeDir, path)));
 	gitRun(bridgeDir, ["add", "--", ...pathsToStage], "failed to stage packed dive artifacts");
 
 	const stashed = stashExceptStaged(bridgeDir);
@@ -335,6 +345,7 @@ export function packDive(args: string[], io: CommandIo): void {
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const dive = kbDocs.find((doc) => doc.kind === "dive" && doc.id === marker.id);
 	if (!dive) throw new Error(`active dive marker names no kind: dive doc: ${marker.id}`);
+	assertBridgeInStep(rc.bridgeDir);
 
 	const { scopes, failures } = uniqueDiveWipScopes(dive.scopes);
 	if (failures.length > 0)
@@ -365,6 +376,8 @@ export function packDive(args: string[], io: CommandIo): void {
 			].join("\n"),
 		);
 	}
+	// Committed in the feat's repo ahead of the scope loop, so it packs with the dive's work there.
+	if (feat?.home) reconcileDiveFeatLinks(feat, feat, dive.id, "packed.dive", { scoping: dive, io });
 	const mintUuid = createUuid7Minter();
 	const groups: CapturedPatch[][] = [];
 	let capturedCount = 0;
@@ -383,7 +396,13 @@ export function packDive(args: string[], io: CommandIo): void {
 			continue;
 		}
 
-		const patches = packRepoScope(scope, resolved.path, rc.kbDir, mintUuid);
+		const patches = packRepoScope(
+			scope,
+			resolved.path,
+			rc.kbDir,
+			mintUuid,
+			scope.repoId === rc.bridge ? rc.bridgeDir : undefined,
+		);
 		if (patches.length > 0) groups.push(patches);
 	}
 	const bridgeWip = packBridgeWip(

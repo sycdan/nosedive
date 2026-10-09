@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import { formatPath, isInsideDir, resolveFrom } from "./coreParsing.js";
+import { formatPath, isInsideDir, readNosediveRc, resolveFrom } from "./coreParsing.js";
 import { KbDoc, repoDocs } from "./kbDocs.js";
 import { gitOutput, runGit } from "./gitProcess.js";
 import { REPO_MARKER_EXCLUDE_SPEC, replaceManagedExcludeBlock } from "./managedExcludes.js";
@@ -16,12 +16,10 @@ import {
 
 export function expectedWorktreePath(repoDoc: KbDoc, bridgeDir: string): string {
 	const worktreePath = repoDoc.repoPath ?? repoDoc.metaScalars["worktree-path"];
-	if (!worktreePath) {
-		throw new Error(
-			`repo ${repoDoc.id} is missing meta.path and deprecated meta.worktree-path fallback in ${repoDoc.relPath}`,
-		);
-	}
-	return resolveFrom(bridgeDir, worktreePath);
+	if (worktreePath) return resolveFrom(bridgeDir, worktreePath);
+	const workspace = readNosediveRc(bridgeDir).workspaceDir;
+	if (!workspace) throw new Error(`repo ${repoDoc.id} has no workspace configured`);
+	return resolve(workspace, repoDoc.name);
 }
 export function worktreeHasExpectedSource(targetPath: string, sourcePath: string): boolean {
 	const sourceCommonRaw = gitOutput(sourcePath, ["rev-parse", "--git-common-dir"]);

@@ -34,7 +34,6 @@ SHIP THIS BODY VERBATIM.
 		`compatibility-level: 2
 workspace: ./workspace
 kb: ./kb
-work-branch-prefix: work/
 drop-prompt: ${promptId}
 `,
 	);
@@ -52,7 +51,11 @@ function writeFeat(
 		`name: ${name}`,
 		'gist: "Ship the completed work."',
 	];
-	if (scopes.length > 0) lines.push("scopes:", ...scopes.map((id) => `  - ${id}`));
+	if (scopes.length > 0)
+		lines.push(
+			"scopes:",
+			...scopes.flatMap((id) => [`  - ${id}:`, "      work-branch: work/ship-it.development"]),
+		);
 	if (links.length > 0) {
 		lines.push("links:");
 		for (const link of links) lines.push(`  - kb/${link.id}.md:`, `      rel: ${link.rel}`);

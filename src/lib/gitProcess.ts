@@ -17,11 +17,16 @@ export function cleanGitEnv(): NodeJS.ProcessEnv {
 	return env;
 }
 
-export function runGit(cwd: string, args: string[]): GitCommandResult {
+export function runGit(
+	cwd: string,
+	args: string[],
+	options: { input?: string } = {},
+): GitCommandResult {
 	const result = spawnSync("git", [...GIT_SAFE_BARE_CONFIG_ARGS, ...args], {
 		cwd: resolve(cwd),
 		encoding: "utf8",
 		env: cleanGitEnv(),
+		input: options.input,
 	});
 	return {
 		status: result.status,

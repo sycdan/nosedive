@@ -3,12 +3,14 @@ import { basename, relative } from "node:path";
 import { CommandIo } from "./bridgeSetupIo.js";
 import { NosediveRc, toPosixPath, uuidLike } from "./coreParsing.js";
 import { KbDoc, ScopeRef } from "./kbDocs.js";
+import { splitRepoRef } from "./kbRefs.js";
+import { linkedDoc } from "./repoLinks.js";
 import { printCommandHelp } from "./packageBacklog.js";
 import { gitOutput } from "./gitProcess.js";
 import { titleFromSlug } from "./slugs.js";
 
 export interface ListDivesOptions {
-	/** A feat or a deck to constrain the listing to. Absent means the whole kb. */
+	/** A feat or a root to constrain the listing to. Absent means the whole kb. */
 	ref?: string;
 	help: boolean;
 	includeHistorical: boolean;
@@ -166,7 +168,7 @@ export function listedDive(
 			.map((scope) => formatScopeRef(scope)),
 		tags,
 		source: doc.relPath,
-		// Only a feat owns a dive. A deck links dives directly too, and that is
+		// Only a feat owns a dive. A root links dives directly too, and that is
 		// the one case a listing must not dress up as ownership.
 		feat: owner?.kind === "feat" ? { name: owner.name, source: owner.relPath } : undefined,
 		lastLog: doc.lastLog,
@@ -212,18 +214,20 @@ function isBacklogFeatRel(rel: string | undefined): boolean {
 }
 
 /**
- * Every dive a deck reaches, walking feat links out from it. A deck is any doc
+ * Every dive a root reaches, walking feat links out from it. A root is any doc
  * that roots a backlog tree -- the configured backlog memo is one -- so the walk
- * is the same whether it starts at the bridge's deck or at one named on the
+ * is the same whether it starts at the backlog or at a root named on the
  * command line. First link to a dive wins: the same dive reached twice is one
  * dive, and the shallower edge is the one the reader was looking for.
+ *
+ * Given `rc`, the walk crosses into feats that live in other repos.
  */
-export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
+export function walkRootDives(root: KbDoc, kbDocs: KbDoc[], rc?: NosediveRc): DiveLink[] {
 	const docsById = new Map(kbDocs.map((doc) => [doc.id, doc]));
 	const dives: DiveLink[] = [];
 	const seenDocs = new Set<string>();
 	const seenDives = new Set<string>();
-	const queue = [deck];
+	const queue = [root];
 
 	while (queue.length > 0) {
 		const current = queue.shift()!;
@@ -231,7 +235,10 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 		seenDocs.add(current.id);
 
 		for (const link of current.links) {
-			const target = docsById.get(link.id);
+			// Another repo is read only for a feat edge: nothing else there is walked.
+			const crossing = rc && link.repo && link.repo !== rc.bridge;
+			if (crossing && !isBacklogFeatRel(link.rel)) continue;
+			const target = rc ? linkedDoc(rc, current, link, docsById) : docsById.get(link.id);
 			if (!target) continue;
 			if (target.kind === "dive") {
 				if (seenDives.has(target.id)) continue;
@@ -241,6 +248,15 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 				queue.push(target);
 			}
 		}
+		// A feat in another repo links only the dives a dive scoping it could
+		// commit, so its others are found by the `meta.feat` that names it.
+		if (!current.home) continue;
+		for (const dive of kbDocs) {
+			if (dive.kind !== "dive" || seenDives.has(dive.id)) continue;
+			if (!sameFeatRef(dive.featRef, current)) continue;
+			seenDives.add(dive.id);
+			dives.push({ dive, owner: current });
+		}
 	}
 
 	return dives;
@@ -249,10 +265,14 @@ export function walkDeckDives(deck: KbDoc, kbDocs: KbDoc[]): DiveLink[] {
 /**
  * A dive names its feat in `meta.feat`, which may be the feat's quid, a
  * bridge-root kb path such as `kb/<id>.md`, or its exact `name`. All three
- * have to agree with the feat doc being listed.
+ * have to agree with the feat doc being listed. A feat in another repo is
+ * named `<repo-quid>:<path>`, and only that repo's copy answers to it.
  */
 export function sameFeatRef(featRef: string | undefined, feat: KbDoc): boolean {
 	if (!featRef) return false;
+	const qualified = splitRepoRef(featRef);
+	if (qualified)
+		return feat.home?.repoId === qualified.repo && toPosixPath(qualified.path) === feat.relPath;
 	if (featRef === feat.id || featRef === feat.name) return true;
 	return toPosixPath(featRef) === feat.relPath;
 }
@@ -317,16 +337,16 @@ export function collectKbDives(
 	return listDivesResult("kb", links, localOnlyIds, includeHistorical);
 }
 
-/** Every dive the given deck reaches, however deep in its feat tree it sits. */
-export function collectDeckDives(
-	deck: KbDoc,
+/** Every dive the given root reaches, however deep in its feat tree it sits. */
+export function collectRootDives(
+	root: KbDoc,
 	kbDocs: KbDoc[],
 	localOnlyIds: ReadonlySet<string>,
 	includeHistorical: boolean,
 ): ListDivesResult {
 	return listDivesResult(
-		`deck ${deck.name}`,
-		walkDeckDives(deck, kbDocs),
+		`root ${root.name}`,
+		walkRootDives(root, kbDocs),
 		localOnlyIds,
 		includeHistorical,
 	);

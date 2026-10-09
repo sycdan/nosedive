@@ -7,11 +7,12 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { CommandIo } from "../lib/bridgeSetupIo.js";
+import { assertBridgeInStep } from "../lib/bridgeTrunk.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { LAND_IN_FLIGHT_ENV, NO_ACTIVE_DIVE_ERROR_ID, shellQuote } from "../lib/constants.js";
+import { diveGateView } from "../lib/diveGateView.js";
 import { attachFailedGatesToDive } from "../lib/gateSession.js";
 import {
-	defaultWorkBranch,
 	formatPath,
 	parseMarkdownDoc,
 	readNosediveRc,
@@ -26,6 +27,13 @@ import {
 } from "../lib/gitState.js";
 import { appendTimestampedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
+import {
+	bringBridgeScopeIn,
+	commitsAheadOfPin,
+	headIsStrictlyBehindPin,
+	scopeUnchanged,
+} from "../lib/landBridgeScope.js";
+import { strandedInstancesOnLand } from "../lib/kindInstances.js";
 import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
 import {
@@ -36,40 +44,15 @@ import {
 } from "../lib/landGates.js";
 import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { gitOutput } from "../lib/gitProcess.js";
+import { leaseRefusal, movedBranchRefusal, type LandLease } from "../lib/landRefusals.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
-import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
+import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
+import { upscopeBranch } from "../lib/diveScopes.js";
 
 const refusalPrefix = "land refused because ";
-
-/** The explicit expected value of a `--hard` push, plus what a refusal must name. */
-interface LandLease {
-	repoId: string;
-	pin: string;
-	diveId: string;
-	cli: string;
-}
-
-function slugForBranch(dive: KbDoc, feat: KbDoc | undefined): string {
-	return feat?.name ?? dive.name;
-}
-
-function commitsAheadOfPin(worktreePath: string, scopeRef: string, repoId: string): string[] {
-	const commits = gitRun(
-		worktreePath,
-		["rev-list", "--abbrev-commit", `${scopeRef}..HEAD`],
-		`failed to list commits ahead of pin for repo ${repoId}`,
-	);
-	return commits ? commits.split(/\r?\n/).filter(Boolean) : [];
-}
-
-function headIsStrictlyBehindPin(worktreePath: string, scopeRef: string): boolean {
-	const head = gitOutput(worktreePath, ["rev-parse", "HEAD"]);
-	if (!head || head === scopeRef) return false;
-	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", "HEAD", scopeRef]) !== undefined;
-}
 
 function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
 	const status = gitRun(
@@ -88,19 +71,8 @@ function originUrl(worktreePath: string): string {
 	);
 }
 
-/** Shared by the pre-gate check and the push itself, so both refusals read alike. */
-function leaseRefusal(branch: string, lease: LandLease): string {
-	return (
-		`${refusalPrefix}scope ${lease.repoId} could not replace ${branch} under a lease expecting ` +
-		`${lease.pin} -- the branch moved since this dive was pinned, or does not exist. ` +
-		`Repin the dive at the new branch head (\`${lease.cli} record.dive --ref ${lease.diveId} ` +
-		`--repin\`) and rebase again; do not force-push past it, which would discard whatever ` +
-		`moved it`
-	);
-}
-
 /**
- * Push one scoped repo's current HEAD to work-branch-prefix<slug> on its own
+ * Push one scoped repo's current HEAD to its recorded work branch on its own
  * cloud remote (read-only scopes never reach here).
  *
  * Deliberately by resolved URL rather than by remote name: hydration leaves
@@ -116,14 +88,31 @@ function leaseRefusal(branch: string, lease: LandLease): string {
  * this dive started -- and refuses an absent branch for free, since git rejects
  * a non-empty expected value against a ref that is not there.
  */
-function landRepoScope(worktreePath: string, branch: string, lease?: LandLease): string {
+function landRepoScope(
+	worktreePath: string,
+	branch: string,
+	scope: LandLease,
+	hard: boolean,
+): string {
 	const url = originUrl(worktreePath);
-	const force = lease ? [`--force-with-lease=refs/heads/${branch}:${lease.pin}`] : [];
-	gitRun(
-		worktreePath,
-		["push", url, ...force, `HEAD:refs/heads/${branch}`],
-		lease ? leaseRefusal(branch, lease) : `failed to push ${formatPath(worktreePath)} to ${branch}`,
-	);
+	const force = hard ? [`--force-with-lease=refs/heads/${branch}:${scope.pin}`] : [];
+	try {
+		gitRun(
+			worktreePath,
+			["push", url, ...force, `HEAD:refs/heads/${branch}`],
+			hard
+				? leaseRefusal(branch, scope)
+				: `failed to push ${formatPath(worktreePath)} to ${branch}`,
+		);
+	} catch (error) {
+		if (!hard) {
+			const published = remoteBranchHead(worktreePath, branch, scope.repoId);
+			if (published && published !== scope.pin && !headContains(worktreePath, published)) {
+				throw new Error(movedBranchRefusal(branch, published, scope));
+			}
+		}
+		throw error;
+	}
 	return branch;
 }
 
@@ -194,14 +183,8 @@ function assertScopesCanPublish(
 		}
 
 		throw new Error(
-			`${refusalPrefix}scope ${scope.repoId} cannot fast-forward ${branch}: the branch is at ` +
-				`${published} and this dive's work does not contain it (pinned at ${pin}). ` +
-				`Nothing was pushed and no gates ran. Repin onto the published head and replay this ` +
-				`dive's work onto it:\n` +
-				`  ${cli} pack\n` +
-				`  ${cli} record.dive --ref ${dive.id} --repin\n` +
-				`  ${cli} jump ${dive.id}\n` +
-				`then land again.`,
+			`${movedBranchRefusal(branch, published, { repoId: scope.repoId, pin, diveId: dive.id, cli })} ` +
+				`Nothing was pushed and no gates ran.`,
 		);
 	}
 }
@@ -222,15 +205,11 @@ function stashExceptStaged(bridgeDir: string): boolean {
  * is published. The check used to sit inside `commitAndPushLand`, which runs
  * after every work branch is already on its remote: a bridge with no upstream
  * therefore published the work and then refused, leaving the dive open with
- * nothing to retry -- landing again cannot un-push a branch.
+ * nothing to retry -- landing again cannot un-push a branch. A bridge diverged
+ * from its upstream is refused here too, for the same reason.
  */
 function bridgeUpstreamForLand(bridgeDir: string): string {
-	const upstream = gitOutput(bridgeDir, [
-		"rev-parse",
-		"--abbrev-ref",
-		"--symbolic-full-name",
-		"@{upstream}",
-	]);
+	const upstream = assertBridgeInStep(bridgeDir);
 	if (!upstream) throw new Error("bridge has no upstream to push to; configure one before landing");
 	return upstream;
 }
@@ -337,7 +316,6 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	if (!dive) throw new Error(`active dive ${marker.id} not found in kb`);
 
 	const feat = dive.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
-	const slug = slugForBranch(dive, feat);
 	const cli = nosediveInvocation();
 
 	// Before the scope loop, the gates and every push: see `bridgeUpstreamForLand`.
@@ -352,9 +330,9 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 			throw new Error(`${refusalPrefix}scoped repo ${scope.repoId} has no pinned ref`);
 	}
 
-	const pushed: string[] = [];
+	const scopeOutcomes: string[] = [];
 	const hydratedWorktrees: { scope: (typeof scopes)[number]; path: string }[] = [];
-	const writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
+	let writableScopes: { scope: (typeof scopes)[number]; path: string }[] = [];
 	for (const scope of scopes) {
 		if (!rc.workspaceDir) throw new Error("no workspace is configured; run nosedive seed");
 		const { path, failure } = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
@@ -362,6 +340,10 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
 		hydratedWorktrees.push({ scope, path });
 		if (!scope.workBranch) {
+			const suggested = upscopeBranch(scope.repoId, undefined, rc, kbDocs, feat);
+			const branchHint = suggested
+				? ` to publish it on ${suggested}, or pass --work-branch to choose another`
+				: " with --work-branch to name where it publishes";
 			if (!scope.ref) throw new Error(`${refusalPrefix}scope ${scope.repoId} has no pinned ref`);
 			const commits = commitsAheadOfPin(path, scope.ref, scope.repoId);
 			/**
@@ -373,16 +355,12 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 				throw new Error(
 					`${refusalPrefix}scope ${scope.repoId} is ahead of pinned ref ${scope.ref} ` +
 						`(${commits.join(", ")}) and names no work branch. ` +
-						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
-						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
-						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\`${branchHint}.`,
 				);
 			if (headIsStrictlyBehindPin(path, scope.ref))
 				throw new Error(
 					`${refusalPrefix}scope ${scope.repoId} is behind pinned ref ${scope.ref} and names no work branch. ` +
-						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\` to publish it on ` +
-						`${defaultWorkBranch(rc, slug)}, or pass --work-branch to choose another -- that default is ` +
-						`nosedive's, and this repo's own branch convention may differ, so check before landing.`,
+						`Run \`${cli} record.dive --ref ${dive.id} --upscope ${scope.repoId}\`${branchHint}.`,
 				);
 			continue;
 		}
@@ -408,7 +386,18 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		);
 	}
 
+	// Committed in the feat's repo before anything is weighed, so it publishes with the dive's work there.
+	if (feat?.home) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive", { scoping: dive, io });
+	// A writable scope with nothing of the dive's past its pin has nothing to
+	// publish, so it is not pushed: every dive takes the backlog's scopes, and most never touch them.
+	const unchanged = writableScopes.filter(({ scope, path }) => scopeUnchanged(scope, path, rc));
+	writableScopes = writableScopes.filter((entry) => !unchanged.includes(entry));
+
 	assertScopesCanPublish(writableScopes, hard, dive, cli);
+
+	// A schema change that strands its own instances would publish broken docs.
+	const stranded = strandedInstancesOnLand(writableScopes, kbDocs, io);
+	if (stranded) throw new Error(`${refusalPrefix}${stranded}`);
 
 	/**
 	 * Gates run before anything is published, and all of them run: a dive that
@@ -420,14 +409,33 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	 * neither of which is a link, so all three are seeded as roots. Order is
 	 * closest-first, which is what first-seen-wins depends on.
 	 */
+	/**
+	 * A repo's own gates run only when the dive changed that repo: on an
+	 * untouched repo they would judge trunk, not this dive, and a breakage
+	 * already there would block unrelated work. Dirty scopes were refused
+	 * above, so a change is a commit past the pin.
+	 */
+	const gateDocs = diveGateView(kbDocs, dive, rc);
 	const gateRoots = [
 		dive,
 		...(feat ? [feat] : []),
-		...scopes
-			.map((scope) => kbDocs.find((doc) => doc.id === scope.repoId))
+		...hydratedWorktrees
+			.filter(({ scope, path }) => commitsAheadOfPin(path, scope.ref!, scope.repoId).length > 0)
+			.map(({ scope }) => kbDocs.find((doc) => doc.id === scope.repoId))
 			.filter((doc): doc is KbDoc => doc !== undefined),
 	];
-	const gates = collectFeatGates("land", gateRoots, kbDocs, rc.bridgeDir);
+	const gates = collectFeatGates(
+		"land",
+		gateRoots
+			.map(
+				(doc) =>
+					gateDocs.find((entry) => entry.id === doc.id) ??
+					(kbDocs.some((entry) => entry.id === doc.id) ? undefined : doc),
+			)
+			.filter((doc): doc is KbDoc => doc !== undefined),
+		gateDocs,
+		rc.bridgeDir,
+	);
 	// Before the run, not after: a gate whose source differs from what will be
 	// published has already made its own result meaningless, green or red. Before
 	// the stash too, which is why no pre-push hook can stand in for this.
@@ -484,6 +492,8 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		io.err("land: land gates passed");
 	}
 
+	// Before any push, so a refusal leaves every work branch where it was.
+	bringBridgeScopeIn(writableScopes, rc, io);
 	for (const { scope, path } of writableScopes) {
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
@@ -494,13 +504,15 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		 * unconditional force wearing the flag's name, so there is deliberately no
 		 * weaker push to fall back to here.
 		 */
-		const lease = hard
-			? { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli }
-			: undefined;
+		const publishScope = { repoId: scope.repoId, pin: scope.ref!, diveId: dive.id, cli };
 		io.err(`land: pushing scope ${scope.repoId} -> ${branch}`);
-		landRepoScope(path, branch, lease);
+		landRepoScope(path, branch, publishScope, hard);
 		io.err(`land: pushed scope ${scope.repoId} -> ${branch}`);
-		pushed.push(`${scope.repoId} -> ${branch}`);
+		scopeOutcomes.push(`${scope.repoId} -> ${branch}`);
+	}
+	for (const { scope } of unchanged) {
+		io.err(`land: scope ${scope.repoId} unchanged; not pushed`);
+		scopeOutcomes.push(`${scope.repoId} unchanged; not pushed`);
 	}
 
 	const text = readFileSync(dive.path, "utf8");
@@ -511,14 +523,15 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	doc.set("kind", "memo");
 
 	const outcome =
-		pushed.length > 0
-			? pushed.map((line) => `- ${line}`).join("\n")
+		scopeOutcomes.length > 0
+			? scopeOutcomes.map((line) => `- ${line}`).join("\n")
 			: "- (no scoped repos to push)";
 	const body = `${parsed.body.trimEnd()}\n\n## Outcome\n\n${dive.gist}\n\n${outcome}\n`;
 	writeFileAtomic(dive.path, ["---", stringifyYaml(doc).trimEnd(), "---", body].join("\n"));
 	if (feat) reconcileDiveFeatLinks(feat, feat, dive.id, "landed.dive");
 
-	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, feat?.path);
+	const featPath = bridgeFeatPath(feat);
+	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, featPath);
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

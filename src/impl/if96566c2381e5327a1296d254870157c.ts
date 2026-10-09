@@ -3,9 +3,9 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import {
-	collectDeckDives,
 	collectKbDives,
 	collectListDives,
+	collectRootDives,
 	formatListDivesResult,
 	ListDivesResult,
 	localOnlyKbDocIds,
@@ -17,8 +17,8 @@ import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { resolveFeatDoc } from "../lib/repoFeatScopes.js";
 
 /**
- * A ref is a feat or a deck, told apart by the kind of doc it resolves to: a
- * feat lists the dives it links, a deck lists every dive its feat tree reaches.
+ * A ref is a feat or a root, told apart by the kind of doc it resolves to: a
+ * feat lists the dives it links, a root lists every dive its feat tree reaches.
  * Anything else is neither, and says so rather than listing nothing.
  */
 function scopedDives(
@@ -32,8 +32,8 @@ function scopedDives(
 
 	const doc = resolveFeatDoc(kbDocs, rc, ref);
 	if (doc.kind === "feat") return collectListDives(doc, kbDocs, localOnlyIds, includeHistorical);
-	if (doc.kind === "memo") return collectDeckDives(doc, kbDocs, localOnlyIds, includeHistorical);
-	throw new Error(`list-dives needs a feat or a deck: ${ref} is a ${doc.kind}`);
+	if (doc.kind === "memo") return collectRootDives(doc, kbDocs, localOnlyIds, includeHistorical);
+	throw new Error(`list-dives needs a feat or a root: ${ref} is a ${doc.kind}`);
 }
 
 function listDives(args: string[], io: CommandIo): void {

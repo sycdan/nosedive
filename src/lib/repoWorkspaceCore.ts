@@ -331,7 +331,9 @@ export function cacheRemoteValue(
 		);
 	}
 
-	const local = resolveRemoteForGit(remotes.local, bridgeDir);
+	const given = resolveRemoteForGit(remotes.local, bridgeDir);
+	// The repo-create gate makes a bare `<local>.git`; git itself reads that suffix the same way.
+	const local = !existsSync(given) && existsSync(`${given}.git`) ? `${given}.git` : given;
 	ensureLocalSeedUsable(repoDoc.id, local);
 	return { remote: local, sourceKind: "local" };
 }

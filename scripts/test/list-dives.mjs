@@ -117,12 +117,12 @@ test("list-dives with no scope lists every dive in the kb", () => {
 	assert.match(listed.stdout, /- \[working-dive\]\(kb\/.+\.md\) diver=dive-pilot@example\.invalid/);
 });
 
-test("list-dives on a deck lists every dive its feat tree reaches", () => {
+test("list-dives on a root lists every dive its feat tree reaches", () => {
 	const bridge = bridgeWithDives("deck-scope-bridge");
 
 	const listed = run(["list-dives", "main.deck"], bridge);
-	assertOk(listed, "deck-scoped list-dives failed");
-	assert.match(listed.stdout, /^Scope: deck main\.deck$/m);
+	assertOk(listed, "root-scoped list-dives failed");
+	assert.match(listed.stdout, /^Scope: root main\.deck$/m);
 	assert.match(listed.stdout, /- \[pending-dive\]\(kb\/.+\.md\) rel=pending\.dive/);
 	// Reached two feats down, and by a bare rel.
 	assert.match(listed.stdout, /- \[deep-dive\]\(kb\/.+\.md\) rel=pending/);
@@ -206,7 +206,7 @@ test("list-dives --json reports the scope and its sections", () => {
 	const listed = run(["list-dives", "main.deck", "--json"], bridge);
 	assertOk(listed, "list-dives --json failed");
 	const result = JSON.parse(listed.stdout);
-	assert.equal(result.scope, "deck main.deck");
+	assert.equal(result.scope, "root main.deck");
 	assert.deepEqual(
 		result.pending.map((dive) => dive.name),
 		["deck-linked-dive", "pending-dive", "deep-dive"],
@@ -218,10 +218,10 @@ test("list-dives --json reports the scope and its sections", () => {
 	assert.deepEqual(result.historical, [], "historical stays out unless asked for");
 });
 
-test("list-dives refuses a ref that is neither a feat nor a deck", () => {
+test("list-dives refuses a ref that is neither a feat nor a root", () => {
 	const bridge = bridgeWithDives("bad-scope-bridge");
 
 	const listed = run(["list-dives", "pending-dive"], bridge);
 	assert.notEqual(listed.status, 0, "list-dives on a dive unexpectedly succeeded");
-	assert.match(listed.stderr, /list-dives needs a feat or a deck: pending-dive is a dive/);
+	assert.match(listed.stderr, /list-dives needs a feat or a root: pending-dive is a dive/);
 });

@@ -6,7 +6,8 @@ import { captureCommand } from "./commandAdapter.js";
 
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
-import { bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
+import { assertBridgeInStep, bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
+import { followLiveBridge } from "../lib/landBridgeScope.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
@@ -25,6 +26,7 @@ import { recreateDiveScratch } from "../lib/diveScratch.js";
 import { appendTimestampedSection, latestLoggedSection } from "../lib/kbSections.js";
 import { KbDoc, loadKbDocs } from "../lib/kbDocs.js";
 import { printWorkDirective } from "../lib/jumpHandoff.js";
+import { diveToJump } from "../lib/jumpFeat.js";
 import { claimAndLabel, parseJumpArgs, selectJumpDive } from "../lib/jumpSelect.js";
 import { unsafeLinkPath } from "../lib/proveCore.js";
 import { reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
@@ -44,6 +46,7 @@ import {
 	moveScopeToPin,
 	pinBehindTrunk,
 	refuseUnmovableScopes,
+	workBranchPinWarning,
 	type HydratedScope,
 	type StalePin,
 } from "../lib/scopeHydration.js";
@@ -329,12 +332,16 @@ function jumpSubject(
 }
 
 export function jump(args: string[], io: CommandIo): void {
-	const ref = parseJumpArgs(args);
+	const asked = parseJumpArgs(args);
 
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error(".nosediverc is missing kb");
 	if (!rc.workspaceDir) throw new Error(".nosediverc is missing workspace");
+	// Before anything is written, the unplanned dive record included: a diverged
+	// bridge would only fail at the push, leaving a half-made dive behind.
+	assertBridgeInStep(rc.bridgeDir);
 
+	const ref = diveToJump(rc, loadKbDocs(rc.kbDir, rc.bridgeDir), asked.ref, io);
 	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	// A refusal here is already on stderr with the exit code set: what it has to
 	// say is a list of the dives that could be jumped instead, which reads far
@@ -390,6 +397,8 @@ export function jump(args: string[], io: CommandIo): void {
 			`hydrated repo=${scope.repoId} path=${formatPath(path)}` +
 				(settled.movedFrom ? ` moved-from=${settled.movedFrom}` : ""),
 		);
+		const branchWarning = workBranchPinWarning(hydrated, scope, dive.id, nosediveInvocation());
+		if (branchWarning) io.err(branchWarning);
 		// A warning, not a refusal: a planned dive that merely waited is the
 		// ordinary case. The agent picking it up was not there when the pin was
 		// chosen and has no reason to suspect it, so say how far behind and name
@@ -467,7 +476,9 @@ export function jump(args: string[], io: CommandIo): void {
 			renderJumpedSection(diver, feat.name || feat.id, hydratedEntries, kbDocs),
 			"Jumped",
 		);
-		reconcileDiveFeatLinks(feat, feat, dive.id, "jumped.dive");
+		// Read again now its repo may be hydrated: the dive's checkout is where the link goes.
+		const current = feat.home ? resolveFeatDoc(kbDocs, rc, featRef) : feat;
+		reconcileDiveFeatLinks(current, current, dive.id, "jumped.dive", { scoping: dive, io });
 
 		// The feat's reciprocal link records that this command jumped the dive, so
 		// it is part of the same bookkeeping -- left unstaged it lingers as bridge
@@ -475,11 +486,16 @@ export function jump(args: string[], io: CommandIo): void {
 		commitAndPushJump(
 			rc.bridgeDir,
 			dive.path,
-			[...appliedFileAbsPaths, feat.path],
+			[...appliedFileAbsPaths, ...(feat.home ? [] : [feat.path])],
 			`jump(${dive.name}): ${subject}`,
 			feat.id,
 		);
 	}
+
+	// After the bookkeeping is pushed, so the dive's checkout of the bridge
+	// starts with it.
+	const self = rc.bridge ? scopePaths.get(rc.bridge) : undefined;
+	if (self && failedChains === 0) followLiveBridge(rc.bridgeDir, self, io);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
 

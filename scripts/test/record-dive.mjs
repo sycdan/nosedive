@@ -27,6 +27,8 @@ const featId = "019fc623-0000-7000-8000-000000000002";
 const unhydratedRepoId = "019fc623-0000-7000-8000-000000000003";
 const unrelatedRepoId = "019fc623-0000-7000-8000-000000000004";
 const backlogId = "019fc623-0000-7000-8000-000000000005";
+const bridgeRepoId = "019fc623-0000-7000-8000-000000000006";
+const bridgeName = "test-bridge";
 const testDiver = "01a05527-a49a-714c-9d35-3fa310ac6270@nosedive.invalid";
 
 function createRepo(path, id) {
@@ -58,7 +60,8 @@ meta:
 }
 
 function setup(name) {
-	const bridge = createBridge(tmp, name);
+	const bridge = createBridge(tmp, name, { bridge: bridgeRepoId });
+	writeRepoDoc(bridge, bridgeRepoId, bridgeName, "workspace/__self", bridge);
 	const repo = join(bridge, "workspace", "repo");
 	const repoCommit = createRepo(repo, repoId);
 	writeRepoDoc(bridge, repoId, "repo", "workspace/repo");
@@ -82,7 +85,8 @@ scopes:
 
 /** A bridge whose configured backlog memo scopes the fixture repo, for `--free`. */
 function setupFree(name, { scopeRepo = true } = {}) {
-	const bridge = createBridge(tmp, name, { backlog: backlogId });
+	const bridge = createBridge(tmp, name, { backlog: backlogId, bridge: bridgeRepoId });
+	writeRepoDoc(bridge, bridgeRepoId, bridgeName, "workspace/__self", bridge);
 	const repo = join(bridge, "workspace", "repo");
 	const repoCommit = createRepo(repo, repoId);
 	write(
@@ -732,7 +736,7 @@ test("record.dive --upscope adds to the inherited set rather than replacing it",
 	assert.match(
 		doc,
 		new RegExp(
-			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: work/leaf.record-dive.nosedive$`,
+			`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}\n      work-branch: ${bridgeName}-main/leaf.record-dive.nosedive-${childEffortId}$`,
 			"m",
 		),
 	);
@@ -762,7 +766,7 @@ test("record.dive warns when no ancestor scopes a repo", () => {
 	writeFeat(bridge, childEffortId, "leaf.record-dive.nosedive", { parent: parentEffortId });
 	const result = run(["record.dive", "--effort", childEffortId], bridge);
 	assertOk(result, "record.dive create failed");
-	assert.match(result.stderr, /and its ancestors scope no repos/);
+	assert.match(result.stderr, /its ancestors and the backlog scope no repos/);
 	assert.match(readFileSync(recordedPath(bridge, result.stdout), "utf8"), /^scopes: \[\]$/m);
 });
 
@@ -1438,7 +1442,7 @@ test("record.dive resolves --upscope and --unscope repos by name", () => {
 	assert.match(
 		doc,
 		new RegExp(
-			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: work/record-dive.nosedive$`,
+			`^  - ${unhydratedRepoId}:\n      ref: ${secondCommit}\n      work-branch: ${bridgeName}-main/record-dive.nosedive-${featId}$`,
 			"m",
 		),
 	);
@@ -1554,4 +1558,70 @@ test("record.dive --upscope pins a newly scoped repo at its branch on origin", (
 			"m",
 		),
 	);
+});
+
+/** `crud <dive> --repin` is the same repin, so helm and agents need not reach for record.dive. */
+test("crud <dive> --repin makes record.dive's repin, committed as crud's", () => {
+	const { bridge, repo, repoCommit } = setup("crud-repin");
+	const { path, id } = recordDive(bridge);
+	const featHead = commitOnBranch(repo, "work/record-dive.nosedive", "feat-work");
+	assertOk(run(["crud", id, "--repin"], bridge), "crud --repin failed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${featHead}$`, "m"));
+	assert.equal(
+		runTool("git", ["log", "-1", "--format=%s"], bridge).stdout.trim(),
+		`crud(${id}): updated dive ${/^name: (.+)$/m.exec(readFileSync(path, "utf8"))[1]}`,
+	);
+	const back = run(["crud", id, "--repin", "main", "--scope", "repo"], bridge);
+	assertOk(back, "crud --repin <ref> --scope failed");
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+	assert.match(back.stdout, new RegExp(`repo: ${featHead} -> ${repoCommit} \\(ref main\\)`));
+
+	for (const [args, refusal] of [
+		[[id, "--repin", "main"], /--repin <ref> requires --scope/],
+		[["--repin", id], /--repin repins a dive: crud <dive-quid> --repin/],
+		[[id, "--scope", "repo"], /crud takes no --scope/],
+		[[id, "--repin", "--meta", "-"], /crud --repin takes no --meta/],
+	]) {
+		const refused = run(["crud", ...args], bridge);
+		assert.notEqual(refused.status, 0, args.join(" "));
+		assert.match(refused.stderr, refusal);
+	}
+});
+
+/** `crud <dive> --scopes -` makes record.dive's scope edits, so no scope is written unpinned. */
+test("crud <dive> --scopes pins what it adds, drops on null, and leaves the pin to --repin", () => {
+	const { bridge, repoCommit } = setup("crud-scopes");
+	const otherCommit = createRepo(join(bridge, "workspace", "other"), unrelatedRepoId);
+	writeRepoDoc(bridge, unrelatedRepoId, "other", "workspace/other");
+	const { path, id } = recordDive(bridge);
+	const patch = (input, ...args) =>
+		assertOk(run(["crud", id, "--scopes", "-", ...args], bridge, input), input);
+	const other = (tail) =>
+		assert.match(
+			readFileSync(path, "utf8"),
+			new RegExp(`^  - ${unrelatedRepoId}:\n      ref: ${otherCommit}${tail}`, "m"),
+		);
+
+	patch("other: {}\n");
+	other(`\n      work-branch: ${bridgeName}-main/record-dive.nosedive-${featId}\n`);
+	patch("other: {work-branch: null}\n");
+	other("\n(?!      )");
+	patch("other: null\n");
+	assert.doesNotMatch(readFileSync(path, "utf8"), new RegExp(unrelatedRepoId));
+	patch("other: {work-branch: null}\n");
+	other("\n(?!      )");
+	patch("repo: {}\n", "--replace");
+	assert.doesNotMatch(readFileSync(path, "utf8"), new RegExp(unrelatedRepoId));
+	assert.match(readFileSync(path, "utf8"), new RegExp(`^      ref: ${repoCommit}$`, "m"));
+
+	const before = readFileSync(path, "utf8");
+	for (const input of [`repo: {ref: ${otherCommit}}\n`, "repo: {work-branch: ''}\n"]) {
+		const refused = run(["crud", id, "--scopes", "-"], bridge, input);
+		assert.equal(refused.status, 1, input);
+	}
+	assert.match(
+		run(["crud", id, "--scopes", "-"], bridge, "repo: {ref: x}\n").stderr,
+		new RegExp(`pin moves with crud ${id} --repin`),
+	);
+	assert.equal(readFileSync(path, "utf8"), before, "a refused patch writes nothing");
 });

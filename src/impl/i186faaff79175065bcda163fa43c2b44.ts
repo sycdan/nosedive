@@ -7,6 +7,8 @@ import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { readNosediveRc } from "../lib/coreParsing.js";
 import { resolveBridgeDocRef } from "../lib/diveScopes.js";
+import { diveGateView } from "../lib/diveGateView.js";
+import { gateChangedOnDive } from "../lib/gateDocs.js";
 import { declaringGateDocs } from "../lib/gateDeclarations.js";
 import { attachFailedGatesToDive, hydrateGateRepos, runGateSession } from "../lib/gateSession.js";
 import { readWorkspaceDiveMarker } from "../lib/gitState.js";
@@ -74,12 +76,13 @@ async function test(args: string[], io: CommandIo): Promise<void> {
 	const { gateRefs, full, viaRef } = parseTestArgs(args);
 	const rc = readNosediveRc(process.cwd());
 	if (!rc.kbDir) throw new Error("test requires a configured kb directory");
-	const kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
+	let kbDocs = loadKbDocs(rc.kbDir, rc.bridgeDir);
 	const marker = readWorkspaceDiveMarker(rc.workspaceDir);
 	const dive =
 		marker.id !== undefined
 			? kbDocs.find((doc) => doc.id === marker.id && doc.kind === "dive")
 			: undefined;
+	kbDocs = diveGateView(kbDocs, dive, rc);
 	const feat = dive?.featRef ? resolveFeatDoc(kbDocs, rc, dive.featRef) : undefined;
 
 	/**
@@ -203,7 +206,8 @@ function mintUnclaimedFailures(
 	rc: ReturnType<typeof readNosediveRc>,
 	io: CommandIo,
 ): void {
-	let kbDocs = initialDocs;
+	// Dives are live bookkeeping, so dedup reads the live bridge, never a dive's `__self` view.
+	let kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 	for (const run of runs) {
 		if (
 			kbDocs.some(
@@ -214,7 +218,7 @@ function mintUnclaimedFailures(
 		}
 
 		const declaredBy = run.gate.introducedBy;
-		const feat = owningFeat(declaredBy, kbDocs, rc);
+		const feat = owningFeat(declaredBy, initialDocs, rc);
 		if (!feat) {
 			io.writeErr(
 				`test: gate ${run.gate.doc.name || run.gate.doc.id} (${run.gate.doc.id}), declared by ${declaredBy.relPath}: a test.gate needs a feat in context to mint against.\n`,
@@ -236,7 +240,7 @@ function mintUnclaimedFailures(
 		recordDive(
 			["--feat", feat.id, "--gist", `triage ${run.gate.doc.name || run.gate.doc.id} failure`],
 			io,
-			brief,
+			{ brief },
 		);
 		kbDocs = loadKbDocs(rc.kbDir!, rc.bridgeDir);
 		const minted = kbDocs.find((doc) => doc.kind === "dive" && !before.has(doc.id));
@@ -270,10 +274,14 @@ function namedGate(
 	viaRef?: string,
 	dive?: KbDoc,
 ): LandGate {
-	const doc = resolveBridgeDocRef(bridgeDir, kbDocs, ref);
+	const doc =
+		kbDocs.find((entry) => entry.relPath === ref) ?? resolveBridgeDocRef(bridgeDir, kbDocs, ref);
 	let introducedBy = doc;
 	if (!doc.hasScopes) {
-		const via = viaRef ? resolveBridgeDocRef(bridgeDir, kbDocs, viaRef) : undefined;
+		const via = viaRef
+			? (kbDocs.find((entry) => entry.relPath === viaRef) ??
+				resolveBridgeDocRef(bridgeDir, kbDocs, viaRef))
+			: undefined;
 		const reachable = via ? reachableDocs(via, kbDocs) : kbDocs;
 		const declaring = declaringGateDocs(reachable, doc.id);
 		const active = dive ? declaring.find((candidate) => candidate.id === dive.id) : undefined;
@@ -301,6 +309,7 @@ function builtGate(doc: KbDoc, introducedBy: KbDoc, bridgeDir: string): LandGate
 	return {
 		doc,
 		scriptPath: resolveGateScript(doc, bridgeDir),
+		changedOnDive: gateChangedOnDive(doc, bridgeDir),
 		gateHeight: 0,
 		flaky: false,
 		introducedBy,

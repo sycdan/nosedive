@@ -11,10 +11,22 @@ const ROLES = new Set(["dive", "feat", "gate", "repo", "note"]);
 const BACKLOG_FEAT_RELS = new Set(["parent", "child"]);
 const UNITS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 };
 
-/** Keep the traversal aligned with list-dives: only feat edges expand the deck. */
+/** Keep the traversal aligned with list-dives: only feat edges expand the root. */
 function isBacklogFeatRel(rel: string | undefined): boolean {
 	return Boolean(
 		rel && (BACKLOG_FEAT_RELS.has(rel) || rel.endsWith("-effort") || rel.endsWith(".feat")),
+	);
+}
+
+/** Whether a doc's name, gist or heading holds `term`, compared as slugs; any doc with no term. */
+export function matchesTerm(doc: KbDoc, term: string | undefined): boolean {
+	if (!term) return true;
+	const normalized = slugFromGist(term, Number.MAX_SAFE_INTEGER);
+	if (!normalized) return false;
+	return (
+		doc.name.includes(normalized) ||
+		Boolean(slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER)?.includes(normalized)) ||
+		Boolean(slugFromGist(doc.h1 ?? "", Number.MAX_SAFE_INTEGER)?.includes(normalized))
 	);
 }
 
@@ -168,18 +180,10 @@ export function findDocs(
 			if (target.kind !== "repo" && isBacklogFeatRel(link.rel)) queue.push(target);
 		}
 	}
-	const normalized = term ? slugFromGist(term, Number.MAX_SAFE_INTEGER) : undefined;
-	if (term && !normalized) return [];
 	return [...selected.entries()]
 		.map(([id, declaredBy]) => ({ doc: byId.get(id)!, declaredBy }))
 		.filter(({ doc }) => options.kinds.length === 0 || options.kinds.includes(doc.kind))
-		.filter(
-			({ doc }) =>
-				!normalized ||
-				doc.name.includes(normalized) ||
-				Boolean(slugFromGist(doc.gist, Number.MAX_SAFE_INTEGER)?.includes(normalized)) ||
-				Boolean(slugFromGist(doc.h1 ?? "", Number.MAX_SAFE_INTEGER)?.includes(normalized)),
-		)
+		.filter(({ doc }) => matchesTerm(doc, term))
 		.filter(
 			({ doc, declaredBy }) =>
 				scopeIds.size === 0 ||

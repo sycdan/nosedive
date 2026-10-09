@@ -304,7 +304,7 @@ test("a memo linking no work renders its heading and says so", () => {
 	assert.doesNotMatch(memo, /^## /m);
 });
 
-test("scopes follow the rendered tree and keep what was written on them", () => {
+test("scopes are the pilot's: a render neither derives nor drops them", () => {
 	const bridge = seeded("update-backlog-scopes");
 	repoDoc(bridge, REPO, "apple");
 	repoDoc(bridge, OTHER_REPO, "zebra");
@@ -314,7 +314,7 @@ test("scopes follow the rendered tree and keep what was written on them", () => 
 		scopes: [REPO, OTHER_REPO],
 		body: "Scoped Root",
 	});
-	// The kept repo carries a note; the stale one is justified by no rendered doc.
+	// One scope no rendered doc names, and none for the rendered doc's other repo.
 	const path = backlogLinks(
 		bridge,
 		[[CURRENT, "current.feat"]],
@@ -322,28 +322,10 @@ test("scopes follow the rendered tree and keep what was written on them", () => 
 	);
 
 	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
-	const memo = readFileSync(path, "utf8");
 	assert.match(
-		memo,
-		new RegExp(`^scopes:\n  - ${REPO}:\n      note: "keep me"\n  - ${OTHER_REPO}$`, "m"),
-		"a surviving scope keeps its keys, a new one is written bare, a stale one goes",
+		readFileSync(path, "utf8"),
+		new RegExp(`^scopes:\n  - ${REPO}:\n      note: "keep me"\n  - ${UNLINKED}\nlinks:`, "m"),
 	);
-	assert.doesNotMatch(memo, new RegExp(UNLINKED));
-});
-
-test("scopes survive a render that derives none", () => {
-	const bridge = seeded("update-backlog-scopes-empty");
-	const path = standardTree(bridge);
-	write(
-		path,
-		readFileSync(path, "utf8").replace(
-			/^links:$/m,
-			`scopes:\n  - ${REPO}:\n      note: "hand written"\nlinks:`,
-		),
-	);
-
-	assertOk(run(["update-backlog"], bridge), "update-backlog failed");
-	assert.match(readFileSync(path, "utf8"), /^ {6}note: "hand written"$/m);
 });
 
 test("--inject adds a doc under its own section", () => {

@@ -1,4 +1,4 @@
-import { gitOutput } from "./gitProcess.js";
+import { gitOutput, runGit } from "./gitProcess.js";
 import { gitRun } from "./repoWorkspaceCore.js";
 
 /**
@@ -21,6 +21,34 @@ export function bridgeTrunkBranch(bridgeDir: string, remote: string): string | u
 		`failed to resolve bridge trunk from remote ${remote}`,
 	);
 	return /^ref:\s+refs\/heads\/(.+)\s+HEAD$/m.exec(remoteHead)?.[1]?.trim();
+}
+
+/**
+ * Refuses a bridge whose HEAD and upstream have diverged, as a helm Pull or
+ * Squash off trunk leaves it until pushed. Every dive verb fast-forwards the
+ * bridge before pushing, which would fail only after the verb had written, so
+ * each calls this first. Behind or ahead is fine; no upstream is left to the
+ * verb's own "no upstream" error. Returns the upstream, if any.
+ */
+export function assertBridgeInStep(bridgeDir: string): string | undefined {
+	const upstream = gitOutput(bridgeDir, [
+		"rev-parse",
+		"--abbrev-ref",
+		"--symbolic-full-name",
+		"@{upstream}",
+	]);
+	if (!upstream) return undefined;
+	const [remote] = upstream.split("/");
+	// A failed fetch is not divergence: judge by the last-known upstream and
+	// leave an unreachable remote to the verb's own fetch, which says so.
+	runGit(bridgeDir, ["fetch", remote!]);
+	const ancestor = (a: string, b: string): boolean =>
+		runGit(bridgeDir, ["merge-base", "--is-ancestor", a, b]).status === 0;
+	if (ancestor("HEAD", "@{upstream}") || ancestor("@{upstream}", "HEAD")) return upstream;
+	const branch = gitOutput(bridgeDir, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
+	throw new Error(
+		`bridge ${branch} has diverged from ${upstream}; push it (helm's Push) or pull first, then retry`,
+	);
 }
 
 /**

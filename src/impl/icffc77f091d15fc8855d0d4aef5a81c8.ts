@@ -19,11 +19,15 @@ import {
 	MANAGED_INSTRUCTIONS_BEGIN,
 	MANAGED_INSTRUCTIONS_END,
 } from "../lib/constants.js";
+import { injectDocsIntoBacklogMemo } from "../lib/backlogDives.js";
 import { commitMessage } from "../lib/commitProvenance.js";
+import { KB_FEAT_ID, shipZerostars } from "../lib/shipZerostars.js";
 import {
 	assertWorkspaceInsideBridge,
 	baseConfigPath,
 	formatPath,
+	legacyConfigPath,
+	readNosediveRc,
 	resolveFrom,
 	toPosixPath,
 	uuidLike,
@@ -45,6 +49,7 @@ import { gitOutput, runGit } from "../lib/gitProcess.js";
 import { quoteYamlString, writeFileAtomic } from "../lib/renderPlan.js";
 import { gitRun } from "../lib/repoWorkspaceCore.js";
 import { uuid7AtMs } from "../lib/uuid7.js";
+import { defaultWorkBranch } from "../lib/workBranches.js";
 
 const MANAGED_BEGIN = MANAGED_INSTRUCTIONS_BEGIN;
 const MANAGED_END = MANAGED_INSTRUCTIONS_END;
@@ -153,9 +158,19 @@ function planAgentInstructions(paths: string[], io: CommandIo): InstructionWrite
 	return writes;
 }
 
-function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
+/**
+ * The backlog scopes the bridge on the kb feat's branch: its scopes are what
+ * every dive starts with, so a fresh bridge's dives can plan.
+ */
+function mintBacklogMemo(
+	bridgeDir: string,
+	kbDir: string,
+	bridgeScope: { id: string; name: string },
+	io: CommandIo,
+): MintedDoc {
 	const id = uuid7AtMs(Date.now());
 	const name = basename(bridgeDir);
+	const workBranch = defaultWorkBranch(bridgeDir, bridgeScope.name, { id, name: "bridge" });
 	const path = join(kbDir, `${id}.md`);
 	mkdirSync(kbDir, { recursive: true });
 	writeFileAtomic(
@@ -164,11 +179,15 @@ function mintBacklogMemo(bridgeDir: string, kbDir: string, io: CommandIo): Minte
 			"---",
 			"kind: memo",
 			`id: ${id}`,
-			`name: backlog.${name}`,
-			`gist: ${quoteYamlString(`Current backlog for ${name}.`)}`,
+			// The bridge: the root helm picks first, whose feats a pilot sees first.
+			"name: bridge",
+			`gist: ${quoteYamlString(`The bridge of ${name}: the feats every pilot starts from.`)}`,
+			"scopes:",
+			`  - ${bridgeScope.id}:`,
+			`      work-branch: ${workBranch}`,
 			"---",
 			"",
-			"# Backlog",
+			"# Bridge",
 			"",
 			// What `update-backlog` renders for a memo that links no work, so a
 			// fresh bridge starts holding the body the renderer would give it. The
@@ -211,8 +230,12 @@ function bridgeRemoteUrls(bridgeDir: string): string[] {
  * only. The name is the bridge directory's basename, which is what the L1
  * migration's `ensureBridgeRepoDoc` also uses.
  */
-function mintBridgeRepoDoc(bridgeDir: string, kbDir: string, io: CommandIo): MintedDoc {
-	const id = uuid7AtMs(Date.now());
+function mintBridgeRepoDoc(
+	bridgeDir: string,
+	kbDir: string,
+	io: CommandIo,
+	id = uuid7AtMs(Date.now()),
+): MintedDoc {
 	const name = basename(bridgeDir);
 	const path = join(kbDir, `${id}.md`);
 	mkdirSync(kbDir, { recursive: true });
@@ -348,15 +371,22 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 				"seed inside the clone, or run `git remote add origin <url>` here.",
 		);
 	}
+	if (!gitOutput(bridgeDir, ["symbolic-ref", "--quiet", "HEAD"]))
+		throw new Error("cannot choose a default work branch: bridge checkout is detached");
 
+	if (
+		[baseConfigPath(bridgeDir), legacyConfigPath(bridgeDir)].some(
+			(path) => existsSync(path) && /^work-branch-prefix:/m.test(readFileSync(path, "utf8")),
+		)
+	)
+		io.log("Ignoring retired work-branch-prefix in bridge config.");
 	await migrateBridgeConfig(bridgeDir, io);
 
 	// Classified before prompting and before the config write, so an unusable
 	// set of instruction files costs the pilot nothing.
-	const instructionWrites = planAgentInstructions(
-		resolveInstructionTargets(bridgeDir, options.files),
-		io,
-	);
+	const instructionWrites = options.noAgents
+		? []
+		: planAgentInstructions(resolveInstructionTargets(bridgeDir, options.files), io);
 
 	const settings = loadSplitRcSettings(bridgeDir);
 
@@ -364,11 +394,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 		try {
 			settings.workspace = await promptScalar(io, "workspace", settings.workspace);
 			settings.kb = await promptScalar(io, "kb", settings.kb);
-			settings.workBranchPrefix = await promptScalar(
-				io,
-				"work-branch-prefix",
-				settings.workBranchPrefix,
-			);
 		} finally {
 			io.close();
 		}
@@ -378,14 +403,6 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	// is minted or written -- a bridge that cannot be resolved from inside its
 	// own workspace is not worth half-creating.
 	assertWorkspaceInsideBridge(bridgeDir, settings.workspace);
-
-	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
-	// L0 already carries the memo its migration minted; a fresh one does not,
-	// and without this update-backlog and dump-backlog have nothing to read.
-	const mintedBacklogMemo = !uuidLike(settings.backlog)
-		? mintBacklogMemo(bridgeDir, resolveFrom(bridgeDir, settings.kb), io)
-		: undefined;
-	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
 
 	// Seed runs at the start of every session, so this has to be a no-op on a
 	// bridge that already knows itself. Matching on the cloud remote is the same
@@ -407,15 +424,49 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 	if (selfDoc && !selfDoc.id) {
 		throw new Error(`bridge repo document ${formatPath(selfDoc.path)} has no id`);
 	}
-	const mintedBridgeRepoDoc = selfDoc ? undefined : mintBridgeRepoDoc(bridgeDir, kbDir, io);
+	if (options.repoId && selfDoc && selfDoc.id !== options.repoId)
+		throw new Error(
+			`seed --repo-id ${options.repoId}: this bridge's own repo doc is already ${selfDoc.id} (${formatPath(selfDoc.path)})`,
+		);
+	const mintedBridgeRepoDoc = selfDoc
+		? undefined
+		: mintBridgeRepoDoc(bridgeDir, kbDir, io, options.repoId);
 	settings.bridge = selfDoc?.id ?? mintedBridgeRepoDoc!.id;
+	const bridgeName = selfDoc?.name ?? readKbDocById(kbDir, bridgeDir, settings.bridge)!.name;
+	const kbWorkBranch = defaultWorkBranch(bridgeDir, bridgeName, {
+		id: KB_FEAT_ID,
+		name: KB_FEAT_ID,
+	});
 	const bridgeBranch = readKbDocById(kbDir, bridgeDir, settings.bridge)?.repoBaseBranch ?? "main";
+
+	// At L1 `backlog:` names a kb memo, not a directory. A bridge migrated from
+	// L0 already carries the memo its migration minted; a fresh one does not,
+	// and without this update-backlog and dump-backlog have nothing to read.
+	const mintedBacklogMemo = !uuidLike(settings.backlog)
+		? mintBacklogMemo(bridgeDir, kbDir, { id: settings.bridge, name: bridgeName }, io)
+		: undefined;
+	if (mintedBacklogMemo) settings.backlog = mintedBacklogMemo.id;
+
+	const shippedPaths = shipZerostars(
+		bridgeDir,
+		kbDir,
+		settings.bridge,
+		kbWorkBranch,
+		join(kbDir, `${settings.backlog}.md`),
+		io,
+	);
 
 	const basePath = baseConfigPath(bridgeDir);
 	writeFileAtomic(basePath, renderBaseConfig(settings, CURRENT_COMPATIBILITY_LEVEL));
 	writeNosediveDirGitignore(bridgeDir);
 	const nosediveGitignorePath = join(bridgeDir, ".nosedive", ".gitignore");
 	io.log(`Wrote ${formatPath(basePath)}`);
+	// A backlog seed just minted renders the kb feat it now links, so a fresh
+	// bridge holds what update-backlog would write. An existing backlog only
+	// gains the link: its body and scopes are the pilot's until they render it.
+	const backlogPath = join(kbDir, `${settings.backlog}.md`);
+	if (mintedBacklogMemo && shippedPaths.includes(backlogPath))
+		injectDocsIntoBacklogMemo(readNosediveRc(bridgeDir), loadKbDocs(kbDir, bridgeDir), [], io);
 
 	for (const write of instructionWrites) {
 		writeFileAtomic(write.path, write.content);
@@ -429,6 +480,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 			nosediveGitignorePath,
 			...(mintedBacklogMemo ? [mintedBacklogMemo.path] : []),
 			...(mintedBridgeRepoDoc ? [mintedBridgeRepoDoc.path] : []),
+			...shippedPaths,
 			...instructionWrites.map((write) => write.path),
 		],
 		bridgeBranch,
@@ -439,7 +491,7 @@ async function seed(args: string[], io: CommandIo): Promise<void> {
 
 	printNextSteps(io, [
 		"nosedive preflight -- what needs attention now",
-		"nosedive record.feat -- start something new",
+		"nosedive helm -- see the bridge, and jump its kb feat to start something new",
 		"nosedive help -- what else nosedive can do",
 		`or ask your agent "What's next?"`,
 	]);

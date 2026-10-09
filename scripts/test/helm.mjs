@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
 	assertOk,
 	cli,
+	cliEnv,
 	createBridge,
 	createTmp,
 	gitCommit,
@@ -171,7 +172,11 @@ function kindDoc(id, name, properties = []) {
 
 /** Starts helm and resolves with its URL once it says where it is listening. */
 function startHelm(cwd) {
-	const child = spawn(process.execPath, [cli, "helm"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(process.execPath, [cli, "helm"], {
+		cwd,
+		env: cliEnv(),
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	let out = "";
 	let err = "";
 	const url = new Promise((resolveUrl, reject) => {

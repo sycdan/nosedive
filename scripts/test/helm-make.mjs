@@ -4,13 +4,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { cli, createTmp, seededBridge } from "../test-helpers.mjs";
+import { cli, cliEnv, createTmp, seededBridge } from "../test-helpers.mjs";
 
 const tmp = createTmp("helm-make");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
 function startHelm(cwd) {
-	const child = spawn(process.execPath, [cli, "helm"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(process.execPath, [cli, "helm"], {
+		cwd,
+		env: cliEnv(),
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	let out = "";
 	const url = new Promise((resolveUrl, reject) => {
 		child.stdout.on("data", (chunk) => {

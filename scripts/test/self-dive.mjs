@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
 	assertOk,
 	createTmp,
+	gitCommit,
 	implRepo,
 	libUrl,
 	pitchFeat,
@@ -70,7 +71,7 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	const selfConfig = join(self, ".nosedive", "config.yaml");
 	writeFileSync(selfConfig, `${readFileSync(selfConfig, "utf8")}picker-level: 1\n`);
 	runTool("git", ["add", ".nosedive/config.yaml"], self);
-	runTool("git", ["commit", "-m", "a picker"], self);
+	gitCommit(self, "a picker");
 
 	// Helm shows the bridge as the dive has it; the retired key changes nothing.
 	const view = helmPicker(bridge);
@@ -163,7 +164,7 @@ test("the bridge's own scope lands alongside commits the live bridge holds, and 
 	runTool("git", ["commit", "-m", "live edit"], bridge);
 	writeFileSync(join(self, "shared.md"), "the dive says another\n");
 	runTool("git", ["add", "shared.md"], self);
-	runTool("git", ["commit", "-m", "dive edit"], self);
+	gitCommit(self, "dive edit");
 	const head = git(["rev-parse", "HEAD"], bridge);
 	const workBranch = () =>
 		git(["branch", "--list", "--format=%(objectname)", kbFeatWorkBranch(bridge)], origin);

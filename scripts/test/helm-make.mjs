@@ -31,7 +31,7 @@ function startHelm(cwd) {
 	};
 }
 
-test("with no dive, helm offers the bridge's kinds; making a repo records a dive, jumps it, and mints there", async (t) => {
+test("with no dive, helm offers a dive alone; on the planned dive, a repo mints there", async (t) => {
 	const { bridge } = seededBridge(tmp, "make", "pilot@nosedive.invalid");
 	const bridgeId = /^bridge: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
@@ -51,17 +51,13 @@ test("with no dive, helm offers the bridge's kinds; making a repo records a dive
 		return { status: res.status, text, body: path === "/api/run" ? {} : JSON.parse(text) };
 	};
 
-	const offered = await get("/api/creatable");
 	assert.deepEqual(
-		offered.map((kind) => kind.name),
-		["kind", "memo", "repo"],
+		(await get("/api/creatable")).map((kind) => kind.name),
+		["dive"],
+		"with no dive, a dive is all Add makes",
 	);
-	const repoSchema = offered.find((kind) => kind.name === "repo").schema;
-	assert.deepEqual(repoSchema.required, ["remotes"]);
-	assert.equal(repoSchema.anyOf, undefined);
-	assert.deepEqual(Object.keys(repoSchema.properties.remotes.properties), ["cloud", "local"]);
 
-	// The three steps the Add modal runs with no dive.
+	// Add plans a dive on the deck's feat; opening it stages it for Jump.
 	const recorded = await post("/api/crud/dive", {
 		feat: KB_FEAT,
 		title: "Add repo cards",
@@ -73,6 +69,16 @@ test("with no dive, helm offers the bridge's kinds; making a repo records a dive
 	assert.ok(dive, recorded.body.stdout);
 	const jumped = await post("/api/run", { verb: "jump", ref: dive });
 	assert.match(jumped.text, /\[exit 0\]\s*$/, jumped.text);
+
+	const offered = await get("/api/creatable");
+	assert.deepEqual(
+		offered.map((kind) => kind.name),
+		["dive", "kind", "memo", "repo"],
+	);
+	const repoSchema = offered.find((kind) => kind.name === "repo").schema;
+	assert.deepEqual(repoSchema.required, ["remotes"]);
+	assert.equal(repoSchema.anyOf, undefined);
+	assert.deepEqual(Object.keys(repoSchema.properties.remotes.properties), ["cloud", "local"]);
 
 	const bare = await post("/api/crud/mint", {
 		repo: bridgeId,

@@ -45,10 +45,10 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	assertOk(run(["jump", divePath], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
 
-	// The dive bar offers what the dive can make: the bridge's kinds, but no dive kind.
+	// The dive bar offers what the dive can make: the bridge's kinds, a dive among them.
 	assert.deepEqual(
 		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:kind", "self:memo", "self:repo"],
+		["self:dive", "self:kind", "self:memo", "self:repo"],
 	);
 	assert.ok(helmCreatableKinds(bridge)[1].schema, "each kind carries its schema for the form");
 
@@ -134,8 +134,8 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 
 	assert.deepEqual(
 		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:kind", "self:memo", "self:repo"],
-		"with no dive helm offers the bridge's kinds, to make on a new dive",
+		["self:dive"],
+		"with no dive helm offers a dive alone",
 	);
 
 	// With no dive the deck is unlocked, the kb feat among the rows and the default.

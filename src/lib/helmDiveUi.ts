@@ -234,6 +234,41 @@ function planForm(doc) {
 	return form;
 }
 
+/**
+ * Add's form for a dive: planned on the deck's feat through crud dive, then
+ * opened -- with no dive on, opening one stages it, so Jump is one click away.
+ */
+function planDialog(feat) {
+	const title = el("input", { type: "text", placeholder: "Title", "aria-label": "title" });
+	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
+	const brief = el("textarea", { placeholder: "Brief", required: "", rows: "6", "aria-label": "brief" });
+	const out = el("pre", { class: "output failed", hidden: "" });
+	const plan = el("button", { type: "submit", class: "act jump" }, "Plan dive");
+	const form = el("form", {}, el("h3", {}, "Plan a dive on " + (rootNames.get(feat) || feat)), title, gist, brief, out,
+		el("div", { class: "modalacts" },
+			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Close"), plan));
+	const dialog = el("dialog", { class: "modal wide" }, form);
+	dialog.addEventListener("close", () => dialog.remove());
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		plan.disabled = true;
+		try {
+			const run = await write("/api/crud/dive", { feat, title: title.value || undefined, gist: gist.value, brief: brief.value });
+			const id = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
+			if (!id) throw new Error(run.stdout || "crud dive recorded nothing");
+			dialog.close();
+			select([{ id: id[1], name: title.value || gist.value, kind: "dive" }], null, outputBox(run.stdout));
+		} catch (err) {
+			out.textContent = String(err.message || err);
+			out.hidden = false;
+			plan.disabled = false;
+		}
+	});
+	document.body.append(dialog);
+	dialog.showModal();
+	title.focus();
+}
+
 function jumpInto(doc) {
 	return confirmButton("Jump " + (doc.title || display(doc)), "jump", () => runVerb({ verb: "jump", ref: doc.ref }));
 }

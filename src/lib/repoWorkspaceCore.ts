@@ -376,9 +376,10 @@ export function ensureManagedRepoCache(repoDoc: KbDoc, bridgeDir: string): strin
 
 	if (!existsSync(cachePath)) {
 		mkdirSync(dirname(cachePath), { recursive: true });
+		// Loose ref files collide on a case-insensitive disk when a remote has branches differing only in case.
 		gitRun(
 			dirname(cachePath),
-			["clone", "--bare", remote, cachePath],
+			["clone", "--bare", "--ref-format=reftable", remote, cachePath],
 			`failed to prepare managed cache for repo ${repoDoc.id} from meta.remotes.${sourceKind}=${remote}`,
 		);
 		ensureOriginRemote(cachePath, remote, repoDoc.id);

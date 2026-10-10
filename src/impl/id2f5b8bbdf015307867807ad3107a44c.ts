@@ -325,7 +325,9 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	const unchanged = writableScopes.filter(({ scope, path }) => scopeUnchanged(scope, path, rc));
 	writableScopes = writableScopes.filter((entry) => !unchanged.includes(entry));
 
-	assertScopesCanPublish(writableScopes, hard, dive, cli);
+	// The bridge's own scope is published by the bridge push, never to its branch.
+	const pushed = writableScopes.filter(({ scope }) => scope.repoId !== rc.bridge);
+	assertScopesCanPublish(pushed, hard, dive, cli);
 
 	// A schema change that strands its own instances would publish broken docs.
 	const stranded = strandedInstancesOnLand(writableScopes, kbDocs, io);

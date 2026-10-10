@@ -31,6 +31,7 @@ import { writeFileAtomic } from "../lib/renderPlan.js";
 import { bridgeFeatPath, reconcileDiveFeatLinks, resolveFeatDoc } from "../lib/repoFeatScopes.js";
 import { ensureManagedRepoCache, gitRun } from "../lib/repoWorkspaceCore.js";
 import { resetHydratedWorktree, resolveRefCommit } from "../lib/repoWorktrees.js";
+import { dropSelfRef, selfDiveRef } from "../lib/selfDiveRef.js";
 
 const BAIL_SECTION_LABEL = "Bail report";
 
@@ -307,6 +308,19 @@ function bail(args: string[], io: CommandIo): void {
 	removeDiveScratch(rc.workspaceDir!, dive.id);
 	io.log(`bailed "${dive.gist}" -- converted to memo, reason: ${reason}`);
 	resetScopesToTrunk(dive, kbDocs, rc.bridgeDir, rc.workspaceDir, io);
+	// The work it gave up is recorded in the bail report; its ref goes with it.
+	const self = dive.scopes.find((scope) => scope.repoId === rc.bridge);
+	const selfPath =
+		self && rc.workspaceDir
+			? hydratedScopedRepoPath(kbDocs, self, rc.bridgeDir, rc.workspaceDir).path
+			: undefined;
+	try {
+		if (selfPath) dropSelfRef(selfPath, dive.id);
+	} catch (error) {
+		io.err(
+			`warning: ${selfDiveRef(dive.id)} not dropped: ${error instanceof Error ? error.message : error}`,
+		);
+	}
 }
 
 export function run(args: string[], _runtime: ImplRuntime): Promise<ImplCommandOutput> {

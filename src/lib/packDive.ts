@@ -21,7 +21,7 @@ import {
 	uniqueDiveWipScopes,
 } from "./gitState.js";
 import { KbDoc, loadKbDocs } from "./kbDocs.js";
-import { fetchLiveBridge, ownCommits } from "./landBridgeScope.js";
+import { packSelf, selfDiveRef, settleSelf } from "./selfDiveRef.js";
 import { printNextSteps } from "./nextSteps.js";
 import {
 	CapturedPatch,
@@ -47,15 +47,10 @@ function packRepoScope(
 	repoPath: string,
 	kbDir: string,
 	mintUuid: () => string,
-	bridgeDir?: string,
 ): CapturedPatch[] {
 	if (!scope.ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to pack against`);
 
-	// A checkout of the bridge itself has the live bridge merged in by jump:
-	// only the dive's own commits are its to pack.
-	const commits = bridgeDir
-		? ownCommits(repoPath, fetchLiveBridge(bridgeDir, repoPath), "HEAD", scope.ref)
-		: listAheadCommits(repoPath, scope.ref, scope.repoId);
+	const commits = listAheadCommits(repoPath, scope.ref, scope.repoId);
 	const entries: CapturedPatch[] = [];
 	for (const sha of commits) {
 		const patch = gitRunPatch(
@@ -386,6 +381,14 @@ export function packDive(args: string[], io: CommandIo): void {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (resolved.failure) throw new Error(resolved.failure.reasons.join("; "));
 		if (!resolved.path) continue;
+		if (scope.repoId === rc.bridge) {
+			const kept = packSelf(rc.bridgeDir, resolved.path, dive.id);
+			if (kept > 0)
+				io.err(
+					`pack: kept ${kept} commit(s) of ${formatPath(resolved.path)} on ${selfDiveRef(dive.id)}`,
+				);
+			continue;
+		}
 		if (scope.readOnly) {
 			const failure = checkScopedRepoWip(scope, resolved.path);
 			if (failure) {
@@ -396,13 +399,7 @@ export function packDive(args: string[], io: CommandIo): void {
 			continue;
 		}
 
-		const patches = packRepoScope(
-			scope,
-			resolved.path,
-			rc.kbDir,
-			mintUuid,
-			scope.repoId === rc.bridge ? rc.bridgeDir : undefined,
-		);
+		const patches = packRepoScope(scope, resolved.path, rc.kbDir, mintUuid);
 		if (patches.length > 0) groups.push(patches);
 	}
 	const bridgeWip = packBridgeWip(
@@ -451,6 +448,11 @@ export function packDive(args: string[], io: CommandIo): void {
 	for (const scope of scopes) {
 		const resolved = hydratedScopedRepoPath(kbDocs, scope, rc.bridgeDir, rc.workspaceDir);
 		if (!resolved.path) continue;
+		if (scope.repoId === rc.bridge) {
+			const head = settleSelf(rc.bridgeDir, resolved.path);
+			io.log(`reset repo=${scope.repoId} path=${formatPath(resolved.path)} ref=${head}`);
+			continue;
+		}
 		const ref = scope.ref;
 		if (!ref) throw new Error(`scoped repo ${scope.repoId} has no pinned ref to reset to`);
 		resetHydratedWorktree(scope.repoId, resolved.path, `${ref}^{commit}`);

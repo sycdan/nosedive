@@ -119,14 +119,11 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
 
-	// Land pushes the checkout to its work branch and brings it into the live bridge, which publishes it.
+	// Land brings the checkout into the live bridge, whose push publishes it; no branch of its own.
 	const landed = run(["land"], bridge);
 	assertOk(landed, "land failed");
 	assert.match(landed.stderr, /brought the bridge's own scope into the bridge/);
-	assert.match(
-		git(["show", `${kbFeatWorkBranch(bridge)}:.nosedive/config.yaml`], origin),
-		/^picker-level: 1$/m,
-	);
+	assert.equal(git(["branch", "--list", kbFeatWorkBranch(bridge)], origin), "");
 	assert.match(git(["show", "main:.nosedive/config.yaml"], origin), /^picker-level: 1$/m);
 	assert.match(readFileSync(configPath, "utf8"), /^picker-level: 1$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8"), /^name: magic-cards$/m);

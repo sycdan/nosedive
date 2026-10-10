@@ -54,29 +54,6 @@ export function fetchLiveBridge(bridgeDir: string, checkout: string): string {
 }
 
 /**
- * Merges the live bridge, as jump leaves it, into the dive's `__self`, so the
- * dive starts with its own record and whatever jump wrote to its feat: work
- * on those docs then never conflicts with the bookkeeping at land. A merge,
- * not a rebase, so the scope's work branch still only moves forward. A
- * conflict is aborted and reported; `__self` stays at its pin.
- */
-export function followLiveBridge(
-	bridgeDir: string,
-	checkout: string,
-	io: { err(message: string): void },
-): void {
-	const head = fetchLiveBridge(bridgeDir, checkout);
-	const merged = runGit(checkout, ["merge", "--no-edit", "-m", "Follow the live bridge", head]);
-	if (merged.status === 0) return;
-	const conflicts = gitOutput(checkout, ["diff", "--name-only", "--diff-filter=U"]) ?? "";
-	runGit(checkout, ["merge", "--abort"]);
-	io.err(
-		`jump: ${formatPath(checkout)} could not take in the live bridge and stays at its pin; ` +
-			`these files conflict: ${conflicts.split(/\r?\n/).filter(Boolean).join(", ") || merged.stderr.trim()}`,
-	);
-}
-
-/**
  * What a dive changed in its checkout of the bridge itself (`__self`) is the
  * bridge's own kb, so land brings the dive's own commits into the live
  * bridge -- before any scope is pushed, so a refusal strands nothing on the
@@ -96,7 +73,7 @@ export function bringBridgeScopeIn(
 	io: { err(message: string): void },
 ): void {
 	const self = scopes.find(({ scope }) => scope.repoId === rc.bridge);
-	if (!self?.scope.ref || !self.scope.workBranch) return;
+	if (!self?.scope.ref) return;
 	const commits = selfOwnCommits(self.path, self.scope.ref, rc);
 	if (commits.length === 0) return;
 	io.err(`land: bringing the bridge's own scope into the bridge`);

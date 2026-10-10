@@ -7,7 +7,7 @@ import { captureCommand } from "./commandAdapter.js";
 import type { ImplCommandOutput, ImplRuntime } from "./types.js";
 
 import { assertBridgeInStep, bridgeIsOnTrunk } from "../lib/bridgeTrunk.js";
-import { followLiveBridge } from "../lib/landBridgeScope.js";
+import { jumpSelf } from "../lib/selfDiveRef.js";
 import { CommandIo } from "../lib/bridgeSetupIo.js";
 import { commitMessage } from "../lib/commitProvenance.js";
 import { DIVE_BRIEF_HEADING, DIVE_BRIEF_HEADING_PATTERN } from "../lib/constants.js";
@@ -421,6 +421,14 @@ export function jump(args: string[], io: CommandIo): void {
 	for (const headId of patchHeadIds) {
 		const steps = walkPatchChain(kbDocs, rc.bridgeDir, headId);
 		const target = resolveChainTarget(steps[0]!.name, scopes, kbDocs, rc.bridgeDir, scopePaths);
+		// __self is rebased from the dive's ref below; a chain an older pack made
+		// for it stays linked rather than land on a checkout jump then moves.
+		if (rc.bridge && target.path === scopePaths.get(rc.bridge)) {
+			io.err(
+				`jump: patch chain ${headId} for ${target.label} predates the dive's ref; apply it there by hand`,
+			);
+			continue;
+		}
 		// Collected locally and only merged in on full success -- a chain that
 		// fails partway must leave every one of its memos/patches in place, or
 		// the dive's still-present `rel: patch` link would point at a deleted
@@ -493,11 +501,12 @@ export function jump(args: string[], io: CommandIo): void {
 	}
 
 	// After the bookkeeping is pushed, so the dive's checkout of the bridge
-	// starts with it.
+	// starts with it, and its packed work rebases onto the lines jump rewrote.
 	const self = rc.bridge ? scopePaths.get(rc.bridge) : undefined;
-	if (self && failedChains === 0) followLiveBridge(rc.bridgeDir, self, io);
+	const selfRebased = !self || failedChains > 0 || jumpSelf(rc.bridgeDir, self, dive.id, io);
 
 	writeFileAtomic(join(rc.workspaceDir, ".nosedive-ref"), `id: ${dive.id}\n`);
+	if (!selfRebased) return io.setExitCode(1);
 
 	io.err(
 		appliedCount > 0

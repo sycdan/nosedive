@@ -311,14 +311,14 @@ export function helmKindDocs(
 	cwd: string,
 	repoId: string,
 	kind: string,
-): Array<{ id: string; name: string; gist: string }> | undefined {
+): Array<{ id: string; name: string; gist: string; title: string }> | undefined {
 	const view = bridgeDocs(cwd);
 	const repo = view.docs.find((doc) => doc.id === repoId && doc.kind === "repo");
 	const source = repo ? readableSource(view, repo) : undefined;
 	if (!source) return undefined;
 	return loadKbDocs(source.kbDir, source.root)
 		.filter((doc) => doc.kind === kind)
-		.map((doc) => ({ id: doc.id, name: doc.name, gist: doc.gist }));
+		.map((doc) => ({ id: doc.id, name: doc.name, gist: doc.gist, title: doc.h1 || doc.name }));
 }
 
 /** Whether helm offers Jump on a doc: what `jump <doc>` would accept. A bridge with no backlog memo offers none. */

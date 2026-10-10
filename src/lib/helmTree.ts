@@ -77,8 +77,8 @@ function kindRow(kind, repo) {
 	const count = el("span", { class: "count", title: "counting" }, "…");
 	const path = [repoStep(repo), { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }];
 	const docs = async () => (await api("/api/kind-docs?repo=" + kind.repoId + "&kind=" + encodeURIComponent(kind.name)))
-		.map((d) => branch("doc", [el("span", { class: "text" }, d.gist || d.name)], d.name, null,
-			(row) => select([...path, { id: d.id, name: d.gist || d.name, kind: kind.name, repo: kind.repoId, kindRef: kind }], row)).li);
+		.map((d) => branch("doc", [el("span", { class: "text" }, d.title)], d.gist, null,
+			(row) => select([...path, { id: d.id, name: d.title, kind: kind.name, repo: kind.repoId, kindRef: kind }], row)).li);
 	const key = "kind:" + kind.repoId + ":" + kind.id;
 	const node = branch("kindrow" + (kind.inCrudContext ? "" : " out"), [el("span", { class: "text" }, kind.name), count],
 		kind.inCrudContext ? kind.gist : OUT_OF_REACH, docs, (row) => showKind(kind, path, row), rememberTreeOpen(key));

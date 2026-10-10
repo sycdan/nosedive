@@ -182,7 +182,8 @@ async function refreshSections() {
 		for (const { repo, rows, node } of shown) {
 			const declared = new Set(rows.map(({ kind }) => kind.name));
 			for (const name of Object.keys(tally[repo.id] || {}).sort()) {
-				if (declared.has(name)) continue;
+				// The kind kind is shipped to every repo, so its docs are never undeclared.
+				if (declared.has(name) || name === "kind") continue;
 				const row = kindRow({ name, repoId: repo.id, undeclared: true, inCrudContext: repo.inCrudContext, gist: "no kind doc" }, repo);
 				rows.push(row);
 				if (treeOpen.has(row.key)) row.node.open();

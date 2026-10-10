@@ -213,6 +213,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const page = await fetch(base);
 	assert.equal(page.status, 200);
 	const html = await page.text();
+	assert.match(html, /<button id="searchbtn"[^>]*aria-label="Search docs"[^>]*>🔍<\/button>/);
 	assert.match(html, /<title>helm/i);
 	// The page's script is a string in a TS file: nothing else would catch it not parsing.
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];

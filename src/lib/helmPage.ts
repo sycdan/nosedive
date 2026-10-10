@@ -4,6 +4,7 @@ import { helmBranchesScript } from "./helmBranchesUi.js";
 import { helmDiveScript } from "./helmDiveUi.js";
 import { helmInternalsScript } from "./helmInternalsUi.js";
 import { helmEditScript } from "./helmEdit.js";
+import { helmSearchScript } from "./helmSearchUi.js";
 import { helmPickerScript } from "./helmPickerUi.js";
 import { helmSectionsScript } from "./helmSectionsUi.js";
 import { helmStyle } from "./helmStyle.js";
@@ -19,7 +20,7 @@ export const helmPage = String.raw`<!doctype html>
 <style>${helmStyle}</style>
 </head>
 <body>
-<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><span id="deckpick" class="deck"></span><span id="headacts"></span></header>
+<header><h1><button id="helmbtn" title="Helm internals">helm</button></h1><button id="branch" class="branch" type="button"></button><nav id="crumbs" aria-label="Breadcrumb"></nav><span class="gap"></span><span id="deckpick" class="deck"></span><span id="headacts"><button id="searchbtn" type="button" title="Search docs (Ctrl+E)" aria-label="Search docs">🔍</button></span></header>
 <div id="divebar" aria-label="Dive"></div>
 <aside><ul class="tree" id="tree" aria-label="Repos in scope"></ul></aside>
 <main><div id="error" hidden></div><div id="view"></div></main>
@@ -72,6 +73,7 @@ function contextQuery(rootId, withRepo) {
 
 ${helmTreeScript}
 ${helmPickerScript}
+${helmSearchScript}
 
 // --- main pane --------------------------------------------------------------
 

@@ -1,12 +1,12 @@
 import type { CommandIo } from "./bridgeSetupIo.js";
-import { uuidLike, type NosediveRc } from "./coreParsing.js";
+import { type NosediveRc } from "./coreParsing.js";
 import { resolveBridgeDocRef } from "./diveScopes.js";
 import { assertJumpable } from "./jumpable.js";
 import { readActiveDiveId, type KbDoc } from "./kbDocs.js";
 import { recordDive } from "./recordDive.js";
 import { featRefOf } from "./repoFeatScopes.js";
 import { resolveRepoRef } from "./repoLinks.js";
-import { managedDiveName, titleFromSlug } from "./slugs.js";
+import { diveFeatLabel } from "./diveTitle.js";
 import { uuid7AtMs } from "./uuid7.js";
 
 /**
@@ -42,8 +42,7 @@ export function diveToJump(
 
 	const id = uuid7AtMs(Date.now());
 	// A feat named by its own id reads as a uuid; its heading is what a pilot knows it by.
-	const label = uuidLike(feat.name) ? (feat.h1 ?? feat.name) : feat.name;
-	const title = `${titleFromSlug(label.replaceAll(" ", "-"))} ${managedDiveName("", id).slice(1)}`;
+	const label = diveFeatLabel(feat);
 	const at = new Date().toISOString().slice(0, 16);
 	// Only the record's own line is worth keeping: its next step is this jump.
 	const quiet: CommandIo = Object.assign(Object.create(io) as CommandIo, {
@@ -52,7 +51,7 @@ export function diveToJump(
 		},
 	});
 	recordDive(
-		["--feat", featRefOf(feat), "--gist", `Free dive on ${label} at ${at}Z`, "--title", title],
+		["--feat", featRefOf(feat), "--gist", `Free dive on ${label} at ${at}Z`],
 		quiet,
 		// jump reads every dive's brief; this one says there was no plan.
 		{ brief: `An unplanned dive into ${label}: no brief was written.`, newId: id },

@@ -193,7 +193,8 @@ scopes:
 		),
 	);
 	assert.doesNotMatch(doc, new RegExp(`^  - ${unrelatedRepoId}:`, "m"));
-	assert.match(doc, /^# Dive Record$/m);
+	const id = /^id: (\S+)$/m.exec(doc)[1];
+	assert.ok(doc.includes(`# Record Dive.nosedive ${id.replaceAll("-", "").slice(-6)}\n`));
 	assert.match(doc, /^id: [0-9a-f-]+$/m);
 });
 

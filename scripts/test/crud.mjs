@@ -444,6 +444,14 @@ test("crud dive --feat records a planned dive on the active dive, with stdin as 
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
 	assert.match(subject(self), /^dive\(\S+\): created$/);
+	const untitled = run(["crud", "dive", "--feat", KB_FEAT, "Default title"], bridge, "A brief.");
+	assertOk(untitled);
+	const untitledDoc = readFileSync(
+		join(bridge, /^Recorded (\S+)$/m.exec(untitled.stdout)[1]),
+		"utf8",
+	);
+	const untitledId = /^id: (\S+)$/m.exec(untitledDoc)[1];
+	assert.ok(untitledDoc.includes(`# Kb ${untitledId.replaceAll("-", "").slice(-6)}\n`));
 	assert.equal(
 		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
 		active,

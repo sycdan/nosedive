@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import { helmContext, readableSource } from "./helm.js";
 import { bridgeView } from "./helmView.js";
 import { loadKbDocs } from "./kbDocs.js";
@@ -45,6 +47,8 @@ export function helmSearch(
 			result.unsearched.push(repo.name);
 			continue;
 		}
+		// A checkout with no kb, as many repos have, holds nothing to find.
+		if (!existsSync(source.kbDir)) continue;
 		const kinds = new Map<string, SearchDoc[]>();
 		for (const doc of loadKbDocs(source.kbDir, source.root)) {
 			const found = { id: doc.id, name: doc.name, title: doc.h1 || doc.name, gist: doc.gist };

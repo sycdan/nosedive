@@ -168,6 +168,10 @@ label.toggle input[role="switch"]::after { content: ""; position: absolute; top:
 label.toggle input[role="switch"]:checked { background: var(--accent); }
 label.toggle input[role="switch"]:checked::after { transform: translateX(14px); }
 label.toggle input[role="switch"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.searchresults { max-height: 55vh; overflow: auto; display: grid; gap: 6px; }
+.searchresults h4 { margin: 6px 0; color: var(--dim); }
+.searchrow { display: grid; gap: 4px; text-align: left; padding: 8px; white-space: normal; }
+.searchrow.current { outline: 2px solid var(--dim); outline-offset: -2px; }
 dialog.modal::backdrop { background: rgba(0, 0, 0, .35); }
 dialog.modal form { display: grid; gap: 12px; padding: 16px; }
 dialog.modal h3 { margin: 0; }

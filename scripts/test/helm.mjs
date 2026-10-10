@@ -52,7 +52,7 @@ function fixture() {
 	for (const id of [CARD_1, CARD_2])
 		write(
 			join(hydrated.source, "kb", `${id}.md`),
-			`---\nkind: card\nid: ${id}\nname: ${id}\ngist: "A card"\n---\n`,
+			`---\nkind: card\nid: ${id}\nname: ${id}\ngist: "A card"\n---\n${id === CARD_1 ? "# Card title\n\n# Later heading\n" : ""}`,
 		);
 	runTool("git", ["add", "."], hydrated.source);
 	gitCommit(hydrated.source, "cards");
@@ -665,6 +665,9 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 
 	const cards = await get(`/api/kind-docs?repo=${HYDRATED}&kind=card`);
 	assert.deepEqual(cards.map((doc) => doc.id).sort(), [CARD_1, CARD_2].sort());
+	assert.equal(cards.find((doc) => doc.id === CARD_1).title, "Card title");
+	assert.equal(cards.find((doc) => doc.id === CARD_2).title, CARD_2);
+	assert.equal(cards.find((doc) => doc.id === CARD_1).gist, "A card");
 
 	// On a dive crud reaches only the scoped repos.
 	write(

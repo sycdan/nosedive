@@ -123,6 +123,14 @@ test("uncommitted work in __self survives a pack and comes back uncommitted", ()
 
 test("the bridge is published by the bridge push alone, so the next dive follows main after main edits what one landed", () => {
 	const { bridge, origin } = seededBridge(tmp, "follow-main", "pilot@nosedive.invalid");
+	// The branch the kb feat names, left on origin by an older nosedive and gone
+	// another way since: land must not weigh it, as it never pushes there.
+	const named = /^ {6}work-branch: (.+)$/m.exec(
+		readFileSync(join(bridge, "kb", `${KB_FEAT}.md`), "utf8"),
+	)[1];
+	const root = git(["rev-list", "--max-parents=0", "HEAD"], bridge);
+	const first = git(["commit-tree", "HEAD^{tree}", "-p", root, "-m", "an old dive's kb"], bridge);
+	runTool("git", ["push", "origin", `${first}:refs/heads/${named}`], bridge);
 	jumpKb(bridge);
 	const made = run(["crud", "memo", "--name", "ideas", "Ideas"], bridge);
 	const memoId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)[1];
@@ -130,8 +138,9 @@ test("the bridge is published by the bridge push alone, so the next dive follows
 	assertOk(landed, "land failed");
 	assert.doesNotMatch(landed.stderr, /pushing scope/, "no work branch of its own");
 	assert.equal(
-		git(["for-each-ref", "--format=%(refname)", "refs/heads"], origin),
-		"refs/heads/main",
+		git(["rev-parse", `refs/heads/${named}`], origin),
+		first,
+		"the old branch is left as it was",
 	);
 
 	const memo = join(bridge, "kb", `${memoId}.md`);

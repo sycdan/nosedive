@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { Script } from "node:vm";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -614,24 +614,25 @@ test("helm searches scoped docs by every word, with bounded groups and unreadabl
 	assert.equal((await get("title absent")).groups.length, 0);
 	assert.deepEqual(await get(" x "), { groups: [], unsearched: [] });
 	assert.deepEqual(await get(""), { groups: [], unsearched: [] });
+	// The fixture bridge is shared: every doc written here is put back after.
+	const scratch = (id, text) => {
+		const path = join(bridge, "kb", `${id}.md`);
+		const before = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+		t.after(() => (before === undefined ? rmSync(path) : write(path, before)));
+		write(path, text);
+	};
 	// A staged dive overrides the deck scopes, even before it is active.
-	write(
-		join(bridge, "kb", `${DIVE}.md`),
+	scratch(
+		DIVE,
 		`---\nkind: dive\nid: ${DIVE}\nname: staged\ngist: "Search scope"\nscopes:\n  - ${INSTALLED}\nmeta:\n  feat: ${FEAT}\n---\n`,
 	);
 	assert.deepEqual(await get("card", `&dive=${DIVE}`), { groups: [], unsearched: ["installed"] });
-	const legacy = join(bridge, "kb", `${IDEAS}.md`);
-	const original = readFileSync(legacy, "utf8");
-	t.after(() => write(legacy, original));
-	write(legacy, `---\nkind: effort\nid: ${IDEAS}\nname: legacy-search\ngist: "Needle"\n---\n`);
+	scratch(IDEAS, `---\nkind: effort\nid: ${IDEAS}\nname: legacy-search\ngist: "Needle"\n---\n`);
 	assert.equal((await get("legacy-search")).groups[0].kind, "feat");
-	for (let i = 0; i < 23; i++) {
-		const id = `00000000-0000-7000-8000-${String(i).padStart(12, "0")}`;
-		write(
-			join(bridge, "kb", `${id}.md`),
-			`---\nkind: memo\nid: ${id}\nname: bulk-${i}\ngist: "Bulk needle"\n---\n`,
-		);
-	}
+	const bulkIds = run(["mint", "23"], tmp).stdout.trim().split(/\r?\n/);
+	bulkIds.forEach((id, i) =>
+		scratch(id, `---\nkind: memo\nid: ${id}\nname: bulk-${i}\ngist: "Bulk needle"\n---\n`),
+	);
 	const bulk = await get("bulk needle");
 	assert.equal(bulk.groups[0].docs.length, 20);
 	assert.equal(bulk.groups[0].more, 3);

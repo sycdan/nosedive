@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { Script } from "node:vm";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -639,6 +639,14 @@ test("helm searches scoped docs by every word, with bounded groups and unreadabl
 	assert.equal(bulk.groups[0].more, 3);
 	const mixed = await get("a");
 	assert.deepEqual(mixed.groups, []);
+
+	// A hydrated repo with no kb has no docs to find; it is no error.
+	const kb = join(bridge, "workspace", "hydrated", "kb");
+	renameSync(kb, `${kb}-away`);
+	t.after(() => renameSync(`${kb}-away`, kb));
+	const bare = await get("card");
+	assert.ok(!bare.groups.some((group) => group.repoName === "hydrated"), JSON.stringify(bare));
+	assert.deepEqual(bare.unsearched, ["installed"]);
 });
 
 test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a repo, counted apart", async (t) => {

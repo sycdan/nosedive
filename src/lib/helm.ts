@@ -151,7 +151,7 @@ const markdown = new Marked({ renderer: { html: ({ text }) => escapeHtml(text) }
  * Where a repo in view keeps its kb, when it can be read: the bridge always,
  * any other repo only while it is hydrated.
  */
-function readableSource(view: BridgeView, repo: KbDoc): KindSource | undefined {
+export function readableSource(view: BridgeView, repo: KbDoc): KindSource | undefined {
 	const { rc } = view;
 	if (repo.id === rc.bridge)
 		return view.self

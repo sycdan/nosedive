@@ -12,7 +12,7 @@ function showBranch() {
 	highlight(null);
 	crumbs([]);
 	document.getElementById("crumbs").append(el("span", { class: "sep" }, "/"), el("button", { title: "The checked-out branch" }, "Branch"));
-	history.replaceState(null, "", location.pathname + location.search + "#branch");
+	navigateHash("#branch");
 	const root = el("section", { class: "branchview" });
 	document.getElementById("view").replaceChildren(root);
 	// Built once, so its timer and listener outlive each redraw; a change it sees redraws the view.

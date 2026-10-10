@@ -103,18 +103,26 @@ function highlight(row) {
 	if (row) row.classList.add("selected");
 }
 
+let renderedHash = null;
+
+/** Record UI navigation once; its hashchange event needs no second render. */
+function navigateHash(hash) {
+	renderedHash = hash;
+	if (location.hash !== hash) location.hash = hash;
+}
+
 function writeHash(path) {
 	const params = new URLSearchParams();
 	if (ctx.repo) params.set("repo", ctx.repo);
 	if (ctx.kind) params.set("kind", ctx.kind.repoId + ":" + ctx.kind.id + ":" + ctx.kind.name);
 	const tail = params.toString();
-	history.replaceState(null, "", "#" + path.map((step) => step.repo ? step.repo + ":" + step.id : step.id).join("/") + (tail ? "?" + tail : ""));
+	navigateHash("#" + path.map((step) => step.repo ? step.repo + ":" + step.id : step.id).join("/") + (tail ? "?" + tail : ""));
 }
 
 function reset() {
 	highlight(null);
 	Object.assign(ctx, { repo: null, kind: null });
-	history.replaceState(null, "", location.pathname + location.search);
+	navigateHash("");
 	refreshSections();
 	crumbs([]);
 	document.getElementById("view").replaceChildren(
@@ -243,6 +251,7 @@ function restoreContext() {
 	const [, query] = location.hash.slice(1).split("?");
 	const params = new URLSearchParams(query || "");
 	ctx.repo = params.get("repo");
+	ctx.kind = null;
 	const kind = params.get("kind");
 	if (kind) {
 		const [repoId, id, name] = kind.split(":");
@@ -283,7 +292,9 @@ events.addEventListener("state", async (event) => {
 ${helmInternalsScript}
 document.getElementById("headacts").append(noteButton());
 
-Promise.all([loadRoots(), loadDives()]).then(() => {
+async function routeHash() {
+	const hash = location.hash;
+	renderedHash = hash;
 	const path = currentPath();
 	if (!path.length) return reset();
 	refreshSections();
@@ -291,9 +302,10 @@ Promise.all([loadRoots(), loadDives()]).then(() => {
 	// Names, kinds and link types are unknown after a reload: each step fills
 	// in its own, and takes its rel -- what makes a feat a feat -- from the
 	// step before it.
-	Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
+	return Promise.all(path.map((step) => api("/api/doc?id=" + step.id + (step.repo ? "&repo=" + step.repo : ""))
 		.then((doc) => { step.name = label(doc); step.kind = doc.kind; return doc; }, () => null)))
 		.then((docs) => {
+			if (location.hash !== hash) return;
 			path.forEach((step, i) => {
 				const link = i > 0 && docs[i - 1] ? docs[i - 1].links.find((l) => l.id === step.id) : null;
 				if (link) step.rel = link.rel;
@@ -309,13 +321,24 @@ Promise.all([loadRoots(), loadDives()]).then(() => {
 			return api(contextQuery(ctx.root, false))
 				.then((context) => context.kinds.find((kind) => kind.id === step.id && kind.repoId === step.repo), () => null)
 				.then((found) => {
+					if (location.hash !== hash) return;
 					const kind = found || { id: step.id, name: docs[k].name, repoId: step.repo, inCrudContext: false };
 					if (k === at) return showKind(kind, path);
 					path[at].kindRef = kind;
-					select(path);
+					return select(path);
 				});
 		});
-}).catch(showError);
+}
+
+const ready = Promise.all([loadRoots(), loadDives()]);
+let routing = ready;
+function scheduleRoute() {
+	routing = routing.then(() => {
+		if (location.hash !== renderedHash) return routeHash();
+	}).catch(showError);
+}
+window.addEventListener("hashchange", scheduleRoute);
+scheduleRoute();
 </script>
 </body>
 </html>

@@ -49,6 +49,10 @@ function fixture() {
 	const unlisted = implRepo(tmp, "unlisted");
 
 	write(join(hydrated.source, "kb", `${CARD_KIND}.md`), kindDoc(CARD_KIND, "card"));
+	write(
+		join(hydrated.source, "kb", `${IDEAS}.md`),
+		`---\nkind: legacy\nid: ${IDEAS}\nname: legacy-doc\ngist: "Undeclared kind"\n---\n# Legacy doc\n`,
+	);
 	for (const id of [CARD_1, CARD_2])
 		write(
 			join(hydrated.source, "kb", `${id}.md`),
@@ -688,6 +692,11 @@ test("helm's context: a root's repos, narrowed by a feat; kinds, narrowed by a r
 	const counts = await get(`/api/kind-counts?repos=${BRIDGE_REPO},${HYDRATED},${INSTALLED}`);
 	assert.equal(counts[BRIDGE_REPO].note, 1);
 	assert.equal(counts[HYDRATED].card, 2);
+	assert.equal(counts[HYDRATED].legacy, 1);
+	assert.deepEqual(
+		(await get(`/api/kind-docs?repo=${HYDRATED}&kind=legacy`)).map((doc) => [doc.id, doc.title]),
+		[[IDEAS, "Legacy doc"]],
+	);
 	assert.equal(counts[INSTALLED], undefined, "a kb that cannot be read is not counted");
 
 	const feat = await get(`/api/context?root=${BACKLOG}&feat=${FEAT}`);

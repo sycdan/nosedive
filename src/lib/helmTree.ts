@@ -23,6 +23,8 @@ function branch(cls, parts, title, load, onPick, onToggle) {
 		try {
 			const items = await load();
 			children.replaceChildren(...items);
+			twisty.disabled = !items.length;
+			if (items.length) twisty.textContent = children.hidden ? "▶" : "▼";
 			if (!items.length) { twisty.disabled = true; twisty.textContent = ""; }
 		} catch (err) { showError(err); }
 	};
@@ -75,13 +77,18 @@ function repoStep(repo) {
 /** A kind under its repo: its count fills in apart, and it expands into its docs. */
 function kindRow(kind, repo) {
 	const count = el("span", { class: "count", title: "counting" }, "…");
-	const path = [repoStep(repo), { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }];
+	const path = kind.undeclared ? [repoStep(repo)]
+		: [repoStep(repo), { id: kind.id, name: kind.name, kind: "kind", repo: kind.repoId }];
 	const docs = async () => (await api("/api/kind-docs?repo=" + kind.repoId + "&kind=" + encodeURIComponent(kind.name)))
 		.map((d) => branch("doc", [el("span", { class: "text" }, d.title)], d.gist, null,
-			(row) => select([...path, { id: d.id, name: d.title, kind: kind.name, repo: kind.repoId, kindRef: kind }], row)).li);
-	const key = "kind:" + kind.repoId + ":" + kind.id;
+			(row) => select([...path, { id: d.id, name: d.title, kind: kind.name, repo: kind.repoId, kindRef: kind.undeclared ? null : kind }], row)).li);
+	const key = "kind:" + kind.repoId + ":" + (kind.undeclared ? "undeclared:" + kind.name : kind.id);
 	const node = branch("kindrow" + (kind.inCrudContext ? "" : " out"), [el("span", { class: "text" }, kind.name), count],
-		kind.inCrudContext ? kind.gist : OUT_OF_REACH, docs, (row) => showKind(kind, path, row), rememberTreeOpen(key));
+		kind.inCrudContext ? kind.gist : OUT_OF_REACH, docs, kind.undeclared ? null : (row) => showKind(kind, path, row), rememberTreeOpen(key));
+	if (kind.undeclared) {
+		node.row.append(el("span", { class: "tag" }, "no kind doc"));
+		node.row.querySelector(".label").addEventListener("click", () => node.open());
+	}
 	return { kind, count, node, key };
 }
 
@@ -168,15 +175,24 @@ async function refreshSections() {
 			}
 			if (!shown.length) heading.textContent = "Repos";
 		})().catch((err) => { if (drawn === sectionsDrawn) showError(err); });
-		const repos = [...new Set(context.kinds.map((kind) => kind.repoId))];
+		const repos = context.repos.filter((repo) => repo.inScope && !context.unreadable.includes(repo.name)).map((repo) => repo.id);
 		if (!repos.length) return;
 		const tally = await api("/api/kind-counts?repos=" + repos.join(","));
 		if (drawn !== sectionsDrawn) return;
-		for (const { rows } of shown)
+		for (const { repo, rows, node } of shown) {
+			const declared = new Set(rows.map(({ kind }) => kind.name));
+			for (const name of Object.keys(tally[repo.id] || {}).sort()) {
+				if (declared.has(name)) continue;
+				const row = kindRow({ name, repoId: repo.id, undeclared: true, inCrudContext: repo.inCrudContext, gist: "no kind doc" }, repo);
+				rows.push(row);
+				if (treeOpen.has(row.key)) row.node.open();
+			}
 			for (const { kind, count } of rows) {
 				count.textContent = String((tally[kind.repoId] || {})[kind.name] || 0);
 				count.removeAttribute("title");
 			}
+			node.refill();
+		}
 	} catch (err) { showError(err); }
 }
 `;

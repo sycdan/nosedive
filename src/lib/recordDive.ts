@@ -47,6 +47,7 @@ import { managedDiveName, titleFromSlug } from "./slugs.js";
 import { rootedScopes } from "./jumpable.js";
 import { defaultFeatWorkBranch } from "./workBranches.js";
 import { uuid7AtMs } from "./uuid7.js";
+import { defaultDiveTitle } from "./diveTitle.js";
 
 /** What a scope's branch fields become when a feat hands the repo down. */
 function inheritedBranch(
@@ -109,7 +110,7 @@ function renderNewDive(
 		`  diver: ${options.diver ? quoteYamlString(options.diver) : "null"}`,
 		"---",
 		"",
-		`# ${options.title?.trim() || "Dive Record"}`,
+		`# ${options.title?.trim() || defaultDiveTitle(feat, id)}`,
 	];
 	if (brief) lines.push("", DIVE_BRIEF_HEADING, "", brief);
 	lines.push("");
@@ -229,7 +230,7 @@ export interface RecordDiveExtras {
 	 * stdin because an argument cannot carry paragraphs.
 	 */
 	brief?: string;
-	/** `jump <feat>` mints the id first, to title the dive with the name it derives. */
+	/** `jump <feat>` mints the id first so it can return the recorded dive's id. */
 	newId?: string;
 	/**
 	 * Writes and commits a new dive in another checkout of the bridge -- a

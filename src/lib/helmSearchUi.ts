@@ -18,7 +18,8 @@ function openSearch() {
 	const draw = async (request) => {
 		if (input.value.trim().length < 2) { results.replaceChildren(el('p', { class: 'detail' }, 'Type at least two characters.')); return; }
 		try {
-			const params = new URLSearchParams(contextQuery(ctx.root, true).split('?')[1]);
+			// Every repo in context, not just one picked in the tree.
+			const params = new URLSearchParams(contextQuery(ctx.root, false).split('?')[1]);
 			params.set('q', input.value);
 			const found = await api('/api/search?' + params);
 			if (request !== version || !dialog.open) return;

@@ -44,9 +44,9 @@ nosedive jump                                 # hydrates the workspace and rebui
 
 # do the work in the hydrated workspace/__self worktree, and commit
 
-nosedive pack                                 # stopping partway; banks WIP as patches
+nosedive pack                                 # stopping partway; banks the WIP
 nosedive jump                                 # picks the same dive back up
-nosedive land                                 # pushes <bridge>-main/add-a-hello-note-<feat-quid>
+nosedive land                                 # publishes the note on the bridge's main
 ```
 
 Every command prints a suggestion for the next one, so you can follow the prompts.

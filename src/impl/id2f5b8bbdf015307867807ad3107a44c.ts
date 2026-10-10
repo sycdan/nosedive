@@ -33,6 +33,7 @@ import {
 	headIsStrictlyBehindPin,
 	scopeUnchanged,
 } from "../lib/landBridgeScope.js";
+import { dropSelfRef, refuseMidRebase, settleSelf } from "../lib/selfDiveRef.js";
 import { strandedInstancesOnLand } from "../lib/kindInstances.js";
 import { rewriteMarkdownLinks } from "../lib/markdownLinks.js";
 import { removeDiveScratch } from "../lib/diveScratch.js";
@@ -44,7 +45,8 @@ import {
 } from "../lib/landGates.js";
 import { describeDirtyGates, dirtyGates } from "../lib/gateFreshness.js";
 import { gitOutput } from "../lib/gitProcess.js";
-import { leaseRefusal, movedBranchRefusal, type LandLease } from "../lib/landRefusals.js";
+import { leaseRefusal, movedBranchRefusal } from "../lib/landRefusals.js";
+import { headContains, landRepoScope, remoteBranchHead } from "../lib/landPush.js";
 import { nosediveInvocation } from "../lib/packageBacklog.js";
 import { printNextSteps } from "../lib/nextSteps.js";
 import { writeFileAtomic } from "../lib/renderPlan.js";
@@ -61,82 +63,6 @@ function dirtyWorktreeStatus(worktreePath: string, repoId: string): string[] {
 		`failed to read dirty status for repo ${repoId}`,
 	);
 	return status.split(/\r?\n/).filter(Boolean);
-}
-
-function originUrl(worktreePath: string): string {
-	return gitRun(
-		worktreePath,
-		["config", "--get", "remote.origin.url"],
-		`failed to resolve origin URL for ${formatPath(worktreePath)}`,
-	);
-}
-
-/**
- * Push one scoped repo's current HEAD to its recorded work branch on its own
- * cloud remote (read-only scopes never reach here).
- *
- * Deliberately by resolved URL rather than by remote name: hydration leaves
- * every worktree with a `remote.origin.pushurl` sentinel so an agent working in
- * it cannot push, and a `pushurl` override applies only to the *named* remote.
- * Landing this way means the isolation is never lifted, not even briefly.
- *
- * `lease` carries the `--hard` case. Its expected value is spelled out rather
- * than left to git: a URL push maintains no `refs/remotes/origin/<branch>`, and
- * a valueless `--force-with-lease` resolved against a ref that does not exist
- * is a silent unconditional force. Naming the dive's own pin is also what gives
- * the flag its meaning -- replace the branch only while it still stands where
- * this dive started -- and refuses an absent branch for free, since git rejects
- * a non-empty expected value against a ref that is not there.
- */
-function landRepoScope(
-	worktreePath: string,
-	branch: string,
-	scope: LandLease,
-	hard: boolean,
-): string {
-	const url = originUrl(worktreePath);
-	const force = hard ? [`--force-with-lease=refs/heads/${branch}:${scope.pin}`] : [];
-	try {
-		gitRun(
-			worktreePath,
-			["push", url, ...force, `HEAD:refs/heads/${branch}`],
-			hard
-				? leaseRefusal(branch, scope)
-				: `failed to push ${formatPath(worktreePath)} to ${branch}`,
-		);
-	} catch (error) {
-		if (!hard) {
-			const published = remoteBranchHead(worktreePath, branch, scope.repoId);
-			if (published && published !== scope.pin && !headContains(worktreePath, published)) {
-				throw new Error(movedBranchRefusal(branch, published, scope));
-			}
-		}
-		throw error;
-	}
-	return branch;
-}
-
-/** The published head of `branch` on the scope's own remote, or undefined when it has none. */
-function remoteBranchHead(
-	worktreePath: string,
-	branch: string,
-	repoId: string,
-): string | undefined {
-	const line = gitRun(
-		worktreePath,
-		["ls-remote", originUrl(worktreePath), `refs/heads/${branch}`],
-		`${refusalPrefix}the published head of ${branch} on scope ${repoId}'s remote could not be read`,
-	);
-	return line ? line.split(/\s+/)[0] : undefined;
-}
-
-/**
- * Whether this worktree's HEAD already contains `sha`. A commit the worktree
- * does not have cannot be an ancestor of its HEAD, so a `merge-base` that fails
- * on a missing object answers the same question correctly.
- */
-function headContains(worktreePath: string, sha: string): boolean {
-	return gitOutput(worktreePath, ["merge-base", "--is-ancestor", sha, "HEAD"]) !== undefined;
 }
 
 /**
@@ -339,6 +265,12 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 		if (failure) throw new Error(`${refusalPrefix}${failure.reasons.join("; ")}`);
 		if (!path) continue; // scope never hydrated -- nothing to land for this repo
 		hydratedWorktrees.push({ scope, path });
+		// Always writable, whatever its branch says: land publishes it by bringing it into the bridge.
+		if (scope.repoId === rc.bridge) {
+			refuseMidRebase(path, "land");
+			writableScopes.push({ scope, path });
+			continue;
+		}
 		if (!scope.workBranch) {
 			const suggested = upscopeBranch(scope.repoId, undefined, rc, kbDocs, feat);
 			const branchHint = suggested
@@ -495,6 +427,11 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 	// Before any push, so a refusal leaves every work branch where it was.
 	bringBridgeScopeIn(writableScopes, rc, io);
 	for (const { scope, path } of writableScopes) {
+		// Brought in above; the bridge push below publishes it.
+		if (scope.repoId === rc.bridge) {
+			scopeOutcomes.push(`${scope.repoId} -> the bridge`);
+			continue;
+		}
 		// Only scopes naming a branch reach here, so there is nothing to fall back to.
 		const branch = scope.workBranch!;
 		/**
@@ -532,6 +469,12 @@ async function landDive(args: string[], io: CommandIo): Promise<void> {
 
 	const featPath = bridgeFeatPath(feat);
 	commitAndPushLand(rc.bridgeDir, dive.path, dive.name, upstream, io, feat?.id, featPath);
+	// The bridge now holds __self's work under other hashes; the next dive starts from it.
+	const self = hydratedWorktrees.find(({ scope }) => scope.repoId === rc.bridge);
+	if (self) {
+		settleSelf(rc.bridgeDir, self.path);
+		dropSelfRef(self.path, dive.id);
+	}
 
 	// The dive is closed and published before its active-work marker is cleared.
 	const markerPath = join(rc.workspaceDir!, ".nosedive-ref");

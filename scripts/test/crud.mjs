@@ -46,8 +46,33 @@ const subject = (cwd) => git(["log", "-1", "--format=%s"], cwd);
 const commits = (cwd) => git(["rev-list", "--count", "HEAD"], cwd);
 const madeId = (stdout) => /^Minted (?:\S*[\\/])?kb[\\/]([0-9a-f-]{36})\.md$/m.exec(stdout)?.[1];
 
+const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
+
 function bridgeWithKinds(name) {
 	const bridge = createBridge(tmp, name);
+	writeKinds(bridge);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "kinds");
+	return bridge;
+}
+
+/**
+ * A seeded bridge holding the note and needy kinds, and what `fixture` writes
+ * in its kb, on a dive of its kb feat: crud writes only on a dive, and this
+ * one's go to the bridge's own checkout, `self`.
+ */
+function onKbDive(name, fixture = () => {}) {
+	const { bridge } = seededBridge(tmp, name, "pilot@nosedive.invalid");
+	writeKinds(bridge);
+	fixture(join(bridge, "kb"));
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "fixture");
+	runTool("git", ["push"], bridge);
+	assertOk(run(["jump", KB_FEAT], bridge), "jump failed");
+	return { bridge, self: join(bridge, "workspace", "__self") };
+}
+
+function writeKinds(bridge) {
 	write(
 		join(bridge, "kb", `${NOTE_KIND}.md`),
 		kindDoc(NOTE_KIND, "note", [
@@ -68,9 +93,6 @@ function bridgeWithKinds(name) {
 			"    type: string",
 		]),
 	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "kinds");
-	return bridge;
 }
 
 test("crud with no arguments fails and shows its help", () => {
@@ -80,29 +102,57 @@ test("crud with no arguments fails and shows its help", () => {
 	assert.match(result.stdout + result.stderr, /Usage: nosedive crud/);
 });
 
+test("with no dive crud reads, and edits scopes, but refuses every other write", () => {
+	const bridge = bridgeWithKinds("no-dive");
+	write(
+		join(bridge, "kb", `${SPARE}.md`),
+		`---\nkind: note\nid: ${SPARE}\nname: kept\ngist: "Kept"\n---\n\n# Kept\n`,
+	);
+	write(
+		join(bridge, "kb", `${CARDS_REPO}.md`),
+		`---\nkind: repo\nid: ${CARDS_REPO}\nname: cards\ngist: "Cards"\nmeta:\n  path: workspace/cards\n---\n`,
+	);
+	runTool("git", ["add", "."], bridge);
+	gitCommit(bridge, "fixture");
+	const before = commits(bridge);
+	for (const [args, input] of [
+		[["note", "Buy", "sleeves"], ""],
+		[["dive", "--feat", SPARE, "Plan"], "A brief.\n"],
+		[[SPARE, "--meta", "-"], "topic: x\n"],
+		[[SPARE, "--links", "-"], `${NOTE_KIND}: {}\n`],
+		[[SPARE, "--title", "Renamed"], ""],
+	]) {
+		const refused = run(["crud", ...args], bridge, input);
+		assert.equal(refused.status, 1, args.join(" "));
+		assert.match(refused.stderr, /no dive is active/);
+		assert.match(refused.stderr, /nosedive jump <feat>/);
+	}
+	assert.equal(commits(bridge), before, "a refused write commits nothing");
+
+	assert.match(run(["crud", SPARE], bridge).stdout, /^gist: "Kept"$/m, "reads still work");
+	assertOk(run(["crud", SPARE, "--scopes", "-"], bridge, "cards: {}\n"), "scopes stay direct");
+	assert.match(readFileSync(join(bridge, "kb", `${SPARE}.md`), "utf8"), /^scopes:$/m);
+});
+
 test("crud mints a doc of a bridge kind, then reads it on the next run", () => {
-	const bridge = bridgeWithKinds("mint-read");
+	const { bridge, self } = onKbDive("mint-read");
 	const first = run(["crud", "note", "Buy", "more", "sleeves"], bridge);
 	assertOk(first, "crud mint failed");
 	const id = madeId(first.stdout);
 	assert.ok(id, first.stdout);
-	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
+	const text = readFileSync(join(self, "kb", `${id}.md`), "utf8");
 	assert.match(
 		text,
 		new RegExp(`^---\nkind: note\nid: ${id}\nname: ${id}\ngist: "Buy more sleeves"\n---\n`),
 	);
-	assert.equal(
-		subject(bridge),
-		`crud(${id}): created note ${id}`,
-		"a minted doc is named by its id",
-	);
-	assert.equal(git(["status", "--porcelain"], bridge), "");
-	const before = commits(bridge);
+	assert.equal(subject(self), `crud(${id}): created note ${id}`, "a minted doc is named by its id");
+	assert.equal(git(["status", "--porcelain"], self), "");
+	const before = commits(self);
 
 	const second = run(["crud", "note", "buy more sleeves"], bridge);
 	assertOk(second, "crud read failed");
 	assert.equal(second.stdout, text, "reading prints the doc as it is");
-	assert.equal(commits(bridge), before, "reading writes nothing");
+	assert.equal(commits(self), before, "reading writes nothing");
 
 	const byGist = run(["crud", "note", "BUY MORE SLEEVES"], bridge);
 	assertOk(byGist, "crud read by gist failed");
@@ -114,25 +164,25 @@ test("crud mints a doc of a bridge kind, then reads it on the next run", () => {
 });
 
 test("crud --name names the minted doc, once per kind in its repo", () => {
-	const bridge = bridgeWithKinds("named");
+	const { bridge, self } = onKbDive("named");
 	const made = run(["crud", "note", "--name", "sleeves", "Buy", "more", "sleeves"], bridge);
 	assertOk(made, "crud --name failed");
 	const id = madeId(made.stdout);
-	const text = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
+	const text = readFileSync(join(self, "kb", `${id}.md`), "utf8");
 	assert.match(text, /^name: sleeves$/m);
 	assert.match(text, /^gist: "Buy more sleeves"$/m);
-	assert.equal(subject(bridge), `crud(${id}): created note sleeves`);
-	const before = commits(bridge);
+	assert.equal(subject(self), `crud(${id}): created note sleeves`);
+	const before = commits(self);
 
 	const taken = run(["crud", "note", "--name", "sleeves", "Something", "else"], bridge);
 	assert.equal(taken.status, 1);
 	assert.match(taken.stderr, new RegExp(`note name sleeves is taken by ${id}`));
-	assert.equal(commits(bridge), before);
+	assert.equal(commits(self), before);
 
 	const slugged = run(["crud", "note", "--name", "Card Sleeves.Big Box", "x"], bridge);
 	assertOk(slugged, "crud --name should slug a name");
 	assert.match(
-		readFileSync(join(bridge, "kb", `${madeId(slugged.stdout)}.md`), "utf8"),
+		readFileSync(join(self, "kb", `${madeId(slugged.stdout)}.md`), "utf8"),
 		/^name: card-sleeves\.big-box$/m,
 	);
 
@@ -140,7 +190,7 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 	const twin = run(["crud", "note", "--name", "gloves", "Buy", "more", "sleeves"], bridge);
 	assertOk(twin, "a named doc sharing a gist should mint");
 	assert.match(
-		readFileSync(join(bridge, "kb", `${madeId(twin.stdout)}.md`), "utf8"),
+		readFileSync(join(self, "kb", `${madeId(twin.stdout)}.md`), "utf8"),
 		/^name: gloves$/m,
 	);
 
@@ -150,11 +200,11 @@ test("crud --name names the minted doc, once per kind in its repo", () => {
 });
 
 test("crud refuses an ambiguous match, an unknown kind, and a mint its kind would reject", () => {
-	const bridge = bridgeWithKinds("refusals");
+	const { bridge, self } = onKbDive("refusals");
 	const [a, b] = [SPARE, DIVE];
 	for (const id of [a, b])
 		write(
-			join(bridge, "kb", `${id}.md`),
+			join(self, "kb", `${id}.md`),
 			`---\nkind: note\nid: ${id}\nname: dupe\ngist: "Dupe"\n---\n`,
 		);
 	const ambiguous = run(["crud", "note", "dupe"], bridge);
@@ -166,47 +216,43 @@ test("crud refuses an ambiguous match, an unknown kind, and a mint its kind woul
 	assert.equal(unknown.status, 1);
 	assert.match(unknown.stderr, /no kind widget/);
 
-	const before = commits(bridge);
+	const before = commits(self);
 	const needy = run(["crud", "needy", "Nobody owns this"], bridge);
 	assert.equal(needy.status, 1);
 	assert.match(needy.stderr, /owner/);
-	assert.equal(commits(bridge), before, "an invalid mint writes nothing");
+	assert.equal(commits(self), before, "an invalid mint writes nothing");
 	assert.deepEqual(
-		git(["status", "--porcelain", "kb"], bridge).split("\n").sort(),
+		git(["status", "--porcelain", "kb"], self).split("\n").sort(),
 		[`?? kb/${a}.md`, `?? kb/${b}.md`].sort(),
 		"only the two hand-written dupes are new",
 	);
 });
 
 test("a new doc takes its meta whole from stdin, validated; a new kind starts with a closed schema", () => {
-	const bridge = bridgeWithKinds("mint-meta");
+	const { bridge, self } = onKbDive("mint-meta");
 	const owned = run(
 		["crud", "needy", "--meta", "-", "Somebody", "owns", "this"],
 		bridge,
 		"owner: pilot\n",
 	);
 	assertOk(owned, "crud needy --meta failed");
-	const doc = readFileSync(join(bridge, "kb", `${madeId(owned.stdout)}.md`), "utf8");
+	const doc = readFileSync(join(self, "kb", `${madeId(owned.stdout)}.md`), "utf8");
 	assert.match(doc, /^meta:\n {2}owner: pilot\n---$/m);
 
-	const before = commits(bridge);
+	const before = commits(self);
 	const bad = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "price: -1\n");
 	assert.equal(bad.status, 1);
 	assert.match(bad.stderr, /\/price/);
-	assert.equal(commits(bridge), before, "an invalid mint writes nothing");
+	assert.equal(commits(self), before, "an invalid mint writes nothing");
 	const taken = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "{}\n");
 	assertOk(taken, "crud note --meta {} failed");
 	const again = run(["crud", "note", "--meta", "-", "Priced", "wrong"], bridge, "topic: x\n");
 	assert.equal(again.status, 1);
 	assert.match(again.stderr, /already has that gist; patch its meta/);
 
-	write(
-		join(bridge, "kb", "00000000-0000-70a0-90bd-1d49dc6264b9.md"),
-		readFileSync(join(root, "kb", "00000000-0000-70a0-90bd-1d49dc6264b9.md"), "utf8"),
-	);
 	const kind = run(["crud", "kind", "--name", "bug", "A", "defect"], bridge);
 	assertOk(kind, "crud kind failed");
-	const kindText = readFileSync(join(bridge, "kb", `${madeId(kind.stdout)}.md`), "utf8");
+	const kindText = readFileSync(join(self, "kb", `${madeId(kind.stdout)}.md`), "utf8");
 	assert.match(
 		kindText,
 		/^meta:\n {2}schema:\n {4}type: object\n {4}additionalProperties: false\n {4}properties: \{\}\n---$/m,
@@ -374,9 +420,9 @@ test("a kind two repos in play define is named <repo>:<kind>, and a doc's meta c
 	assert.match(flag.stderr, /<repo>:<kind>/);
 });
 
-test("crud dive --feat records a planned dive with stdin as its brief, where the dive kind is", () => {
-	const { bridge } = seededBridge(tmp, "dives", "pilot@nosedive.invalid");
-	const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
+test("crud dive --feat records a planned dive on the active dive, with stdin as its brief", () => {
+	const { bridge, self } = onKbDive("dives");
+	const active = readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8");
 	const made = run(
 		["crud", "dive", "--feat", KB_FEAT, "--title", "Note button", "Add", "the", "note", "button"],
 		bridge,
@@ -384,7 +430,11 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	);
 	assertOk(made, "crud dive failed");
 	const path = /^Recorded (\S+)$/m.exec(made.stdout)?.[1];
-	assert.ok(path, made.stdout);
+	assert.match(
+		path,
+		/^workspace[\\/]__self[\\/]kb[\\/]/,
+		"recorded in __self, to land with the dive",
+	);
 	const doc = readFileSync(join(bridge, path), "utf8");
 	assert.match(doc, /^kind: dive$/m);
 	assert.match(doc, /^gist: "Add the note button"$/m);
@@ -393,8 +443,12 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 	assert.doesNotMatch(doc, /^ {2}(root|deck):/m, "a dive keeps no root");
 	assert.match(doc, /^# Note button$/m);
 	assert.match(doc, /^## Brief\n\nPut a Note button in the dive bar\.\n\nIt takes free text\.$/m);
-	assert.match(subject(bridge), /^dive\(\S+\): created$/);
-	assert.ok(!existsSync(join(bridge, "workspace", ".nosedive-ref")), "nothing is on deck");
+	assert.match(subject(self), /^dive\(\S+\): created$/);
+	assert.equal(
+		readFileSync(join(bridge, "workspace", ".nosedive-ref"), "utf8"),
+		active,
+		"the dive on deck is still the one jumped",
+	);
 
 	const empty = run(["crud", "dive", "--feat", KB_FEAT, "Empty"], bridge, "   \n");
 	assert.equal(empty.status, 1);
@@ -417,9 +471,9 @@ test("crud dive --feat records a planned dive with stdin as its brief, where the
 const withoutMeta = (text) => text.replace(/^meta:\n(?:[ \t].*\n)*/m, "");
 
 test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching nothing else", () => {
-	const bridge = bridgeWithKinds("meta");
+	const { bridge, self } = onKbDive("meta");
 	const id = madeId(run(["crud", "note", "Sleeves"], bridge).stdout);
-	const path = join(bridge, "kb", `${id}.md`);
+	const path = join(self, "kb", `${id}.md`);
 	const original = readFileSync(path, "utf8");
 
 	const first = run(["crud", id, "--meta", "-"], bridge, "topic: sleeves\n");
@@ -428,8 +482,8 @@ test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching
 	let text = readFileSync(path, "utf8");
 	assert.match(text, /^meta:\n {2}topic: sleeves\n/m);
 	assert.equal(withoutMeta(text), original, "only the meta block changed");
-	assert.equal(subject(bridge), `crud(${id}): updated note ${id}`);
-	assert.equal(git(["status", "--porcelain"], bridge), "");
+	assert.equal(subject(self), `crud(${id}): updated note ${id}`);
+	assert.equal(git(["status", "--porcelain"], self), "");
 
 	assertOk(run(["crud", id, "--meta", "-"], bridge, "price: 3\n"), "second merge failed");
 	text = readFileSync(path, "utf8");
@@ -441,7 +495,7 @@ test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching
 	assert.doesNotMatch(text, /topic/, "null removes a key");
 	assert.match(text, /^ {2}price: 3$/m);
 
-	const before = commits(bridge);
+	const before = commits(self);
 	for (const [input, pattern] of [
 		["price: -1\n", /\/price/],
 		["colour: red\n", /colour/],
@@ -452,7 +506,7 @@ test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching
 		assert.match(refused.stderr, pattern);
 	}
 	assert.equal(readFileSync(path, "utf8"), text, "a refused merge writes nothing");
-	assert.equal(commits(bridge), before);
+	assert.equal(commits(self), before);
 
 	assertOk(run(["crud", id, "--meta", "-"], bridge, '{"topic": "json"}'), "a JSON patch failed");
 	assert.match(readFileSync(path, "utf8"), /^ {2}topic: json$/m, "JSON is read as YAML");
@@ -474,15 +528,14 @@ test("crud <quid> --meta - merges stdin into the doc's meta, validated, touching
 });
 
 test("crud --meta puts a new meta block where KINGSMetaL order wants it", () => {
-	const bridge = bridgeWithKinds("meta-order");
 	const id = SPARE;
-	const path = join(bridge, "kb", `${id}.md`);
-	write(
-		path,
-		`---\nkind: note\nid: ${id}\nname: linked\ngist: "Linked"\nlinks:\n  - kb/${NOTE_KIND}.md\n---\n\n# Linked\n`,
+	const { bridge, self } = onKbDive("meta-order", (kb) =>
+		write(
+			join(kb, `${id}.md`),
+			`---\nkind: note\nid: ${id}\nname: linked\ngist: "Linked"\nlinks:\n  - kb/${NOTE_KIND}.md\n---\n\n# Linked\n`,
+		),
 	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "linked note");
+	const path = join(self, "kb", `${id}.md`);
 	assertOk(run(["crud", id, "--meta", "-"], bridge, "topic: order\n"), "crud --meta failed");
 	assert.equal(
 		readFileSync(path, "utf8"),
@@ -491,15 +544,14 @@ test("crud --meta puts a new meta block where KINGSMetaL order wants it", () => 
 });
 
 test("crud --meta merges nested mappings key by key", () => {
-	const bridge = createBridge(tmp, "meta-nested");
 	const id = SPARE;
-	const path = join(bridge, "kb", `${id}.md`);
-	write(
-		path,
-		`---\nkind: loose\nid: ${id}\nname: nested\ngist: "Nested"\nmeta:\n  box:\n    keep: 1\n    drop: 2\n---\n`,
+	const { bridge, self } = onKbDive("meta-nested", (kb) =>
+		write(
+			join(kb, `${id}.md`),
+			`---\nkind: loose\nid: ${id}\nname: nested\ngist: "Nested"\nmeta:\n  box:\n    keep: 1\n    drop: 2\n---\n`,
+		),
 	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "nested");
+	const path = join(self, "kb", `${id}.md`);
 	assertOk(
 		run(["crud", id, "--meta", "-"], bridge, "box: {drop: null, add: 3}\n"),
 		"nested merge failed",
@@ -508,24 +560,20 @@ test("crud --meta merges nested mappings key by key", () => {
 });
 
 test("crud --scopes and --links patch one entry by its target, in KINGSMetaL order", () => {
-	const bridge = createBridge(tmp, "blocks");
 	const id = SPARE;
-	const path = join(bridge, "kb", `${id}.md`);
-	write(
-		join(bridge, "kb", `${CARDS_REPO}.md`),
-		`---\nkind: repo\nid: ${CARDS_REPO}\nname: cards\ngist: "Cards"\nmeta:\n  path: workspace/cards\n---\n`,
-	);
-	write(
-		path,
-		`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nmeta:\n  topic: x\n---\n\n# Plan\n`,
-	);
-	// The linked dive must exist: crud refuses a link to a missing doc.
-	write(
-		join(bridge, "kb", `${DIVE}.md`),
-		`---\nkind: dive\nid: ${DIVE}\nname: mtg\ngist: "Mtg"\n---\n`,
-	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "plan");
+	const { bridge, self } = onKbDive("blocks", (kb) => {
+		write(
+			join(kb, `${CARDS_REPO}.md`),
+			`---\nkind: repo\nid: ${CARDS_REPO}\nname: cards\ngist: "Cards"\nmeta:\n  path: workspace/cards\n---\n`,
+		);
+		write(
+			join(kb, `${id}.md`),
+			`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nmeta:\n  topic: x\n---\n\n# Plan\n`,
+		);
+		// The linked doc must exist: crud refuses a link to a missing doc.
+		write(join(kb, `${DIVE}.md`), `---\nkind: memo\nid: ${DIVE}\nname: mtg\ngist: "Mtg"\n---\n`);
+	});
+	const path = join(self, "kb", `${id}.md`);
 	const read = () => readFileSync(path, "utf8");
 
 	assertOk(
@@ -537,7 +585,7 @@ test("crud --scopes and --links patch one entry by its target, in KINGSMetaL ord
 		new RegExp(`gist: "Plan"\\nscopes:\\n {2}- ${CARDS_REPO}\\nmeta:`),
 		"bare, before meta",
 	);
-	assert.equal(subject(bridge), `crud(${id}): updated memo plan`);
+	assert.equal(subject(self), `crud(${id}): updated memo plan`);
 
 	assertOk(
 		run(["crud", id, "--scopes", "-"], bridge, `${CARDS_REPO}: {work-branch: work/cards}\n`),
@@ -573,7 +621,7 @@ test("crud --scopes and --links patch one entry by its target, in KINGSMetaL ord
 	);
 	assert.match(read(), /^links:\n {2}- https:\/\/example\.org\n---/m);
 
-	const before = commits(bridge);
+	const before = commits(self);
 	for (const [args, input, pattern] of [
 		[["--scopes", "-"], "nowhere: {}\n", /no repo named nowhere/],
 		[["--scopes", "-", "--links", "-"], "a: {}\n", /one block at a time/],
@@ -583,24 +631,23 @@ test("crud --scopes and --links patch one entry by its target, in KINGSMetaL ord
 		assert.equal(refused.status, 1, args.join(" "));
 		assert.match(refused.stderr, pattern);
 	}
-	assert.equal(commits(bridge), before, "a refused patch commits nothing");
+	assert.equal(commits(self), before, "a refused patch commits nothing");
 });
 
 test("crud --links refuses a link to a doc that does not exist, but removes one and passes URLs", () => {
-	const bridge = createBridge(tmp, "dead-links");
 	const id = SPARE;
-	const path = join(bridge, "kb", `${id}.md`);
-	write(
-		join(bridge, "kb", `${CARDS_REPO}.md`),
-		`---\nkind: memo\nid: ${CARDS_REPO}\nname: there\ngist: "There"\n---\n`,
-	);
-	// A dead link written by hand: kb/${DIVE}.md is never made in this bridge.
-	write(
-		path,
-		`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nlinks:\n  - kb/${DIVE}.md\n---\n\n# Plan\n`,
-	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "dead link");
+	const { bridge, self } = onKbDive("dead-links", (kb) => {
+		write(
+			join(kb, `${CARDS_REPO}.md`),
+			`---\nkind: memo\nid: ${CARDS_REPO}\nname: there\ngist: "There"\n---\n`,
+		);
+		// A dead link written by hand: kb/${DIVE}.md is never made in this bridge.
+		write(
+			join(kb, `${id}.md`),
+			`---\nkind: memo\nid: ${id}\nname: plan\ngist: "Plan"\nlinks:\n  - kb/${DIVE}.md\n---\n\n# Plan\n`,
+		);
+	});
+	const path = join(self, "kb", `${id}.md`);
 	const read = () => readFileSync(path, "utf8");
 
 	for (const [args, input, named] of [
@@ -608,12 +655,12 @@ test("crud --links refuses a link to a doc that does not exist, but removes one 
 		[[], "docs/nowhere.md: {}\n", ["docs/nowhere.md"]],
 		[["--replace"], `${CARDS_REPO}: {}\n${DIVE}: {}\n`, [DIVE]],
 	]) {
-		const before = { text: read(), count: commits(bridge) };
+		const before = { text: read(), count: commits(self) };
 		const refused = run(["crud", id, "--links", "-", ...args], bridge, input);
 		assert.equal(refused.status, 1, `${args.join(" ")} ${input}`);
 		for (const name of named) assert.ok(refused.stderr.includes(name), refused.stderr);
 		assert.equal(read(), before.text, "a refused link writes nothing");
-		assert.equal(commits(bridge), before.count, "a refused link commits nothing");
+		assert.equal(commits(self), before.count, "a refused link commits nothing");
 	}
 
 	assertOk(
@@ -638,17 +685,17 @@ test("crud --links refuses a link to a doc that does not exist, but removes one 
 });
 
 test("crud title replaces or adds h1 and combines with a meta patch", () => {
-	const bridge = bridgeWithKinds("titles");
+	const { bridge, self } = onKbDive("titles");
 	const made = run(["crud", "note", "Original heading"], bridge);
 	assertOk(made);
 	const id = madeId(made.stdout);
-	const path = join(bridge, "kb", `${id}.md`);
-	const before = commits(bridge);
+	const path = join(self, "kb", `${id}.md`);
+	const before = commits(self);
 	assertOk(run(["crud", id, "--title", "A $& title", "--meta", "-"], bridge, "topic: titles"));
-	assert.equal(commits(bridge), String(Number(before) + 1), "title and meta share one commit");
+	assert.equal(commits(self), String(Number(before) + 1), "title and meta share one commit");
 	assert.match(readFileSync(path, "utf8"), /# A \$& title/);
 	assert.match(readFileSync(path, "utf8"), /topic: titles/);
-	assert.equal(subject(bridge), `crud(${id}): updated note ${id}`);
+	assert.equal(subject(self), `crud(${id}): updated note ${id}`);
 	write(path, readFileSync(path, "utf8").replace(/^# .*$/m, "Paragraph without a heading."));
 	assertOk(run(["crud", id, "--title", "Inserted"], bridge));
 	assert.match(readFileSync(path, "utf8"), /---\n\n# Inserted\n/);
@@ -656,25 +703,20 @@ test("crud title replaces or adds h1 and combines with a meta patch", () => {
 });
 
 test("crud backlog links re-render additions, rel changes and removals in the patch commit", () => {
-	const { bridge } = seededBridge(tmp, "backlog-links", "pilot@nosedive.invalid");
+	const { bridge, self } = onKbDive("backlog-links", (kb) =>
+		write(
+			join(kb, SPARE + ".md"),
+			"---\nkind: memo\nid: " + SPARE + "\nname: water\ngist: Water\n---\n\n# Water treatment\n",
+		),
+	);
 	const config = readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8");
 	const backlog = /^backlog: (.+)$/m.exec(config)[1];
-	const path = join(bridge, "kb", backlog + ".md");
-	write(
-		join(bridge, "kb", SPARE + ".md"),
-		"---\nkind: memo\nid: " + SPARE + "\nname: water\ngist: Water\n---\n\n# Water treatment\n",
-	);
-	runTool("git", ["add", "."], bridge);
-	gitCommit(bridge, "water");
+	const path = join(self, "kb", backlog + ".md");
 	for (const rel of ["system.feat", "property.feat", null]) {
-		const before = commits(bridge);
+		const before = commits(self);
 		const patch = rel ? SPARE + ": {rel: " + rel + "}\n" : SPARE + ": null\n";
 		assertOk(run(["crud", backlog, "--links", "-"], bridge, patch), "patch backlog");
-		assert.equal(
-			Number(commits(bridge)),
-			Number(before) + 1,
-			"frontmatter and body share a commit",
-		);
+		assert.equal(Number(commits(self)), Number(before) + 1, "frontmatter and body share a commit");
 		const rendered = readFileSync(path, "utf8");
 		if (rel)
 			assert.match(
@@ -684,8 +726,9 @@ test("crud backlog links re-render additions, rel changes and removals in the pa
 				),
 			);
 		else assert.doesNotMatch(rendered, /Water treatment/);
-		assertOk(run(["update-backlog"], bridge), "render backlog again");
+		// Run in the checkout, a bridge of its own, so it renders the backlog the dive has.
+		assertOk(run(["update-backlog"], self), "render backlog again");
 		assert.equal(readFileSync(path, "utf8"), rendered, "same renderer as update-backlog");
-		assert.equal(git(["status", "--porcelain"], bridge), "");
+		assert.equal(git(["status", "--porcelain"], self), "");
 	}
 });

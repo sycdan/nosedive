@@ -37,7 +37,7 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 
 	// The kb feat scopes the bridge itself, so jumping a dive on it hydrates __self.
 	const recorded = run(
-		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "memo"],
+		["record.dive", "--feat", KB_FEAT, "--gist", "Add a memo", "--brief", "-"],
 		bridge,
 		"Make a memo.\n",
 	);
@@ -146,7 +146,7 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {
 	const { bridge, origin } = seededBridge(tmp, "self-ahead", "pilot@nosedive.invalid");
 	const recorded = run(
-		["crud", "dive", "--feat", KB_FEAT, "Add", "a", "memo"],
+		["record.dive", "--feat", KB_FEAT, "--gist", "Add a memo", "--brief", "-"],
 		bridge,
 		"Make a memo.\n",
 	);
@@ -210,7 +210,11 @@ const scopeIds = (text) => [...text.matchAll(/^  - (\S+):$/gm)].map((match) => m
 
 test("a backlog scoping the bridge gives every dive it, and kb writes on it go to __self", () => {
 	const { bridge, featId, bridgeId } = bridgeWithImplFeat("every-dive");
-	const recorded = run(["crud", "dive", "--feat", featId, "Impl"], bridge, "Do impl work.\n");
+	const recorded = run(
+		["record.dive", "--feat", featId, "--gist", "Impl", "--brief", "-"],
+		bridge,
+		"Do impl work.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	const text = readFileSync(join(bridge, divePath), "utf8");
@@ -235,7 +239,11 @@ test("a backlog scoping the bridge gives every dive it, and kb writes on it go t
 
 test("a dive on a feat that already scopes the bridge scopes it once", () => {
 	const { bridge } = seededBridge(tmp, "once", "pilot@nosedive.invalid");
-	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Once"], bridge, "Once.\n");
+	const recorded = run(
+		["record.dive", "--feat", KB_FEAT, "--gist", "Once", "--brief", "-"],
+		bridge,
+		"Once.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	const text = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(recorded.stdout)[1]), "utf8");
 	assert.equal(scopeIds(text.slice(0, text.indexOf("meta:"))).length, 1);
@@ -243,7 +251,11 @@ test("a dive on a feat that already scopes the bridge scopes it once", () => {
 
 test("crud patches an active dive's scopes in the live bridge, where jump and land read them", () => {
 	const { bridge } = seededBridge(tmp, "live-dive", "pilot@nosedive.invalid");
-	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Read"], bridge, "Read.\n");
+	const recorded = run(
+		["record.dive", "--feat", KB_FEAT, "--gist", "Read", "--brief", "-"],
+		bridge,
+		"Read.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	assertOk(run(["jump", divePath], bridge), "jump failed");

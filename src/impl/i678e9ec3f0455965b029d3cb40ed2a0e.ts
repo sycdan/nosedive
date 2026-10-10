@@ -125,6 +125,18 @@ function liveDive(ref: string): KindSource[] | undefined {
 	return [{ id: rc.bridge, name: basename(rc.bridgeDir), root: rc.bridgeDir, kbDir: rc.kbDir }];
 }
 
+/**
+ * Every write but a scope edit goes through a dive, so land reviews it before
+ * anyone reads it. Scopes are bookkeeping the bridge alone is read for, as is
+ * a dive's pin, so `--scopes` and `--repin` stay direct.
+ */
+function refuseWithoutDive(what: string): void {
+	if (readActiveDiveId(readNosediveRc(process.cwd()).workspaceDir)) return;
+	throw new Error(
+		`crud writes on a dive: no dive is active to ${what}; jump one first, as \`nosedive jump <feat>\` starts one`,
+	);
+}
+
 function crud(args: string[], io: CommandIo): void {
 	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
 		printCommandHelp("crud", io);
@@ -185,6 +197,7 @@ function crud(args: string[], io: CommandIo): void {
 			io.writeOut(readFileSync(target.path, "utf8"));
 			return;
 		}
+		if (block !== "scopes") refuseWithoutDive(`edit ${first}`);
 		if (!block) {
 			updateTitle(target, title!, io);
 			return;
@@ -249,6 +262,7 @@ function crud(args: string[], io: CommandIo): void {
 			throw new Error(
 				"crud dive needs --feat: echo <brief> | nosedive crud dive --feat <feat> <gist...>",
 			);
+		refuseWithoutDive("plan a dive");
 		const brief = readStdinText("crud dive reads its brief on stdin");
 		if (!brief.trim()) throw new Error("crud dive requires a nonempty brief on stdin");
 		recordDive(["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : [])], io, {
@@ -277,6 +291,7 @@ function crud(args: string[], io: CommandIo): void {
 				matches.map((match) => `${match.id} (${match.name})`).join(", "),
 		);
 
+	refuseWithoutDive(`make a ${kind.name}`);
 	mintDoc(kind, gist, io, name, meta);
 }
 

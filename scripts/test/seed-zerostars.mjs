@@ -63,12 +63,7 @@ test("seed keeps only the kb feat in the bridge, scopes it, and links it from th
 	assertOk(run(["seed", "--headless", "--no-push"], bridge, ""), "a second seed failed");
 	assert.equal(commits(bridge), before, "a second seed changes nothing");
 
-	const dive = run(
-		["record.dive", "--feat", KB_FEAT, "--gist", "Tidy", "--brief", "-"],
-		bridge,
-		"Tidy the kb",
-	);
-	assertOk(dive, "the kb feat is something to dive from");
+	assertOk(run(["jump", KB_FEAT], bridge), "the kb feat is something to dive from");
 	const linked = run(["crud", "memo", "Linked", "memo"], bridge);
 	assertOk(linked, "crud memo failed");
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(linked.stdout)?.[1];
@@ -115,6 +110,7 @@ test("seed leaves an edited built-in copy in place and ignores it for crud and v
 	assert.equal(commits(bridge), before);
 	assert.match(readFileSync(memo, "utf8"), /# Our Memo/);
 	assert.equal(run(["crud", MEMO], bridge).stdout, shipped, "crud reads the package copy");
+	assertOk(run(["jump", KB_FEAT], bridge), "jump failed");
 	const made = run(["crud", "memo", "Valid", "memo"], bridge);
 	assertOk(made, "crud memo failed");
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
@@ -139,6 +135,7 @@ test("seed keeps picker-level, and an old roots: or decks: key as it is", () => 
 
 test("the memo kind's schema is open: any meta validates", () => {
 	const { bridge } = seededBridge(tmp, "memo", "pilot@nosedive.invalid");
+	assertOk(run(["jump", KB_FEAT], bridge), "jump failed");
 	const made = run(["crud", "memo", "Anything", "goes"], bridge);
 	assertOk(made, "crud memo failed");
 	const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];

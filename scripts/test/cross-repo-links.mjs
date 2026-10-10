@@ -8,7 +8,9 @@ import {
 	createTmp,
 	gitCommit,
 	implRepo,
+	KB_FEAT_ID,
 	libUrl,
+	onLandedKbDive,
 	recordedDiveId,
 	run,
 	runTool,
@@ -101,11 +103,14 @@ function world(name) {
 	return { bridge, bridgeId, b, c, featPath: join(kb, `${FEAT}.md`) };
 }
 
-function linkBFeat(bridge) {
-	assertOk(
-		run(["crud", FEAT, "--links", "-"], bridge, `${B_FEAT_LINK}: {rel: child.feat}\n`),
-		"linking the feat in B failed",
-	);
+function linkBFeat(bridge, alsoFrom = []) {
+	onLandedKbDive(bridge, () => {
+		for (const feat of [FEAT, ...alsoFrom])
+			assertOk(
+				run(["crud", feat, "--links", "-"], bridge, `${B_FEAT_LINK}: {rel: child.feat}\n`),
+				`linking the feat in B from ${feat} failed`,
+			);
+	});
 }
 
 test("a bridge feat links a feat in another repo, read from the managed cache and then the checkout", () => {
@@ -155,6 +160,7 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 test("crud refuses a link into a repo the doc does not scope, and one to a missing file", () => {
 	const { bridge, featPath } = world("refuse");
 	const before = readFileSync(featPath, "utf8");
+	assertOk(run(["jump", KB_FEAT_ID], bridge), "jump failed");
 
 	const unscoped = run(
 		["crud", FEAT, "--links", "-"],
@@ -177,7 +183,11 @@ test("crud refuses a link into a repo the doc does not scope, and one to a missi
 
 test("a bare quid two repos in play both hold is refused as ambiguous", () => {
 	const { bridge } = world("ambiguous");
-	const recorded = run(["crud", "dive", "--feat", WIDE, "Wide", "work"], bridge, "Work.\n");
+	const recorded = run(
+		["record.dive", "--feat", WIDE, "--gist", "Wide work", "--brief", "-"],
+		bridge,
+		"Work.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", `kb/${recordedDiveId(recorded.stdout)}.md`], bridge), "jump failed");
 
@@ -197,7 +207,11 @@ test("a dive on a feat in another repo records it qualified, inherits its scopes
 	const checkout = join(bridge, "workspace", b.name);
 	const checkoutFeat = join(checkout, "kb", `${B_FEAT}.md`);
 
-	const recorded = run(["crud", "dive", "--feat", B_FEAT_LINK, "Cross", "repo"], bridge, "Work.\n");
+	const recorded = run(
+		["record.dive", "--feat", B_FEAT_LINK, "--gist", "Cross repo", "--brief", "-"],
+		bridge,
+		"Work.\n",
+	);
 	assertOk(recorded, "crud dive on a feat in B failed");
 	const id = recordedDiveId(recorded.stdout);
 	const dive = readFileSync(join(bridge, "kb", `${id}.md`), "utf8");
@@ -283,11 +297,7 @@ test("crud fails a read with one line for a missing doc, no frontmatter or an un
 
 test("helm resolves a link into a repo never cached, at the asking doc's work branch", () => {
 	const { bridge, b } = world("branch");
-	linkBFeat(bridge);
-	assertOk(
-		run(["crud", WIDE, "--links", "-"], bridge, `${B_FEAT_LINK}: {rel: child.feat}\n`),
-		"linking the feat from the wide feat failed",
-	);
+	linkBFeat(bridge, [WIDE]);
 	publishBranch(b, "work/f", doc("feat", B_FEAT, "b-work", "On work/f in B"));
 	rmSync(cachePath(bridge, B_REPO), { recursive: true, force: true });
 

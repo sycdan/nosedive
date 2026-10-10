@@ -93,7 +93,7 @@ test("a dive on a feat two links into a sub-bridge scopes it and commits its boo
 	);
 
 	const recorded = run(
-		["crud", "dive", "--feat", WATER_REF, "Water", "details"],
+		["record.dive", "--feat", WATER_REF, "--gist", "Water details", "--brief", "-"],
 		bridge,
 		"Work.\n",
 	);
@@ -133,7 +133,11 @@ test("a dive on a feat two links into a sub-bridge scopes it and commits its boo
 
 test("the feat's repo lands on the crossing doc's branch, never the sub-bridge's own", () => {
 	const branchOf = (bridge) => {
-		const recorded = run(["crud", "dive", "--feat", WATER_REF, "Water"], bridge, "Work.\n");
+		const recorded = run(
+			["record.dive", "--feat", WATER_REF, "--gist", "Water", "--brief", "-"],
+			bridge,
+			"Work.\n",
+		);
 		assertOk(recorded, "crud dive failed");
 		const dive = readFileSync(join(bridge, "kb", `${recordedDiveId(recorded.stdout)}.md`), "utf8");
 		return new RegExp(`- ${SUB_REPO}:\n {6}ref: [0-9a-f]{40}\n {6}work-branch: (\\S+)`).exec(
@@ -147,7 +151,11 @@ test("the feat's repo lands on the crossing doc's branch, never the sub-bridge's
 
 test("crud re-renders a hydrated sub-bridge's backlog when its links change", () => {
 	const { bridge, checkout } = world("render", { subConfig: true });
-	const recorded = run(["crud", "dive", "--feat", WATER_REF, "Water"], bridge, "Work.\n");
+	const recorded = run(
+		["record.dive", "--feat", WATER_REF, "--gist", "Water", "--brief", "-"],
+		bridge,
+		"Work.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", `kb/${recordedDiveId(recorded.stdout)}.md`], bridge), "jump failed");
 	const patch = `kb/${WATER}.md:\n  rel: system.feat\n`;

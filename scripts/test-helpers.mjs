@@ -373,6 +373,21 @@ meta:
 	);
 }
 
+/** The kb feat every seeded bridge has, which scopes the bridge itself. */
+export const KB_FEAT_ID = "00000000-0000-7003-a10b-25d64dd1d5ba";
+
+/**
+ * Runs `work` the way a pilot changes the kb: on a dive of the kb feat, which
+ * then lands, since crud writes only on a dive. For fixtures that need docs in
+ * the live bridge; returns what `work` returns.
+ */
+export function onLandedKbDive(bridge, work) {
+	assertOk(run(["jump", KB_FEAT_ID], bridge), "jump for a fixture failed");
+	const result = work();
+	assertOk(run(["land"], bridge), "land of a fixture failed");
+	return result;
+}
+
 /**
  * A seeded bridge with an upstream, which `land` requires. Committed and pushed
  * so the bridge is in the state a pilot's would be after `seed`.

@@ -51,7 +51,7 @@ function setup(name, initial, ownFeat = false) {
 	}
 	assertOk(runTool("git", ["push"], bridge), "push fixture");
 	const recorded = run(
-		["crud", "dive", "--feat", feat, "Change", "gate"],
+		["record.dive", "--feat", feat, "--gist", "Change gate", "--brief", "-"],
 		bridge,
 		"Check self gates.\n",
 	);

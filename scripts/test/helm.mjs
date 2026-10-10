@@ -246,8 +246,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const resetHome = new Script("(" + resetSource + ")").runInNewContext({
 		highlight() {},
 		ctx: {},
-		history: { replaceState() {} },
-		location: { pathname: "/", search: "" },
+		navigateHash() {},
 		refreshSections() {},
 		crumbs() {},
 		el: makeEl,
@@ -272,12 +271,14 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 		"late status batches cannot alter a new draw",
 	);
 	assert.match(script, /loaded \+ "\/" \+ shown\.length/, "the Repos heading tracks loaded repos");
-	// A reload restores a kind page through showKind, and kindRef on a doc under a kind step.
-	const restore =
-		/Promise\.all\(\[loadRoots\(\), loadDives\(\)\]\)\.then[\s\S]*?\}\)\.catch\(showError\);/.exec(
-			script,
-		)?.[0];
-	assert.ok(restore, "page carries its startup restore");
+	// A load or a hash change restores a kind page through showKind, and kindRef on a doc under a kind step.
+	const restore = /async function routeHash\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+	assert.ok(restore, "page carries its hash routing");
+	assert.match(
+		script,
+		/addEventListener\("hashchange", scheduleRoute\)/,
+		"a hash change routes like a load",
+	);
 	assert.match(
 		restore,
 		/docs\[i\]\.kind === "kind" && path\[i\]\.repo/,
@@ -290,7 +291,7 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	);
 	assert.match(
 		restore,
-		/path\[at\]\.kindRef = kind;\s*select\(path\)/,
+		/path\[at\]\.kindRef = kind;\s*return select\(path\)/,
 		"a doc under a kind step gets its kindRef back",
 	);
 	assert.match(

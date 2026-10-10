@@ -21,7 +21,11 @@ const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 
 /** A jumped dive on the kb feat that has minted repo `name`, its local remote `../<name>` unless given. */
 function diveWithRepo(bridge, name, local = `../${name}`) {
-	const recorded = run(["crud", "dive", "--feat", KB_FEAT, "Add", name], bridge, "Add a repo.\n");
+	const recorded = run(
+		["record.dive", "--feat", KB_FEAT, "--gist", ["Add", name].join(" "), "--brief", "-"],
+		bridge,
+		"Add a repo.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	assertOk(run(["jump", /^Recorded (\S+)$/m.exec(recorded.stdout)[1]], bridge), "jump failed");
 	const minted = run(

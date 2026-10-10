@@ -235,8 +235,9 @@ function planForm(doc) {
 }
 
 /**
- * Add's form for a dive: planned on the deck's feat through crud dive, then
- * opened -- with no dive on, opening one stages it, so Jump is one click away.
+ * Add's form for a dive: planned on the deck's feat through crud dive, which
+ * writes only on a dive -- so with none on, the deck's feat is jumped first,
+ * and the planned dive is recorded on that one, to land with it.
  */
 function planDialog(feat) {
 	const title = el("input", { type: "text", placeholder: "Title", "aria-label": "title" });
@@ -253,6 +254,16 @@ function planDialog(feat) {
 		event.preventDefault();
 		plan.disabled = true;
 		try {
+			if (!dives.active) {
+				const res = await fetch("/api/run", {
+					method: "POST",
+					headers: { "x-helm-token": token, "content-type": "application/json" },
+					body: JSON.stringify({ verb: "jump", ref: feat }),
+				});
+				const jumped = res.ok ? await res.text() : (await res.json()).error;
+				if (!/\[exit 0\]\s*$/.test(jumped)) throw new Error(jumped);
+				await loadDives();
+			}
 			const run = await write("/api/crud/dive", { feat, title: title.value || undefined, gist: gist.value, brief: brief.value });
 			const id = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
 			if (!id) throw new Error(run.stdout || "crud dive recorded nothing");

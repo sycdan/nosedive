@@ -46,7 +46,11 @@ function onDive(name) {
 	runTool("git", ["add", "."], bridge);
 	gitCommit(bridge, "fixture");
 	runTool("git", ["push"], bridge);
-	const recorded = run(["crud", "dive", "--feat", FEAT, "Impl", "work"], bridge, "Work.\n");
+	const recorded = run(
+		["record.dive", "--feat", FEAT, "--gist", "Impl work", "--brief", "-"],
+		bridge,
+		"Work.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	assertOk(run(["jump", divePath], bridge), "jump failed");

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertOk, createTmp, run, seededBridge } from "../test-helpers.mjs";
+import { assertOk, createTmp, onLandedKbDive, run, seededBridge } from "../test-helpers.mjs";
 
 const tmp = createTmp("jump-feat");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
@@ -67,18 +67,20 @@ test("jump takes a doc the backlog reaches through .feat links, of any kind, and
 		assertOk(made, "crud memo failed");
 		return /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)[1];
 	};
-	const reached = memo("Reached");
-	const stray = memo("Stray");
-	// The backlog reaches the kb feat as `zerostar.feat`, and through it these.
-	// A non-feat rel does not make a feat: only `.feat` edges are walked.
-	assertOk(
-		run(
-			["crud", KB_FEAT, "--links", "-"],
-			bridge,
-			`${reached}: {rel: ideas.feat}\n${stray}: {rel: see.note}\n`,
-		),
-		"linking from the kb feat failed",
-	);
+	const [reached, stray] = onLandedKbDive(bridge, () => {
+		const docs = [memo("Reached"), memo("Stray")];
+		// The backlog reaches the kb feat as `zerostar.feat`, and through it these.
+		// A non-feat rel does not make a feat: only `.feat` edges are walked.
+		assertOk(
+			run(
+				["crud", KB_FEAT, "--links", "-"],
+				bridge,
+				`${docs[0]}: {rel: ideas.feat}\n${docs[1]}: {rel: see.note}\n`,
+			),
+			"linking from the kb feat failed",
+		);
+		return docs;
+	});
 
 	const backlog = /^backlog: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),

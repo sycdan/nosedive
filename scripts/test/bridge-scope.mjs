@@ -133,7 +133,11 @@ test("land skips a scope with nothing past its pin, the bridge's own included", 
 	const { bridge, bridgeId, origin, impl } = setup("untouched", implOnly);
 	const git = (args, cwd) => runTool("git", args, cwd).stdout.trim();
 	runTool("git", ["push"], bridge);
-	const recorded = run(["crud", "dive", "--feat", FEAT, "Change", "impl"], bridge, "Work.\n");
+	const recorded = run(
+		["record.dive", "--feat", FEAT, "--gist", "Change impl", "--brief", "-"],
+		bridge,
+		"Work.\n",
+	);
 	assertOk(recorded, "crud dive failed");
 	const divePath = /^Recorded (\S+)$/m.exec(recorded.stdout)?.[1];
 	assertOk(run(["jump", divePath], bridge), "jump failed");

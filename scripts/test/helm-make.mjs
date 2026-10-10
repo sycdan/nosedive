@@ -35,7 +35,7 @@ function startHelm(cwd) {
 	};
 }
 
-test("with no dive, helm offers a dive alone; on the planned dive, a repo mints there", async (t) => {
+test("with no dive, helm offers a dive alone, planned on a dive of the deck; a repo mints there", async (t) => {
 	const { bridge } = seededBridge(tmp, "make", "pilot@nosedive.invalid");
 	const bridgeId = /^bridge: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
@@ -61,18 +61,26 @@ test("with no dive, helm offers a dive alone; on the planned dive, a repo mints 
 		"with no dive, a dive is all Add makes",
 	);
 
-	// Add plans a dive on the deck's feat; opening it stages it for Jump.
+	// crud writes only on a dive, so with none Add jumps the deck's feat, then
+	// plans the dive on that one, to land with it.
+	const unplanned = await post("/api/crud/dive", {
+		feat: KB_FEAT,
+		gist: "Adds the repo cards",
+		brief: "Made in helm with no dive.",
+	});
+	assert.equal(unplanned.status, 400, "crud refuses a dive planned on no dive");
+	const jumped = await post("/api/run", { verb: "jump", ref: KB_FEAT });
+	assert.match(jumped.text, /\[exit 0\]\s*$/, jumped.text);
+	const dive = /jump: recorded \S*?([0-9a-f-]{36})\.md/.exec(jumped.text)?.[1];
+	assert.ok(dive, jumped.text);
 	const recorded = await post("/api/crud/dive", {
 		feat: KB_FEAT,
 		title: "Add repo cards",
 		gist: "Adds the repo cards",
-		brief: "Made in helm with no dive.",
+		brief: "Made in helm on a dive.",
 	});
 	assert.equal(recorded.status, 200, recorded.text);
-	const dive = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(recorded.body.stdout)?.[1];
-	assert.ok(dive, recorded.body.stdout);
-	const jumped = await post("/api/run", { verb: "jump", ref: dive });
-	assert.match(jumped.text, /\[exit 0\]\s*$/, jumped.text);
+	assert.match(recorded.body.stdout, /Recorded workspace[\\/]__self[\\/]kb[\\/]/);
 
 	const offered = await get("/api/creatable");
 	assert.deepEqual(

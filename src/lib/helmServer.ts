@@ -15,6 +15,7 @@ import {
 } from "./helm.js";
 import { HELM_POLL_MS, helmInternals, helmLogFollower } from "./helmInternals.js";
 import { helmPage } from "./helmPage.js";
+import { helmSearch } from "./helmSearch.js";
 import { gitOutput } from "./gitProcess.js";
 import { isPrimaryWorktree } from "./helmBranch.js";
 import { helmCreatableKinds } from "./helmCreate.js";
@@ -252,6 +253,18 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 				return sendJson(res, helmFeats(cwd, url.searchParams.get("ref") ?? ""));
 			if (url.pathname === "/api/doc")
 				return sendJson(res, helmDoc(cwd, id, url.searchParams.get("repo") || undefined));
+			if (url.pathname === "/api/search")
+				return sendJson(
+					res,
+					helmSearch(
+						cwd,
+						url.searchParams.get("q") ?? "",
+						url.searchParams.get("root") ?? "",
+						url.searchParams.get("feat") || undefined,
+						url.searchParams.get("repo") || undefined,
+						url.searchParams.get("dive") || undefined,
+					),
+				);
 			if (url.pathname === "/api/context")
 				return sendJson(
 					res,

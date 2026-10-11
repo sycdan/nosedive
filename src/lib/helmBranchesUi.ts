@@ -6,20 +6,54 @@
 export const helmBranchesScript = String.raw`
 // --- branches ---------------------------------------------------------------
 
-async function drawBranches(root, list) {
-	let info;
+const BRANCH_FETCH_EVERY = 60000;
+
+function branchesCard(root) {
+	const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
+	const checked = el("span", { class: "rel" }, "not checked yet");
+	const error = el("p", { class: "blocker", hidden: "" });
+	const refresh = el("button", { class: "act unstage", title: "Refresh branches from origin", "aria-label": "Refresh branches", onclick: () => drawBranches(root) }, "↻");
+	const state = { list, checked, error, refresh, busy: false, signature: null, checkedAt: null };
+	root.branches = state;
+	state.card = syncCard("Branches", [checked, refresh], error, list);
+	let nextFetch = Date.now() + BRANCH_FETCH_EVERY;
+	const timer = setInterval(() => {
+		if (!root.isConnected) return clearInterval(timer);
+		if (state.checkedAt != null) checked.textContent = "checked " + Math.floor((Date.now() - state.checkedAt) / 1000) + "s ago";
+		if (Date.now() >= nextFetch) {
+			nextFetch = Date.now() + BRANCH_FETCH_EVERY;
+			if (bridge.branch && bridge.branch.name === bridge.branch.trunk) drawBranches(root);
+		}
+	}, 1000);
+	return state.card;
+}
+
+async function drawBranches(root) {
+	const state = root.branches;
+	if (!state || state.busy || !root.isConnected) return;
+	state.busy = true;
+	state.refresh.disabled = true;
 	try {
-		info = await api("/api/branches");
-		showError(null);
+		const info = await api("/api/branches");
+		if (!root.isConnected) return;
+		state.checkedAt = Date.now();
+		state.checked.textContent = "checked 0s ago";
+		state.error.hidden = true;
+		const signature = JSON.stringify([info, !!dives.active]);
+		if (signature === state.signature) return;
+		state.signature = signature;
+		state.list.replaceChildren(...(info.branches.length
+			? info.branches.map((b) => branchCard(b, info.trunk, root, state.list, info.onTrunk))
+			: [el("p", { class: "empty" }, "no remote branches besides " + info.trunk)]));
 	} catch (err) {
-		if (root.isConnected) showError(err);
-		return;
+		if (root.isConnected) {
+			state.error.textContent = "Branch fetch failed: " + String(err.message || err);
+			state.error.hidden = false;
+		}
+	} finally {
+		state.busy = false;
+		state.refresh.disabled = false;
 	}
-	if (!root.isConnected || !list.isConnected) return;
-	const trunk = info.trunk;
-	list.replaceChildren(...(info.branches.length
-		? info.branches.map((b) => branchCard(b, trunk, root, list, info.onTrunk))
-		: [el("p", { class: "empty" }, "no remote branches besides " + trunk)]));
 }
 
 /** Why a branch cannot be merged now, and what to do about it; null when it can. */

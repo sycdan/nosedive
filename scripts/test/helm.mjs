@@ -223,6 +223,73 @@ test("helm serves the backlog as a link tree over a token-guarded API", async (t
 	const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
 	assert.ok(script, "page carries its script");
 	assert.doesNotThrow(() => new Script(script), "page script parses");
+	const branchSource = script.slice(
+		script.indexOf("const BRANCH_FETCH_EVERY"),
+		script.indexOf("/** Why a branch"),
+	);
+	let now = 0,
+		tick,
+		stopped = false,
+		calls = 0,
+		redraws = 0,
+		release;
+	let answer = { trunk: "main", onTrunk: true, branches: [] };
+	const branchRoot = { isConnected: true };
+	const branchContext = {
+		Date: { now: () => now },
+		setInterval: (fn) => {
+			tick = fn;
+			return 1;
+		},
+		clearInterval: () => {
+			stopped = true;
+		},
+		bridge: { branch: { name: "main", trunk: "main" } },
+		dives: {},
+		el: () => ({
+			replaceChildren: () => {
+				redraws++;
+			},
+		}),
+		syncCard: () => ({}),
+		api: async () => {
+			calls++;
+			if (release)
+				await new Promise((resolve) => {
+					release = resolve;
+				});
+			return answer;
+		},
+	};
+	const branchFns = new Script(branchSource + "\n({ branchesCard, drawBranches })").runInNewContext(
+		branchContext,
+	);
+	branchFns.branchesCard(branchRoot);
+	await branchFns.drawBranches(branchRoot);
+	await branchFns.drawBranches(branchRoot);
+	assert.equal(redraws, 1, "unchanged branch list keeps its controls");
+	now = 60000;
+	release = true;
+	tick();
+	assert.equal(calls, 3, "minute tick fetches independently");
+	now = 120000;
+	tick();
+	assert.equal(calls, 3, "busy tick is skipped");
+	release();
+	release = null;
+	await new Promise((resolve) => setImmediate(resolve));
+	branchContext.api = async () => {
+		throw new Error("offline");
+	};
+	await branchFns.drawBranches(branchRoot);
+	assert.equal(branchRoot.branches.error.hidden, false, "failure stays in card");
+	branchContext.api = async () => answer;
+	await branchFns.drawBranches(branchRoot);
+	assert.equal(branchRoot.branches.error.hidden, true, "successful retry clears failure");
+	branchRoot.isConnected = false;
+	tick();
+	assert.equal(stopped, true, "leaving view stops timer");
+
 	// Exercise the rendering path for a deck doc in another repo, including its link targets.
 	const bodySource = /function docBody\(doc, withFrontmatter\) \{[\s\S]*?\n\}/.exec(script)[0];
 	const selected = [];

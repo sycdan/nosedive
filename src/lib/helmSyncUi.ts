@@ -65,14 +65,9 @@ async function drawBranch(root) {
 		squash && squash.tagName !== "BUTTON" ? squash : null);
 	const history = syncCard("History", [root.poll], commitList(info.history, "no shared history"));
 	const parts = [el("h3", {}, info.branch), pull, push, history];
-	const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
-	const refresh = el("button", { class: "act unstage", title: "Refresh branches from origin", "aria-label": "Refresh branches", onclick: async () => {
-		refresh.disabled = true;
-		try { await drawBranches(root, list); } finally { refresh.disabled = false; }
-	} }, "↻");
-	parts.push(syncCard("Branches", [refresh], list));
+	parts.push(root.branches ? root.branches.card : branchesCard(root));
 	root.replaceChildren(...parts);
-	await drawBranches(root, list);
+	await drawBranches(root);
 }
 
 function confirmPush(root) {

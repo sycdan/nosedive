@@ -98,7 +98,7 @@ test("with no dive, helm offers every kind, planned on a dive of the deck; a rep
 		"utf8",
 	);
 	assert.match(plannedDoc, /^name: add-repo-cards$/m);
-	assert.doesNotMatch(plannedDoc, /^## Brief$/m);
+	assert.match(plannedDoc, /^## Brief$/m, "jumpable: jump refuses a dive without a brief");
 	assert.ok(
 		!existsSync(join(bridge, "kb", `${plannedId}.md`)),
 		"planned dive is not on the live bridge",

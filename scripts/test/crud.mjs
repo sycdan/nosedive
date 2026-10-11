@@ -461,13 +461,17 @@ test("crud dive --feat records a planned dive on the active dive, with stdin as 
 	const empty = run(["crud", "dive", "--feat", KB_FEAT, "Empty"], bridge, "   \n");
 	assertOk(empty, "a dive can be planned before writing its brief");
 	const emptyDoc = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(empty.stdout)[1]), "utf8");
-	assert.doesNotMatch(emptyDoc, /^## Brief$/m);
+	assert.match(
+		emptyDoc,
+		/^## Brief\n\nNo brief was written when this dive was planned\.$/m,
+		"a stand-in brief, since jump refuses a dive without one",
+	);
 	const named = run(["crud", "dive", "--feat", KB_FEAT, "--name", "My Plan", "Named"], bridge);
 	assertOk(named);
 	const namedDoc = readFileSync(join(bridge, /^Recorded (\S+)$/m.exec(named.stdout)[1]), "utf8");
 	assert.match(namedDoc, /^name: my-plan$/m);
 	assert.match(namedDoc, /^# Kb [0-9a-f]{6}$/m, "a name does not override the default title");
-	assert.doesNotMatch(namedDoc, /^## Brief$/m);
+	assert.match(namedDoc, /^## Brief$/m);
 	const duplicate = run(["crud", "dive", "--feat", KB_FEAT, "--name", "My Plan", "Again"], bridge);
 	assert.equal(duplicate.status, 1);
 	assert.match(duplicate.stderr, /name my-plan is taken/);

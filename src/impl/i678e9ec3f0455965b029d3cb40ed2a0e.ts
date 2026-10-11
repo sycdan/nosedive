@@ -258,13 +258,14 @@ function crud(args: string[], io: CommandIo): void {
 		throw new Error("--meta reads a YAML or JSON mapping from stdin");
 	if (kind.id === DIVE_KIND_ID) {
 		if (block) throw new Error("a dive's meta is nosedive's: crud dive takes no --meta");
-
 		if (!feat)
 			throw new Error("crud dive needs --feat: nosedive crud dive --feat <feat> <gist...>");
 		refuseWithoutDive("plan a dive");
-		const brief = process.stdin.isTTY
-			? undefined
+		const given = process.stdin.isTTY
+			? ""
 			: readStdinText("crud dive optionally reads its brief on stdin");
+		// Jump hands a dive's brief to whoever picks it up, and refuses one without.
+		const brief = given.trim() ? given : "No brief was written when this dive was planned.";
 		recordDive(["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : [])], io, {
 			brief,
 			name: name === undefined ? undefined : mintName(kind, name),

@@ -54,7 +54,7 @@ test("seed creates a bridge repo doc from an origin remote", () => {
 	assert.match(seed.stdout, /^Next steps:/m, "seed should include a next-steps heading");
 	for (const step of [
 		/nosedive preflight -- what needs attention now/,
-		/nosedive helm -- see the bridge, and jump its kb feat/,
+		/nosedive record\.feat --gist "<what you want done>" -- pitch your first feat/,
 		/nosedive help -- what else nosedive can do/,
 	]) {
 		assert.match(seed.stdout, step, "seed should include each next-step command");

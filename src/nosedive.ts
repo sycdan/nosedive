@@ -39,21 +39,52 @@ export { readKbDocById } from "./lib/kbDocs.js";
 export { reconcileDocLink } from "./lib/repoFeatScopes.js";
 // Exported so the merge is tested against RFC 7386's own examples.
 export { mergePatch } from "./lib/mergePatch.js";
-// Exported so helm's picker and its view of a dive's __self checkout are tested below the server.
-export { helmFeats, helmPicker, helmPickerLoad, helmRepoList } from "./lib/helmPicker.js";
-// Exported so a doc's links, those into other repos among them, are tested below the server.
-export { helmDoc, helmKindCounts, helmKindDocs } from "./lib/helm.js";
-// Exported so what the dive bar can create is tested below the server.
-export { helmCreatableKinds } from "./lib/helmCreate.js";
-export { helmDives } from "./lib/helmDives.js";
-// Exported so a branch worktree and its status are tested below the command.
-export { branchWorktree, helmBranchStatus } from "./lib/helmBranch.js";
-export { helmBranches, helmDeleteBranch, helmMerge } from "./lib/helmBranches.js";
-export { helmPull, helmPush, helmSquash, helmUnpushed } from "./lib/helmSync.js";
+// --- core API for nosedive-helm ---------------------------------------------
+// `nosedive helm` runs nosedive-helm, a separate product, which imports this
+// entry from NOSEDIVE_CORE. Everything in this block is that contract: bump
+// HELM_PROTOCOL when any of it changes incompatibly, so a helm built against
+// the old shape refuses to start rather than failing mid-request.
+export { HELM_PROTOCOL } from "./lib/coreProtocol.js";
 export { assertBridgeInStep } from "./lib/bridgeTrunk.js";
-export { helmLogPath, pruneHelmLogs } from "./lib/helmLog.js";
-export { helmPorts } from "./lib/helmServer.js";
-export { helmState } from "./lib/helmState.js";
+export { BUILTIN_KIND_IDS, builtinDocPath } from "./lib/builtinKinds.js";
+export {
+	BASE_CONFIG_FILENAME,
+	BRIDGE_STATE_DIRNAME,
+	LEGACY_CONFIG_FILENAME,
+} from "./lib/constants.js";
+export {
+	configCompatibilityLevel,
+	formatPath,
+	leadingMarkdownFrontmatter,
+	parseYamlBlock,
+	toPosixPath,
+	uuidLike,
+	type NosediveRc,
+} from "./lib/coreParsing.js";
+export { sameFeatRef } from "./lib/diveListing.js";
+export { featWorkBranch, inheritedScopes } from "./lib/diveScopes.js";
+export { findDocs, matchesTerm } from "./lib/find.js";
+export { gitOutput, runGit, type GitCommandResult } from "./lib/gitProcess.js";
+export { docKey, featChildren, isFeatEdge, isJumpable, rootedScopes } from "./lib/jumpable.js";
+export {
+	loadKbDocs,
+	readActiveDiveId,
+	readKbDoc,
+	type KbDoc,
+	type LinkRef,
+	type ScopeRef,
+} from "./lib/kbDocs.js";
+export { splitRepoRef } from "./lib/kbRefs.js";
+export { instanceFailures, type InstanceFailure } from "./lib/kindInstances.js";
+export { isBridge, isShipped, repoKbDir, type KindSource } from "./lib/kinds.js";
+export { packageRoot } from "./lib/packageBacklog.js";
+export { writeFileAtomic } from "./lib/renderPlan.js";
+export { linkedDoc, mayLinkRepo, repoCheckout } from "./lib/repoLinks.js";
+export { readRepoRefDoc, readRepoText, repoBacklogId } from "./lib/repoRead.js";
+export { gitRun, managedCachePath } from "./lib/repoWorkspaceCore.js";
+export { expectedWorktreePath, worktreeHasExpectedSource } from "./lib/repoWorktrees.js";
+export { KB_FEAT_ID } from "./lib/shipZerostars.js";
+// --- end of the core API for nosedive-helm ----------------------------------
 // Exported so kind resolution and validation are tested at the library, below any command.
 export {
 	checkDocMeta,

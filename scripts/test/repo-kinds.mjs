@@ -8,7 +8,6 @@ import {
 	createTmp,
 	gitCommit,
 	implRepo,
-	libUrl,
 	run,
 	runTool,
 	seededBridge,
@@ -16,7 +15,6 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmCreatableKinds } = await import(libUrl);
 const tmp = createTmp("repo-kinds");
 const IMPL = "01a0fe82-ca4a-7ad4-9739-e168fe7f3a90";
 const FEAT = "01a0fe82-ca4b-7470-85ee-577f0b0702e0";
@@ -104,19 +102,6 @@ test("a repo with an empty kb takes shipped kinds on a dive, and defines its own
 	assert.match(note.stderr, /kind note is the bridge's own/);
 	assert.match(note.stderr, new RegExp(`crud ${repo}:kind --name note`));
 	assert.equal(git(["rev-list", "--count", "HEAD"], worktree), before);
-
-	// Helm offers the repo its own kinds and the kind kind, but no memo or dive; the bridge a dive.
-	const offered = helmCreatableKinds(bridge)
-		.filter((entry) => entry.repoName === repo)
-		.map((entry) => `${entry.name}${entry.shipped ? " (shipped)" : ""}`);
-	assert.deepEqual(offered, ["kind (shipped)", "widget"]);
-	const bridgeOffers = helmCreatableKinds(bridge).filter((entry) => entry.repoName !== repo);
-	assert.ok(bridgeOffers.some((entry) => entry.name === "note"));
-	assert.ok(bridgeOffers.every((entry) => !entry.shipped));
-	assert.ok(
-		bridgeOffers.some((entry) => entry.name === "dive"),
-		"a dive is planned on the bridge",
-	);
 });
 
 test("a repo's own kind wins over a shipped kind of the same name inside it", () => {
@@ -142,11 +127,6 @@ test("a repo's own kind wins over a shipped kind of the same name inside it", ()
 
 	// The bridge keeps its shipped memo.
 	assertOk(run(["crud", "own:memo", "Unowned"], bridge), "the bridge's memo failed");
-	const offered = helmCreatableKinds(bridge).filter((entry) => entry.repoName === repo);
-	assert.deepEqual(
-		offered.map((entry) => `${entry.name}${entry.shipped ? " (shipped)" : ""}`),
-		["kind (shipped)", "memo"],
-	);
 });
 
 test("a memo already in a repo is reported, not validated, and the package's memo kind is read-only", () => {

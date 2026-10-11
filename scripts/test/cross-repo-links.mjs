@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -9,7 +9,6 @@ import {
 	gitCommit,
 	implRepo,
 	KB_FEAT_ID,
-	libUrl,
 	onLandedKbDive,
 	recordedDiveId,
 	run,
@@ -19,7 +18,6 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmDoc, helmFeats, helmPicker, helmPickerLoad } = await import(libUrl);
 const tmp = createTmp("cross-repo-links");
 const B_REPO = "01a0ff4a-e058-7744-b150-cdc7928f345d";
 const C_REPO = "01a0ff4a-e059-7323-a55b-3a5064d11e8e";
@@ -113,7 +111,7 @@ function linkBFeat(bridge, alsoFrom = []) {
 	});
 }
 
-test("a bridge feat links a feat in another repo, read from the managed cache and then the checkout", () => {
+test("a bridge feat links a feat in another repo, which reads from the managed cache", () => {
 	const { bridge, b, featPath } = world("link");
 	linkBFeat(bridge);
 	assert.match(
@@ -121,40 +119,7 @@ test("a bridge feat links a feat in another repo, read from the managed cache an
 		new RegExp(`- ${B_FEAT_LINK}:\n {6}rel: child.feat`),
 	);
 	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "B is not hydrated");
-
-	// Helm's picker lists B's feat unread, under the feat; Load reads it.
-	const { rows } = helmPicker(bridge);
-	const unread = rows.find((row) => row.ref === B_FEAT_LINK);
-	assert.ok(rows.some((row) => row.id === FEAT));
-	assert.equal(unread.load, true);
-	const [loaded] = helmPickerLoad(bridge, unread.chain).rows;
-	assert.deepEqual(
-		{ ref: loaded.ref, gist: loaded.gist, load: loaded.load },
-		{ ref: B_FEAT_LINK, gist: "Work in B", load: undefined },
-	);
-	const cached = helmDoc(bridge, FEAT).links.find((link) => link.id === B_FEAT);
-	assert.deepEqual(
-		{ type: cached.type, repo: cached.repo, rel: cached.rel, gist: cached.gist },
-		{ type: "doc", repo: B_REPO, rel: "child.feat", gist: "Work in B" },
-	);
-	const opened = helmDoc(bridge, B_FEAT, B_REPO);
-	assert.equal(opened.ref, B_FEAT_LINK);
-	// Picked, the feat's tree row for B's feat is named the way crud names it.
-	const [bFeat] = helmFeats(bridge, FEAT);
-	assert.deepEqual(
-		{ id: bFeat.id, repo: bFeat.repo, ref: bFeat.ref, hasFeats: bFeat.hasFeats },
-		{ id: B_FEAT, repo: B_REPO, ref: B_FEAT_LINK, hasFeats: false },
-	);
-	assert.match(opened.html, /Work in B/);
-
-	assertOk(run(["hydrate-repo.workspace", B_REPO], bridge), "hydrating B failed");
-	const checkoutFeat = join(bridge, "workspace", b.name, "kb", `${B_FEAT}.md`);
-	writeFileSync(
-		checkoutFeat,
-		readFileSync(checkoutFeat, "utf8").replace('gist: "Work in B"', 'gist: "Edited in B"'),
-	);
-	const hydrated = helmDoc(bridge, FEAT).links.find((link) => link.id === B_FEAT);
-	assert.equal(hydrated.gist, "Edited in B", "read from the checkout once hydrated");
+	assert.match(run(["crud", B_FEAT_LINK], bridge).stdout, /^gist: "Work in B"$/m);
 });
 
 test("crud refuses a link into a repo the doc does not scope, and one to a missing file", () => {
@@ -234,17 +199,6 @@ test("a dive on a feat in another repo records it qualified, inherits its scopes
 const GONE_REPO = "01a1198f-f7bc-764d-ad46-3a80781b4770";
 const cachePath = (bridge, repo) => join(bridge, ".nosedive", "cache", repo);
 
-/** Publishes `text` as B's feat on `branch` of both B remotes, leaving B's source on main. */
-function publishBranch(b, branch, text) {
-	runTool("git", ["checkout", "-B", branch, "main"], b.source);
-	write(join(b.source, "kb", `${B_FEAT}.md`), text);
-	runTool("git", ["add", "kb"], b.source);
-	gitCommit(b.source, branch);
-	runTool("git", ["push", "-f", "cloud", branch], b.source);
-	runTool("git", ["push", "-f", "local", branch], b.source);
-	runTool("git", ["checkout", "main"], b.source);
-}
-
 test("crud prints a doc from a repo nobody hydrated, out of its managed cache", () => {
 	const { bridge, b } = world("read");
 	const published = readFileSync(join(b.source, "kb", `${B_FEAT}.md`), "utf8");
@@ -293,22 +247,4 @@ test("crud fails a read with one line for a missing doc, no frontmatter or an un
 	const old = new Date(Date.now() - 3_600_000);
 	utimesSync(join(cachePath(bridge, B_REPO), "FETCH_HEAD"), old, old);
 	refuses(B_FEAT_LINK, /failed to fetch managed cache for repo/);
-});
-
-test("helm resolves a link into a repo never cached, at the asking doc's work branch", () => {
-	const { bridge, b } = world("branch");
-	linkBFeat(bridge, [WIDE]);
-	publishBranch(b, "work/f", doc("feat", B_FEAT, "b-work", "On work/f in B"));
-	rmSync(cachePath(bridge, B_REPO), { recursive: true, force: true });
-
-	// FEAT scopes B on work/f, which origin has; WIDE scopes it on work/w, which it has not.
-	const linked = (from) => helmDoc(bridge, from).links.find((link) => link.id === B_FEAT);
-	assert.deepEqual(
-		{ type: linked(FEAT).type, name: linked(FEAT).name, title: linked(FEAT).title },
-		{ type: "doc", name: "b-work", title: "On work/f in B" },
-	);
-	assert.equal(linked(WIDE).title, "Work in B", "trunk when origin lacks the scope's branch");
-	assert.ok(!existsSync(join(bridge, "workspace", b.name)), "nothing is hydrated");
-	// With no asking doc, crud reads trunk.
-	assert.match(run(["crud", B_FEAT_LINK], bridge).stdout, /# Work in B/);
 });

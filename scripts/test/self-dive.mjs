@@ -8,7 +8,6 @@ import {
 	createTmp,
 	gitCommit,
 	implRepo,
-	libUrl,
 	pitchFeat,
 	run,
 	runTool,
@@ -16,7 +15,6 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmCreatableKinds, helmKindCounts, helmKindDocs, helmPicker } = await import(libUrl);
 const tmp = createTmp("self-dive");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
 
@@ -46,23 +44,10 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	assertOk(run(["jump", divePath], bridge), "jump failed");
 	const self = join(bridge, "workspace", "__self");
 
-	// The dive bar offers what the dive can make: the bridge's kinds, a dive among them.
-	assert.deepEqual(
-		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:dive", "self:kind", "self:memo", "self:repo"],
-	);
-	assert.ok(helmCreatableKinds(bridge)[1].schema, "each kind carries its schema for the form");
-
 	const made = run(["crud", "memo", "--name", "Magic Cards", "Cards", "I", "own"], bridge);
 	assertOk(made, "crud memo failed");
 	const memoId = /Minted \S*?([0-9a-f-]{36})\.md/.exec(made.stdout)?.[1];
-	const bridgeId = /^bridge: (\S+)$/m.exec(liveConfig)[1];
-	const memoDocs = helmKindDocs(bridge, bridgeId, "memo");
-	assert.ok(
-		memoDocs.some((doc) => doc.id === memoId),
-		"the kind list reads __self",
-	);
-	assert.equal(helmKindCounts(bridge, [bridgeId])[bridgeId].memo, memoDocs.length);
+	assert.ok(existsSync(join(self, "kb", `${memoId}.md`)), "minted in __self");
 	assert.equal(
 		git(["log", "-1", "--format=%s"], self),
 		`crud(${memoId}): created memo magic-cards`,
@@ -72,13 +57,6 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	writeFileSync(selfConfig, `${readFileSync(selfConfig, "utf8")}picker-level: 1\n`);
 	runTool("git", ["add", ".nosedive/config.yaml"], self);
 	gitCommit(self, "a picker");
-
-	// Helm shows the bridge as the dive has it; the retired key changes nothing.
-	const view = helmPicker(bridge);
-	assert.deepEqual(view.defaultChain, [KB_FEAT]);
-	const backlog = /^backlog: (\S+)$/m.exec(liveConfig)[1];
-	assert.equal(view.backlog.id, backlog);
-	assert.equal(view.locked.ref, KB_FEAT, "on a dive the deck locks to its feat");
 
 	// A dive planned on the dive -- on the very feat being dived, which jump has
 	// just edited in the live bridge -- is written and committed in __self too,
@@ -129,18 +107,6 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 	assert.match(readFileSync(join(bridge, "kb", `${memoId}.md`), "utf8"), /^name: magic-cards$/m);
 	assert.match(readFileSync(join(bridge, "kb", `${plannedId}.md`), "utf8"), /^# Next$/m);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
-
-	assert.deepEqual(
-		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:dive", "self:kind", "self:memo", "self:repo"],
-		"with no dive helm offers every creatable kind",
-	);
-
-	// With no dive the deck is unlocked, the kb feat among the rows and the default.
-	const picked = helmPicker(bridge);
-	assert.equal(picked.locked, undefined);
-	assert.ok(picked.rows.some((row) => row.id === KB_FEAT));
-	assert.deepEqual(picked.defaultChain, [KB_FEAT]);
 });
 
 test("the bridge's own scope lands alongside commits the live bridge holds, and a conflict writes nothing", () => {
@@ -330,20 +296,4 @@ test("a second dive on the bridge lands only its own work, after the first lande
 	assert.equal(published.match(/created memo first/g)?.length, 1, "the first memo lands once");
 	assert.equal(published.match(/created memo second/g)?.length, 1);
 	assert.equal(git(["status", "--porcelain", "--", ".nosedive", "kb"], bridge), "");
-});
-
-test("helm counts an effort doc as the feat it is read as, so the kind's list holds it", () => {
-	const { bridge } = seededBridge(tmp, "effort", "pilot@nosedive.invalid");
-	const bridgeId = /^bridge: (\S+)$/m.exec(
-		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
-	)[1];
-	const id = "01a1224b-36d8-7bdf-a735-3a5593eb7124";
-	writeFileSync(
-		join(bridge, "kb", `${id}.md`),
-		`---\nkind: effort\nid: ${id}\nname: old-effort\ngist: "Spelled the old way"\n---\n\n# Old effort\n`,
-	);
-	const counts = helmKindCounts(bridge, [bridgeId])[bridgeId];
-	assert.equal(counts.effort, undefined);
-	assert.equal(counts.feat, helmKindDocs(bridge, bridgeId, "feat").length);
-	assert.ok(helmKindDocs(bridge, bridgeId, "feat").some((doc) => doc.id === id));
 });

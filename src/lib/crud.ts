@@ -90,6 +90,19 @@ function withRemoteIds(meta: Record<string, unknown>, id: string): Record<string
 	return { ...meta, remotes };
 }
 
+export function mintName(kind: KindDoc, name: string): string {
+	const given = name;
+	name = given
+		.split(".")
+		.map((part) => slugFromGist(part, 60) ?? "")
+		.join(".");
+	if (!NAME.test(name))
+		throw new Error(`--name has nothing to slug between its dots: ${JSON.stringify(given)}`);
+	const holder = docsOfKind(kind).find((doc) => doc.name === name);
+	if (holder) throw new Error(`${kind.name} name ${name} is taken by ${holder.id}`);
+	return name;
+}
+
 export function mintDoc(
 	kind: KindDoc,
 	gist: string,
@@ -98,17 +111,7 @@ export function mintDoc(
 	meta: Record<string, unknown> = {},
 ): string {
 	gistSlug(gist); // refuses a gist with nothing in it
-	if (name !== undefined) {
-		const given = name;
-		name = given
-			.split(".")
-			.map((part) => slugFromGist(part, 60) ?? "")
-			.join(".");
-		if (!NAME.test(name))
-			throw new Error(`--name has nothing to slug between its dots: ${JSON.stringify(given)}`);
-		const holder = docsOfKind(kind).find((doc) => doc.name === name);
-		if (holder) throw new Error(`${kind.name} name ${name} is taken by ${holder.id}`);
-	}
+	if (name !== undefined) name = mintName(kind, name);
 	const errors = validateMeta(kind, meta);
 	if (errors.length > 0)
 		throw new Error(

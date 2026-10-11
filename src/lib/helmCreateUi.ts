@@ -6,7 +6,7 @@
 export const helmCreateScript = String.raw`
 // --- create -----------------------------------------------------------------
 
-/** The kinds the active dive can make, by repo then name; with no dive, a dive alone. */
+/** The kinds the active dive can make, by repo then name; with no dive, a create jumps the deck first. */
 let creatable = [];
 /** The kind last picked, by repo and id, so redrawing the bar keeps it. */
 let pickedKind = null;
@@ -27,12 +27,7 @@ function createControl() {
 	const kept = creatable.findIndex((kind) => pickedKind && kind.id === pickedKind.id && kind.repoId === pickedKind.repoId);
 	if (kept !== -1) picker.value = String(kept);
 	picker.addEventListener("change", () => { pickedKind = creatable[Number(picker.value)]; });
-	const add = () => {
-		const kind = creatable[Number(picker.value)];
-		if (kind.name !== "dive") return createDialog(kind);
-		if (!ctx.root) return showError(new Error("Pick a deck feat to plan a dive on."));
-		planDialog(ctx.root);
-	};
+	const add = () => createDialog(creatable[Number(picker.value)]);
 	return [picker, el("button", { class: "act jump", onclick: add }, "Add")];
 }
 
@@ -56,8 +51,9 @@ function newMeta(inputs, required) {
  * property no simple field can hold is left to crud <quid> --meta -. A
  * refusal keeps every field; a create offers to open the new doc.
  */
-function createDialog(kind) {
-	const schema = kind.schema || {};
+function createDialog(kind, feat = ctx.root) {
+	const isDive = kind.name === "dive";
+	const schema = isDive ? {} : kind.schema || {};
 	const properties = schema.properties || {};
 	const required = schema.required || [];
 	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
@@ -76,23 +72,25 @@ function createDialog(kind) {
 	const form = el("form", {},
 		el("h3", {}, "New " + kind.name + " in " + kind.repoName),
 		el("p", { class: "detail" }, kind.gist),
+		isDive && !feat ? el("p", { class: "empty" }, "Pick a deck feat to plan a dive on.") : null,
 		gist, name,
 		rows.length ? el("fieldset", { class: "meta" }, el("legend", {}, "meta"), rows) : null,
 		out, actions);
 	const dialog = el("dialog", { class: "modal wide" }, form);
+	if (isDive && !feat) create.disabled = true;
 	dialog.addEventListener("close", () => dialog.remove());
 	form.addEventListener("submit", async (event) => {
 		event.preventDefault();
 		create.disabled = true;
 		try {
 			const meta = newMeta(inputs, required);
-			const run = await writeOnDive("/api/crud/mint", {
-				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
-				meta: Object.keys(meta).length ? meta : undefined,
-			}, out);
+			const run = await writeOnDive(isDive ? "/api/crud/dive" : "/api/crud/mint", isDive
+				? { feat, gist: gist.value, name: name.value || undefined }
+				: { repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
+					meta: Object.keys(meta).length ? meta : undefined }, out);
 			out.textContent = run.stdout;
 			out.classList.remove("failed");
-			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
+			const id = /(?:Minted|Recorded) \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
 			refreshSections();
 			// A new kind can be made at once; the dropdown and its schemas are read again.
 			await loadCreatable();

@@ -184,6 +184,7 @@ export async function helmWrite(
 	}
 	if (path === "/api/crud/dive") {
 		const title = text(body, "title", false);
+		const name = text(body, "name", false);
 		return succeeded(
 			await runCrud(
 				cwd,
@@ -192,9 +193,10 @@ export async function helmWrite(
 					"--feat",
 					text(body, "feat")!,
 					...(title ? ["--title", title] : []),
+					...(name ? ["--name", name] : []),
 					text(body, "gist")!,
 				],
-				text(body, "brief")!,
+				text(body, "brief", false) || "",
 			),
 		);
 	}

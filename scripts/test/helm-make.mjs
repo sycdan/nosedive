@@ -36,7 +36,7 @@ function startHelm(cwd) {
 	};
 }
 
-test("with no dive, helm offers a dive alone, planned on a dive of the deck; a repo mints there", async (t) => {
+test("with no dive, helm offers every kind, planned on a dive of the deck; a repo mints there", async (t) => {
 	const { bridge } = seededBridge(tmp, "make", "pilot@nosedive.invalid");
 	const bridgeId = /^bridge: (\S+)$/m.exec(
 		readFileSync(join(bridge, ".nosedive", "config.yaml"), "utf8"),
@@ -58,8 +58,8 @@ test("with no dive, helm offers a dive alone, planned on a dive of the deck; a r
 
 	assert.deepEqual(
 		(await get("/api/creatable")).map((kind) => kind.name),
-		["dive"],
-		"with no dive, a dive is all Add makes",
+		["dive", "kind", "memo", "repo"],
+		"with no dive, Add offers every creatable kind",
 	);
 
 	// crud writes only on a dive, so with none Add jumps the deck's feat, then
@@ -87,12 +87,22 @@ test("with no dive, helm offers a dive alone, planned on a dive of the deck; a r
 	assert.ok(dive, jumped.text);
 	const recorded = await post("/api/crud/dive", {
 		feat: KB_FEAT,
-		title: "Add repo cards",
+		name: "Add repo cards",
 		gist: "Adds the repo cards",
-		brief: "Made in helm on a dive.",
 	});
 	assert.equal(recorded.status, 200, recorded.text);
 	assert.match(recorded.body.stdout, /Recorded workspace[\\/]__self[\\/]kb[\\/]/);
+	const plannedId = /([0-9a-f-]{36})\.md/.exec(recorded.body.stdout)[1];
+	const plannedDoc = readFileSync(
+		join(bridge, "workspace", "__self", "kb", `${plannedId}.md`),
+		"utf8",
+	);
+	assert.match(plannedDoc, /^name: add-repo-cards$/m);
+	assert.doesNotMatch(plannedDoc, /^## Brief$/m);
+	assert.ok(
+		!existsSync(join(bridge, "kb", `${plannedId}.md`)),
+		"planned dive is not on the live bridge",
+	);
 
 	const offered = await get("/api/creatable");
 	assert.deepEqual(

@@ -96,13 +96,14 @@ function renderNewDive(
 	options: RecordDiveOptions,
 	scopes: ScopeRef[],
 	brief: string | undefined,
+	name?: string,
 ): string {
 	const gist = options.gist?.trim() || `Working on ${featTitle(feat)}.`;
 	const lines = [
 		"---",
 		"kind: dive",
 		`id: ${id}`,
-		`name: ${managedName(feat, id)}`,
+		`name: ${name ?? managedName(feat, id)}`,
 		`gist: ${quoteYamlString(gist)}`,
 		...renderScopes(scopes),
 		"meta:",
@@ -224,6 +225,8 @@ export interface DiveTarget {
 
 /** What an in-process caller hands `recordDive` beyond the CLI's own arguments. */
 export interface RecordDiveExtras {
+	/** Optional crud name, already normalized and checked for uniqueness. */
+	name?: string;
 	/**
 	 * For the caller that already holds the text -- `test` minting a dive for a
 	 * failed gate. Every other caller is the CLI, where the brief arrives on
@@ -338,6 +341,7 @@ export function recordDive(args: string[], io: CommandIo, extras: RecordDiveExtr
 				{ ...options, diver: target ? pilotEmail : options.diver },
 				scopes,
 				brief,
+				extras.name,
 			),
 		);
 		reconcileDiveFeatLinks(undefined, feat, id, "planned.dive");

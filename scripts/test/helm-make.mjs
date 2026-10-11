@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { Script } from "node:vm";
 
-import { cli, cliEnv, createTmp, seededBridge } from "../test-helpers.mjs";
+import { cli, cliEnv, createTmp, root, seededBridge } from "../test-helpers.mjs";
 
 const tmp = createTmp("helm-make");
 const KB_FEAT = "00000000-0000-7003-a10b-25d64dd1d5ba";
@@ -69,6 +70,17 @@ test("with no dive, helm offers a dive alone, planned on a dive of the deck; a r
 		brief: "Made in helm with no dive.",
 	});
 	assert.equal(unplanned.status, 400, "crud refuses a dive planned on no dive");
+	const context = await get(`/api/context?root=${KB_FEAT}`);
+	assert.ok(context.repos.find((repo) => repo.id === bridgeId)?.inScope);
+	assert.equal(context.repos.find((repo) => repo.id === bridgeId)?.inCrudContext, false);
+	for (const [path, body] of [
+		["/api/crud/mint", { repo: bridgeId, kind: "memo", gist: "No dive" }],
+		["/api/crud/meta", { repo: bridgeId, id: bridgeId, patch: { merge: "fast-forward" } }],
+		["/api/crud/title", { repo: bridgeId, id: bridgeId, title: "No dive" }],
+	]) {
+		const refused = await post(path, body);
+		assert.equal(refused.status, 409, `${path} refuses before the client jumps`);
+	}
 	const jumped = await post("/api/run", { verb: "jump", ref: KB_FEAT });
 	assert.match(jumped.text, /\[exit 0\]\s*$/, jumped.text);
 	const dive = /jump: recorded \S*?([0-9a-f-]{36})\.md/.exec(jumped.text)?.[1];
@@ -134,4 +146,74 @@ test("with no dive, helm offers a dive alone, planned on a dive of the deck; a r
 		patch: { merge: "fast-forward" },
 	});
 	assert.equal(own.status, 200, own.text);
+});
+
+// Exercise the shipped client helper: a refused jump never calls a write, and
+// a successful streamed jump refreshes dive state before the original payload.
+test("content writes stream a deck jump before writing and stop on refusal", async () => {
+	const source = readFileSync(join(root, "src/lib/helmEdit.ts"), "utf8");
+	const helper = source.slice(
+		source.indexOf("let diveWrites = 0;"),
+		source.indexOf("async function write(path, body)"),
+	);
+	for (const exit of [1, 0]) {
+		const calls = [];
+		const classes = new Set();
+		const out = {
+			hidden: true,
+			textContent: "",
+			classList: { add: (v) => classes.add(v), remove: (v) => classes.delete(v) },
+		};
+		const payload = { repo: "repo", kind: "memo", gist: "Kept input" };
+		const context = {
+			TextDecoder,
+			out,
+			payload,
+			dives: { active: null },
+			ctx: { root: "deck-ref" },
+			token: "token",
+			fetch: async (path, init) => {
+				calls.push([path, JSON.parse(init.body)]);
+				const chunks = ["jumping deck\n", `[exit ${exit}]\n`];
+				let index = 0;
+				return {
+					ok: true,
+					body: {
+						getReader: () => ({
+							read: async () =>
+								index < chunks.length
+									? { value: new TextEncoder().encode(chunks[index++]), done: false }
+									: { done: true },
+						}),
+					},
+				};
+			},
+			loadDives: async () => {
+				calls.push("dives");
+				context.dives.active = { id: "new-dive" };
+			},
+			loadRoots: async () => calls.push("roots"),
+			refreshSections: () => calls.push("sections"),
+			write: async (path, body) => {
+				assert.ok(context.dives.active);
+				assert.equal(body, payload);
+				calls.push([path, body]);
+				return { stdout: "minted" };
+			},
+		};
+		const result = new Script(
+			helper + '\nwriteOnDive("/api/crud/mint", payload, out)',
+		).runInNewContext(context);
+		if (exit) {
+			await assert.rejects(result, /jumping deck\n\[exit 1\]/);
+			assert.equal(calls.length, 1);
+		} else {
+			assert.equal((await result).stdout, "minted");
+			assert.deepEqual(calls.slice(1, 4), ["dives", "roots", "sections"]);
+			assert.equal(calls[4][0], "/api/crud/mint");
+		}
+		assert.deepEqual(calls[0], ["/api/run", { verb: "jump", ref: "deck-ref" }]);
+		assert.equal(out.hidden, false);
+		assert.equal(classes.has("streaming"), false);
+	}
 });

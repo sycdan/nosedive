@@ -86,10 +86,10 @@ function createDialog(kind) {
 		create.disabled = true;
 		try {
 			const meta = newMeta(inputs, required);
-			const run = await write("/api/crud/mint", {
+			const run = await writeOnDive("/api/crud/mint", {
 				repo: kind.repoId, kind: kind.name, gist: gist.value, name: name.value || undefined,
 				meta: Object.keys(meta).length ? meta : undefined,
-			});
+			}, out);
 			out.textContent = run.stdout;
 			out.classList.remove("failed");
 			const id = /Minted \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);

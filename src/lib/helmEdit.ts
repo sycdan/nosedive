@@ -9,6 +9,49 @@ export const helmEditScript = String.raw`
 
 const KB_FEAT = "${KB_FEAT_ID}";
 
+let diveWrites = 0;
+
+/** A content form jumps the deck first, streaming output while retaining its fields. */
+async function writeOnDive(path, body, out) {
+	diveWrites++;
+	try {
+		if (!dives.active) {
+			if (!ctx.root) throw new Error("Pick a deck feat before writing.");
+			out.hidden = false;
+			out.textContent = "";
+			out.classList.add("streaming");
+			out.classList.remove("failed");
+			const res = await fetch("/api/run", {
+				method: "POST",
+				headers: { "x-helm-token": token, "content-type": "application/json" },
+				body: JSON.stringify({ verb: "jump", ref: ctx.root }),
+			});
+			if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			for (;;) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				out.textContent += decoder.decode(value, { stream: true });
+				out.scrollTop = out.scrollHeight;
+			}
+			out.textContent += decoder.decode();
+			if (!/\[exit 0\]\s*$/.test(out.textContent)) throw new Error(out.textContent);
+			await loadDives();
+			await loadRoots();
+			refreshSections();
+		}
+		return await write(path, body);
+	} finally {
+		out.classList.remove("streaming");
+		diveWrites--;
+	}
+}
+
+function repoWritable(repo) {
+	return !!repo && (dives.active ? repo.inCrudContext : repo.inScope);
+}
+
 async function write(path, body) {
 	const res = await fetch(path, {
 		method: "POST",
@@ -105,15 +148,19 @@ function metaForm(doc, repoId, schema, reach, rerender) {
 	const form = el("form", { class: "meta", title: reach ? null : OUT_OF_REACH },
 		el("fieldset", { disabled: reach ? null : "" }, el("legend", {}, "meta"), rows,
 			el("button", { type: "submit" }, "Save meta")));
+	const out = outputBox("");
+	form.append(out);
 	onSubmit(form, async () => {
 		const patch = patchFrom(inputs, meta);
 		if (!Object.keys(patch).length) return rerender(outputBox("Nothing changed."));
 		try {
-			const run = await write("/api/crud/meta", { id: doc.id, repo: repoId, patch });
+			const run = await writeOnDive("/api/crud/meta", { id: doc.id, repo: repoId, patch }, out);
 			refreshSections();
 			rerender(outputBox(run.stdout));
 		} catch (err) {
-			rerender(outputBox(String(err.message || err), true));
+			out.textContent = String(err.message || err);
+			out.hidden = false;
+			out.classList.add("failed");
 		}
 	});
 	return form;
@@ -125,9 +172,11 @@ function titleForm(doc, repo, reach, rerender) {
 	const form = el("form", { class: "meta", title: reach ? null : OUT_OF_REACH },
 		el("fieldset", { disabled: reach ? null : "" }, el("legend", {}, "Title"), input,
 			el("button", { type: "submit" }, "Save title")));
+	const out = outputBox("");
+	form.append(out);
 	onSubmit(form, async () => {
-		try { const run = await write("/api/crud/title", { id: doc.id, repo, title: input.value }); rerender(outputBox(run.stdout)); }
-		catch (err) { rerender(outputBox(String(err.message || err), true)); }
+		try { const run = await writeOnDive("/api/crud/title", { id: doc.id, repo, title: input.value }, out); rerender(outputBox(run.stdout)); }
+		catch (err) { out.textContent = String(err.message || err); out.hidden = false; out.classList.add("failed"); }
 	});
 	return form;
 }

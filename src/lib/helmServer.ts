@@ -24,7 +24,7 @@ import { helmDives } from "./helmDives.js";
 import { pruneHelmLogs } from "./helmLog.js";
 import { helmState } from "./helmState.js";
 import { streamVerb } from "./helmRun.js";
-import { helmBranches, helmMerge } from "./helmBranches.js";
+import { helmBranches, helmDeleteBranch, helmMerge } from "./helmBranches.js";
 import { helmPull, helmPush, helmSquash, helmUnpushed } from "./helmSync.js";
 import { helmWrite, HelmRequestError, readJsonBody } from "./helmWrites.js";
 import { writeFileAtomic } from "./renderPlan.js";
@@ -227,6 +227,10 @@ export async function startHelmServer(cwd: string): Promise<HelmServer> {
 			if (req.method === "POST" && url.pathname === "/api/branches/merge") {
 				const body = await readJsonBody(req);
 				return sendJson(res, helmMerge(cwd, String(body.branch ?? "")));
+			}
+			if (req.method === "POST" && url.pathname === "/api/branches/delete") {
+				const body = await readJsonBody(req);
+				return sendJson(res, helmDeleteBranch(cwd, String(body.branch ?? "")));
 			}
 			if (req.method === "GET" && url.pathname === "/api/branches")
 				return sendJson(res, helmBranches(cwd));

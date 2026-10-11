@@ -128,12 +128,14 @@ function scopeList(dive) {
  * one is asked for -- so a stray Enter or a double-click backs out; Esc or a
  * click outside closes it too.
  */
-function confirmDialog({ verb, cls, target, detail, reason, act }) {
-	const why = reason ? el("input", { type: "text", placeholder: reason, "aria-label": "reason" }) : null;
+function confirmDialog({ verb, cls, target, detail, reason, requiredText, act }) {
+	const why = reason || requiredText ? el("input", { type: "text", placeholder: requiredText ? "Type " + requiredText + " to confirm" : reason, "aria-label": requiredText ? "branch name" : "reason" }) : null;
+	const confirm = el("button", { type: "submit", class: "act " + cls, disabled: requiredText ? "" : null }, "Confirm " + verb.toLowerCase());
+	if (requiredText) why.addEventListener("input", () => { confirm.disabled = why.value !== requiredText; });
 	const cancel = el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Cancel");
 	const form = el("form", {}, el("h3", {}, verb + " " + target + "?"), el("p", { class: "detail" }, detail), why,
 		el("div", { class: "modalacts" }, cancel,
-			el("button", { type: "submit", class: "act " + cls }, "Confirm " + verb.toLowerCase())));
+			confirm));
 	const dialog = el("dialog", { class: "modal" }, form);
 	dialog.addEventListener("close", () => dialog.remove());
 	dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
@@ -141,6 +143,7 @@ function confirmDialog({ verb, cls, target, detail, reason, act }) {
 		event.preventDefault();
 		const given = why ? why.value.trim() : "";
 		if (why && !given) return why.focus();
+		if (requiredText && why.value !== requiredText) return why.focus();
 		dialog.close();
 		act(given);
 	});

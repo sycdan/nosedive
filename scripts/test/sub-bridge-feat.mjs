@@ -8,7 +8,6 @@ import {
 	createTmp,
 	gitCommit,
 	implRepo,
-	libUrl,
 	recordedDiveId,
 	run,
 	runTool,
@@ -17,7 +16,6 @@ import {
 	writeImplRepoDoc,
 } from "../test-helpers.mjs";
 
-const { helmRepoList } = await import(libUrl);
 const tmp = createTmp("sub-bridge-feat");
 const SUB_REPO = "01a11c8e-6b0c-7ac5-9b12-3c686e6ff187";
 const PROPS = "01a11c8e-6b0d-7deb-85d4-b3a4703e4f4e";
@@ -87,11 +85,6 @@ function world(name, { propsBranch = BRANCH, subBranch, subConfig } = {}) {
 
 test("a dive on a feat two links into a sub-bridge scopes it and commits its bookkeeping there", () => {
 	const { bridge, bridgeId, sub, checkout, water } = world("walk");
-	assert.ok(
-		helmRepoList(bridge, WATER_REF).some((repo) => repo.id === SUB_REPO),
-		"helm lists the feat's repo in scope",
-	);
-
 	const recorded = run(
 		["record.dive", "--feat", WATER_REF, "--gist", "Water details", "--brief", "-"],
 		bridge,

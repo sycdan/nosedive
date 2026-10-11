@@ -47,7 +47,7 @@ export function assertBridgeInStep(bridgeDir: string): string | undefined {
 	if (ancestor("HEAD", "@{upstream}") || ancestor("@{upstream}", "HEAD")) return upstream;
 	const branch = gitOutput(bridgeDir, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? "HEAD";
 	throw new Error(
-		`bridge ${branch} has diverged from ${upstream}; push it (helm's Push) or pull first, then retry`,
+		`bridge ${branch} has diverged from ${upstream}; push it or pull first, then retry`,
 	);
 }
 

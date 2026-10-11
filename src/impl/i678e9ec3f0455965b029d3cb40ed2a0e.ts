@@ -12,6 +12,7 @@ import {
 	findDocByQuid,
 	matchDocs,
 	mintDoc,
+	mintName,
 	updateTitle,
 	updateBlock,
 	type Block,
@@ -257,16 +258,16 @@ function crud(args: string[], io: CommandIo): void {
 		throw new Error("--meta reads a YAML or JSON mapping from stdin");
 	if (kind.id === DIVE_KIND_ID) {
 		if (block) throw new Error("a dive's meta is nosedive's: crud dive takes no --meta");
-		if (name !== undefined) throw new Error("a dive's name is managed: crud dive takes no --name");
+
 		if (!feat)
-			throw new Error(
-				"crud dive needs --feat: echo <brief> | nosedive crud dive --feat <feat> <gist...>",
-			);
+			throw new Error("crud dive needs --feat: nosedive crud dive --feat <feat> <gist...>");
 		refuseWithoutDive("plan a dive");
-		const brief = readStdinText("crud dive reads its brief on stdin");
-		if (!brief.trim()) throw new Error("crud dive requires a nonempty brief on stdin");
+		const brief = process.stdin.isTTY
+			? undefined
+			: readStdinText("crud dive optionally reads its brief on stdin");
 		recordDive(["--feat", feat, "--gist", gist, ...(title ? ["--title", title] : [])], io, {
 			brief,
+			name: name === undefined ? undefined : mintName(kind, name),
 			target: { root: kind.source.root, kbDir: kind.source.kbDir },
 		});
 		return;

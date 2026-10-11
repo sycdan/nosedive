@@ -132,8 +132,8 @@ test("a memo made on a dive that scopes the bridge goes to its __self checkout, 
 
 	assert.deepEqual(
 		helmCreatableKinds(bridge).map((kind) => `${kind.repoName}:${kind.name}`),
-		["self:dive"],
-		"with no dive helm offers a dive alone",
+		["self:dive", "self:kind", "self:memo", "self:repo"],
+		"with no dive helm offers every creatable kind",
 	);
 
 	// With no dive the deck is unlocked, the kb feat among the rows and the default.

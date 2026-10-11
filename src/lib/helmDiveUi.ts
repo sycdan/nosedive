@@ -215,69 +215,10 @@ function featActions(doc, step) {
 }
 
 function planForm(doc) {
-	const title = el("input", { type: "text", placeholder: "Title" });
-	const gist = el("input", { type: "text", placeholder: "Gist", required: "" });
-	const brief = el("textarea", { placeholder: "Brief", required: "", rows: "4" });
-	let out = outputBox("");
-	const show = (text, failed) => { const next = outputBox(text, failed); out.replaceWith(next); out = next; };
-	const form = el("form", { class: "newdive" }, el("h3", {}, "Plan a dive"), title, gist, brief,
-		el("button", { type: "submit" }, "Plan dive"), out);
-	onSubmit(form, async () => {
-		try {
-			const run = await write("/api/crud/dive", { feat: doc.ref, title: title.value || undefined, gist: gist.value, brief: brief.value });
-			show(run.stdout);
-			form.reset();
-		} catch (err) {
-			show(String(err.message || err), true);
-		}
-	});
-	return form;
-}
-
-/**
- * Add's form for a dive: planned on the deck's feat through crud dive, which
- * writes only on a dive -- so with none on, the deck's feat is jumped first,
- * and the planned dive is recorded on that one, to land with it.
- */
-function planDialog(feat) {
-	const title = el("input", { type: "text", placeholder: "Title", "aria-label": "title" });
-	const gist = el("input", { type: "text", placeholder: "Gist", required: "", "aria-label": "gist" });
-	const brief = el("textarea", { placeholder: "Brief", required: "", rows: "6", "aria-label": "brief" });
-	const out = el("pre", { class: "output failed", hidden: "" });
-	const plan = el("button", { type: "submit", class: "act jump" }, "Plan dive");
-	const form = el("form", {}, el("h3", {}, "Plan a dive on " + (rootNames.get(feat) || feat)), title, gist, brief, out,
-		el("div", { class: "modalacts" },
-			el("button", { type: "button", class: "act unstage", onclick: () => dialog.close() }, "Close"), plan));
-	const dialog = el("dialog", { class: "modal wide" }, form);
-	dialog.addEventListener("close", () => dialog.remove());
-	form.addEventListener("submit", async (event) => {
-		event.preventDefault();
-		plan.disabled = true;
-		try {
-			if (!dives.active) {
-				const res = await fetch("/api/run", {
-					method: "POST",
-					headers: { "x-helm-token": token, "content-type": "application/json" },
-					body: JSON.stringify({ verb: "jump", ref: feat }),
-				});
-				const jumped = res.ok ? await res.text() : (await res.json()).error;
-				if (!/\[exit 0\]\s*$/.test(jumped)) throw new Error(jumped);
-				await loadDives();
-			}
-			const run = await write("/api/crud/dive", { feat, title: title.value || undefined, gist: gist.value, brief: brief.value });
-			const id = /Recorded \S*?([0-9a-f-]{36})\.md/.exec(run.stdout);
-			if (!id) throw new Error(run.stdout || "crud dive recorded nothing");
-			dialog.close();
-			select([{ id: id[1], name: title.value || gist.value, kind: "dive" }], null, outputBox(run.stdout));
-		} catch (err) {
-			out.textContent = String(err.message || err);
-			out.hidden = false;
-			plan.disabled = false;
-		}
-	});
-	document.body.append(dialog);
-	dialog.showModal();
-	title.focus();
+	return el("div", { class: "cardacts" }, el("button", { class: "act jump", onclick: () => {
+		const kind = creatable.find((entry) => entry.name === "dive");
+		if (kind) createDialog(kind, doc.ref);
+	} }, "Plan a dive"));
 }
 
 function jumpInto(doc) {

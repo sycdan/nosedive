@@ -1,7 +1,7 @@
 /**
- * The Branch view's Branches section, spliced into the page's script: on
- * trunk, origin's other branches with what each has over the local trunk, and
- * a Merge that fast-forwards the local trunk to one. Nothing is pushed.
+ * The Branch view's Branches section, spliced into the page's script:
+ * origin's other branches with what each has over the local trunk. On trunk,
+ * Merge fast-forwards the local trunk and Delete removes a remote branch.
  */
 export const helmBranchesScript = String.raw`
 // --- branches ---------------------------------------------------------------
@@ -15,10 +15,10 @@ async function drawBranches(root, list) {
 		if (root.isConnected) showError(err);
 		return;
 	}
-	if (!root.isConnected) return;
+	if (!root.isConnected || !list.isConnected) return;
 	const trunk = info.trunk;
 	list.replaceChildren(...(info.branches.length
-		? info.branches.map((b) => branchCard(b, trunk, root, list))
+		? info.branches.map((b) => branchCard(b, trunk, root, list, info.onTrunk))
 		: [el("p", { class: "empty" }, "no remote branches besides " + trunk)]));
 }
 
@@ -31,7 +31,7 @@ function mergeBlocker(b, trunk) {
 	return null;
 }
 
-function branchCard(b, trunk, root, list) {
+function branchCard(b, trunk, root, list, onTrunk) {
 	const why = mergeBlocker(b, trunk);
 	const button = why ? el("p", { class: "blocker" }, why) : el("button", { class: "act land", title: "Fast-forward " + trunk + " to origin/" + b.name,
 		onclick: () => confirmDialog({
@@ -39,6 +39,13 @@ function branchCard(b, trunk, root, list) {
 			detail: "Fast-forwards the local " + trunk + " to origin/" + b.name + ". Nothing is pushed; use Push to publish.",
 			act: () => runMerge(b.name, button, root, list),
 		}) }, "Merge");
+	const remove = el("button", { class: "act bail", onclick: () => confirmDialog({
+		verb: "Delete", cls: "bail", target: b.name + " from origin",
+		detail: "Deletes origin/" + b.name + " and removes its clean helm worktree. Dirty worktrees are kept." +
+			(b.ahead > 0 ? " " + b.ahead + " commit" + (b.ahead === 1 ? "" : "s") + " that " + trunk + " lacks will be lost from origin." : ""),
+		requiredText: b.ahead > 0 ? b.name : null,
+		act: () => runDeleteBranch(b.name, remove, root),
+	}) }, "Delete");
 	const commits = el("ul", { class: "doclist" }, b.commits.length
 		? b.commits.map((c) => el("li", {}, el("code", {}, c.hash), " ", c.subject, " ", el("span", { class: "rel" }, c.author + " · " + ago(c.at))))
 		: [el("li", { class: "rel" }, "no commits")]);
@@ -46,7 +53,18 @@ function branchCard(b, trunk, root, list) {
 		el("div", { class: "name" }, b.name, " ", el("code", {}, b.head)),
 		el("div", { class: "facts" }, el("span", { class: "count", title: "ahead of / behind " + trunk }, "↑" + b.ahead + " ↓" + b.behind + " " + trunk)),
 		commits,
-		el("div", { class: "cardacts" }, button));
+		onTrunk ? el("div", { class: "cardacts" }, button, remove) : null);
+}
+
+async function runDeleteBranch(name, button, root) {
+	button.disabled = true;
+	button.textContent = "Deleting…";
+	let text;
+	let failed = false;
+	try { text = (await write("/api/branches/delete", { branch: name })).output || "branch deleted"; }
+	catch (err) { text = String(err.message || err); failed = true; }
+	syncNotice(failed ? "Delete refused" : "Deleted", text, failed);
+	if (root.isConnected) await drawBranch(root);
 }
 
 async function runMerge(name, button, root, list) {

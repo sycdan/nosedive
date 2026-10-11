@@ -2,8 +2,8 @@
  * The Branch view behind the header's branch pill, spliced into the page's
  * script: Pull rebases the bridge checkout onto its trunk, Push asks first,
  * then fast-forwards trunk or updates the branch, and Squash makes the
- * commits over trunk one. All wait while a dive is active. On trunk, the
- * view also lists origin's branches to merge.
+ * commits over trunk one. All wait while a dive is active. The
+ * view also lists origin's branches; Merge and Delete appear only on trunk.
  */
 export const helmSyncScript = String.raw`
 // --- branch view ------------------------------------------------------------
@@ -65,12 +65,14 @@ async function drawBranch(root) {
 		squash && squash.tagName !== "BUTTON" ? squash : null);
 	const history = syncCard("History", [root.poll], commitList(info.history, "no shared history"));
 	const parts = [el("h3", {}, info.branch), pull, push, history];
-	if (!off) {
-		const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
-		parts.push(syncCard("Branches", [], list));
-		root.replaceChildren(...parts);
-		await drawBranches(root, list);
-	} else root.replaceChildren(...parts);
+	const list = el("div", { class: "branches" }, el("p", { class: "rel" }, "fetching…"));
+	const refresh = el("button", { class: "act unstage", title: "Refresh branches from origin", "aria-label": "Refresh branches", onclick: async () => {
+		refresh.disabled = true;
+		try { await drawBranches(root, list); } finally { refresh.disabled = false; }
+	} }, "↻");
+	parts.push(syncCard("Branches", [refresh], list));
+	root.replaceChildren(...parts);
+	await drawBranches(root, list);
 }
 
 function confirmPush(root) {

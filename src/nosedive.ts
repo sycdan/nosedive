@@ -48,7 +48,7 @@ export { helmCreatableKinds } from "./lib/helmCreate.js";
 export { helmDives } from "./lib/helmDives.js";
 // Exported so a branch worktree and its status are tested below the command.
 export { branchWorktree, helmBranchStatus } from "./lib/helmBranch.js";
-export { helmBranches, helmMerge } from "./lib/helmBranches.js";
+export { helmBranches, helmDeleteBranch, helmMerge } from "./lib/helmBranches.js";
 export { helmPull, helmPush, helmSquash, helmUnpushed } from "./lib/helmSync.js";
 export { assertBridgeInStep } from "./lib/bridgeTrunk.js";
 export { helmLogPath, pruneHelmLogs } from "./lib/helmLog.js";

@@ -158,23 +158,22 @@ async function select(path, row, message) {
 		showError(null);
 		stageOpened(doc);
 		if (last.name !== label(doc)) { last.name = label(doc); crumbs(path); }
-		const titleContext = await api(contextQuery(ctx.root, false));
-		const titleReach = !doc.builtin && (dives.active?.id === doc.id || titleContext.repos.some((repo) => repo.id === (last.repo || bridge.id) && repo.inCrudContext));
+		const titleContext = await api(dives.active ? contextQuery(ctx.root, false) : "/api/context?root=" + ctx.root);
+		const titleReach = !doc.builtin && (dives.active?.id === doc.id || titleContext.repos.some((repo) => repo.id === (last.repo || bridge.id) && repoWritable(repo)));
 		const editTitle = titleForm(doc, last.repo || bridge.id, titleReach, (msg) => select(path, row, msg));
 		const editLog = logForm(doc, (msg) => select(path, row, msg));
 		if (rootIds.has(last.id)) {
-			view.replaceChildren(dives.active ? planForm(doc) : divePicker(), editTitle, ...docBody(doc, false));
+			view.replaceChildren(...[message, dives.active ? planForm(doc) : divePicker(), editTitle].filter(Boolean), ...docBody(doc, false));
 			return;
 		}
 		// Opened from a kind's list, a doc's meta is editable through a form from that kind's schema.
 		let ref = last.kindRef;
-		let reach = ref?.inCrudContext;
+		const reach = !doc.builtin && repoWritable(titleContext.repos.find((repo) => repo.id === (last.repo || bridge.id)));
 		if (!ref && doc.kind !== "dive" && doc.kind !== "kind" && ctx.root) {
-			const context = await api(contextQuery(ctx.root, false));
+			const context = titleContext;
 			const repoId = last.repo || bridge.id;
 			ref = context.kinds.find((kind) => kind.name === doc.kind && kind.repoId === repoId)
 				|| context.kinds.find((kind) => kind.name === doc.kind && kind.repoId === bridge.id);
-			reach = context.repos.find((repo) => repo.id === repoId)?.inCrudContext;
 			if (ref) last.kindRef = ref;
 		}
 		const kindDoc = ref ? await api("/api/doc?id=" + ref.id + "&repo=" + ref.repoId) : null;
@@ -221,6 +220,8 @@ async function showKind(kind, path, row, message) {
 				" ", el("span", { class: "rel" }, d.name))))
 			: el("p", { class: "empty" }, "No " + kind.name + " docs yet.");
 		const rerender = (msg) => showKind(kind, path, row, msg);
+		const context = await api(dives.active ? contextQuery(ctx.root, false) : "/api/context?root=" + ctx.root);
+		const editTitle = titleForm(doc, kind.repoId, !doc.builtin && repoWritable(context.repos.find((repo) => repo.id === kind.repoId)), rerender);
 		view.replaceChildren(...[message, list].filter(Boolean), ...(doc.builtin ? [] : [schemaEditor(kind, doc, path, rerender)]), editTitle, ...docBody(doc, false));
 	} catch (err) { showError(err); }
 }
@@ -278,7 +279,7 @@ events.addEventListener("state", async (event) => {
 	const last = bridgeState;
 	bridgeState = next;
 	if (!last || (last.dive === next.dive && last.head === next.head)) return;
-	if (document.querySelector("#view .output.streaming")) return;
+	if (diveWrites || document.querySelector(".output.streaming")) return;
 	try {
 		await loadDives();
 		await loadRoots();
